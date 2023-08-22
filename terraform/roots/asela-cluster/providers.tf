@@ -4,7 +4,7 @@ terraform {
     bucket = "asela-tf-states"
     key    = "asela-cluster"
     region = "us-west-2"
-    profile = "infra-asela"
+    profile = "infra-admin"
     encrypt = true
   }
 
@@ -17,7 +17,7 @@ terraform {
 
 provider aws {
   region = "us-west-2"
-  profile = "infra-asela"
+  profile = "infra-admin"
 }
 
 provider "kubernetes" {
@@ -26,4 +26,10 @@ provider "kubernetes" {
   client_certificate     = base64decode(var.client_certificate)
   client_key             = base64decode(var.client_key)
   cluster_ca_certificate = base64decode(var.cluster_ca_certificate)
+}
+
+provider "helm" {
+  kubernetes {
+    config_path = "~/k3s.yaml"
+  }
 }
