@@ -20,7 +20,7 @@ resource "kubernetes_service" "mysite" {
       name = "http"
       port        = 80
       target_port = 80
-      node_port = 30080
+      node_port = 30090
     }
 
     type = "NodePort"
