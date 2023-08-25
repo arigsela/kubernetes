@@ -5,7 +5,7 @@ resource "random_password" "rds_west2_beappdb1_password" {
 }
 
 resource "aws_secretsmanager_secret" "rds_west2_beappdb1_credentials" {
-    name = "rds-us-west2-beappdb1-credentals"
+    name = "rds-us-west2-beappdb1-credentials"
 }
 
 resource "aws_secretsmanager_secret_version" "rds_west2_beappdb1_credentials_version" {
