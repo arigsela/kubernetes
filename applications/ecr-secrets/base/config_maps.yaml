@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ecr-registry-helper-cm
+  namespace: book-project
+data:
+  AWS_REGION: "us-west-2"
+  DOCKER_SECRET_NAME: regcred
