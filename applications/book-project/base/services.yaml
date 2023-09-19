@@ -5,6 +5,7 @@ metadata:
  labels:
    run: books-project-deployment
 spec:
+ type: NodePort 
  ports:
  - port: 8000
  selector:
