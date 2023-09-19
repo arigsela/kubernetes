@@ -1,18 +1,12 @@
 apiVersion: autoscaling/v1
 kind: HorizontalPodAutoscaler
 metadata:
-  name: books-project-hpa
+ name: books-project-hpa
 spec:
-  scaleTargetRef:
-  apiVersion: apps/v1
-  kind: Deployment
-  name: books-project-deployment
-  minReplicas: 1
-  maxReplicas: 1
-  metrics:
-  - type: Resource
-  resource:
-    name: cpu
-    target:
-      type: Utilization
-      averageUtilization: 50
+ scaleTargetRef:
+   apiVersion: apps/v1
+   kind: Deployment
+   name: books-project-deployment
+ minReplicas: 1
+ maxReplicas: 2
+ targetCPUUtilizationPercentage: 50
