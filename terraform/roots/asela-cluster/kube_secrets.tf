@@ -4,9 +4,9 @@ locals {
 
 module "ecr_secrets" {
   source = "../../modules/kube-secrets"
-  name = "regcred"
+  name = "aws-credentials"
   namespace = "book-project"
-  type = "kubernetes.io/basic-auth"
+  type = "Opaque"
   data = {
     "AWS_SECRET_ACCESS_KEY" = local.aws_credentials_secret["aws_secret_key"]
     "AWS_ACCESS_KEY_ID" = local.aws_credentials_secret["aws_access_id"]
