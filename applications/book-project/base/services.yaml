@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+ name: books-project-deployment
+ labels:
+   run: books-project-deployment
+spec:
+ type: NodePort 
+ ports:
+ - port: 8000
+ selector:
+   run: books-project-deployment

@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+ name: books-project-deployment
+spec:
+ selector:
+   matchLabels:
+     run: books-project-deployment
+ replicas: 1
+ template:
+   metadata:
+     labels:
+       run: books-project-deployment
+   spec:
+     imagePullSecrets:
+     - name: regcred
+     containers:
+     - name: books-project-deployment
+       image: 783920358539.dkr.ecr.us-west-2.amazonaws.com/booksapp
+       imagePullPolicy: Always
+       ports:
+       -  containerPort: 8000
+          name: http
+          protocol: TCP
+       resources:
+         limits:
+           cpu: 500m
+         requests:
+           cpu: 200m
+
