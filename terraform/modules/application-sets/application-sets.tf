@@ -1,5 +1,6 @@
 resource "kubectl_manifest" "applications_application_set" {
     yaml_body = <<YAML
+---
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -8,24 +9,25 @@ metadata:
 spec:
   generators:
     - git:
+        repoURL: https://github.com/arigsela/kubernetes
+        revision: main
         files:
           - path: app-discovery/*
-        repoURL: https://github.com/arigsela/kubernetes
-        revision: master
   template:
+    metadata:
       name: "{{app_path}}-{{overlay}}"
     spec:
-      destination:
-        namespace: "{{namespace}}"
-        server: https://kubernetes.default.svc
       project: applications
       source:
+        repoURL: https://github.com/arigsela/kubernetes
+        targetRevision: main
+        path: applications/{{app_path}}/overlays/{{overlay}}
         kustomize:
           images:
             - "{{image}}:{{tag}}"
-        path: applications/{{app_path}}/overlays/{{overlay}}
-        repoURL: https://github.com/arigsela/kubernetes
-        targetRevision: master
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{namespace}}"
       syncPolicy:
         automated:
           prune: true
