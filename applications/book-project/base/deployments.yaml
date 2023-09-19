@@ -12,8 +12,8 @@ spec:
      labels:
        run: books-project-deployment
    spec:
-      imagePullSecrets:
-        - name: regcred
+     imagePullSecrets:
+     - name: regcred
      containers:
      - name: books-project-deployment
        image: 783920358539.dkr.ecr.us-west-2.amazonaws.com/booksapp
