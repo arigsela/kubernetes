@@ -2,7 +2,6 @@ apiVersion: batch/v1beta1
 kind: CronJob
 metadata:
   name: ecr-registry-helper
-  namespace: book-project
 spec:
   schedule: "0 */10 * * *"
   successfulJobsHistoryLimit: 3
