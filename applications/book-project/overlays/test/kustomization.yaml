@@ -4,5 +4,5 @@ kind: Kustomization
 resources:
   - ../../base
 
-patchesStrategicMerge:
-  - hpa.yaml
+# patchesStrategicMerge:
+#  - hpa.yaml
