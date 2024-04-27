@@ -1,9 +1,9 @@
 terraform {
 
   backend "s3" {
-    bucket = "asela-tf-states"
+    bucket = "asela-terraform-states"
     key    = "asela-cluster"
-    region = "us-west-2"
+    region = "us-east-2"
     profile = "infra-admin"
     encrypt = true
   }
@@ -16,7 +16,7 @@ terraform {
 }
 
 provider aws {
-  region = "us-west-2"
+  region = "us-east-2"
   profile = "infra-admin"
 }
 
