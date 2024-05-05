@@ -18,6 +18,15 @@ spec:
      - name: chores-backend
        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-backend
        imagePullPolicy: Always
+       envFrom:
+        - configMapRef:
+            name: chores-app-config
+       env:
+       - name: DB_PASSWORD
+         valueFrom:
+         secretKeyRef:
+          name: chores-app-secrets
+          key: DB_PASSWORD
        ports:
        -  containerPort: 8000
           name: http
@@ -27,4 +36,5 @@ spec:
            cpu: 500m
          requests:
            cpu: 200m
+
 
