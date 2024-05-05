@@ -2,4 +2,4 @@ app_path: chores-backend
 overlay: test
 namespace: chores
 image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-backend
-tag: 4860458142d866b66f696998b2f371b286b7626f
+tag: 59b3a22b8a318ab62eaca98b4147c9c4951b3045
