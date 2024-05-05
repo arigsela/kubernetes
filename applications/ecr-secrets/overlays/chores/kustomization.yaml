@@ -3,3 +3,9 @@ kind: Kustomization
   
 resources:
   - ../../base
+
+patchesStrategicMerge:
+  - config_maps.yaml
+  - cronjobs.yaml
+  - role_bindings.yaml
+  - service_accounts.yaml
