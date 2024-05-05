@@ -4,6 +4,5 @@ kind: Kustomization
 resources:
   - config_maps.yaml
   - cronjobs.yaml
-  - role_bindings.yaml
   - roles.yaml
   - service_accounts.yaml
