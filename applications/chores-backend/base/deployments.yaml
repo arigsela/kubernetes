@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+ name: chores-backend-deployment
+spec:
+ selector:
+   matchLabels:
+     run: chores-backend-deployment
+ replicas: 1
+ template:
+   metadata:
+     labels:
+       run: chores-backend-deployment
+   spec:
+     imagePullSecrets:
+     - name: regcred
+     containers:
+     - name: chores-backend
+       image: 783920358539.dkr.ecr.us-east-2.amazonaws.com/chores-backend
+       imagePullPolicy: Always
+       ports:
+       -  containerPort: 8000
+          name: http
+          protocol: TCP
+       resources:
+         limits:
+           cpu: 500m
+         requests:
+           cpu: 200m
+
