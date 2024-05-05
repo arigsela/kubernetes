@@ -16,7 +16,7 @@ spec:
      - name: regcred
      containers:
      - name: chores-backend
-       image: 783920358539.dkr.ecr.us-east-2.amazonaws.com/chores-backend
+       image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-backend
        imagePullPolicy: Always
        ports:
        -  containerPort: 8000
