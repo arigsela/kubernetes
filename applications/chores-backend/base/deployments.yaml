@@ -24,9 +24,9 @@ spec:
        env:
        - name: DB_PASSWORD
          valueFrom:
-         secretKeyRef:
-          name: chores-app-secrets
-          key: DB_PASSWORD
+          secretKeyRef:
+            name: chores-app-secrets
+            key: DB_PASSWORD
        ports:
        -  containerPort: 8000
           name: http
