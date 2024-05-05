@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
   - ../../base
   - role_bindings.yaml
+  - service_accounts.yaml
