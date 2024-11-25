@@ -10,7 +10,7 @@ spec:
   project: default
   source:
     chart: argo-rollouts
-    repoURL: https://charts.argoproj.io
+    repoURL: https://argoproj.github.io/argo-helm
     targetRevision: 2.38.0
     helm:
       valueFiles:
