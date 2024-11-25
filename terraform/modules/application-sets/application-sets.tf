@@ -50,7 +50,7 @@ resource "kubectl_manifest" "master_app" {
       server: https://kubernetes.default.svc
     project: applications
     source:
-      path: master-apps
+      path: base-apps
       repoURL: https://github.com/arigsela/kubernetes
       targetRevision: master
     syncPolicy:
