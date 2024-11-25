@@ -36,3 +36,26 @@ spec:
           - CreateNamespace=true
 YAML
 }
+
+resource "kubectl_manifest" "master_app" {
+  yaml_body = <<YAML
+  apiVersion: argoproj.io/v1alpha1
+  kind: Application
+  metadata:
+    name: master-app
+    namespace: argo-cd
+  spec:
+    destination:
+      namespace: argo-cd
+      server: https://kubernetes.default.svc
+    project: applications
+    source:
+      path: master-apps
+      repoURL: https://github.com/arigsela/kubernetes
+      targetRevision: master
+    syncPolicy:
+      automated:
+        prune: true
+        selfHeal: true
+  YAML
+}
