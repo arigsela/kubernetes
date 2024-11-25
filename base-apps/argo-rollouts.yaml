@@ -14,7 +14,7 @@ spec:
     targetRevision: 2.38.0
     helm:
       valueFiles:
-        - argo-rollouts/values.yaml
+        - /base-apps/argo-rollouts/values.yaml
   syncPolicy:
     automated:
       prune: true
