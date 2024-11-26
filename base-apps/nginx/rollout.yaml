@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: blue-green-nginx-rollout
+  namespace: argo-cd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: blue-green-nginx
+  template:
+    metadata:
+      labels:
+        app: blue-green-nginx
+    spec:
+      containers:
+      - name: rollouts-demo
+        image: argoproj/rollouts-demo:green
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        envFrom:
+          - configMapRef:
+              name: green-config
+  strategy:
+    blueGreen:
+      activeService: blue-nginx-service
+      previewService: green-nginx-service
+      autoPromotionEnabled: false

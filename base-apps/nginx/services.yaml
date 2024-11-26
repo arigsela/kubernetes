@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: blue-nginx-service
+  namespace: argo-cd
+spec:
+  selector:
+    app: blue-green-nginx
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+  type: NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: green-nginx-service
+  namespace: argo-cd
+spec:
+  selector:
+    app: blue-green-nginx
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+  type: NodePort

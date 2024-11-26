@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blue-config
+  namespace: argo-cd
+data:
+  key1: value1
+  key2: value2
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: green-config
+  namespace: argo-cd
+data:
+  key1: value3
+  key2: value4
