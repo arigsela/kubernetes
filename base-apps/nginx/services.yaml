@@ -7,7 +7,7 @@ spec:
   selector:
     app: blue-green-nginx
   ports:
-    - port: 8080
+    - port: 80
       targetPort: 8080
       protocol: TCP
   type: NodePort
@@ -21,7 +21,7 @@ spec:
   selector:
     app: blue-green-nginx
   ports:
-    - port: 8080
+    - port: 80
       targetPort: 8080
       protocol: TCP
   type: NodePort
