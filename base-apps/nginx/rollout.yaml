@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
   name: blue-green-nginx-rollout
-  namespace: argocd
+  namespace: argo-cd
 spec:
   replicas: 3
   selector:
