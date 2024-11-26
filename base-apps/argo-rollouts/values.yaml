@@ -353,7 +353,7 @@ dashboard:
   containerSecurityContext: {}
   service:
     # -- Sets the type of the Service
-    type: ClusterIP
+    type: NodePort
     # -- The class of the load balancer implementation
     loadBalancerClass: ""
     # -- LoadBalancer will get created with the IP specified in this field
