@@ -288,7 +288,7 @@ providerRBAC:
 
 dashboard:
   # -- Deploy dashboard server
-  enabled: false
+  enabled: true
   # -- Set cluster role to readonly
   readonly: false
   # -- Value of label `app.kubernetes.io/component`

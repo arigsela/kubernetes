@@ -52,7 +52,7 @@ resource "kubectl_manifest" "master_app" {
     source:
       path: base-apps
       repoURL: https://github.com/arigsela/kubernetes
-      targetRevision: master
+      targetRevision: deploy-rollouts
     syncPolicy:
       automated:
         prune: true
