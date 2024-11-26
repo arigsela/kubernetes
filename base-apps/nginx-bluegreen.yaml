@@ -9,7 +9,7 @@ spec:
     server: https://kubernetes.default.svc
   project: applications
   source:
-    path: nginx
+    path: base-apps/nginx
     repoURL: https://github.com/arigsela/kubernetes
     targetRevision: deploy-rollouts
   syncPolicy:
