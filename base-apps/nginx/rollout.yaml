@@ -4,7 +4,7 @@ metadata:
   name: blue-green-nginx-rollout
   namespace: argo-cd
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: blue-green-nginx
@@ -14,14 +14,18 @@ spec:
         app: blue-green-nginx
     spec:
       containers:
-      - name: nginx
-        # Update the image tag to change between blue and green
-        image: nginx:1.19.10  # Change this to nginx:1.19.11 to represent green
-        ports:
-        - containerPort: 80
+      - name: python-server
+        image: python:3.8-slim
+        command: ["sh", "-c"]
+        args:
+          - |
+            echo '<h1>This is the ${APP_COLOR} version of the application</h1>' > /app/index.html && \
+            python -m http.server 80 -d /app
         env:
         - name: APP_COLOR
-          value: "blue"  # Update this to "green" in the next release
+          value: "blue" # Update this for green version as well
+        ports:
+        - containerPort: 80
   strategy:
     blueGreen:
       activeService: blue-nginx-service
