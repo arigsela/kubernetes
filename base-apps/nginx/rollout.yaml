@@ -19,6 +19,9 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
+        envFrom:
+          - configMapRef:
+              name: green-config
   strategy:
     blueGreen:
       activeService: blue-nginx-service
