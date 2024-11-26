@@ -14,18 +14,11 @@ spec:
         app: blue-green-nginx
     spec:
       containers:
-      - name: python-server
-        image: python:3.8-slim
-        command: ["sh", "-c"]
-        args:
-          - |
-            echo '<h1>This is the ${APP_COLOR} version of the application</h1>' > /app/index.html && \
-            python -m http.server 80 -d /app
-        env:
-        - name: APP_COLOR
-          value: "blue" # Update this for green version as well
+      - name: rollouts-demo
+        image: argoproj/rollouts-demo:blue
+        imagePullPolicy: Always
         ports:
-        - containerPort: 80
+        - containerPort: 8080
   strategy:
     blueGreen:
       activeService: blue-nginx-service
