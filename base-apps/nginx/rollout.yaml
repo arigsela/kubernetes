@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: blue-green-nginx-rollout
+  namespace: argocd
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: blue-green-nginx
+  template:
+    metadata:
+      labels:
+        app: blue-green-nginx
+    spec:
+      containers:
+      - name: nginx
+        # Update the image tag to change between blue and green
+        image: nginx:1.19.10  # Change this to nginx:1.19.11 to represent green
+        ports:
+        - containerPort: 80
+        env:
+        - name: APP_COLOR
+          value: "blue"  # Update this to "green" in the next release
+  strategy:
+    blueGreen:
+      activeService: blue-nginx-service
+      previewService: green-nginx-service
+      autoPromotionEnabled: false
