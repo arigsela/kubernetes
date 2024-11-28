@@ -48,11 +48,11 @@ resource "kubectl_manifest" "master_app" {
     destination:
       namespace: argo-cd
       server: https://kubernetes.default.svc
-    project: applications
+    project: default
     source:
       path: master-apps
       repoURL: https://github.com/arigsela/kubernetes
-      targetRevision: master
+      targetRevision: main
     syncPolicy:
       automated:
         prune: true
