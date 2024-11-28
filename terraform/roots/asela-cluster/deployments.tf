@@ -1,53 +1,53 @@
-resource "kubernetes_deployment" "mysite" {
+# resource "kubernetes_deployment" "mysite" {
 
-  timeouts {}
+#   timeouts {}
 
-  metadata {
-    name = "mysite"
-    namespace = "nginx"
-    labels = {
-      app = "mysite"
-    }
-  }
+#   metadata {
+#     name = "mysite"
+#     namespace = "nginx"
+#     labels = {
+#       app = "mysite"
+#     }
+#   }
 
-  spec {
-    replicas = 2
+#   spec {
+#     replicas = 2
 
-    selector {
-      match_labels = {
-        app = "mysite"
-      }
-    }
+#     selector {
+#       match_labels = {
+#         app = "mysite"
+#       }
+#     }
 
-    template {
-      metadata {
-        labels = {
-          app = "mysite"
-        }
-      }
+#     template {
+#       metadata {
+#         labels = {
+#           app = "mysite"
+#         }
+#       }
 
-      spec {
-        automount_service_account_token = false
-        enable_service_links = false
-        scheduler_name = "default-scheduler"
+#       spec {
+#         automount_service_account_token = false
+#         enable_service_links = false
+#         scheduler_name = "default-scheduler"
         
-        container {
-          image = "nginx"
-          name  = "mysite"
-          image_pull_policy = "Always"
-          termination_message_policy = "File"
+#         container {
+#           image = "nginx"
+#           name  = "mysite"
+#           image_pull_policy = "Always"
+#           termination_message_policy = "File"
           
-          port {
-            container_port = "80"
-            protocol = "TCP"
-          }
+#           port {
+#             container_port = "80"
+#             protocol = "TCP"
+#           }
 
-          resources {
-            limits = {}
-            requests = {}
-          }
-        }
-      }
-    }
-  }
-}
+#           resources {
+#             limits = {}
+#             requests = {}
+#           }
+#         }
+#       }
+#     }
+#   }
+# }
