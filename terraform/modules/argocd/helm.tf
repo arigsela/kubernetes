@@ -14,11 +14,19 @@ resource "helm_release" "argocd" {
 
   set {
       name = "server.service.type"
-      value = "NodePort"
+      value = "ClusterIP"
   }
 
   set {
     name  = "server.config.exec\\.enabled"
+    value = "true"
+    type  = "string"
+  }
+
+
+  // Add this block to enable insecure mode
+  set {
+    name  = "configs.params.server\\.insecure"
     value = "true"
     type  = "string"
   }
