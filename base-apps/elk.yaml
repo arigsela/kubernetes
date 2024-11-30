@@ -1,19 +1,69 @@
-# apps/observability.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: observability
-  namespace: argo-cd
+  name: monitoring-stack
+  namespace: argocd
 spec:
   project: default
   source:
-    repoURL: https://github.com/arigsela/kubernetes
-    path: base-apps/elk
-    targetRevision: elk
+    chart: loki-stack
+    repoURL: https://grafana.github.io/helm-charts
+    targetRevision: 2.9.10  # You may want to check the latest version
+    helm:
+      values: |
+        grafana:
+          ingress:
+            enabled: true
+            annotations:
+              kubernetes.io/ingress.class: traefik
+            hosts:
+              - grafana.arigsela.com
+            path: /
+          enabled: true
+          persistence:
+            enabled: true
+            size: 5Gi
+          adminPassword: "changeme123"
+          sidecar:
+            dashboards:
+              enabled: true
+
+        loki:
+          persistence:
+            enabled: true
+            size: 10Gi
+          
+        promtail:
+          enabled: true
+          config:
+            snippets:
+              extraScrapeConfigs: |
+                - job_name: k3s
+                  kubernetes_sd_configs:
+                    - role: pod
+                  relabel_configs:
+                    - action: replace
+                      source_labels:
+                      - __meta_kubernetes_pod_node_name
+                      target_label: node_name
+
+        prometheus:
+          enabled: true
+          alertmanager:
+            enabled: false
+          server:
+            retention: 7d
+            persistentVolume:
+              enabled: true
+              size: 10Gi
+
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
+
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
