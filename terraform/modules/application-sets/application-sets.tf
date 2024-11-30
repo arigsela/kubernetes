@@ -52,9 +52,7 @@ resource "kubectl_manifest" "master_app" {
     source:
       path: base-apps
       repoURL: https://github.com/arigsela/kubernetes
-      targetRevision: use-argocd-ingress
-      directory:
-        recursive: true
+      targetRevision: main
 
     syncPolicy:
       automated:
