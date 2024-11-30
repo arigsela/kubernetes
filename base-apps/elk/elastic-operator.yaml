@@ -9,9 +9,9 @@ spec:
   source:
     repoURL: https://helm.elastic.co
     chart: eck-operator
-    targetRevision: 2.15.0
+    targetRevision: 2.9.0
     helm:
-      values:
+      values: |
         resources:
           limits:
             cpu: 200m
