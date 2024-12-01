@@ -41,9 +41,9 @@ spec:
                 - name: MySQL
                   type: mysql
                   url: mysql.mysql.svc.cluster.local:3306
-                  user: ${MYSQL_USER}
+                  user: $MYSQL_USER
                   secureJsonData:
-                    password: ${MYSQL_PASSWORD}
+                    password: $MYSQL_PASSWORD
                   jsonData:
                     database: test_db
                     maxOpenConns: 100
