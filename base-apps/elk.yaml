@@ -36,18 +36,51 @@ spec:
         promtail:
           enabled: true
           config:
+            serverPort: 3101
             clients:
               - url: http://monitoring-stack-loki:3100/loki/api/v1/push
+            positions:
+              filename: /run/promtail/positions.yaml
             snippets:
               extraScrapeConfigs: |
-                - job_name: k3s
+                - job_name: kubernetes-pods
+                  pipeline_stages:
+                    - cri: {}
                   kubernetes_sd_configs:
                     - role: pod
                   relabel_configs:
-                    - action: replace
+                    - source_labels:
+                        - __meta_kubernetes_pod_controller_name
+                      regex: ([0-9a-z-.]+?)(-[0-9a-f]{8,10})?
+                      action: replace
+                      target_label: __tmp_controller_name
+                    - source_labels:
+                        - __meta_kubernetes_pod_label_app_kubernetes_io_name
+                        - __meta_kubernetes_pod_label_app
+                        - __meta_kubernetes_pod_label_k8s_app
+                        - __tmp_controller_name
+                        - __meta_kubernetes_pod_name
+                      regex: ^;*([^;]+)(;.*)?$
+                      action: replace
+                      target_label: app
+                    - source_labels:
+                        - __meta_kubernetes_namespace
+                      action: replace
+                      target_label: namespace
+                    - source_labels:
+                        - __meta_kubernetes_pod_name
+                      action: replace
+                      target_label: pod
+                    - source_labels:
+                        - __meta_kubernetes_pod_container_name
+                      action: replace
+                      target_label: container
+                    - replacement: /var/log/pods/*$1/*.log
+                      separator: /
                       source_labels:
-                      - __meta_kubernetes_pod_node_name
-                      target_label: node_name
+                        - __meta_kubernetes_pod_uid
+                        - __meta_kubernetes_pod_container_name
+                      target_label: __path__
 
         prometheus:
           enabled: true
