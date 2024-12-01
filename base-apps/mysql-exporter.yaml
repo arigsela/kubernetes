@@ -19,8 +19,11 @@ spec:
               name: mysql-exporter-secret
               key: mysql-password
         serviceMonitor:
-          enabled: true
-          namespace: monitoring
+          enabled: false  # Disabled since we're not using Prometheus Operator
+        # Instead, use annotations for Prometheus scraping
+        podAnnotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "9104"
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
