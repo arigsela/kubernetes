@@ -38,18 +38,18 @@ spec:
             datasources.yaml:
               apiVersion: 1
               datasources:
-                - name: MySQL
-                  type: mysql
-                  url: mysql.mysql.svc.cluster.local:3306
-                  user: $MYSQL_USER
-                  secureJsonData:
-                    password: $MYSQL_PASSWORD
-                  jsonData:
-                    database: test_db
-                    maxOpenConns: 100
-                    maxIdleConns: 100
-                    maxIdleConnsAuto: true
-                    connMaxLifetime: 14400
+              - name: MySQL
+                type: mysql
+                url: mysql.mysql.svc.cluster.local:3306
+                user: exporter     # Direct value instead of env var
+                secureJsonData:
+                  password: testing123   # Direct value instead of env var
+                jsonData:
+                  database: test_db
+                  maxOpenConns: 100
+                  maxIdleConns: 100
+                  maxIdleConnsAuto: true
+                  connMaxLifetime: 14400
 
         loki:
           persistence:
