@@ -12,9 +12,6 @@ spec:
     helm:
       values: |
         grafana:
-          envFrom:
-            - secretRef:
-                name: mysql-grafana-secret   # This loads the environment variables
           ingress:
             enabled: true
             annotations:
@@ -38,10 +35,9 @@ spec:
               - name: MySQL
                 type: mysql
                 url: mysql.mysql.svc.cluster.local:3306
-                user: "${MYSQL_USER}"        # Use environment variable reference
-                database: test_db
+                user: 'exporter'  # Direct value since it's not sensitive
                 secureJsonData:
-                  password: "${MYSQL_PASSWORD}"  # Use environment variable reference
+                  password: testing123  # Direct value for now
                 jsonData:
                   database: test_db
                   maxOpenConns: 100
