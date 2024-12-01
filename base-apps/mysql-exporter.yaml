@@ -13,14 +13,18 @@ spec:
       values: |
         mysql:
           host: "mysql.mysql.svc.cluster.local"  
-          user: "exporter"            
-          pass:
-            secret:
-              name: mysql-exporter-secret
-              key: mysql-password
+          user: "exporter"
+          pass: "${MYSQL_PASSWORD}"
+          existingSecret: mysql-exporter-secret
+          existingSecretKey: mysql-password
+        env:
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mysql-exporter-secret
+                key: mysql-password
         serviceMonitor:
-          enabled: false  # Disabled since we're not using Prometheus Operator
-        # Instead, use annotations for Prometheus scraping
+          enabled: false
         podAnnotations:
           prometheus.io/scrape: "true"
           prometheus.io/port: "9104"
