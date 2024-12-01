@@ -36,6 +36,8 @@ spec:
         promtail:
           enabled: true
           config:
+            clients:
+              - url: http://monitoring-stack-loki:3100/loki/api/v1/push
             snippets:
               extraScrapeConfigs: |
                 - job_name: k3s
