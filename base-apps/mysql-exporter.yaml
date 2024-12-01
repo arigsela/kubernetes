@@ -14,15 +14,9 @@ spec:
         mysql:
           host: "mysql.mysql.svc.cluster.local"  
           user: "exporter"
-          pass: "${MYSQL_PASSWORD}"
-          existingSecret: mysql-exporter-secret
-          existingSecretKey: mysql-password
-        env:
-          - name: MYSQL_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: mysql-exporter-secret
-                key: mysql-password
+          existingSecret: "mysql-exporter-secret"
+          existingSecretKey: "mysql-password"
+          # Remove the pass field entirely as we're using existingSecret
         serviceMonitor:
           enabled: false
         podAnnotations:
