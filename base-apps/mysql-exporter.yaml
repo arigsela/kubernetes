@@ -13,12 +13,13 @@ spec:
       values: |
         mysql:
           host: "mysql.mysql.svc.cluster.local"  
-          user: "exporter"
-          existingSecret: "mysql-exporter-secret"
-          existingSecretKey: "mysql-password"
-          # Remove the pass field entirely as we're using existingSecret
+          user: "exporter"            
+          pass:
+            secret:
+              name: mysql-exporter-secret
+              key: mysql-password
         serviceMonitor:
-          enabled: false
+          enabled: false  # Disabled since we're not using Prometheus Operator
         podAnnotations:
           prometheus.io/scrape: "true"
           prometheus.io/port: "9104"
@@ -29,3 +30,5 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
