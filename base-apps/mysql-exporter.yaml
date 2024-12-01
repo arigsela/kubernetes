@@ -17,6 +17,17 @@ spec:
           existingPasswordSecret:
             name: "mysql-exporter-secret"
             key: "mysql-password"
+        collectors:
+          global_status: true
+          global_variables: true
+          info_schema.tables: true
+          info_schema.processlist: true
+          perf_schema.tableiowaits: true
+          perf_schema.indexiowaits: true
+          perf_schema.tablelocks: true
+          slave_status: true
+          binlog_size: true
+          info_schema.innodb_metrics: true
         serviceMonitor:
           enabled: false
         podAnnotations:
