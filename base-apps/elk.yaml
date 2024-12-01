@@ -26,7 +26,24 @@ spec:
           adminPassword: "changeme123"
           sidecar:
             dashboards:
-              enabled: true
+              enabled: true   
+          # Add datasources configuration
+          datasources:
+            datasources.yaml:
+              apiVersion: 1
+              datasources:
+              - name: MySQL
+                type: mysql
+                url: mysql.mysql.svc.cluster.local:3306
+                user: 'exporter'  # Direct value since it's not sensitive
+                secureJsonData:
+                  password: testing123  # Direct value for now
+                jsonData:
+                  database: test_db
+                  maxOpenConns: 100
+                  maxIdleConns: 100
+                  maxIdleConnsAuto: true
+                  connMaxLifetime: 14400
 
         loki:
           persistence:

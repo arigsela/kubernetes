@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mysql-monitoring
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    chart: prometheus-mysql-exporter
+    repoURL: https://prometheus-community.github.io/helm-charts
+    targetRevision: 2.8.0
+    helm:
+      values: |
+        mysql:
+          host: "mysql.mysql.svc.cluster.local"  
+          user: "exporter"
+          existingPasswordSecret:
+            name: "mysql-exporter-secret"
+            key: "mysql-password"
+        collectors:
+          global_status: true
+          global_variables: true
+          info_schema.tables: true
+          info_schema.processlist: true
+          perf_schema.tableiowaits: true
+          perf_schema.indexiowaits: true
+          perf_schema.tablelocks: true
+          slave_status: true
+          binlog_size: true
+          info_schema.innodb_metrics: true
+        serviceMonitor:
+          enabled: false
+        podAnnotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "9104"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
