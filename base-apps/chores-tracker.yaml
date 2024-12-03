@@ -1,22 +1,20 @@
-# apps/ecr-auth/application.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ecr-auth
+  name: chores-tracker
   namespace: argo-cd
 spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
     targetRevision: deploy-chores-backend
-    path: base-apps/ecr-auth
+    path: base-apps/chores-tracker
   destination:
     server: https://kubernetes.default.svc
-    namespace: kube-system
+    namespace: chores-tracker
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-
