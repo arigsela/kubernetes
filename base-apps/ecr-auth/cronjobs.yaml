@@ -4,7 +4,7 @@ metadata:
   name: ecr-credentials-sync
   namespace: kube-system
 spec:
-  schedule: "*/6 * * * *"  # Run every 6 hours
+  schedule: "*/6 * * * *"
   jobTemplate:
     spec:
       template:
@@ -20,11 +20,15 @@ spec:
             - /bin/sh
             - -c
             - |
-              aws ecr get-login-password --region us-east-2 | kubectl delete secret --ignore-not-found=true docker-registry ecr-registry -n kube-system
+              # Create namespace if it doesn't exist
+              kubectl create namespace chores-tracker --dry-run=client -o yaml | kubectl apply -f -
+              
+              # Create secret in chores-tracker namespace
+              aws ecr get-login-password --region us-east-2 | kubectl delete secret --ignore-not-found=true docker-registry ecr-registry -n chores-tracker
               aws ecr get-login-password --region us-east-2 | kubectl create secret docker-registry ecr-registry \
-                --docker-server=852893458518.dkr.ecr.ue-east-2.amazonaws.com \
+                --docker-server=852893458518.dkr.ecr.us-east-2.amazonaws.com \
                 --docker-username=AWS \
                 --docker-password=$(aws ecr get-login-password) \
-                -n kube-system
+                -n chores-tracker
           restartPolicy: OnFailure
 
