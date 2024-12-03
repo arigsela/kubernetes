@@ -21,25 +21,25 @@ spec:
         ports:
         - containerPort: 8000
         env:
-        - name: MYSQL_HOST
+        - name: DB_HOST
           value: "mysql.mysql.svc.cluster.local"
-        - name: MYSQL_PORT
+        - name: DB_PORT
           value: "3306"
-        - name: MYSQL_USER
+        - name: DB_USER
           valueFrom:
             secretKeyRef:
               name: mysql-creds
-              key: MYSQL_USER
-        - name: MYSQL_PASSWORD
+              key: DB_USER
+        - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: mysql-creds
-              key: MYSQL_PASSWORD
-        - name: MYSQL_DATABASE
+              key: DB_PASSWORD
+        - name: DB_NAME
           valueFrom:
             secretKeyRef:
               name: mysql-creds
-              key: MYSQL_DATABASE
+              key: DB_NAME
         resources:
           requests:
             cpu: 100m
