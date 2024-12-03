@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ecr-credentials-sync
+  namespace: kube-system
+spec:
+  schedule: "*/6 * * * *"  # Run every 6 hours
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: ecr-credentials-sync
+          containers:
+          - name: ecr-credentials-sync
+            image: heyvaldemar/aws-kubectl:latest
+            envFrom:
+            - secretRef:
+                name: aws-credentials
+            command:
+            - /bin/sh
+            - -c
+            - |
+              aws ecr get-login-password --region us-east-2 | kubectl delete secret --ignore-not-found=true docker-registry ecr-registry -n kube-system
+              aws ecr get-login-password --region us-east-2 | kubectl create secret docker-registry ecr-registry \
+                --docker-server=852893458518.dkr.ecr.ue-east-2.amazonaws.com \
+                --docker-username=AWS \
+                --docker-password=$(aws ecr get-login-password) \
+                -n kube-system
+          restartPolicy: OnFailure
+
