@@ -20,8 +20,11 @@ spec:
             - /bin/sh
             - -c
             - |
-              # Create namespace if it doesn't exist
-              kubectl create namespace chores-tracker --dry-run=client -o yaml | kubectl apply -f -
+              # Check if namespace exists first
+              if ! kubectl get namespace chores-tracker > /dev/null 2>&1; then
+                echo "Namespace chores-tracker doesn't exist. Please create it first."
+                exit 1
+              fi
               
               # Create secret in chores-tracker namespace
               aws ecr get-login-password --region us-east-2 | kubectl delete secret --ignore-not-found=true docker-registry ecr-registry -n chores-tracker
