@@ -12,7 +12,7 @@ spec:
           serviceAccountName: ecr-credentials-sync
           containers:
           - name: ecr-credentials-sync
-            image: bitnami/kubectl:latest
+            image: heyvaldemar/aws-kubectl:latest
             envFrom:
             - secretRef:
                 name: aws-credentials
