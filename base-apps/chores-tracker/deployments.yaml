@@ -20,6 +20,26 @@ spec:
         image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:latest
         ports:
         - containerPort: 8000
+        env:
+        - name: MYSQL_HOST
+          value: "mysql.mysql.svc.cluster.local"
+        - name: MYSQL_PORT
+          value: "3306"
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-creds
+              key: MYSQL_USER
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-creds
+              key: MYSQL_PASSWORD
+        - name: MYSQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: mysql-creds
+              key: MYSQL_DATABASE
         resources:
           requests:
             cpu: 100m
