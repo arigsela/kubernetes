@@ -21,9 +21,7 @@ spec:
             - -c
             - |
               # Namespaces to synchronize secrets to
-              NAMESPACES=("chores-tracker" "chores-frontend")
-
-              for NAMESPACE in "${NAMESPACES[@]}"; do
+              for NAMESPACE in chores-tracker chores-frontend; do
                 # Check if namespace exists
                 if ! kubectl get namespace $NAMESPACE > /dev/null 2>&1; then
                   echo "Namespace $NAMESPACE doesn't exist. Please create it first."
