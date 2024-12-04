@@ -15,7 +15,7 @@ spec:
           ingress:
             enabled: true
             annotations:
-              kubernetes.io/ingress.class: traefik
+              
             hosts:
               - grafana.arigsela.com
             path: /
