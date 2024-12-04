@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chores-frontend
+  namespace: chores-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: chores-frontend
+  template:
+    metadata:
+      labels:
+        app: chores-frontend
+    spec:
+      imagePullSecrets:
+      - name: ecr-registry
+      containers:
+      - name: chores-frontend
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-frontend:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DB_HOST
+          value: "mysql.mysql.svc.cluster.local"
+        - name: DB_PORT
+          value: "3306"
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-creds
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-creds
+              key: DB_PASSWORD
+        - name: DB_NAME
+          valueFrom:
+            secretKeyRef:
+              name: mysql-creds
+              key: DB_NAME
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
