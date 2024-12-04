@@ -13,13 +13,17 @@ spec:
       labels:
         app: chores-frontend
     spec:
-      imagePullSecrets:
-      - name: ecr-registry
       containers:
       - name: chores-frontend
         image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-frontend:latest
         ports:
-        - containerPort: 8000
+        - containerPort: 80
+        env:
+        - name: API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: frontend-config
+              key: API_URL
         resources:
           requests:
             cpu: 100m
@@ -30,12 +34,12 @@ spec:
         livenessProbe:
           httpGet:
             path: /health
-            port: 8000
+            port: 80
           initialDelaySeconds: 30
           periodSeconds: 10
         readinessProbe:
           httpGet:
             path: /health
-            port: 8000
+            port: 80
           initialDelaySeconds: 5
           periodSeconds: 5
