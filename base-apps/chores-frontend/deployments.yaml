@@ -13,6 +13,8 @@ spec:
       labels:
         app: chores-frontend
     spec:
+      imagePullSecrets:
+      - name: ecr-registry
       containers:
       - name: chores-frontend
         image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-frontend:latest
