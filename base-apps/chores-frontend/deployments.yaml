@@ -42,5 +42,3 @@ spec:
         env:
         - name: REACT_APP_API_BASE_URL
           value: "http://chores-tracker.chores-tracker.svc.cluster.local:80"
-          initialDelaySeconds: 5
-          periodSeconds: 5
