@@ -4,4 +4,4 @@ metadata:
   name: frontend-config
   namespace: chores-frontend
 data:
-  API_URL: "https://chores-api.arigsela.com"
+  API_URL: "http://chores-api.arigsela.com"
