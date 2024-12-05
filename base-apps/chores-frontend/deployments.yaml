@@ -15,6 +15,7 @@ spec:
     spec:
       imagePullSecrets:
       - name: ecr-registry
+      imagePullPolicy: Always
       containers:
       - name: chores-frontend
         image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-frontend:test-1
