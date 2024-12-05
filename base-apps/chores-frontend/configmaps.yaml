@@ -4,4 +4,4 @@ metadata:
   name: frontend-config
   namespace: chores-frontend
 data:
-  API_URL: "http://chores-tracker.chores-tracker.svc.cluster.local:80"
+  API_URL: "https://chores-api.arigsela.com"
