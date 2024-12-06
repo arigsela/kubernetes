@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: custom-dnsmasq
+  namespace: dns
+data:
+  02-custom.conf: |
+    address=/chores.arigsela.com/192.168.1.100
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pihole-config
+  namespace: dns
+data:
+  TZ: "EST"  # Change to your timezone
+  FTLCONF_LOCAL_IPV4: "0.0.0.0"
+  DNSMASQ_USER: "root"
+  DNS_BOGUS_PRIV: "false"
+  DNSSEC: "true"
+  WEBPASSWORD: "changeme123"  # Change this!
