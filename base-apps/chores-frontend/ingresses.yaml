@@ -12,5 +12,3 @@ spec:
     services:
     - name: chores-frontend-service
       port: 80
-  tls:
-    certResolver: default

@@ -12,5 +12,3 @@ spec:
     services:
     - name: chores-tracker
       port: 80
-  tls:
-    certResolver: default
