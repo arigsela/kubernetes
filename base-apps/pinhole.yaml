@@ -1,5 +1,20 @@
-
-
----
----
-
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mysql-application
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: deploy-pinhole
+    path: base-apps/pinhole
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dns
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
