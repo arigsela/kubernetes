@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: chores-frontend
+data:
+  API_URL: "http://chores-api.arigsela.com"

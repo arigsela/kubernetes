@@ -5,12 +5,10 @@ metadata:
   namespace: chores-tracker
 spec:
   entryPoints:
-    - websecure
+    - web
   routes:
   - match: Host(`chores-api.arigsela.com`)
     kind: Rule
     services:
     - name: chores-tracker
       port: 80
-  tls:
-    certResolver: default

@@ -5,12 +5,10 @@ metadata:
   namespace: chores-frontend
 spec:
   entryPoints:
-    - websecure
+    - web
   routes:
   - match: Host(`chores.arigsela.com`)
     kind: Rule
     services:
-    - name: chores-frontend
+    - name: chores-frontend-service
       port: 80
-  tls:
-    certResolver: default
