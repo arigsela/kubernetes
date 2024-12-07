@@ -1,14 +1,14 @@
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
-  name: pinhole
+  name: pihole
   namespace: dns
 spec:
   entryPoints:
     - web
   routes:
-  - match: Host(`pinhole.arigsela.com`)
-    kind: Rule
-    services:
-    - name: pinhole-tcp
-      port: 80
+    - match: Host('pihole.arigsela.com')
+      kind: Rule
+      services:
+        - name: pihole-tcp
+          port: 80
