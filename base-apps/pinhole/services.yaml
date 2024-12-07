@@ -5,7 +5,6 @@ metadata:
   namespace: dns
 spec:
   type: ClusterIP
-  externalTrafficPolicy: Local
   ports:
     - port: 53
       protocol: TCP
