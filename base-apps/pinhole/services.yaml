@@ -4,19 +4,18 @@ metadata:
   name: pihole-dns
   namespace: dns
 spec:
-  type: NodePort
+  type: ClusterIP
+  externalTrafficPolicy: Local
   ports:
     - port: 53
       protocol: TCP
       name: dns-tcp
-      nodePort: 30053  # Custom NodePort for DNS TCP
+      targetPort: 53
     - port: 53
       protocol: UDP
       name: dns-udp
-      nodePort: 30053  # Same port for DNS UDP
+      targetPort: 53
     - port: 80
       protocol: TCP
       name: http
-      nodePort: 30090  # Web interface
-  selector:
-    app: pihole
+      targetPort: 80
