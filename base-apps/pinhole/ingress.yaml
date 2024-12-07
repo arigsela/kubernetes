@@ -10,5 +10,5 @@ spec:
   - match: Host(`pinhole.arigsela.com`)
     kind: Rule
     services:
-    - name: pinhole-dns
+    - name: pinhole-tcp
       port: 80
