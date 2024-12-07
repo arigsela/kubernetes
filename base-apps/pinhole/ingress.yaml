@@ -1,14 +1,14 @@
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
-  name: pihole-web
-  namespace: dns
+  name: chores-frontend
+  namespace: chores-frontend
 spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`pihole.home`)
-      kind: Rule
-      services:
-        - name: pihole-dns
-          port: 80
+  - match: Host(`pinhole.arigsela.com`)
+    kind: Rule
+    services:
+    - name: pinhole-dns
+      port: 80
