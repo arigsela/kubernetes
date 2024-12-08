@@ -1,14 +1,35 @@
 apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: pihole-rewrite
+  namespace: dns
+spec:
+  redirectRegex:
+    regex: ^/$ 
+    replacement: /admin
+---
+apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
   name: pihole
   namespace: dns
+  labels:
+    argocd.argoproj.io/instance: pinhole-application
 spec:
   entryPoints:
     - web
   routes:
-    - match: Host('pihole.arigsela.com')
+    - match: Host(`pihole.arigsela.com`)
       kind: Rule
+      priority: 1
+      middlewares:
+        - name: pihole-rewrite
+      services:
+        - name: pihole-tcp
+          port: 80
+    - match: Host(`pihole.arigsela.com`) && PathPrefix(`/admin`)
+      kind: Rule
+      priority: 2
       services:
         - name: pihole-tcp
           port: 80
