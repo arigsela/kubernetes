@@ -1,7 +1,7 @@
-# 1. First, install the MySQL provider
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-sql
+  namespace: crossplane-system
 spec:
   package: xpkg.upbound.io/crossplane-contrib/provider-sql:v0.9.0
