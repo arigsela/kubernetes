@@ -16,6 +16,11 @@ spec:
       containers:
       - name: crossplane
         image: crossplane/crossplane:v1.18.1-stable
+        command:
+          - crossplane
+        args:
+          - core
+          - start
         resources:
           limits:
             cpu: '1'
