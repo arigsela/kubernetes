@@ -6,9 +6,15 @@ metadata:
 spec:
   project: default
   source:
-    chart: crossplane-stable
+    chart: crossplane
     repoURL: https://charts.crossplane.io/stable
     targetRevision: 1.19.0-rc.0.110.g0d806babb
+    helm:
+      releaseName: crossplane
+      values: |
+        # Add any custom values here if needed
+        # metrics:
+        #   enabled: true
   destination:
     server: https://kubernetes.default.svc
     namespace: crossplane-system
