@@ -1,21 +1,20 @@
-# base-apps/crossplane/application.yaml
-# apiVersion: argoproj.io/v1alpha1
-# kind: Application
-# metadata:
-#   name: crossplane
-#   namespace: argo-cd
-# spec:
-#   project: default
-#   source:
-#     repoURL: https://github.com/arigsela/kubernetes
-#     targetRevision: deploy-crossplane
-#     path: base-apps/crossplane
-#   destination:
-#     server: https://kubernetes.default.svc
-#     namespace: crossplane-system
-#   syncPolicy:
-#     automated:
-#       prune: true
-#       selfHeal: true
-#     syncOptions:
-#       - CreateNamespace=true
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mysql-monitoring
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    chart: crossplane-stable
+    repoURL: https://charts.crossplane.io/stable
+    targetRevision: 1.18.1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: crossplane-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
