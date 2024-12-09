@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crossplane
+  namespace: crossplane-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crossplane
+  template:
+    metadata:
+      labels:
+        app: crossplane
+    spec:
+      containers:
+      - name: crossplane
+        image: crossplane/crossplane:v1.18.1-stable
+        args:
+          - '--enable-external-secret-stores'
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+      serviceAccountName: crossplane
