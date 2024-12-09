@@ -21,6 +21,8 @@ spec:
         args:
           - core
           - start
+          - --webhook-tls-cert-dir=/certs
+          - --disable-webhook-server=true
         resources:
           limits:
             cpu: '1'
@@ -28,4 +30,10 @@ spec:
           requests:
             cpu: 100m
             memory: 256Mi
+        volumeMounts:
+          - name: certs
+            mountPath: /certs
+            readOnly: true
+      volumes:
+        - name: certs
       serviceAccountName: crossplane
