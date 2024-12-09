@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: mysql-monitoring
+  name: crossplane
   namespace: argo-cd
 spec:
   project: default
