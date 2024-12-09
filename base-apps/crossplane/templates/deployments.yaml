@@ -16,8 +16,6 @@ spec:
       containers:
       - name: crossplane
         image: crossplane/crossplane:v1.18.1-stable
-        args:
-          - '--enable-external-secret-stores'
         resources:
           limits:
             cpu: '1'
