@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: deploy-mysql-provider
+    targetRevision: main
     path: base-apps/crossplane-mysql
   destination:
     server: https://kubernetes.default.svc
