@@ -1,14 +1,11 @@
-apiVersion: sql.crossplane.io/v1alpha1
+apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: ProviderConfig
 metadata:
-  name: mysql-provider-config
+  name: mysql-provider
 spec:
   credentials:
-    source: Secret
-    secretRef:
-      namespace: mysql
+    source: MySQLConnectionSecret
+    connectionSecretRef:
+      namespace: crossplane-system
       name: mysql-credentials
-      key: credentials
-  host: "mysql.mysql.svc.cluster.local"
-  port: "3306"  # Default MySQL port
-  defaultSSL: false  # Set to true if you're using SSL
+  tls: preferred
