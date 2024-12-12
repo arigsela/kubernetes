@@ -38,11 +38,11 @@ spec:
   providerConfigRef:
     name: mysql-provider
   forProvider:
-    userRef:
-      name: chores-mysql-credentials
-      key: DB_USER
     databaseRef:
       name: chores-mysql-credentials
-      key: DB_NAME
+      key: DB_NAME     
+    userRef:
+      name: chores-mysql-credentials
+      key: DB_USER     
     privileges:
       - ALL
