@@ -1,7 +1,7 @@
 apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: Database
 metadata:
-  name: chores_db
+  name: chores-db
   namespace: chores-backend
 spec:
   providerConfigRef:
@@ -10,7 +10,7 @@ spec:
 apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: User
 metadata:
-  name: chores_user
+  name: chores-user
   namespace: chores-backend
 spec:
   providerConfigRef:
@@ -31,8 +31,8 @@ spec:
     name: mysql-provider
   forProvider:
     databaseRef:
-      name: chores_db
+      name: chores-db
     privileges:
       - ALL
     userRef:
-      name: chores_user
+      name: chores-user
