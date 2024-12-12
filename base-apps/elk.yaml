@@ -23,7 +23,11 @@ spec:
           persistence:
             enabled: true
             size: 5Gi
-          adminPassword: "changeme123"
+          admin:
+          ## Name of the secret. Can be templated.
+            existingSecret: "monitoring-stack-grafana"
+            userKey: admin-user
+            passwordKey: admin-password
           sidecar:
             dashboards:
               enabled: true   
