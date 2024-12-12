@@ -6,6 +6,8 @@ metadata:
 spec:
   providerConfigRef:
     name: mysql-provider
+  forProvider:
+    name: chores-db
 ---
 apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: User
