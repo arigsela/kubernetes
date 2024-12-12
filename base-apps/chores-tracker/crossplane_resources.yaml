@@ -1,29 +1,21 @@
 apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: Database
 metadata:
-  name: chores-backend-db
+  name: chores_db
   namespace: chores-backend
 spec:
   providerConfigRef:
     name: mysql-provider
-  forProvider:
-    databaseRef:
-      name: chores-mysql-credentials
-      key: DB_NAME
----
 ---
 apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: User
 metadata:
-  name: chores-backend-db-user
+  name: chores_user
   namespace: chores-backend
 spec:
   providerConfigRef:
     name: mysql-provider
   forProvider:
-    userRef:
-      name: chores-mysql-credentials
-      key: DB_USER
     passwordSecretRef:
       name: chores-mysql-credentials
       key: DB_PASSWORD
@@ -39,10 +31,8 @@ spec:
     name: mysql-provider
   forProvider:
     databaseRef:
-      name: chores-mysql-credentials
-      key: DB_NAME     
-    userRef:
-      name: chores-mysql-credentials
-      key: DB_USER     
+      name: chores_db
     privileges:
       - ALL
+    userRef:
+      name: chores_user
