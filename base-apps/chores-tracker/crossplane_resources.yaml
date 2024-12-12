@@ -1,0 +1,42 @@
+apiVersion: mysql.sql.crossplane.io/v1alpha1
+kind: Database
+metadata:
+  name: chores-backend-db
+  namespace: chores-backend
+spec:
+  forProvider:
+    databaseRef:
+      name: mysql-credentials
+      key: DB_NAME
+---
+---
+apiVersion: mysql.sql.crossplane.io/v1alpha1
+kind: User
+metadata:
+  name: chores-backend-db-user
+  namespace: chores-backend
+spec:
+  forProvider:
+    userRef:
+      name: mysql-credentials
+      key: DB_USER
+    passwordSecretRef:
+      name: mysql-credentials
+      key: DB_PASSWORD
+      namespace: chores-tracker
+---
+apiVersion: mysql.sql.crossplane.io/v1alpha1
+kind: Grant
+metadata:
+  name: chores-backend-db-grant
+  namespace: chores-backend
+spec:
+  forProvider:
+    userRef:
+      name: mysql-credentials
+      key: DB_USER
+    databaseRef:
+      name: mysql-credentials
+      key: DB_NAME
+    privileges:
+      - ALL
