@@ -31,9 +31,7 @@ spec:
   providerConfigRef:
     name: mysql-provider
   forProvider:
-    databaseRef:
-      name: chores-db
+    database: chores-db
     privileges:
       - ALL
-    userRef:
-      name: chores-user
+    user: chores-user
