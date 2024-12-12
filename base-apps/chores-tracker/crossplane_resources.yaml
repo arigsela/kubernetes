@@ -25,7 +25,7 @@ spec:
       name: chores-mysql-credentials
       key: DB_USER
     passwordSecretRef:
-      name: mysql-credentials
+      name: chores-mysql-credentials
       key: DB_PASSWORD
       namespace: chores-tracker
 ---
@@ -42,7 +42,7 @@ spec:
       name: chores-mysql-credentials
       key: DB_USER
     databaseRef:
-      name: mysql-credentials
+      name: chores-mysql-credentials
       key: DB_NAME
     privileges:
       - ALL
