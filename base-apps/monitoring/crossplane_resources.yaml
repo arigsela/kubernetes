@@ -1,0 +1,27 @@
+apiVersion: mysql.sql.crossplane.io/v1alpha1
+kind: User
+metadata:
+  name: exporter
+  namespace: chores-backend
+spec:
+  providerConfigRef:
+    name: mysql-provider
+  forProvider:
+    passwordSecretRef:
+      name: mysql-exporter-secret
+      key: mysql-password
+      namespace: monitoring
+---
+apiVersion: mysql.sql.crossplane.io/v1alpha1
+kind: Grant
+metadata:
+  name: exporter-backend-user-grant
+  namespace: monitoring
+spec:
+  providerConfigRef:
+    name: mysql-provider
+  forProvider:
+    database: chores-db
+    privileges:
+      - SELECT
+    user: exporter
