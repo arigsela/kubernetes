@@ -4,6 +4,8 @@ metadata:
   name: chores-backend-db
   namespace: chores-backend
 spec:
+  providerConfigRef:
+    name: mysql-provider
   forProvider:
     databaseRef:
       name: mysql-credentials
@@ -16,6 +18,8 @@ metadata:
   name: chores-backend-db-user
   namespace: chores-backend
 spec:
+  providerConfigRef:
+    name: mysql-provider
   forProvider:
     userRef:
       name: mysql-credentials
@@ -31,6 +35,8 @@ metadata:
   name: chores-backend-db-grant
   namespace: chores-backend
 spec:
+  providerConfigRef:
+    name: mysql-provider
   forProvider:
     userRef:
       name: mysql-credentials
