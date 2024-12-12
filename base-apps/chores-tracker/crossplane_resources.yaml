@@ -8,7 +8,7 @@ spec:
     name: mysql-provider
   forProvider:
     databaseRef:
-      name: mysql-credentials
+      name: chores-mysql-credentials
       key: DB_NAME
 ---
 ---
@@ -22,7 +22,7 @@ spec:
     name: mysql-provider
   forProvider:
     userRef:
-      name: mysql-credentials
+      name: chores-mysql-credentials
       key: DB_USER
     passwordSecretRef:
       name: mysql-credentials
@@ -39,7 +39,7 @@ spec:
     name: mysql-provider
   forProvider:
     userRef:
-      name: mysql-credentials
+      name: chores-mysql-credentials
       key: DB_USER
     databaseRef:
       name: mysql-credentials

@@ -28,17 +28,17 @@ spec:
         - name: DB_USER
           valueFrom:
             secretKeyRef:
-              name: mysql-credentials
+              name: chores-mysql-credentials
               key: DB_USER
         - name: DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: mysql-credentials
+              name: chores-mysql-credentials
               key: DB_PASSWORD
         - name: DB_NAME
           valueFrom:
             secretKeyRef:
-              name: mysql-credentials
+              name: chores-mysql-credentials
               key: DB_NAME
         resources:
           requests:
