@@ -40,8 +40,12 @@ spec:
                 type: mysql
                 url: mysql.mysql.svc.cluster.local:3306
                 user: 'exporter'  # Direct value since it's not sensitive
-                secureJsonData:
-                  password: testing123  # Direct value for now
+                        secureJsonData:
+                password:
+                  valueFrom:
+                    secretKeyRef:
+                      name: mysql-exporter-secret
+                      key: mysql-password
                 jsonData:
                   database: test_db
                   maxOpenConns: 100
