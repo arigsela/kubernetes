@@ -1,7 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: ecr-registry-helper-cm
-data:
-  AWS_REGION: "us-east-2"
-  DOCKER_SECRET_NAME: regcred
