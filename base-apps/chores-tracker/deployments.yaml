@@ -19,7 +19,7 @@ spec:
       - name: ecr-registry
       containers:
       - name: chores-tracker
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:2a93baf31dd012f84b6e0e2034a08b8fbcf72731
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:b8df4d1e1dc1b938ce18226cb547670f25373809
         ports:
         - containerPort: 8000
         env:
