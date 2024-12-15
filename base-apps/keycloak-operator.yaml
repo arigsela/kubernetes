@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
+    targetRevision: deploy-keycloak
     path: base-apps/keycloak-operator
   destination:
     server: https://kubernetes.default.svc
