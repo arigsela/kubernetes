@@ -17,7 +17,7 @@ spec:
       - name: ecr-registry
       containers:
       - name: chores-frontend
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-frontend:d7802ebd3965eef2ff4e7f762da3a8d08da956ff
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-frontend:nginx-1
         ports:
         - containerPort: 80
         env:
