@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
+    targetRevision: fix-nginx
     path: base-apps/chores-frontend
   destination:
     server: https://kubernetes.default.svc
