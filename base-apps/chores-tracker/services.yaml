@@ -1,16 +1,14 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: chores-tracker
+  name: chores-tracker-backend  # Changed from chores-tracker
   namespace: chores-tracker
-  labels:
-    app: chores-tracker
 spec:
-  type: ClusterIP
   ports:
-  - port: 80
-    targetPort: 8000
-    protocol: TCP
-    name: http
+    - name: http
+      port: 8000  # Changed to actual backend port
+      protocol: TCP
+      targetPort: 8000
   selector:
-    app: chores-tracker
+    app: chores-tracker-backend
+  type: ClusterIP
