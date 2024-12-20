@@ -3,12 +3,14 @@ kind: IngressRoute
 metadata:
   name: chores-tracker
   namespace: chores-tracker
+  labels:
+    argocd.argoproj.io/instance: chores-tracker
 spec:
   entryPoints:
     - web
   routes:
-  - match: Host(`chores-api.arigsela.com`)
-    kind: Rule
-    services:
-    - name: chores-tracker
-      port: 80
+    - kind: Rule
+      match: Host(`chores.arigsela.com`) && PathPrefix(`/api`)
+      services:
+        - name: chores-tracker
+          port: 80
