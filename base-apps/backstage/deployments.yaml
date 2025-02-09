@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: backstage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:13
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgresql-credentials
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc 
+---
+# # kubernetes/backstage.yaml
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: backstage
+#   namespace: backstage
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: backstage
+#   template:
+#     metadata:
+#       labels:
+#         app: backstage
+#     spec:
+#       containers:
+#         - name: backstage
+#           image: backstage:1.0.0
+#           imagePullPolicy: IfNotPresent
+#           ports:
+#             - name: http
+#               containerPort: 7007
+#           resources:
+#             limits:
+#               cpu: "1"
+#               memory: "1Gi"
+#             requests:
+#               cpu: "200m"
+#               memory: "256Mi"
+#           envFrom:
+#             - secretRef:
+#                 name: postgres-secrets
+#             - secretRef:
+#                 name: backstage-secrets
