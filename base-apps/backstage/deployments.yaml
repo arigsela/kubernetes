@@ -52,6 +52,8 @@ spec:
       labels:
         app: backstage
     spec:
+      imagePullSecrets:
+      - name: ecr-registry
       containers:
         - name: backstage
           image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/backstage:latest
