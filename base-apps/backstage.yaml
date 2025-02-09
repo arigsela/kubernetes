@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backstage
+  namespace: argo-cd
+spec:
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: backstage
+  project: default
+  source:
+    repoURL: 'https://github.com/arigsela/kubernetes'
+    targetRevision: install-backstage
+    path: base-apps/backstage 
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
