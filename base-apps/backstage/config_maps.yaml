@@ -12,8 +12,7 @@ data:
       name: My Company
     backend:
       baseUrl: http://backstage.arigsela.com
-      listen:
-        port: 7007
+      listen: ':7007'
       database:
         client: pg
         connection:
@@ -21,9 +20,28 @@ data:
           port: ${POSTGRES_PORT}
           user: ${POSTGRES_USER}
           password: ${POSTGRES_PASSWORD}
+    integrations:
+      github:
+        - host: github.com
+          token: ${GITHUB_TOKEN}
+    techdocs:
+      builder: 'local'
+      generator:
+        runIn: 'docker'
+      publisher:
+        type: 'local'
+    kubernetes:
+      clusterLocatorMethods:
+        - type: multiTenant
     auth:
       providers:
         guest: {}
+    permission:
+      enabled: true
+      policies:
+        - allow:
+            actions: ["*"]
+            identities: ["guest"]
     scaffolder: {}
     catalog:
       import:
@@ -42,21 +60,3 @@ data:
           target: ./examples/org.yaml
           rules:
             - allow: [User, Group]
-    techdocs:
-      builder: 'local'
-      generator:
-        runIn: 'docker'
-      publisher:
-        type: 'local'
-    integrations:
-      github:
-        - host: github.com
-          token: ${GITHUB_TOKEN}
-    proxy: {}
-    kubernetes: {}
-    permission:
-      enabled: true
-      policies:
-        - allow:
-            actions: ["*"]
-            identities: ["guest"]
