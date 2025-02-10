@@ -1,20 +1,59 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: backstage-override-config
+  name: backstage-config
   namespace: backstage
 data:
   app-config.yaml: |
     app:
       title: "Arigsela Backstage"
+      baseUrl: http://backstage.arigsela.com
+    organization:
+      name: My Company
     backend:
       baseUrl: http://backstage.arigsela.com
+      listen:
+        port: 7007
       database:
+        client: pg
         connection:
           host: ${POSTGRES_HOST}
           port: ${POSTGRES_PORT}
           user: ${POSTGRES_USER}
           password: ${POSTGRES_PASSWORD}
+    auth:
+      providers:
+        guest: {}
+    scaffolder: {}
+    catalog:
+      import:
+        entityFilename: catalog-info.yaml
+        pullRequestBranchName: backstage-integration
+      rules:
+        - allow: [Component, System, API, Resource, Location]
+      locations:
+        - type: file
+          target: ./examples/entities.yaml
+        - type: file
+          target: ./examples/template/template.yaml
+          rules:
+            - allow: [Template]
+        - type: file
+          target: ./examples/org.yaml
+          rules:
+            - allow: [User, Group]
+    techdocs:
+      builder: 'local'
+      generator:
+        runIn: 'docker'
+      publisher:
+        type: 'local'
+    integrations:
+      github:
+        - host: github.com
+          token: ${GITHUB_TOKEN}
+    proxy: {}
+    kubernetes: {}
     permission:
       enabled: true
       policies:
