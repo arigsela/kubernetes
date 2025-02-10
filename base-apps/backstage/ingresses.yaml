@@ -10,5 +10,5 @@ spec:
   - match: Host(`backstage.arigsela.com`)
     kind: Rule
     services:
-    - name: backend
-      port: 80
+    - name: backstage
+      port: 7007
