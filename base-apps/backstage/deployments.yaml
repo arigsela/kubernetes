@@ -64,10 +64,10 @@ spec:
               containerPort: 7007
           resources:
             limits:
-              cpu: "2"
+              cpu: "4"
               memory: "2Gi"
             requests:
-              cpu: "500m"
+              cpu: "1"
               memory: "512Mi"
           envFrom:
             - secretRef:
