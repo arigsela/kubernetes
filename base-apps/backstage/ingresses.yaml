@@ -1,0 +1,14 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: backend
+  namespace: backstage
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`backstage.arigsela.com`)
+    kind: Rule
+    services:
+    - name: backend
+      port: 80
