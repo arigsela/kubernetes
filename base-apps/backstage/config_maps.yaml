@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backstage-override-config
+  namespace: backstage
+data:
+  app-config.yaml: |
+    backend:
+      baseUrl: http://backstage.arigsela.com
+      database:
+        connection:
+          host: ${POSTGRES_HOST}
+          port: ${POSTGRES_PORT}
+          user: ${POSTGRES_USER}
+          password: ${POSTGRES_PASSWORD}
+    permission:
+      enabled: true
+      policies:
+        - allow:
+            actions: ["*"]
+            identities: ["guest"]
