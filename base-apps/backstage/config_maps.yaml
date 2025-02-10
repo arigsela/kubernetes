@@ -5,6 +5,8 @@ metadata:
   namespace: backstage
 data:
   app-config.yaml: |
+    app:
+      title: "Arigsela Backstage"
     backend:
       baseUrl: http://backstage.arigsela.com
       database:
