@@ -51,9 +51,13 @@ spec:
       labels:
         app: backstage
     spec:
+      imagePullSecrets:
+        - name: ecr-registry
       containers:
         - name: backstage
           image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/backstage:latest
+          # Now that all configuration is in one file, you can simply use:
+          command: ["node", "packages/backend"]
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
