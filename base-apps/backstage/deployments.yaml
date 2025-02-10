@@ -57,6 +57,7 @@ spec:
       containers:
         - name: backstage
           image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/backstage:latest
+          command: ["node", "packages/backend", "--config", "/app/config/override.yaml", "--config", "app-config.yaml"]
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -73,3 +74,12 @@ spec:
                 name: postgresql-credentials
             - secretRef:
                 name: backstage-secrets
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config/override.yaml
+              subPath: app-config.yaml
+              readOnly: true
+      volumes:
+        - name: config-volume
+          configMap:
+            name: backstage-override-config
