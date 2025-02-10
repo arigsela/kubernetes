@@ -79,14 +79,6 @@ spec:
               mountPath: /app/config/override.yaml
               subPath: app-config.yaml
               readOnly: true
-          readinessProbe:
-           httpGet:
-             port: 7007
-             path: /healthcheck
-          livenessProbe:
-           httpGet:
-             port: 7007
-             path: /healthcheck
       volumes:
         - name: config-volume
           configMap:
