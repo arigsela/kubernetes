@@ -51,6 +51,7 @@ spec:
       labels:
         app: backstage
     spec:
+      serviceAccountName: backstage-sa  # Add this line
       imagePullSecrets:
         - name: ecr-registry
       containers:
