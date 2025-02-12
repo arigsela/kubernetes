@@ -31,8 +31,16 @@ data:
       publisher:
         type: 'local'
     kubernetes:
-      clusterLocatorMethods:
-        - type: multiTenant
+          serviceLocatorMethod:
+            type: 'multiTenant'
+          clusterLocatorMethods:
+            - type: 'config'
+              clusters:
+                - name: 'k3s-cluster'
+                  url: 'https://kubernetes.default.svc'  # This is the internal k8s API endpoint
+                  authProvider: 'serviceAccount'
+                  skipTLSVerify: true
+                  serviceAccountToken: ${K8S_SERVICE_ACCOUNT_TOKEN}
     auth:
       providers:
         guest: {}
