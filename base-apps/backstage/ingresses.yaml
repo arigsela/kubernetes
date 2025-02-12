@@ -7,8 +7,24 @@ spec:
   entryPoints:
     - web
   routes:
-  - match: Host(`backstage.arigsela.com`)
-    kind: Rule
-    services:
-    - name: backstage
-      port: 80
+    - kind: Rule
+      match: Host(`backstage.arigsela.com`)
+      middlewares:
+        - name: backstage-headers
+          namespace: backstage
+      services:
+        - name: backstage
+          port: 80
+          kind: Service
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: backstage-headers
+  namespace: backstage
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-Proto: "http"
+    customResponseHeaders:
+      Content-Security-Policy: "upgrade-insecure-requests"
