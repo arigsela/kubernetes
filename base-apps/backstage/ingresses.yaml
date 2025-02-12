@@ -7,8 +7,8 @@ spec:
   entryPoints:
     - web
   routes:
-    - match: Host(`backstage.arigsela.com`)
-      kind: Rule
-      services:
-        - name: backstage
-          port: 80
+  - match: Host(`backstage.arigsela.com`)
+    kind: Rule
+    services:
+    - name: backstage
+      port: 80
