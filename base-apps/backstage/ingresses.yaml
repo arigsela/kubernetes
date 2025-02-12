@@ -1,15 +1,4 @@
 apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: force-http
-  namespace: backstage
-spec:
-  headers:
-    customRequestHeaders:
-      X-Forwarded-Proto: "http"
-      X-Forwarded-Port: "80"
----
-apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
   name: backstage-ingress
@@ -20,11 +9,6 @@ spec:
   routes:
     - kind: Rule
       match: Host(`backstage.arigsela.com`)
-      middlewares:
-        - name: force-http
-          namespace: backstage
       services:
         - name: backstage
           port: 80
-          kind: Service
-          scheme: http
