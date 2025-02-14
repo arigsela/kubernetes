@@ -8,9 +8,12 @@ data:
     app:
       title: "Arigsela Backstage"
       baseUrl: http://backstage.arigsela.com
+      publicPath: http://backstage.arigsela.com
     organization:
       name: My Company
     backend:
+      csp:
+        connect-src: ["'self'", 'http:', 'https:']
       baseUrl: http://backstage.arigsela.com
       listen: ':7007'
       database:

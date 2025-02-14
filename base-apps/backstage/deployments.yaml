@@ -63,6 +63,9 @@ spec:
           ports:
             - name: http
               containerPort: 7007
+          env:
+            - name: NODE_ENV
+              value: development
           envFrom:
             - secretRef:
                 name: postgresql-credentials
