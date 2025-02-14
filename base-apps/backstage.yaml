@@ -10,7 +10,7 @@ spec:
   project: default
   source:
     repoURL: 'https://github.com/arigsela/kubernetes'
-    targetRevision: install-backstage
+    targetRevision: main
     path: base-apps/backstage 
   syncPolicy:
     automated:
