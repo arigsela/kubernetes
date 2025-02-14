@@ -14,6 +14,7 @@ data:
     backend:
       csp:
         connect-src: ["'self'", 'http:', 'https:']
+        upgrade-insecure-requests: false
       baseUrl: http://backstage.arigsela.com
       listen: ':7007'
       database:
