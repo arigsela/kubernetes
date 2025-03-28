@@ -1,0 +1,38 @@
+apiVersion: mysql.sql.crossplane.io/v1alpha1
+kind: User
+metadata:
+  name: chores-tracker
+  namespace: chores-tracker
+spec:
+  providerConfigRef:
+    name: mysql-provider
+  forProvider:
+    passwordSecretRef:
+      name: chores-tracker-db-password
+      key: password
+      namespace: chores-tracker
+---
+apiVersion: mysql.sql.crossplane.io/v1alpha1
+kind: Database
+metadata:
+  name: chores-tracker-db
+  namespace: chores-tracker
+spec:
+  providerConfigRef:
+    name: mysql-provider
+  forProvider:
+    name: chores_tracker
+---
+apiVersion: mysql.sql.crossplane.io/v1alpha1
+kind: Grant
+metadata:
+  name: chores-tracker-db-grant
+  namespace: chores-tracker
+spec:
+  providerConfigRef:
+    name: mysql-provider
+  forProvider:
+    user: chores-tracker
+    privileges:
+      - ALL
+    database: chores_tracker
