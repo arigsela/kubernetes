@@ -4,7 +4,7 @@ terraform {
     bucket = "asela-terraform-states"
     key    = "asela-cluster"
     region = "us-east-2"
-    profile = "infra-admin"
+    profile = "default"
     encrypt = true
   }
 
@@ -17,7 +17,7 @@ terraform {
 
 provider aws {
   region = "us-east-2"
-  profile = "infra-admin"
+  profile = "default"
 }
 
 provider "kubernetes" {
@@ -30,6 +30,6 @@ provider "kubernetes" {
 
 provider "helm" {
   kubernetes {
-    config_path = "~/k3s.yaml"
+    config_path = "~/.kube/config"
   }
 }
