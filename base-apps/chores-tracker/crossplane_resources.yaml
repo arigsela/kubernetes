@@ -6,12 +6,13 @@ metadata:
 spec:
   providerConfigRef:
     name: mysql-provider
-    namespace: chores-tracker
   forProvider:
     passwordSecretRef:
       name: chores-tracker-secrets
       key: DB_PASSWORD
       namespace: chores-tracker
+    # Add explicit host access
+    host: "%"
 ---
 apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: Database
@@ -21,7 +22,12 @@ metadata:
 spec:
   providerConfigRef:
     name: mysql-provider
-  forProvider: {}
+  forProvider:
+    # Add explicit database name
+    name: chores_db
+    # Add character set and collation
+    charset: utf8mb4
+    collation: utf8mb4_unicode_ci
 ---
 apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: Grant
@@ -31,9 +37,9 @@ metadata:
 spec:
   providerConfigRef:
     name: mysql-provider
-    namespace: chores-tracker
   forProvider:
     user: chores-user
+    host: "%"  # Match the user's host
     privileges:
       - ALL
-    database: chores-db
+    database: chores_db  # Match the database name
