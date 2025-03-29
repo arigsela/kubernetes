@@ -21,7 +21,6 @@ metadata:
 spec:
   providerConfigRef:
     name: mysql-provider
-    namespace: chores-tracker
   forProvider: {}
 ---
 apiVersion: mysql.sql.crossplane.io/v1alpha1
