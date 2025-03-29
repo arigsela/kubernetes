@@ -8,8 +8,8 @@ spec:
     connectionSecretRef:
       namespace: crossplane-system
       name: mysql-credentials
-  # Add host and port explicitly
   forProvider:
+    # Fix the host format - remove the port from the DNS name
     host: mysql.mysql.svc.cluster.local
     port: 3306
   tls: preferred
