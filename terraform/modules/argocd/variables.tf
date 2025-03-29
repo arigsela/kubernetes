@@ -10,7 +10,7 @@ variable "helm_services" {
     {
       name          = "argo-cd"
       release_name  = "argo-cd"
-      chart_version = "7.7.5"
+      chart_version = "7.8.13"
       settings      = {}
     }
   ]
