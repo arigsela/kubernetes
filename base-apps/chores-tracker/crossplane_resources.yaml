@@ -16,7 +16,7 @@ apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: Database
 metadata:
   name: chores-db
-  namespace: chores-tracker
+  namespace: chores-backend
 spec:
   providerConfigRef:
     name: mysql-provider
