@@ -16,23 +16,22 @@ apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: Database
 metadata:
   name: chores-db
-  namespace: chores-backend
+  namespace: chores-tracker
 spec:
   providerConfigRef:
     name: mysql-provider
   forProvider: {}
-# ---
-# apiVersion: mysql.sql.crossplane.io/v1alpha1
-# kind: Grant
-# metadata:
-#   name: chores-db-grant
-#   namespace: chores-tracker
-# spec:
-#   providerConfigRef:
-#     name: mysql-provider
-#   forProvider:
-#     user: chores-user
-#     host: "%"  # Match the user's host
-#     privileges:
-#       - ALL
-#     database: chores_db  # Match the database name
+---
+apiVersion: mysql.sql.crossplane.io/v1alpha1
+kind: Grant
+metadata:
+  name: chores-db-grant
+  namespace: chores-tracker
+spec:
+  providerConfigRef:
+    name: mysql-provider
+  forProvider:
+    user: chores-user
+    privileges:
+      - ALL
+    database: chores-db  # Match the database name
