@@ -25,7 +25,6 @@ spec:
   serviceName: vault-internal
   template:
     metadata:
-      creationTimestamp: null
       labels:
         app.kubernetes.io/instance: vault
         app.kubernetes.io/name: vault
@@ -35,7 +34,7 @@ spec:
       containers:
         - args:
             - |
-              /usr/local/bin/docker-entrypoint.sh vault server -dev 
+              /usr/local/bin/docker-entrypoint.sh vault server -config=/vault/config/vault.json
           command:
             - /bin/sh
             - -ec
@@ -77,10 +76,6 @@ spec:
               value: https://$(HOSTNAME).vault-internal:8201
             - name: HOME
               value: /home/vault
-            - name: VAULT_DEV_ROOT_TOKEN_ID
-              value: root
-            - name: VAULT_DEV_LISTEN_ADDRESS
-              value: "[::]:8200"
           image: hashicorp/vault:1.18.1
           imagePullPolicy: IfNotPresent
           lifecycle:
@@ -120,6 +115,10 @@ spec:
           volumeMounts:
             - mountPath: /home/vault
               name: home
+            - mountPath: /vault/data
+              name: vault-data
+            - mountPath: /vault/config
+              name: vault-config
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
@@ -132,7 +131,18 @@ spec:
       serviceAccountName: vault
       terminationGracePeriodSeconds: 10
       volumes:
-        - emptyDir: {}
-          name: home
+        - name: home
+          emptyDir: {}
+        - name: vault-config
+          configMap:
+            name: vault-config
   updateStrategy:
     type: OnDelete
+  volumeClaimTemplates:
+  - metadata:
+      name: vault-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
