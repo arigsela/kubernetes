@@ -1,0 +1,135 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xmysqldatabase.platform.io
+  labels:
+    crossplane.io/xrd: xmysqldatabases.platform.io
+    provider: mysql
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+  compositeTypeRef:
+    apiVersion: platform.io/v1alpha1
+    kind: XMySQLDatabase
+  
+  resources:
+    # MySQL User
+    - name: mysql-user
+      base:
+        apiVersion: mysql.sql.crossplane.io/v1alpha1
+        kind: User
+        spec:
+          providerConfigRef:
+            name: mysql-provider
+          forProvider:
+            passwordSecretRef:
+              key: password
+      patches:
+        # Set user name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.username
+          toFieldPath: metadata.name
+        
+        # Set user namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.userNamespace
+          toFieldPath: metadata.namespace
+        
+        # Password secret reference
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.passwordSecretRef.name
+          toFieldPath: spec.forProvider.passwordSecretRef.name
+        
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.passwordSecretRef.key
+          toFieldPath: spec.forProvider.passwordSecretRef.key
+        
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.passwordSecretRef.namespace
+          toFieldPath: spec.forProvider.passwordSecretRef.namespace
+        
+        # Add external-name annotation for provider
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.username
+          toFieldPath: metadata.annotations[crossplane.io/external-name]
+      
+      readinessChecks:
+        - type: MatchString
+          fieldPath: status.atProvider.ready
+          matchString: "True"
+    
+    # MySQL Database
+    - name: mysql-database
+      base:
+        apiVersion: mysql.sql.crossplane.io/v1alpha1
+        kind: Database
+        spec:
+          providerConfigRef:
+            name: mysql-provider
+          forProvider: {}
+      patches:
+        # Set database name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.databaseName
+          toFieldPath: metadata.name
+        
+        # Set database namespace
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.databaseNamespace
+          toFieldPath: metadata.namespace
+        
+        # Add external-name annotation
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.databaseName
+          toFieldPath: metadata.annotations[crossplane.io/external-name]
+      
+      readinessChecks:
+        - type: MatchString
+          fieldPath: status.atProvider.ready
+          matchString: "True"
+    
+    # MySQL Grant
+    - name: mysql-grant
+      base:
+        apiVersion: mysql.sql.crossplane.io/v1alpha1
+        kind: Grant
+        spec:
+          providerConfigRef:
+            name: mysql-provider
+          forProvider:
+            privileges: []
+      patches:
+        # Generate unique grant name
+        - type: CombineFromComposite
+          toFieldPath: metadata.name
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.username
+              - fromFieldPath: spec.parameters.databaseName
+            strategy: string
+            string:
+              fmt: "%s-%s-grant"
+        
+        # Set grant namespace (same as database)
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.databaseNamespace
+          toFieldPath: metadata.namespace
+        
+        # Set user reference
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.username
+          toFieldPath: spec.forProvider.user
+        
+        # Set database reference
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.databaseName
+          toFieldPath: spec.forProvider.database
+        
+        # Set privileges
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.parameters.privileges
+          toFieldPath: spec.forProvider.privileges
+      
+      readinessChecks:
+        - type: MatchString
+          fieldPath: status.atProvider.ready
+          matchString: "True"
