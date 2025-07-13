@@ -1,0 +1,93 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xmysqldatabases.platform.io
+spec:
+  group: platform.io
+  names:
+    kind: XMySQLDatabase
+    plural: xmysqldatabases
+  claimNames:
+    kind: MySQLDatabase
+    plural: mysqldatabases
+  connectionSecretKeys:
+    - username
+    - password
+    - database
+    - endpoint
+    - port
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              parameters:
+                type: object
+                properties:
+                  databaseName:
+                    type: string
+                    description: "Name of the MySQL database"
+                    pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+                  username:
+                    type: string
+                    description: "Name of the MySQL user"
+                    pattern: "^[a-zA-Z][a-zA-Z0-9_-]{0,31}$"
+                  userNamespace:
+                    type: string
+                    description: "Namespace where the user resource will be created"
+                    default: "default"
+                  databaseNamespace:
+                    type: string
+                    description: "Namespace where the database and grant resources will be created"
+                    default: "default"
+                  privileges:
+                    type: array
+                    description: "List of privileges to grant"
+                    default: ["ALL"]
+                    items:
+                      type: string
+                      enum:
+                        - "ALL"
+                        - "SELECT"
+                        - "INSERT"
+                        - "UPDATE"
+                        - "DELETE"
+                        - "CREATE"
+                        - "DROP"
+                        - "ALTER"
+                        - "INDEX"
+                        - "CREATE VIEW"
+                        - "SHOW VIEW"
+                        - "TRIGGER"
+                        - "EXECUTE"
+                  passwordSecretRef:
+                    type: object
+                    description: "Reference to secret containing password"
+                    properties:
+                      name:
+                        type: string
+                      key:
+                        type: string
+                        default: "password"
+                      namespace:
+                        type: string
+                    required:
+                      - name
+                      - namespace
+                required:
+                  - databaseName
+                  - username
+            required:
+              - parameters
+          status:
+            type: object
+            properties:
+              ready:
+                type: boolean
+                description: "Whether all resources are ready"
