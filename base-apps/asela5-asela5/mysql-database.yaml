@@ -3,6 +3,12 @@ kind: MySQLDatabase
 metadata:
   name: asela5
   namespace: asela5
+  labels:
+    backstage.io/kubernetes-id: asela5
+    app.kubernetes.io/managed-by: backstage
+  annotations:
+    backstage.io/kubernetes-id: asela5
+    backstage.io/kubernetes-namespace: asela5
 spec:
   compositionRef:
     name: xmysqldatabase.platform.io
