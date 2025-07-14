@@ -7,7 +7,7 @@ spec:
   parameters:
     databaseName: testapp_db
     username: testapp_user
-    userNamespace: test-app-backend
+    userNamespace: test-app
     databaseNamespace: test-app
     privileges:
       - "SELECT"
