@@ -1,0 +1,22 @@
+apiVersion: platform.io/v1alpha1
+kind: MySQLDatabase
+metadata:
+  name: prod-db
+  namespace: prod
+  labels:
+    app.kubernetes.io/name: prod-db
+    app.kubernetes.io/managed-by: backstage
+spec:
+  parameters:
+    databaseName: proddb
+    username: produser
+    userNamespace: prod-backend
+    databaseNamespace: prod
+    privileges:
+      ["SELECT","INSERT","UPDATE","DELETE"]
+    passwordSecretRef:
+      name: prod-db-secret
+      key: DB_PASSWORD
+      namespace: prod
+  writeConnectionSecretToRef:
+    name: prod-db-connection
