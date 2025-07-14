@@ -33,11 +33,13 @@ spec:
                   databaseName:
                     type: string
                     description: "Name of the MySQL database"
-                    pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,63}$"
+                    pattern: "^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,62}$"
+                    maxLength: 63
                   username:
                     type: string
                     description: "Name of the MySQL user"
-                    pattern: "^[a-zA-Z][a-zA-Z0-9_-]{0,31}$"
+                    pattern: "^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,30}$"
+                    maxLength: 31
                   userNamespace:
                     type: string
                     description: "Namespace where the user resource will be created"
