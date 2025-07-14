@@ -6,7 +6,7 @@ metadata:
 spec:
   parameters:
     databaseName: testapp_db
-    username: testapp_user
+    username: testapp-user
     userNamespace: test-app
     databaseNamespace: test-app
     privileges:
