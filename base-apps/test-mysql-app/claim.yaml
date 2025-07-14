@@ -4,6 +4,8 @@ metadata:
   name: test-app-db
   namespace: test-app
 spec:
+  compositionRef:
+    name: xmysqldatabase.platform.io
   parameters:
     databaseName: testapp-db
     username: testapp-user
