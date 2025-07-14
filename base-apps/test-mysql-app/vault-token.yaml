@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: Secret
-metadata:
-  name: vault-token
-  namespace: test-app
-data:
-  token: aHZzLlZxbldsblVEMjdBWjlvODhMSVpBT0pPdA==
-type: Opaque
