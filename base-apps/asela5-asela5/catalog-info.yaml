@@ -1,0 +1,14 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: asela5-database
+  description: MySQL Database provisioned via Crossplane
+  annotations:
+    backstage.io/kubernetes-id: asela5
+    backstage.io/kubernetes-namespace: asela5
+    argocd/app-name: asela5-asela5
+spec:
+  type: database
+  owner: platform-team
+  lifecycle: production
+  system: crossplane-resources
