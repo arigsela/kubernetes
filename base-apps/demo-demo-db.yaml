@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-demo-db
+  namespace: argo-cd
+  labels:
+    app.kubernetes.io/managed-by: backstage
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/demo-demo-db
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

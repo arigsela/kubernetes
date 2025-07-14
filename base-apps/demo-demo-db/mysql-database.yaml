@@ -1,0 +1,25 @@
+apiVersion: platform.io/v1alpha1
+kind: MySQLDatabase
+metadata:
+  name: demo-db
+  namespace: demo
+  labels:
+    app.kubernetes.io/name: demo-db
+    app.kubernetes.io/managed-by: backstage
+spec:
+  parameters:
+    databaseName: demodb
+    username: demouser
+    userNamespace: ${{ parameters.namespace }}-backend
+    databaseNamespace: demo
+    privileges:
+      - "{{ privilege }}"
+      - "{{ privilege }}"
+      - "{{ privilege }}"
+      - "{{ privilege }}"
+    passwordSecretRef:
+      name: demo-db-secret
+      key: DB_PASSWORD
+      namespace: demo
+  writeConnectionSecretToRef:
+    name: demo-db-connection
