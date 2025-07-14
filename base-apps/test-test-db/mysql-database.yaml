@@ -1,0 +1,25 @@
+apiVersion: platform.io/v1alpha1
+kind: MySQLDatabase
+metadata:
+  name: test-db
+  namespace: test
+  labels:
+    app.kubernetes.io/name: test-db
+    app.kubernetes.io/managed-by: backstage
+spec:
+  parameters:
+    databaseName: testdb
+    username: testuser
+    userNamespace: ${{ parameters.namespace }}-backend
+    databaseNamespace: test
+    privileges:
+      - "{{ privilege }}"
+      - "{{ privilege }}"
+      - "{{ privilege }}"
+      - "{{ privilege }}"
+    passwordSecretRef:
+      name: test-db-secret
+      key: DB_PASSWORD
+      namespace: test
+  writeConnectionSecretToRef:
+    name: test-db-connection

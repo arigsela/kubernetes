@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: test-test-db
+  namespace: argo-cd
+  labels:
+    app.kubernetes.io/managed-by: backstage
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/test-test-db
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: test
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
