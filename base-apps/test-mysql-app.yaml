@@ -20,3 +20,12 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    # Ignore Crossplane-generated composite resources
+    - group: platform.io
+      kind: XMySQLDatabase
+      jsonPointers:
+        - /metadata
+        - /spec
+        - /status
