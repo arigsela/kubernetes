@@ -10,6 +10,8 @@ spec:
   claimNames:
     kind: MySQLDatabase
     plural: mysqldatabases
+  defaultCompositionRef:
+    name: xmysqldatabase.platform.io
   connectionSecretKeys:
     - username
     - password
