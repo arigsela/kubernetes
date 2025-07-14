@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: argo-cd
+spec:
+  description: Default project
+  sourceRepos:
+  - '*'
+  destinations:
+  - namespace: '*'
+    server: '*'
+  clusterResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  # Exclude Crossplane-generated resources from being tracked
+  # These resources are created by Crossplane controllers, not ArgoCD
+  namespaceResourceBlacklist:
+  - group: "platform.io"
+    kind: "XMySQLDatabase"
