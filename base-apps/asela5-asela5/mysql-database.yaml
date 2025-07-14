@@ -1,0 +1,21 @@
+apiVersion: platform.io/v1alpha1
+kind: MySQLDatabase
+metadata:
+  name: asela5
+  namespace: asela5
+spec:
+  compositionRef:
+    name: xmysqldatabase.platform.io
+  parameters:
+    databaseName: asela5db
+    username: asela5user
+    userNamespace: asela5
+    databaseNamespace: asela5
+    privileges:
+      ["SELECT","INSERT","UPDATE","DELETE"]
+    passwordSecretRef:
+      name: asela5-secret
+      key: DB_PASSWORD
+      namespace: asela5
+  writeConnectionSecretToRef:
+    name: asela5-connection
