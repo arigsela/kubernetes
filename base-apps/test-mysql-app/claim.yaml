@@ -5,7 +5,7 @@ metadata:
   namespace: test-app
 spec:
   parameters:
-    databaseName: testapp_db
+    databaseName: testapp-db
     username: testapp-user
     userNamespace: test-app
     databaseNamespace: test-app
