@@ -7,6 +7,16 @@ metadata:
     backstage.io/kubernetes-id: asela5
     app.kubernetes.io/managed-by: backstage
   annotations:
+    # Required for discovery
+    terasky.backstage.io/add-to-catalog: "true"
+
+    # Entity metadata
+    terasky.backstage.io/system: "asela-apps"
+    terasky.backstage.io/owner: "team:platform"
+    terasky.backstage.io/component-type: "resource"
+    terasky.backstage.io/lifecycle: "production"
+    terasky.backstage.io/description: "MySQL database for asela5 application"
+    terasky.backstage.io/tags: "database,mysql,crossplane,infrastructure"
     backstage.io/kubernetes-id: asela5
     backstage.io/kubernetes-namespace: asela5
 spec:
