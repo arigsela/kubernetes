@@ -1,0 +1,34 @@
+apiVersion: platform.io/v1alpha1
+kind: MySQLDatabase
+metadata:
+  name: asela-testmysql
+  namespace: asela-testmysql
+  labels:
+    app.kubernetes.io/name: asela-testmysql
+    app.kubernetes.io/instance: asela-testmysql-mysql
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: asela-testmysql
+    environment: development
+    backstage.io/kubernetes-id: asela-testmysql
+  annotations:
+    # These annotations are used by the kubernetes-ingestor to discover this resource
+    backstage.io/kubernetes-id: asela-testmysql
+    backstage.io/kubernetes-namespace: asela-testmysql
+spec:
+  compositionRef:
+    name: xmysqldatabases.platform.io
+  parameters:
+    # Database configuration
+    databaseName: asela-testmysqldb
+    storageSize: 1Gi
+    
+    # User configuration
+    username: asela-testmysqluser
+    privileges: ["SELECT","INSERT","UPDATE","DELETE"]
+    
+    # Connection secret configuration
+    connectionSecretName: asela-testmysql-connection
+    connectionSecretNamespace: asela-testmysql
+    
+    # Resource class based on environment
+    resourceClass: development
