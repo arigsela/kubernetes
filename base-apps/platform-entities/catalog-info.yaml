@@ -11,4 +11,27 @@ metadata:
 spec:
   type: team
   children: []
-
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: examples
+  description: Example applications and demos
+spec:
+  owner: platform-team
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: mysqldatabase-platform.io--v1alpha1
+  description: MySQL Database Crossplane Claim API
+spec:
+  type: openapi
+  lifecycle: production
+  owner: platform-team
+  definition: |
+    openapi: 3.0.0
+    info:
+      title: MySQL Database API
+      version: v1alpha1
+    paths: {}
