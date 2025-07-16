@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: testmysql-testmysql
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/name: testmysql
+    app.kubernetes.io/instance: testmysql-argocd
+    app.kubernetes.io/component: gitops
+    app.kubernetes.io/part-of: testmysql
+    environment: development
+    backstage.io/kubernetes-id: testmysql
+  annotations:
+    backstage.io/kubernetes-id: testmysql
+    backstage.io/kubernetes-namespace: testmysql
+    argocd.argoproj.io/sync-wave: "100"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/testmysql-testmysql
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: testmysql
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10
