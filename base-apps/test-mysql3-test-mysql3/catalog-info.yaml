@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: test-mysql3-mysql-db
+  description: MySQL database for test-mysql3
+  annotations:
+    backstage.io/kubernetes-id: test-mysql3
+    backstage.io/kubernetes-namespace: test-mysql3
+spec:
+  type: database
+  owner: group:default/platform-team
+  system: system:default/examples
+  lifecycle: development

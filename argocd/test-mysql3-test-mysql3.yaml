@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: test-mysql3-test-mysql3
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/name: test-mysql3
+    app.kubernetes.io/instance: test-mysql3-argocd
+    app.kubernetes.io/component: gitops
+    app.kubernetes.io/part-of: test-mysql3
+    environment: development
+    backstage.io/kubernetes-id: test-mysql3
+  annotations:
+    backstage.io/kubernetes-id: test-mysql3
+    backstage.io/kubernetes-namespace: test-mysql3
+    argocd.argoproj.io/sync-wave: "100"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/test-mysql3-test-mysql3
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: test-mysql3
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10
