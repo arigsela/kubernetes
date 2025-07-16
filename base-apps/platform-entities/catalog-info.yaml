@@ -13,14 +13,6 @@ spec:
   children: []
 ---
 apiVersion: backstage.io/v1alpha1
-kind: System
-metadata:
-  name: examples
-  description: Example applications and demos
-spec:
-  owner: platform-team
----
-apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
   name: mysqldatabase-platform.io--v1alpha1
