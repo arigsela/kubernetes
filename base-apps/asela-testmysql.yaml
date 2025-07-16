@@ -13,7 +13,7 @@ metadata:
   annotations:
     backstage.io/kubernetes-id: asela-testmysql
     backstage.io/kubernetes-namespace: asela-testmysql
-    argocd.argoproj.io/sync-wave: "100"
+    argocd.argoproj.io/sync-wave: '100'
 spec:
   project: default
   source:

@@ -15,12 +15,12 @@ metadata:
     backstage.io/kubernetes-id: asela-testmysql
     backstage.io/kubernetes-namespace: asela-testmysql
     # Terasky kubernetes-ingestor annotations for catalog discovery
-    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/add-to-catalog: 'true'
     terasky.backstage.io/component-type: resource
     terasky.backstage.io/description: MySQL database for asela-testmysql application
     terasky.backstage.io/lifecycle: development
-    terasky.backstage.io/owner: group:default/platform-team
-    terasky.backstage.io/system: system:default/examples
+    terasky.backstage.io/owner: platform-team
+    terasky.backstage.io/system: examples
     terasky.backstage.io/tags: database,mysql,crossplane,infrastructure
 spec:
   compositionRef:
@@ -29,18 +29,18 @@ spec:
     # Database configuration
     databaseName: asela-testmysqldb
     databaseNamespace: asela-testmysql
-    
+
     # User configuration
     username: asela-testmysqluser
     userNamespace: asela-testmysql
     privileges: ["SELECT","INSERT","UPDATE","DELETE"]
-    
+
     # Password secret reference
     passwordSecretRef:
       name: asela-testmysql-secret
       namespace: asela-testmysql
       key: DB_PASSWORD
-  
+
   # Connection secret output
   writeConnectionSecretToRef:
     name: asela-testmysql-connection
