@@ -1,0 +1,34 @@
+apiVersion: platform.io/v1alpha1
+kind: MySQLDatabase
+metadata:
+  name: test-mysql-1
+  namespace: test-mysql-1
+  labels:
+    app.kubernetes.io/name: test-mysql-1
+    app.kubernetes.io/instance: test-mysql-1-mysql
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: test-mysql-1
+    environment: development
+    backstage.io/kubernetes-id: test-mysql-1
+  annotations:
+    # These annotations are used by the kubernetes-ingestor to discover this resource
+    backstage.io/kubernetes-id: test-mysql-1
+    backstage.io/kubernetes-namespace: test-mysql-1
+spec:
+  compositionRef:
+    name: xmysqldatabases.platform.io
+  parameters:
+    # Database configuration
+    databaseName: test-mysql-1db
+    storageSize: 1Gi
+    
+    # User configuration
+    username: test-mysql-1user
+    privileges: {{ values.privileges | yaml }}
+    
+    # Connection secret configuration
+    connectionSecretName: test-mysql-1-connection
+    connectionSecretNamespace: test-mysql-1
+    
+    # Resource class based on environment
+    resourceClass: development
