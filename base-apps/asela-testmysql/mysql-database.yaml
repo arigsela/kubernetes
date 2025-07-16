@@ -16,19 +16,23 @@ metadata:
     backstage.io/kubernetes-namespace: asela-testmysql
 spec:
   compositionRef:
-    name: xmysqldatabases.platform.io
+    name: xmysqldatabase.platform.io
   parameters:
     # Database configuration
     databaseName: asela-testmysqldb
-    storageSize: 1Gi
+    databaseNamespace: asela-testmysql
     
     # User configuration
     username: asela-testmysqluser
+    userNamespace: asela-testmysql
     privileges: ["SELECT","INSERT","UPDATE","DELETE"]
     
-    # Connection secret configuration
-    connectionSecretName: asela-testmysql-connection
-    connectionSecretNamespace: asela-testmysql
-    
-    # Resource class based on environment
-    resourceClass: development
+    # Password secret reference
+    passwordSecretRef:
+      name: asela-testmysql-secret
+      namespace: asela-testmysql
+      key: DB_PASSWORD
+  
+  # Connection secret output
+  writeConnectionSecretToRef:
+    name: asela-testmysql-connection
