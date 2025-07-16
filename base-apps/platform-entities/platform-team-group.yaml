@@ -1,0 +1,14 @@
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-team
+  description: Platform Engineering Team
+  annotations:
+    backstage.io/kubernetes-id: platform-entities
+    backstage.io/kubernetes-namespace: default
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: group
+spec:
+  type: team
+  children: []
+
