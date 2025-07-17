@@ -1,0 +1,97 @@
+apiVersion: platform.io/v1alpha1
+kind: MySQLDatabase
+metadata:
+  name: asela-test3
+  namespace: asela-test3
+  labels:
+    app.kubernetes.io/name: asela-test3
+    app.kubernetes.io/instance: asela-test3-mysql
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: asela-test3
+    environment: development
+    backstage.io/kubernetes-id: asela-test3
+  annotations:
+    # These annotations are used by the kubernetes-ingestor to discover this resource
+    backstage.io/kubernetes-id: asela-test3
+    backstage.io/kubernetes-namespace: asela-test3
+    # Terasky kubernetes-ingestor annotations for catalog discovery
+    terasky.backstage.io/add-to-catalog: 'true'
+    terasky.backstage.io/component-type: resource
+    terasky.backstage.io/description: MySQL database for asela-test3 application
+    terasky.backstage.io/lifecycle: development
+    terasky.backstage.io/owner: platform-team
+    terasky.backstage.io/system: examples
+    terasky.backstage.io/tags: database,mysql,crossplane,infrastructure
+
+    # External resource links
+    backstage.io/view-url: https://k8s-dashboard.example.com/#!/overview?namespace=asela-test3&kind=MySQLDatabase&name=asela-test3
+    backstage.io/edit-url: https://github.com/arigsela/kubernetes/edit/main/base-apps/asela-test3/mysql-database.yaml
+
+    # Monitoring annotations
+    grafana/dashboard-url: https://grafana.example.com/d/mysql-overview/mysql-database?var-database=asela-test3db
+    grafana/alert-label-selector: 'database=asela-test3db'
+    prometheus.io/scrape: 'true'
+    prometheus.io/port: '9104'
+    prometheus.io/path: '/metrics'
+
+    # Vault integration
+    vault.io/secret-path: secret/data/asela-test3
+    vault.io/role: asela-test3-db-reader
+
+    # Cost tracking
+    cost-center.io/team: platform-team
+    cost-center.io/product: examples
+    cost-center.io/environment: development
+    finops.io/cost-allocation: database-services
+    
+    # Backstage links - using terasky format
+    terasky.backstage.io/links: |
+      [
+        {
+          "url": "https://vault.arigsela.com/ui/vault/secrets/secret/show/asela-test3/DB_PASSWORD",
+          "title": "Database Password (Vault)",
+          "icon": "key"
+        },
+        {
+          "url": "https://grafana.example.com/d/mysql-overview/mysql-database-overview?var-database=asela-test3db&var-namespace=asela-test3",
+          "title": "Grafana Dashboard",
+          "icon": "dashboard"
+        },
+        {
+          "url": "https://phpmyadmin.example.com/index.php?db=asela-test3db&server=asela-test3-mysql",
+          "title": "phpMyAdmin",
+          "icon": "database"
+        },
+        {
+          "url": "https://argocd.example.com/applications/asela-test3/asela-test3",
+          "title": "ArgoCD Application",
+          "icon": "docs"
+        },
+        {
+          "url": "https://slack.com/app_redirect?channel=C1234567890",
+          "title": "Support Channel",
+          "icon": "chat"
+        }
+      ]
+spec:
+  compositionRef:
+    name: xmysqldatabase.platform.io
+  parameters:
+    # Database configuration
+    databaseName: asela-test3db
+    databaseNamespace: asela-test3
+
+    # User configuration
+    username: asela-test3user
+    userNamespace: asela-test3
+    privileges: ["SELECT","INSERT","UPDATE","DELETE"]
+
+    # Password secret reference
+    passwordSecretRef:
+      name: asela-test3-secret
+      namespace: asela-test3
+      key: DB_PASSWORD
+
+  # Connection secret output
+  writeConnectionSecretToRef:
+    name: asela-test3-connection
