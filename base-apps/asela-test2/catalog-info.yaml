@@ -1,0 +1,64 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: asela-test2-mysql-db
+  description: testing the database creation
+  annotations:
+    backstage.io/kubernetes-id: asela-test2
+    backstage.io/kubernetes-namespace: asela-test2
+  links:
+    # Vault Secret Management
+    - url: https://vault.arigsela.com/ui/vault/secrets/secret/show/asela-test2/DB_PASSWORD
+      title: Database Password (Vault)
+      icon: key
+      type: admin
+
+    # Monitoring & Observability
+    - url: https://grafana.arigsela.com/d/mysql-overview/mysql-database-overview?var-database=asela-test2db&var-namespace=asela-test2
+      title: Grafana Dashboard
+      icon: dashboard
+      type: monitoring
+
+    - url: https://prometheus.example.com/graph?g0.expr=mysql_up%7Bdatabase%3D%22asela-test2db%22%7D&g0.tab=0
+      title: Prometheus Metrics
+      icon: dashboard
+      type: monitoring
+
+    # Database Administration
+    - url: https://phpmyadmin.arigsela.com/index.php?db=asela-test2db&server=asela-test2-mysql
+      title: phpMyAdmin
+      icon: database
+      type: admin
+
+    # Kubernetes Resources
+    - url: https://k8s-dashboard.example.com/#!/overview?namespace=asela-test2
+      title: Kubernetes Dashboard
+      icon: dashboard
+      type: infrastructure
+
+    - url: https://argocd.example.com/applications/asela-test2/asela-test2
+      title: ArgoCD Application
+      icon: docs
+      type: deployment
+
+    # Documentation & Support
+    - url: https://wiki.example.com/display/PLATFORM/MySQL+Database+asela-test2
+      title: Runbook
+      icon: docs
+      type: documentation
+
+    - url: https://slack.com/app_redirect?channel=C1234567890
+      title: Support Channel (#platform-support)
+      icon: chat
+      type: support
+
+    # Cost & Billing
+    - url: https://cloud.example.com/billing/project/asela-test2?filter=mysql
+      title: Cost Analysis
+      icon: report
+      type: cost
+spec:
+  type: database
+  owner: group:default/platform-team
+  system: system:default/examples
+  lifecycle: staging
