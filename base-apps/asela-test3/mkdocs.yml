@@ -1,0 +1,63 @@
+site_name: 'asela-test3 MySQL Database'
+site_description: 'Documentation for asela-test3 MySQL database instance'
+site_author: 'platform-team'
+
+repo_url: 'https://github.com/arigsela/kubernetes'
+edit_uri: 'edit/main/base-apps/asela-test3/docs/'
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Connection Guide: connection.md
+    - Authentication: authentication.md
+  - Operations:
+    - Backup & Restore: operations.md
+    - Performance Tuning: performance.md
+    - Troubleshooting: troubleshooting.md
+  - Security:
+    - Access Control: security.md
+    - Best Practices: best-practices.md
+
+plugins:
+  - techdocs-core
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - content.tabs.link
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.share
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - codehilite
+  - meta
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
