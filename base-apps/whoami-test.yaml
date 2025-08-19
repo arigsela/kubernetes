@@ -7,11 +7,11 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
+    targetRevision: deploy-cloudflare
     path: base-apps/whoami-test
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: whoami-test
   syncPolicy:
     automated:
       prune: true
