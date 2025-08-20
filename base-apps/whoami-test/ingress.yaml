@@ -1,0 +1,18 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: whoami
+  namespace: default
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`whoami.arigsela.com`)
+      kind: Rule
+      services:
+        - name: whoami
+          port: 80
+  tls:
+    certResolver: cloudflare
+    domains:
+      - main: whoami.arigsela.com
