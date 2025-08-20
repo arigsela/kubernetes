@@ -5,10 +5,14 @@ metadata:
   namespace: vault
 spec:
   entryPoints:
-    - web
+    - websecure
   routes:
   - match: Host(`vault.arigsela.com`)
     kind: Rule
     services:
     - name: vault
       port: 8200
+  tls:
+    certResolver: cloudflare
+    domains:
+      - main: vault.arigsela.com
