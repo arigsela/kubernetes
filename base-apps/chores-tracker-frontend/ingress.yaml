@@ -1,0 +1,18 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: chores-tracker-frontend
+  namespace: chores-tracker-frontend
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`chores-frontend.arigsela.com`)
+    kind: Rule
+    services:
+    - name: chores-tracker-frontend
+      port: 80
+  tls:
+    certResolver: cloudflare
+    domains:
+      - main: chores-frontend.arigsela.com
