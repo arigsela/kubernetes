@@ -12,19 +12,8 @@ spec:
     services:
     - name: chores-tracker
       port: 80
-    middlewares:
-    - name: api-stripprefix
+    # middlewares section removed - no longer stripping /api prefix
   tls:
     certResolver: cloudflare
     domains:
       - main: chores.arigsela.com
----
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: api-stripprefix
-  namespace: chores-tracker
-spec:
-  stripPrefix:
-    prefixes:
-      - /api
