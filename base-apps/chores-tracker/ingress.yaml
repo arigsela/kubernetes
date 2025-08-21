@@ -7,12 +7,24 @@ spec:
   entryPoints:
     - websecure
   routes:
-  - match: Host(`chores.arigsela.com`)
+  - match: Host(`chores.arigsela.com`) && PathPrefix(`/api`)
     kind: Rule
     services:
     - name: chores-tracker
       port: 80
+    middlewares:
+    - name: api-stripprefix
   tls:
     certResolver: cloudflare
     domains:
       - main: chores.arigsela.com
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: api-stripprefix
+  namespace: chores-tracker
+spec:
+  stripPrefix:
+    prefixes:
+      - /api
