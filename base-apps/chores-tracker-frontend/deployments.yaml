@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker-frontend:latest
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker-frontend:0.1.0
         ports:
         - containerPort: 3000
           name: http
