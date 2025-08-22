@@ -69,6 +69,8 @@ spec:
           mountPath: /var/cache/nginx
         - name: nginx-run
           mountPath: /var/run
+        - mountPath: /etc/nginx/conf.d
+          name: nginx-conf-d  # Add this line
       volumes:
       - name: tmp
         emptyDir: {}
@@ -76,6 +78,8 @@ spec:
         emptyDir: {}
       - name: nginx-run
         emptyDir: {}
+      - emptyDir: {}
+        name: nginx-conf-d  # Add this line
       imagePullSecrets:
       - name: ecr-registry
       securityContext:
