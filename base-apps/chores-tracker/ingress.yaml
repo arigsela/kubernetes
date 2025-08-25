@@ -12,7 +12,7 @@ spec:
     services:
     - name: chores-tracker
       port: 80
-    # middlewares section removed - no longer stripping /api prefix
+    priority: 20  # Higher priority than frontend
   tls:
     certResolver: cloudflare
     domains:
