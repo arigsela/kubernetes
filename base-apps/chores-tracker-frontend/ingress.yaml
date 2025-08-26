@@ -5,14 +5,16 @@ metadata:
   namespace: chores-tracker-frontend
 spec:
   entryPoints:
-    - websecure
+  - websecure
   routes:
-  - match: Host(`chores-frontend.arigsela.com`)
-    kind: Rule
+  # Frontend routes (everything EXCEPT /api paths)
+  - kind: Rule
+    match: Host(`chores.arigsela.com`) && !PathPrefix(`/api`)
     services:
     - name: chores-tracker-frontend
       port: 80
+    priority: 10  # Lower priority than API routes
   tls:
     certResolver: cloudflare
     domains:
-      - main: chores-frontend.arigsela.com
+    - main: chores.arigsela.com

@@ -7,11 +7,12 @@ spec:
   entryPoints:
     - websecure
   routes:
-  - match: Host(`chores.arigsela.com`)
+  - match: Host(`chores.arigsela.com`) && PathPrefix(`/api`)
     kind: Rule
     services:
     - name: chores-tracker
       port: 80
+    priority: 20  # Higher priority than frontend
   tls:
     certResolver: cloudflare
     domains:
