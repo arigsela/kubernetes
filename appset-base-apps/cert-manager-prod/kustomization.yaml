@@ -22,4 +22,5 @@ commonLabels:
   app.kubernetes.io/managed-by: argocd
 
 # Resources to include
-resources: []
+resources:
+- rbac.yaml
