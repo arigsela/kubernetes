@@ -88,6 +88,9 @@ spec:
     # Additional configuration for tunnel compatibility
     additionalArguments:
       - "--serverstransport.insecureskipverify=true"  # For internal services
+      - "--serverstransport.maxidleconnsperhost=100"  # Increase connection pool
+      - "--serverstransport.dialtimeout=30s"          # Increase dial timeout
+      - "--serverstransport.respondeheadertimeout=10s" # Response header timeout
       - "--log.level=INFO"
     
     # Global redirect middleware
