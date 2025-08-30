@@ -1,12 +1,13 @@
 # cert-manager v1.16.2 configuration
-# Optimized for GKE cluster with system node pool scheduling
+# Fixed schema for official cert-manager Helm chart
 
-crds:
-  enabled: true
-  keep: true
+# Install CRDs (correct property name)
+installCRDs: true
 
+# Enable certificate owner reference (correct property name) 
 enableCertificateOwnerRef: true
 
+# Global configuration
 global:
   commonLabels: {}
   priorityClassName: ""
@@ -14,49 +15,51 @@ global:
     create: true
   podSecurityPolicy:
     enabled: false
-    useAppArmor: false  # GKE COS doesn't support AppArmor
+    useAppArmor: false
 
-controller:
-  replicaCount: 1
+# Main cert-manager controller
+replicaCount: 1
 
-  image:
-    repository: quay.io/jetstack/cert-manager-controller
-    pullPolicy: IfNotPresent
+image:
+  repository: quay.io/jetstack/cert-manager-controller
+  pullPolicy: IfNotPresent
 
-  resources:
-    requests:
-      cpu: 50m      # Increased for stability
-      memory: 64Mi   # Increased for stability
-    limits:
-      cpu: 150m     # Increased for cert generation
-      memory: 128Mi  # Increased for cert generation
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 150m
+    memory: 128Mi
 
-  prometheus:
-    enabled: true
-    servicemonitor:
-      enabled: false
+prometheus:
+  enabled: true
+  servicemonitor:
+    enabled: false
 
-  securityContext:
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-      - ALL
-    readOnlyRootFilesystem: true
-    runAsNonRoot: true
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
 
-  nodeSelector:
-    pool: system           # Schedule on system node pool
-    kubernetes.io/os: linux
-  tolerations: []
-  affinity: {}
+nodeSelector:
+  pool: system
+  kubernetes.io/os: linux
 
+tolerations: []
+affinity: {}
+
+# Webhook component
 webhook:
   replicaCount: 1
 
   resources:
     requests:
-      cpu: 20m      # Increased
-      memory: 32Mi   # Increased
+      cpu: 20m
+      memory: 32Mi
     limits:
       cpu: 100m
       memory: 64Mi
@@ -70,17 +73,18 @@ webhook:
     runAsNonRoot: true
 
   nodeSelector:
-    pool: system           # Schedule on system node pool
+    pool: system
     kubernetes.io/os: linux
 
+# CA Injector component
 cainjector:
   enabled: true
   replicaCount: 1
 
   resources:
     requests:
-      cpu: 20m      # Increased
-      memory: 32Mi   # Increased
+      cpu: 20m
+      memory: 32Mi
     limits:
       cpu: 100m
       memory: 64Mi
@@ -94,18 +98,20 @@ cainjector:
     runAsNonRoot: true
 
   nodeSelector:
-    pool: system           # Schedule on system node pool
+    pool: system
     kubernetes.io/os: linux
 
+# ACME solver
 acmesolver:
   image:
     repository: quay.io/jetstack/cert-manager-acmesolver
     pullPolicy: IfNotPresent
 
+# Startup API check
 startupapicheck:
   enabled: true
 
-  resources:              # Added resource limits
+  resources:
     requests:
       cpu: 10m
       memory: 32Mi
@@ -122,9 +128,10 @@ startupapicheck:
     runAsNonRoot: true
 
   nodeSelector:
-    pool: system           # Schedule on system node pool
+    pool: system
     kubernetes.io/os: linux
 
+# Service account
 serviceAccount:
   create: true
   automountServiceAccountToken: true
