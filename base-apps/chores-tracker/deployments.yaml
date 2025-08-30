@@ -4,7 +4,7 @@ metadata:
   name: chores-tracker
   namespace: chores-tracker
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: chores-tracker
@@ -24,11 +24,26 @@ spec:
             name: chores-tracker-config
         - secretRef:
             name: chores-tracker-secrets
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
           initialDelaySeconds: 30
           periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
       imagePullSecrets:
       - name: ecr-registry
