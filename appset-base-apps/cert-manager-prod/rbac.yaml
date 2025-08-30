@@ -1,0 +1,25 @@
+# Role for leader election in kube-system namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: kube-system
+  name: cert-manager-leader-election
+rules:
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "create", "update", "patch"]
+---
+# RoleBinding to grant cert-manager service account leader election permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cert-manager-leader-election
+  namespace: kube-system
+subjects:
+- kind: ServiceAccount
+  name: cert-manager
+  namespace: cert-manager-prod
+roleRef:
+  kind: Role
+  name: cert-manager-leader-election
+  apiGroup: rbac.authorization.k8s.io
