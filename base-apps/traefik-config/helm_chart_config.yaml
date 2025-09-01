@@ -11,8 +11,9 @@ spec:
         port: 8000
         exposedPort: 80
         protocol: TCP
-        # HTTP to HTTPS redirect
-        redirectTo: websecure
+        # HTTP to HTTPS redirect (chart >=27 expects object with port)
+        redirectTo:
+          port: websecure
         forwardedHeaders:
           trustedIPs:
             - 10.0.0.0/8
