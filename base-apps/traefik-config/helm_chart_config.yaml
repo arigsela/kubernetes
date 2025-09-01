@@ -11,6 +11,8 @@ spec:
         port: 8000
         exposedPort: 80
         protocol: TCP
+        expose:
+          default: true
         # HTTP to HTTPS redirect
         redirectTo: websecure
         forwardedHeaders:
@@ -32,6 +34,8 @@ spec:
         port: 8443
         exposedPort: 443
         protocol: TCP
+        expose:
+          default: true
         tls:
           enabled: true
         forwardedHeaders:
