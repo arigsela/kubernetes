@@ -9,7 +9,6 @@ spec:
     ports:
       web:
         port: 8000
-        expose: true
         exposedPort: 80
         protocol: TCP
         # HTTP to HTTPS redirect
@@ -31,7 +30,6 @@ spec:
             - 198.41.128.0/17
       websecure:
         port: 8443
-        expose: true
         exposedPort: 443
         protocol: TCP
         tls:
