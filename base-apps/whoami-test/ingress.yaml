@@ -13,6 +13,6 @@ spec:
         - name: whoami
           port: 80
   tls:
-    certResolver: cloudflare
+    certResolver: letsencrypt
     domains:
       - main: whoami.arigsela.com

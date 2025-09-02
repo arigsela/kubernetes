@@ -60,18 +60,13 @@ spec:
       dashboard: true
       insecure: false  # Use HTTPS for dashboard
     
-    # ACME Certificate Resolver for Cloudflare DNS Challenge
+    # ACME Certificate Resolver for TLS-ALPN Challenge
     certificatesResolvers:
-      cloudflare:
+      letsencrypt:
         acme:
           email: arigsela@gmail.com 
           storage: /data/acme.json
-          dnsChallenge:
-            provider: cloudflare
-            delayBeforeCheck: 120
-            resolvers:
-              - "1.1.1.1:53"
-              - "8.8.8.8:53"
+          tlsChallenge: {}
     
     # Persistent storage for ACME certificates
     persistence:
@@ -80,13 +75,8 @@ spec:
       path: /data
       storageClass: local-path  # k3s default storage class
     
-    # Environment variables for Cloudflare API
-    env:
-      - name: CF_DNS_API_TOKEN
-        valueFrom:
-          secretKeyRef:
-            name: cloudflare-api-credentials
-            key: apitoken
+    # Environment variables (none needed for TLS-ALPN challenge)
+    # env: []
     
     # Additional configuration for tunnel compatibility
     additionalArguments:
