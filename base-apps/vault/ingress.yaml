@@ -12,7 +12,5 @@ spec:
     services:
     - name: vault
       port: 8200
-  tls:
-    certResolver: letsencrypt
-    domains:
-      - main: vault.arigsela.com
+  # TLS handled by Cloudflare - no certificate resolver needed
+  tls: {}
