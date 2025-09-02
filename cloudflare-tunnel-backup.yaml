@@ -1,0 +1,29 @@
+apiVersion: v1
+data:
+  config.yml: |
+    tunnel: homelab-k3s
+    credentials-file: /etc/cloudflared/creds/token
+    metrics: 0.0.0.0:2000
+    no-autoupdate: true
+    ingress:
+      - hostname: "*.arigsela.com"
+        service: https://traefik.kube-system.svc.cluster.local:443
+        originRequest:
+          noTLSVerify: true
+      - hostname: "arigsela.com"
+        service: https://traefik.kube-system.svc.cluster.local:443
+        originRequest:
+          noTLSVerify: true
+      - service: http_status:404
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"config.yml":"tunnel: homelab-k3s\ncredentials-file: /etc/cloudflared/creds/token\nmetrics: 0.0.0.0:2000\nno-autoupdate: true\ningress:\n  - hostname: \"*.arigsela.com\"\n    service: https://traefik.kube-system.svc.cluster.local:443\n    originRequest:\n      noTLSVerify: true\n  - hostname: \"arigsela.com\"\n    service: https://traefik.kube-system.svc.cluster.local:443\n    originRequest:\n      noTLSVerify: true\n  - service: http_status:404\n"},"kind":"ConfigMap","metadata":{"annotations":{},"labels":{"argocd.argoproj.io/instance":"cloudflare-tunnel"},"name":"cloudflared-config","namespace":"cloudflare"}}
+  creationTimestamp: "2025-08-20T01:33:02Z"
+  labels:
+    argocd.argoproj.io/instance: cloudflare-tunnel
+  name: cloudflared-config
+  namespace: cloudflare
+  resourceVersion: "42613530"
+  uid: fc7e5c54-c161-4e16-9449-c2e51ef7e909

@@ -1,0 +1,189 @@
+apiVersion: v1
+items:
+- apiVersion: traefik.containo.us/v1alpha1
+  kind: IngressRoute
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"traefik.containo.us/v1alpha1","kind":"IngressRoute","metadata":{"annotations":{},"labels":{"argocd.argoproj.io/instance":"backstage"},"name":"backstage-ingress","namespace":"backstage"},"spec":{"entryPoints":["web"],"routes":[{"kind":"Rule","match":"Host(`backstage.arigsela.com`)","services":[{"name":"backstage","port":80}]}]}}
+    creationTimestamp: "2025-02-10T02:53:08Z"
+    generation: 4
+    labels:
+      argocd.argoproj.io/instance: backstage
+    name: backstage-ingress
+    namespace: backstage
+    resourceVersion: "11290670"
+    uid: 6b7f7ac1-e133-4831-80d1-60e50ae0a5a0
+  spec:
+    entryPoints:
+    - web
+    routes:
+    - kind: Rule
+      match: Host(`backstage.arigsela.com`)
+      services:
+      - name: backstage
+        port: 80
+- apiVersion: traefik.containo.us/v1alpha1
+  kind: IngressRoute
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"traefik.containo.us/v1alpha1","kind":"IngressRoute","metadata":{"annotations":{},"labels":{"argocd.argoproj.io/instance":"chores-tracker-frontend"},"name":"chores-tracker-frontend","namespace":"chores-tracker-frontend"},"spec":{"entryPoints":["websecure"],"routes":[{"kind":"Rule","match":"Host(`chores.arigsela.com`) \u0026\u0026 !PathPrefix(`/api`)","priority":10,"services":[{"name":"chores-tracker-frontend","port":80,"serversTransport":"kube-system-cloudflare-tunnel-transport@kubernetescrd"}]}],"tls":{}}}
+    creationTimestamp: "2025-08-21T00:45:42Z"
+    generation: 7
+    labels:
+      argocd.argoproj.io/instance: chores-tracker-frontend
+    name: chores-tracker-frontend
+    namespace: chores-tracker-frontend
+    resourceVersion: "45477977"
+    uid: 0ba1cab3-8187-43ea-b810-2b708672f0d6
+  spec:
+    entryPoints:
+    - websecure
+    routes:
+    - kind: Rule
+      match: Host(`chores.arigsela.com`) && !PathPrefix(`/api`)
+      priority: 10
+      services:
+      - name: chores-tracker-frontend
+        port: 80
+        serversTransport: kube-system-cloudflare-tunnel-transport@kubernetescrd
+    tls: {}
+- apiVersion: traefik.containo.us/v1alpha1
+  kind: IngressRoute
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"traefik.containo.us/v1alpha1","kind":"IngressRoute","metadata":{"annotations":{},"labels":{"argocd.argoproj.io/instance":"chores-tracker"},"name":"chores-tracker","namespace":"chores-tracker"},"spec":{"entryPoints":["websecure"],"routes":[{"kind":"Rule","match":"Host(`chores.arigsela.com`) \u0026\u0026 PathPrefix(`/api`)","priority":20,"services":[{"name":"chores-tracker","port":80,"serversTransport":"kube-system-cloudflare-tunnel-transport@kubernetescrd"}]}],"tls":{}}}
+    creationTimestamp: "2025-03-29T01:13:33Z"
+    generation: 10
+    labels:
+      argocd.argoproj.io/instance: chores-tracker
+    name: chores-tracker
+    namespace: chores-tracker
+    resourceVersion: "45477997"
+    uid: 2c42420c-e5d0-47ec-ab48-9083822faa20
+  spec:
+    entryPoints:
+    - websecure
+    routes:
+    - kind: Rule
+      match: Host(`chores.arigsela.com`) && PathPrefix(`/api`)
+      priority: 20
+      services:
+      - name: chores-tracker
+        port: 80
+        serversTransport: kube-system-cloudflare-tunnel-transport@kubernetescrd
+    tls: {}
+- apiVersion: traefik.containo.us/v1alpha1
+  kind: IngressRoute
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"traefik.containo.us/v1alpha1","kind":"IngressRoute","metadata":{"annotations":{},"labels":{"argocd.argoproj.io/instance":"whoami-test"},"name":"whoami","namespace":"default"},"spec":{"entryPoints":["websecure"],"routes":[{"kind":"Rule","match":"Host(`whoami.arigsela.com`)","services":[{"name":"whoami","port":80}]}],"tls":{}}}
+    creationTimestamp: "2025-08-20T01:41:58Z"
+    generation: 3
+    labels:
+      argocd.argoproj.io/instance: whoami-test
+    name: whoami
+    namespace: default
+    resourceVersion: "45370566"
+    uid: 19881bdd-8088-4c7e-83ca-2d5c0c80ab7b
+  spec:
+    entryPoints:
+    - websecure
+    routes:
+    - kind: Rule
+      match: Host(`whoami.arigsela.com`)
+      services:
+      - name: whoami
+        port: 80
+    tls: {}
+- apiVersion: traefik.containo.us/v1alpha1
+  kind: IngressRoute
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"traefik.containo.us/v1alpha1","kind":"IngressRoute","metadata":{"annotations":{},"labels":{"argocd.argoproj.io/instance":"pinhole-application"},"name":"pihole","namespace":"dns"},"spec":{"entryPoints":["web"],"routes":[{"kind":"Rule","match":"Host(`pihole.arigsela.com`)","middlewares":[{"name":"pihole-rewrite"}],"priority":1,"services":[{"name":"pihole-tcp","port":80}]},{"kind":"Rule","match":"Host(`pihole.arigsela.com`) \u0026\u0026 PathPrefix(`/admin`)","priority":2,"services":[{"name":"pihole-tcp","port":80}]}]}}
+    creationTimestamp: "2024-12-07T23:46:51Z"
+    generation: 2
+    labels:
+      argocd.argoproj.io/instance: pinhole-application
+    name: pihole
+    namespace: dns
+    resourceVersion: "734192"
+    uid: 0460a496-3de2-4b3f-8d79-aaed1fc0b9e1
+  spec:
+    entryPoints:
+    - web
+    routes:
+    - kind: Rule
+      match: Host(`pihole.arigsela.com`)
+      middlewares:
+      - name: pihole-rewrite
+      priority: 1
+      services:
+      - name: pihole-tcp
+        port: 80
+    - kind: Rule
+      match: Host(`pihole.arigsela.com`) && PathPrefix(`/admin`)
+      priority: 2
+      services:
+      - name: pihole-tcp
+        port: 80
+- apiVersion: traefik.containo.us/v1alpha1
+  kind: IngressRoute
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"traefik.containo.us/v1alpha1","kind":"IngressRoute","metadata":{"annotations":{},"labels":{"argocd.argoproj.io/instance":"vault"},"name":"vault","namespace":"vault"},"spec":{"entryPoints":["websecure"],"routes":[{"kind":"Rule","match":"Host(`vault.arigsela.com`)","services":[{"name":"vault","port":8200}]}],"tls":{}}}
+    creationTimestamp: "2024-12-12T04:24:21Z"
+    generation: 4
+    labels:
+      argocd.argoproj.io/instance: vault
+    name: vault
+    namespace: vault
+    resourceVersion: "45370517"
+    uid: 3f557192-9d40-4325-844d-238d91417578
+  spec:
+    entryPoints:
+    - websecure
+    routes:
+    - kind: Rule
+      match: Host(`vault.arigsela.com`)
+      services:
+      - name: vault
+        port: 8200
+    tls: {}
+kind: List
+metadata:
+  resourceVersion: ""
+apiVersion: v1
+items:
+- apiVersion: traefik.containo.us/v1alpha1
+  kind: ServersTransport
+  metadata:
+    annotations:
+      kubectl.kubernetes.io/last-applied-configuration: |
+        {"apiVersion":"traefik.containo.us/v1alpha1","kind":"ServersTransport","metadata":{"annotations":{},"labels":{"argocd.argoproj.io/instance":"traefik-config"},"name":"cloudflare-tunnel-transport","namespace":"kube-system"},"spec":{"forwardingTimeouts":{"dialTimeout":"30s","idleConnTimeout":"60s","pingTimeout":"30s","readIdleTimeout":"60s","responseHeaderTimeout":"30s"},"insecureSkipVerify":true,"maxIdleConnsPerHost":100,"serverName":""}}
+    creationTimestamp: "2025-09-02T14:01:26Z"
+    generation: 1
+    labels:
+      argocd.argoproj.io/instance: traefik-config
+    name: cloudflare-tunnel-transport
+    namespace: kube-system
+    resourceVersion: "45477403"
+    uid: fe87e43b-71db-4760-9be1-2d8150d66f18
+  spec:
+    forwardingTimeouts:
+      dialTimeout: 30s
+      idleConnTimeout: 60s
+      pingTimeout: 30s
+      readIdleTimeout: 60s
+      responseHeaderTimeout: 30s
+    insecureSkipVerify: true
+    maxIdleConnsPerHost: 100
+    serverName: ""
+kind: List
+metadata:
+  resourceVersion: ""
