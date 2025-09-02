@@ -11,11 +11,11 @@ data:
     no-autoupdate: true
     ingress:
       - hostname: "*.arigsela.com"
-        service: https://traefik.kube-system.svc.cluster.local:443
+        service: https://ingress-nginx-controller.ingress-nginx.svc.cluster.local:443
         originRequest:
           noTLSVerify: true
       - hostname: "arigsela.com"
-        service: https://traefik.kube-system.svc.cluster.local:443
+        service: https://ingress-nginx-controller.ingress-nginx.svc.cluster.local:443
         originRequest:
           noTLSVerify: true
       - service: http_status:404
