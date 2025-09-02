@@ -15,6 +15,6 @@ spec:
       port: 80
     priority: 10  # Lower priority than API routes
   tls:
-    certResolver: cloudflare
+    certResolver: letsencrypt
     domains:
     - main: chores.arigsela.com

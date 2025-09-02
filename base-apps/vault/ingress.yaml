@@ -13,6 +13,6 @@ spec:
     - name: vault
       port: 8200
   tls:
-    certResolver: cloudflare
+    certResolver: letsencrypt
     domains:
       - main: vault.arigsela.com
