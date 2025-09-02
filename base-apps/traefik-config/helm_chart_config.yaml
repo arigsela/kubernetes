@@ -93,7 +93,6 @@ spec:
       # Corrected serversTransport flags (timeouts, pooling, TLS verification)
       - "--serversTransport.insecureSkipVerify=true"      # For internal services
       - "--serversTransport.maxIdleConnsPerHost=100"      # Increase connection pool
-      - "--serversTransport.dialTimeout=30s"              # Increase dial timeout
       - "--serversTransport.responseHeaderTimeout=10s"    # Response header timeout
       # Temporary debug and access logging for 503 troubleshooting
       - "--log.level=DEBUG"
