@@ -80,16 +80,7 @@ spec:
     # Environment variables (none needed for TLS-ALPN challenge)
     # env: []
     
-    # CRITICAL: Configure serversTransport with Cloudflare tunnel optimized timeouts
-    serversTransport:
-      insecureSkipVerify: true
-      maxIdleConnsPerHost: 100
-      forwardingTimeouts:
-        dialTimeout: 30s
-        responseHeaderTimeout: 30s    # CRITICAL FIX: Was 0s (no timeout) causing stream cancellation
-        idleConnTimeout: 60s          # Reduce from 90s for tunnel stability  
-        readIdleTimeout: 60s          # CRITICAL FIX: Enable HTTP/2 health checks
-        pingTimeout: 30s              # Increase from 15s for tunnel latency
+    # Note: serversTransport should be configured as a separate CRD, not in global Helm values
     
     # Additional arguments - debug logging for monitoring fix
     additionalArguments:
@@ -99,5 +90,6 @@ spec:
     providers:
       kubernetesCRD:
         enabled: true
+        allowCrossNamespace: true  # Allow ServersTransport references across namespaces
       kubernetesIngress:
         enabled: true
