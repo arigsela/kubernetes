@@ -1,0 +1,15 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: ServersTransport
+metadata:
+  name: cloudflare-tunnel-transport
+  namespace: kube-system
+spec:
+  serverName: ""
+  insecureSkipVerify: true
+  maxIdleConnsPerHost: 100
+  forwardingTimeouts:
+    dialTimeout: 30s
+    responseHeaderTimeout: 30s    # CRITICAL FIX: Was 0s causing stream cancellation
+    idleConnTimeout: 60s          # Reduce from 90s for tunnel stability
+    readIdleTimeout: 60s          # CRITICAL FIX: Enable HTTP/2 health checks
+    pingTimeout: 30s              # Increase from 15s for tunnel latency
