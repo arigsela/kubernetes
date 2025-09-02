@@ -60,20 +60,12 @@ spec:
       dashboard: true
       insecure: false  # Use HTTPS for dashboard
     
-    # ACME Certificate Resolver for TLS-ALPN Challenge
-    certificatesResolvers:
-      letsencrypt:
-        acme:
-          email: arigsela@gmail.com 
-          storage: /data/acme.json
-          tlsChallenge: {}
+    # Certificate resolver disabled - using Cloudflare origin certificates
+    # certificatesResolvers: {}
     
-    # Persistent storage for ACME certificates
-    persistence:
-      enabled: true
-      size: 128Mi
-      path: /data
-      storageClass: local-path  # k3s default storage class
+    # Persistent storage disabled - not using ACME certificates
+    # persistence:
+    #   enabled: false
     
     # Environment variables (none needed for TLS-ALPN challenge)
     # env: []

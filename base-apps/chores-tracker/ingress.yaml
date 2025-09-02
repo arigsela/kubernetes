@@ -13,7 +13,5 @@ spec:
     - name: chores-tracker
       port: 80
     priority: 20  # Higher priority than frontend
-  tls:
-    certResolver: letsencrypt
-    domains:
-      - main: chores.arigsela.com
+  # TLS handled by Cloudflare - no certificate resolver needed
+  tls: {}
