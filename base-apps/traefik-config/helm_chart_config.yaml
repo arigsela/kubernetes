@@ -60,6 +60,10 @@ spec:
       dashboard: true
       insecure: false  # Use HTTPS for dashboard
     
+    # Deployment Configuration
+    deployment:
+      replicas: 3  # Scale to 3 replicas to eliminate single point of failure
+    
     # Certificate resolver disabled - using Cloudflare origin certificates
     # certificatesResolvers: {}
     
