@@ -9,7 +9,11 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
-    nginx.ingress.kubernetes.io/priority: "10"
+    # Lower priority than API - handle everything except /api
+    nginx.ingress.kubernetes.io/priority: "50"
+    # Handle SPA routing by serving index.html for non-API routes
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      try_files $uri $uri/ /index.html;
 spec:
   ingressClassName: nginx
   rules:
