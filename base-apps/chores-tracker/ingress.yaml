@@ -12,6 +12,7 @@ spec:
     services:
     - name: chores-tracker
       port: 80
+      serversTransport: kube-system-cloudflare-tunnel-transport@kubernetescrd
     priority: 20  # Higher priority than frontend
   # TLS handled by Cloudflare - no certificate resolver needed
   tls: {}
