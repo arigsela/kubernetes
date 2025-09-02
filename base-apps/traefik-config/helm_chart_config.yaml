@@ -68,7 +68,7 @@ spec:
           storage: /data/acme.json
           dnsChallenge:
             provider: cloudflare
-            delayBeforeCheck: 90
+            delayBeforeCheck: 120
             resolvers:
               - "1.1.1.1:53"
               - "8.8.8.8:53"
