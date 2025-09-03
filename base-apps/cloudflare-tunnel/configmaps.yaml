@@ -10,6 +10,9 @@ data:
     metrics: 0.0.0.0:2000
     no-autoupdate: true
     protocol: auto
+    region: us
+    connections: 6
+    edge-ip-version: auto
     ingress:
       - hostname: "*.arigsela.com"
         service: http://ingress-nginx-controller.ingress-nginx.svc.cluster.local:80
