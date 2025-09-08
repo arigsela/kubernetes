@@ -1,16 +1,42 @@
-# apiVersion: traefik.containo.us/v1alpha1
-# kind: IngressRoute
-# metadata:
-#   name: whoami
-#   namespace: default
-# spec:
-#   entryPoints:
-#     - websecure
-#   routes:
-#     - match: Host(`whoami.arigsela.com`)
-#       kind: Rule
-#       services:
-#         - name: whoami
-#           port: 80
-#   # TLS handled by Cloudflare - no certificate resolver needed
-#   tls: {}
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: whoami
+  namespace: whoami-test
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`whoami.arigsela.com`)
+      kind: Rule
+      services:
+        - name: whoami
+          port: 80
+      middlewares:
+        - name: redirect-to-https
+  tls:
+    secretName: whoami-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: whoami-tls
+  namespace: whoami-test
+spec:
+  secretName: whoami-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+  - whoami.arigsela.com
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-to-https
+  namespace: whoami-test
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
