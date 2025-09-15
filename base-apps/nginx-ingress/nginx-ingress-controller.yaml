@@ -12,7 +12,7 @@ spec:
   valuesContent: |-
     controller:
       kind: DaemonSet
-      hostNetwork: false
+      hostNetwork: true
       service:
         type: ClusterIP
         ports:
