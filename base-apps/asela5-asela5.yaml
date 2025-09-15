@@ -1,21 +1,21 @@
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: asela5-asela5
-  namespace: argo-cd
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
-    path: base-apps/asela5-asela5
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: asela5
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-      - RespectIgnoreDifferences=true
+# apiVersion: argoproj.io/v1alpha1
+# kind: Application
+# metadata:
+#   name: asela5-asela5
+#   namespace: argo-cd
+# spec:
+#   project: default
+#   source:
+#     repoURL: https://github.com/arigsela/kubernetes
+#     targetRevision: main
+#     path: base-apps/asela5-asela5
+#   destination:
+#     server: https://kubernetes.default.svc
+#     namespace: asela5
+#   syncPolicy:
+#     automated:
+#       prune: true
+#       selfHeal: true
+#     syncOptions:
+#       - CreateNamespace=true
+#       - RespectIgnoreDifferences=true
