@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main-with-nginx
+    targetRevision: main
     path: base-apps/nginx-ingress
   destination:
     server: https://kubernetes.default.svc
