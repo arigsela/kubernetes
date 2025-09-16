@@ -13,6 +13,8 @@ spec:
     controller:
       kind: DaemonSet
       hostNetwork: true
+      nodeSelector:
+        workload: infra
       service:
         type: ClusterIP
         ports:
