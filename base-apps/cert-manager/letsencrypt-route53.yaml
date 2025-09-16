@@ -1,0 +1,29 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-route53
+spec:
+  acme:
+    # The ACME staging server URL (switch to production later)
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    # Email address used for ACME registration
+    email: admin@arigsela.com
+    # Name of a secret used to store the ACME account private key
+    privateKeySecretRef:
+      name: letsencrypt-route53
+    # Enable the DNS-01 challenge provider with Route 53
+    solvers:
+    - dns01:
+        route53:
+          region: us-east-1
+          # AWS access key ID (can also be set as environment variable)
+          accessKeyID: AKIA4NFDJMBLDENYEH5Z
+          # AWS secret access key
+          secretAccessKeySecretRef:
+            name: route53-credentials
+            key: secret-access-key
+      # Only use this solver for arigsela.com domain
+      selector:
+        dnsNames:
+        - '*.arigsela.com'
+        - 'arigsela.com'
