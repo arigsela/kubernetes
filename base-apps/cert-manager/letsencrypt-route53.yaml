@@ -22,8 +22,4 @@ spec:
           secretAccessKeySecretRef:
             name: route53-credentials
             key: secret-access-key
-      # Only use this solver for arigsela.com domain
-      selector:
-        dnsNames:
-        - '*.arigsela.com'
-        - 'arigsela.com'
+      # DNS-01 solver for Route 53 (applies to all domains)
