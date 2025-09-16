@@ -5,14 +5,18 @@ metadata:
   namespace: whoami-test
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-route53"
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - whoami.arigsela.com
+    secretName: whoami-tls
   rules:
   - host: whoami.arigsela.com
     http:
