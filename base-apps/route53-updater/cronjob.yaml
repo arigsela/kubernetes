@@ -57,14 +57,22 @@ spec:
 
               echo "Current public IP: $CURRENT_IP"
               
+              # Test AWS connectivity first
+              echo "Testing AWS connectivity..."
+              timeout 30 aws sts get-caller-identity || {
+                echo "ERROR: Cannot connect to AWS or invalid credentials"
+                exit 1
+              }
+              echo "AWS connectivity confirmed"
+
               # Get existing DNS record
               echo "Querying existing DNS record for ${RECORD_NAME}..."
-              EXISTING_IP=$(aws route53 list-resource-record-sets \
+              EXISTING_IP=$(timeout 60 aws route53 list-resource-record-sets \
                 --hosted-zone-id "$HOSTED_ZONE_ID" \
                 --query "ResourceRecordSets[?Name=='${RECORD_NAME}.' && Type=='${RECORD_TYPE}'].ResourceRecords[0].Value" \
                 --output text 2>&1 || echo "None")
 
-              echo "AWS CLI command completed with exit code: $?"
+              echo "AWS CLI command completed. Result: $EXISTING_IP"
               
               echo "Existing DNS record IP: $EXISTING_IP"
               
