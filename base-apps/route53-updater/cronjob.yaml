@@ -59,10 +59,16 @@ spec:
               
               # Test AWS connectivity first
               echo "Testing AWS connectivity..."
-              timeout 30 aws sts get-caller-identity || {
+              echo "AWS_ACCESS_KEY_ID length: ${#AWS_ACCESS_KEY_ID}"
+              echo "AWS_SECRET_ACCESS_KEY length: ${#AWS_SECRET_ACCESS_KEY}"
+
+              # Try AWS STS call with full error output
+              if ! timeout 30 aws sts get-caller-identity 2>&1; then
+                echo "ERROR: AWS STS call failed. Checking AWS CLI version..."
+                aws --version
                 echo "ERROR: Cannot connect to AWS or invalid credentials"
                 exit 1
-              }
+              fi
               echo "AWS connectivity confirmed"
 
               # Get existing DNS record
