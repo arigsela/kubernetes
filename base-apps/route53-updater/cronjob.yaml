@@ -62,10 +62,21 @@ spec:
               echo "AWS_ACCESS_KEY_ID length: ${#AWS_ACCESS_KEY_ID}"
               echo "AWS_SECRET_ACCESS_KEY length: ${#AWS_SECRET_ACCESS_KEY}"
 
+              # Check if AWS CLI is working at all
+              echo "Checking AWS CLI..."
+              if ! aws --version 2>&1; then
+                echo "ERROR: AWS CLI is not working"
+                exit 1
+              fi
+
               # Try AWS STS call with full error output
-              if ! timeout 30 aws sts get-caller-identity 2>&1; then
-                echo "ERROR: AWS STS call failed. Checking AWS CLI version..."
-                aws --version
+              echo "Attempting AWS STS call..."
+              STS_OUTPUT=$(timeout 30 aws sts get-caller-identity 2>&1)
+              STS_EXIT_CODE=$?
+              echo "STS output: $STS_OUTPUT"
+              echo "STS exit code: $STS_EXIT_CODE"
+
+              if [ $STS_EXIT_CODE -ne 0 ]; then
                 echo "ERROR: Cannot connect to AWS or invalid credentials"
                 exit 1
               fi
