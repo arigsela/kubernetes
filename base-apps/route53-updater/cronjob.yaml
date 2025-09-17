@@ -1,0 +1,120 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: route53-updater
+  namespace: route53-updater
+  labels:
+    app: route53-updater
+spec:
+  schedule: "0 * * * *"  # Every hour at minute 0
+  timeZone: "America/New_York"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: route53-updater
+        spec:
+          serviceAccountName: route53-updater
+          restartPolicy: OnFailure
+          containers:
+          - name: route53-updater
+            image: amazon/aws-cli:latest
+            imagePullPolicy: Always
+            command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              
+              echo "Starting Route 53 IP update at $(date)"
+              
+              # Get current public IP
+              CURRENT_IP=$(curl -s --max-time 10 "${IP_DETECTION_URL}" || echo "")
+              if [[ -z "$CURRENT_IP" ]]; then
+                echo "ERROR: Failed to get current public IP"
+                exit 1
+              fi
+              
+              echo "Current public IP: $CURRENT_IP"
+              
+              # Get existing DNS record
+              EXISTING_IP=$(aws route53 list-resource-record-sets \
+                --hosted-zone-id "$HOSTED_ZONE_ID" \
+                --query "ResourceRecordSets[?Name=='${RECORD_NAME}.' && Type=='${RECORD_TYPE}'].ResourceRecords[0].Value" \
+                --output text 2>/dev/null || echo "None")
+              
+              echo "Existing DNS record IP: $EXISTING_IP"
+              
+              # Compare IPs
+              if [[ "$CURRENT_IP" == "$EXISTING_IP" ]]; then
+                echo "IP address unchanged. No update needed."
+                exit 0
+              fi
+              
+              echo "IP address changed from $EXISTING_IP to $CURRENT_IP. Updating Route 53..."
+              
+              # Create change batch JSON
+              cat > /tmp/change-batch.json << EOF
+              {
+                "Comment": "Automated public IP update - $(date)",
+                "Changes": [
+                  {
+                    "Action": "UPSERT",
+                    "ResourceRecordSet": {
+                      "Name": "${RECORD_NAME}",
+                      "Type": "${RECORD_TYPE}",
+                      "TTL": ${TTL},
+                      "ResourceRecords": [
+                        {
+                          "Value": "${CURRENT_IP}"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+              EOF
+              
+              # Update Route 53 record
+              CHANGE_ID=$(aws route53 change-resource-record-sets \
+                --hosted-zone-id "$HOSTED_ZONE_ID" \
+                --change-batch file:///tmp/change-batch.json \
+                --query 'ChangeInfo.Id' \
+                --output text)
+              
+              echo "Route 53 change submitted: $CHANGE_ID"
+              
+              # Wait for change to propagate
+              echo "Waiting for DNS change to propagate..."
+              aws route53 wait resource-record-sets-changed --id "$CHANGE_ID"
+              
+              echo "Route 53 record updated successfully!"
+              echo "DNS record ${RECORD_NAME} now points to ${CURRENT_IP}"
+            
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: route53-updater-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: route53-updater-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            
+            envFrom:
+            - configMapRef:
+                name: route53-updater-config
+            
+            resources:
+              requests:
+                memory: "64Mi"
+                cpu: "50m"
+              limits:
+                memory: "128Mi"
+                cpu: "100m"
