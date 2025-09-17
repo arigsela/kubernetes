@@ -22,7 +22,7 @@ spec:
           restartPolicy: OnFailure
           containers:
           - name: route53-updater
-            image: alpine/aws-cli:latest
+            image: amazon/aws-cli:2.7.35
             imagePullPolicy: Always
             command:
             - /bin/bash
