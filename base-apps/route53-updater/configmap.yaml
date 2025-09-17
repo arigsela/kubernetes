@@ -7,7 +7,8 @@ data:
   # Route 53 Configuration
   HOSTED_ZONE_ID: "Z0524483LR4JCFNLS7N0"  # Your arigsela.com hosted zone ID
   DOMAIN_NAME: "arigsela.com"
-  RECORD_NAME: "home.arigsela.com"  # The record to update with your public IP
+  # Multiple records to update (comma-separated)
+  RECORD_NAMES: "home.arigsela.com,whoami.arigsela.com"
   RECORD_TYPE: "A"
   TTL: "300"  # 5 minutes TTL
   
