@@ -20,6 +20,8 @@ spec:
         spec:
           serviceAccountName: route53-updater
           restartPolicy: OnFailure
+          imagePullSecrets:
+          - name: ecr-registry
           containers:
           - name: route53-updater
             image: 852893458518.dkr.ecr.us-east-1.amazonaws.com/route53-updater:latest
