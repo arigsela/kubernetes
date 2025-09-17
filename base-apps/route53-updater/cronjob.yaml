@@ -22,7 +22,7 @@ spec:
           restartPolicy: OnFailure
           containers:
           - name: route53-updater
-            image: amazon/aws-cli:2.7.35
+            image: ubuntu:20.04
             imagePullPolicy: Always
             command:
             - /bin/bash
@@ -31,6 +31,11 @@ spec:
               set -euo pipefail
 
               echo "Starting Route 53 IP update at $(date)"
+
+              # Install dependencies
+              echo "Installing dependencies..."
+              apt-get update -qq
+              apt-get install -y -qq awscli curl
 
               # Debug: Check if AWS credentials are available
               echo "Checking AWS credentials..."
@@ -48,6 +53,14 @@ spec:
               echo "AWS Region: ${AWS_REGION:-not set}"
               echo "Hosted Zone ID: ${HOSTED_ZONE_ID:-not set}"
 
+              # Check AWS CLI version
+              echo "AWS CLI version:"
+              aws --version
+
+              # Test AWS connectivity
+              echo "Testing AWS connectivity..."
+              aws sts get-caller-identity
+
               # Get current public IP
               CURRENT_IP=$(curl -s --max-time 10 "${IP_DETECTION_URL}" || echo "")
               if [[ -z "$CURRENT_IP" ]]; then
@@ -56,31 +69,6 @@ spec:
               fi
 
               echo "Current public IP: $CURRENT_IP"
-              
-              # Test AWS connectivity first
-              echo "Testing AWS connectivity..."
-              echo "AWS_ACCESS_KEY_ID length: ${#AWS_ACCESS_KEY_ID}"
-              echo "AWS_SECRET_ACCESS_KEY length: ${#AWS_SECRET_ACCESS_KEY}"
-
-              # Check if AWS CLI is working at all
-              echo "Checking AWS CLI..."
-              if ! aws --version 2>&1; then
-                echo "ERROR: AWS CLI is not working"
-                exit 1
-              fi
-
-              # Try AWS STS call with full error output
-              echo "Attempting AWS STS call..."
-              STS_OUTPUT=$(timeout 30 aws sts get-caller-identity 2>&1)
-              STS_EXIT_CODE=$?
-              echo "STS output: $STS_OUTPUT"
-              echo "STS exit code: $STS_EXIT_CODE"
-
-              if [ $STS_EXIT_CODE -ne 0 ]; then
-                echo "ERROR: Cannot connect to AWS or invalid credentials"
-                exit 1
-              fi
-              echo "AWS connectivity confirmed"
 
               # Get existing DNS record
               echo "Querying existing DNS record for ${RECORD_NAME}..."
