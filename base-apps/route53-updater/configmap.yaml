@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: route53-updater-config
+  namespace: route53-updater
+data:
+  # Route 53 Configuration
+  HOSTED_ZONE_ID: "Z05244483LR4JCFNLS7N0"  # Your arigsela.com hosted zone ID
+  DOMAIN_NAME: "arigsela.com"
+  RECORD_NAME: "home.arigsela.com"  # The record to update with your public IP
+  RECORD_TYPE: "A"
+  TTL: "300"  # 5 minutes TTL
+  
+  # AWS Region
+  AWS_REGION: "us-east-1"
+  
+  # Update Schedule (cron format)
+  SCHEDULE: "0 * * * *"  # Every hour at minute 0
+  
+  # Public IP Detection Service
+  IP_DETECTION_URL: "https://ifconfig.me/ip"
+  
+  # Logging
+  LOG_LEVEL: "INFO"
