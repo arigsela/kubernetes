@@ -2,10 +2,14 @@ apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: ProviderConfig
 metadata:
   name: mysql-provider
+  namespace: crossplane-system
 spec:
   credentials:
     source: MySQLConnectionSecret
     connectionSecretRef:
-      namespace: crossplane-system
+      namespace: mysql
       name: mysql-credentials
-  tls: preferred
+  # Connection configuration
+  endpoint: mysql.mysql.svc.cluster.local:3306
+  tls:
+    required: false
