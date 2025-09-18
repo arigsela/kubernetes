@@ -9,5 +9,4 @@ spec:
     connectionSecretRef:
       namespace: mysql
       name: mysql-credentials
-  endpoint: mysql.mysql.svc.cluster.local:3306
   tls: "skip-verify"
