@@ -11,10 +11,10 @@ spec:
     targetRevision: 2.0.2
     helm:
       values: |
-        # Enable Crossplane v2 features
+        # Enable Crossplane v2 features (updated for v2.0.2)
         args:
-          - --enable-composition-functions
-          - --enable-composition-webhook-schema-validation
+          - --enable-realtime-compositions
+          - --enable-ssa-claims
 
         # Install SQL provider at startup
         provider:
