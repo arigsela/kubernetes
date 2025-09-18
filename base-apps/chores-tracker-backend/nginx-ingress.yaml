@@ -1,8 +1,8 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: chores-tracker-nginx
-  namespace: chores-tracker
+  name: chores-tracker-backend-nginx
+  namespace: chores-tracker-backend
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
@@ -23,6 +23,6 @@ spec:
         pathType: ImplementationSpecific
         backend:
           service:
-            name: chores-tracker
+            name: chores-tracker-backend
             port:
               number: 80

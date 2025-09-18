@@ -1,17 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: nginx-ingress
+  name: chores-tracker-backend
   namespace: argo-cd
 spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
     targetRevision: enable-applications
-    path: base-apps/nginx-ingress
+    path: base-apps/chores-tracker-backend
   destination:
     server: https://kubernetes.default.svc
-    namespace: ingress-nginx
+    namespace: chores-tracker-backend
   syncPolicy:
     automated:
       prune: true
