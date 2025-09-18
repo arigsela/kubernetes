@@ -31,6 +31,9 @@ spec:
         # This provides SHA-256 hashing with server-side caching for performance
         - name: MYSQL_DEFAULT_AUTHENTICATION_PLUGIN
           value: "caching_sha2_password"
+        # Allow connections from any host (required for Crossplane)
+        - name: MYSQL_ROOT_HOST
+          value: "%"
         ports:
         - containerPort: 3306
           name: mysql
