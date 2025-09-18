@@ -11,4 +11,4 @@ spec:
       name: mysql-credentials
   # Connection configuration
   endpoint: mysql.mysql.svc.cluster.local:3306
-  tls: "false"
+  tls: "skip-verify"
