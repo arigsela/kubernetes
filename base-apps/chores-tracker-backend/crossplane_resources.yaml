@@ -2,21 +2,21 @@ apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: User
 metadata:
   name: chores-user
-  namespace: chores-backend
+  namespace: chores-tracker-backend
 spec:
   providerConfigRef:
     name: mysql-provider
   forProvider:
     passwordSecretRef:
-      name: chores-tracker-secrets
+      name: chores-tracker-backend-secrets
       key: DB_PASSWORD
-      namespace: chores-tracker
+      namespace: chores-tracker-backend
 ---
 apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: Database
 metadata:
   name: chores-db
-  namespace: chores-tracker
+  namespace: chores-tracker-backend
 spec:
   providerConfigRef:
     name: mysql-provider
@@ -26,7 +26,7 @@ apiVersion: mysql.sql.crossplane.io/v1alpha1
 kind: Grant
 metadata:
   name: chores-db-grant
-  namespace: chores-tracker
+  namespace: chores-tracker-backend
 spec:
   providerConfigRef:
     name: mysql-provider

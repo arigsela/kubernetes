@@ -1,29 +1,29 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: chores-tracker
-  namespace: chores-tracker
+  name: chores-tracker-backend
+  namespace: chores-tracker-backend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: chores-tracker
+      app: chores-tracker-backend
   template:
     metadata:
       labels:
-        app: chores-tracker
+        app: chores-tracker-backend
     spec:
       containers:
-      - name: chores-tracker
+      - name: chores-tracker-backend
         image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:5.2.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
         envFrom:
         - configMapRef:
-            name: chores-tracker-config
+            name: chores-tracker-backend-config
         - secretRef:
-            name: chores-tracker-secrets
+            name: chores-tracker-backend-secrets
         livenessProbe:
           httpGet:
             path: /health
