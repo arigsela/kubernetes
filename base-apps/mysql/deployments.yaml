@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: mysql
-        image: mysql:8.0.0
+        image: mysql:8.0
         env:
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
@@ -47,23 +47,14 @@ spec:
             cpu: "1000m"
         # Health checks for better reliability
         livenessProbe:
-          exec:
-            command:
-            - mysqladmin
-            - ping
-            - -h
-            - localhost
+          tcpSocket:
+            port: 3306
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
         readinessProbe:
-          exec:
-            command:
-            - mysql
-            - -h
-            - localhost
-            - -e
-            - "SELECT 1"
+          tcpSocket:
+            port: 3306
           initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 3
