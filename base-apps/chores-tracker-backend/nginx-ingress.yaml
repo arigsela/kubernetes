@@ -13,6 +13,11 @@ metadata:
     nginx.ingress.kubernetes.io/rewrite-target: /$1
     # Higher priority than frontend for /api paths
     nginx.ingress.kubernetes.io/priority: "100"
+    # Block access to OpenAPI documentation endpoints
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location ~* ^/(openapi\.json|docs)$ {
+        return 403;
+      }
 spec:
   ingressClassName: nginx
   rules:
