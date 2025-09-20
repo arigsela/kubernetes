@@ -4,7 +4,9 @@ metadata:
   name: chores-tracker-backend-nginx
   namespace: chores-tracker-backend
   annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
@@ -15,6 +17,10 @@ metadata:
     nginx.ingress.kubernetes.io/priority: "100"
 spec:
   ingressClassName: nginx
+  tls:
+  - hosts:
+    - chores.arigsela.com
+    secretName: chores-tracker-tls
   rules:
   - host: chores.arigsela.com
     http:
