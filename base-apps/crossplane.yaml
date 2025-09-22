@@ -1,35 +1,56 @@
-# apiVersion: argoproj.io/v1alpha1
-# kind: Application
-# metadata:
-#   name: crossplane
-#   namespace: argo-cd
-#   annotations:
-#     argocd.argoproj.io/sync-wave: "1"
-# spec:
-#   project: default
-#   source:
-#     chart: crossplane
-#     repoURL: https://charts.crossplane.io/stable
-#     targetRevision: 1.20.0
-#     helm:
-#       releaseName: crossplane
-#       values: |
-#         # Add any custom values here if needed
-#         # metrics:
-#         #   enabled: true
-#   destination:
-#     server: https://kubernetes.default.svc
-#     namespace: crossplane-system
-#   syncPolicy:
-#     automated:
-#       prune: true
-#       selfHeal: true
-#     syncOptions:
-#       - CreateNamespace=true
-#       - ServerSideApply=true
-#   ignoreDifferences:
-#   - group: apps
-#     kind: Deployment
-#     jqPathExpressions:
-#       - .spec.template.spec.containers[].env[].valueFrom.resourceFieldRef.divisor
-#       - .spec.template.spec.initContainers[].env[].valueFrom.resourceFieldRef.divisor
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: crossplane
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.crossplane.io/stable
+    chart: crossplane
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        # Enable Crossplane v2 features (updated for v2.0.2)
+        args:
+          - --enable-realtime-compositions
+          - --enable-ssa-claims
+
+        # Install SQL provider at startup
+        provider:
+          packages:
+            - xpkg.upbound.io/crossplane-contrib/provider-sql:v0.9.0
+
+        # Resource limits for main Crossplane pod
+        resourcesCrossplane:
+          limits:
+            cpu: 500m
+            memory: 1024Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+
+        # Resource limits for RBAC Manager
+        resourcesRBACManager:
+          limits:
+            cpu: 100m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+
+        # Security context
+        securityContextCrossplane:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsUser: 65532
+          runAsGroup: 65532
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: crossplane-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

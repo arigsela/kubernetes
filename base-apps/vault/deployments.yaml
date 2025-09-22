@@ -128,6 +128,8 @@ spec:
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
+      nodeSelector:
+        workload: infra
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000
