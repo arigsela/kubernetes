@@ -1,20 +1,18 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: mysql-application
+  name: crossplane-config
   namespace: argo-cd
 spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
     targetRevision: main
-    path: base-apps/mysql
+    path: base-apps/crossplane-config
   destination:
     server: https://kubernetes.default.svc
-    namespace: mysql
+    namespace: crossplane-system
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true

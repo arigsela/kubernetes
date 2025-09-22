@@ -1,16 +1,31 @@
-apiVersion: traefik.containo.us/v1alpha1
-kind: IngressRoute
+apiVersion: networking.k8s.io/v1
+kind: Ingress
 metadata:
-  name: vault
+  name: vault-internal
   namespace: vault
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
-  entryPoints:
-    - websecure
-  routes:
-  - match: Host(`vault.arigsela.com`)
-    kind: Rule
-    services:
-    - name: vault
-      port: 8200
-  # TLS handled by Cloudflare - no certificate resolver needed
-  tls: {}
+  ingressClassName: nginx
+  rules:
+  - host: vault.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: vault
+            port:
+              number: 8200
+  - host: vault.10.0.1.110
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: vault
+            port:
+              number: 8200

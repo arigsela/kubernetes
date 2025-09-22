@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: mysql
-        image: mysql:5.7
+        image: mysql:8.4.0-oraclelinux8
         env:
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
@@ -23,14 +23,53 @@ spec:
               name: mysql-credentials
               key: password
         - name: MYSQL_DATABASE
-          value: "mydatabase"
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: database
+        # Use caching_sha2_password (default in 8.4) for enhanced security
+        # This provides SHA-256 hashing with server-side caching for performance
+        - name: MYSQL_DEFAULT_AUTHENTICATION_PLUGIN
+          value: "caching_sha2_password"
+        # Allow connections from any host (required for Crossplane)
+        - name: MYSQL_ROOT_HOST
+          value: "%"
         ports:
         - containerPort: 3306
           name: mysql
         volumeMounts:
         - name: mysql-persistent-storage
           mountPath: /var/lib/mysql
+        # Enhanced resource management
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        # Health checks for better reliability
+        livenessProbe:
+          tcpSocket:
+            port: 3306
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          tcpSocket:
+            port: 3306
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+        # Security context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 999
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
       volumes:
       - name: mysql-persistent-storage
         persistentVolumeClaim:
-          claimName: mysql-pvc
+          claimName: mysql-pvc-fresh
