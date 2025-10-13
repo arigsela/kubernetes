@@ -1,0 +1,50 @@
+# Dockerfile for MySQL Backup to S3
+# Based on official MySQL image with AWS CLI added
+
+FROM mysql:8.4.0-oraclelinux8
+
+LABEL maintainer="MySQL Backup Service"
+LABEL description="MySQL backup container with AWS CLI for S3 uploads"
+LABEL version="1.0"
+
+# Oracle Linux 8 uses microdnf in minimal images
+# Install required packages for AWS CLI
+RUN microdnf install -y \
+    unzip \
+    less \
+    groff-base \
+    bc \
+    && microdnf clean all \
+    && rm -rf /var/cache/yum
+
+# Install AWS CLI v2
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
+    && unzip awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws \
+    && aws --version
+
+# Copy backup script
+COPY backup-script.sh /usr/local/bin/backup-script.sh
+
+# Make script executable
+RUN chmod +x /usr/local/bin/backup-script.sh
+
+# Verify MySQL client and tools are available
+RUN mysql --version && mysqldump --version
+
+# Create temp directory for backups
+RUN mkdir -p /tmp && chmod 1777 /tmp
+
+# Set working directory
+WORKDIR /tmp
+
+# Health check (optional - checks if AWS CLI is working)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD aws --version || exit 1
+
+# Default entrypoint
+ENTRYPOINT ["/usr/local/bin/backup-script.sh"]
+
+# Metadata
+ENV BACKUP_VERSION="1.0.0"
