@@ -5,8 +5,12 @@ metadata:
   namespace: kube-system
 spec:
   schedule: "0 * * * *"
+  successfulJobsHistoryLimit: 3  # Keep last 3 successful jobs
+  failedJobsHistoryLimit: 3       # Keep last 3 failed jobs
+  concurrencyPolicy: Forbid        # Don't run concurrent jobs
   jobTemplate:
     spec:
+      ttlSecondsAfterFinished: 3600  # Delete job 1 hour after completion
       template:
         spec:
           serviceAccountName: ecr-credentials-sync
