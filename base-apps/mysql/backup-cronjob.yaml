@@ -99,6 +99,10 @@ spec:
                 memory: "512Mi"
                 cpu: "500m"
 
+          # ECR image pull credentials
+          imagePullSecrets:
+          - name: ecr-registry
+
           securityContext:
             runAsNonRoot: true
             runAsUser: 999
