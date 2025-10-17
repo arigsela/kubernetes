@@ -5,7 +5,7 @@
 apiVersion: s3.aws.upbound.io/v1beta1
 kind: Bucket
 metadata:
-  name: loki-logs-homelab
+  name: asela-chores-loki-logs-20251017
   labels:
     app: loki
     component: storage
@@ -14,10 +14,11 @@ spec:
   forProvider:
     region: us-east-1
     tags:
-      Name: "Loki Logs Storage"
+      Name: "Asela Chores Loki Logs Storage"
       Environment: "homelab"
       ManagedBy: "Crossplane"
       Purpose: "Loki log chunk storage"
       CostCenter: "observability"
+      Project: "asela-chores"
   providerConfigRef:
     name: default
