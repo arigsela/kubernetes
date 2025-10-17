@@ -1,9 +1,9 @@
 # Grafana Observability Stack: Loki (Logs) + Prometheus (Metrics) + Alloy - Implementation Plan
 
-**Document Version:** 3.0
+**Document Version:** 3.1
 **Created:** 2025-10-16
 **Last Updated:** 2025-10-17
-**Status:** Ready for Implementation (GitOps with Crossplane)
+**Status:** Phase 1 Complete - Ready for Phase 1.5 (AWS Infrastructure)
 **Cluster:** K3s Homelab
 **Stack:** Complete Observability (Logs + Metrics)
 
@@ -414,7 +414,7 @@ vault write auth/kubernetes/role/logging \
 
 #### Tasks
 
-- [ ] **Task 1.1:** Install Crossplane AWS Provider
+- [x] **Task 1.1:** Install Crossplane AWS Provider ✅ (Completed 2025-10-17)
 
   Create file: `base-apps/crossplane-aws-provider/provider.yaml`
   ```yaml
@@ -437,7 +437,7 @@ vault write auth/kubernetes/role/logging \
   - `provider-aws-s3`: For S3 bucket and lifecycle management
   - `provider-aws-iam`: For IAM users, policies, and access keys
 
-- [ ] **Task 1.2:** Create ProviderConfig with AWS credentials
+- [x] **Task 1.2:** Create ProviderConfig with AWS credentials ✅ (Completed 2025-10-17)
 
   Create file: `base-apps/crossplane-aws-provider/provider-config.yaml`
   ```yaml
@@ -456,7 +456,7 @@ vault write auth/kubernetes/role/logging \
 
   **This tells Crossplane how to authenticate with AWS using the secret created in Prerequisites.**
 
-- [ ] **Task 1.3:** Create ArgoCD Application for Crossplane Provider
+- [x] **Task 1.3:** Create ArgoCD Application for Crossplane Provider ✅ (Completed 2025-10-17)
 
   Create file: `base-apps/crossplane-aws-provider.yaml`
   ```yaml
@@ -482,7 +482,7 @@ vault write auth/kubernetes/role/logging \
         - CreateNamespace=false  # crossplane-system already exists
   ```
 
-- [ ] **Task 1.4:** Deploy Crossplane providers
+- [x] **Task 1.4:** Deploy Crossplane providers ✅ (Completed 2025-10-17)
 
   ```bash
   # Commit and push
@@ -501,11 +501,21 @@ vault write auth/kubernetes/role/logging \
   kubectl get providerconfig default
   ```
 
-- [ ] **Task 1.5:** Create logging namespace
+  **Actual Implementation Notes:**
+  - Created feature branch `feature/crossplane-aws-provider`
+  - Fixed namespace issue: Removed namespace field from cluster-scoped Provider resources
+  - Added ArgoCD sync waves: wave 1 for Providers, wave 2 for ProviderConfig
+  - Added `SkipDryRunOnMissingResource=true` sync option to handle CRD installation timing
+  - Final status: All 3 providers (provider-aws-s3, provider-aws-iam, upbound-provider-family-aws) HEALTHY
+  - ProviderConfig created successfully with AWS credentials from `aws-secret`
+
+- [x] **Task 1.5:** Create logging namespace ✅ (Completed 2025-10-17)
 
   ```bash
   kubectl create namespace logging
   ```
+
+  **Note:** Namespace `logging` already existed in the cluster (created 84m before verification).
 
 #### Testing
 ```bash
@@ -525,13 +535,40 @@ kubectl logs -n crossplane-system -l pkg.crossplane.io/provider=provider-aws-s3 
 kubectl get namespace logging
 ```
 
-#### Success Criteria
-- ✅ Provider `provider-aws-s3` installed and healthy
-- ✅ Provider `provider-aws-iam` installed and healthy
-- ✅ ProviderConfig `default` created and configured
-- ✅ No authentication errors in provider logs
-- ✅ Namespace `logging` exists
-- ✅ ArgoCD application synced successfully
+#### Success Criteria ✅ ALL COMPLETE (2025-10-17)
+- ✅ Provider `provider-aws-s3` installed and healthy - **VERIFIED**
+- ✅ Provider `provider-aws-iam` installed and healthy - **VERIFIED**
+- ✅ Provider `upbound-provider-family-aws` installed and healthy - **VERIFIED**
+- ✅ ProviderConfig `default` created and configured - **VERIFIED**
+- ✅ No authentication errors in provider logs - **VERIFIED**
+- ✅ Namespace `logging` exists - **VERIFIED**
+- ✅ ArgoCD application synced successfully - **VERIFIED**
+- ✅ 90 AWS CRDs installed (S3, IAM resources) - **VERIFIED**
+
+#### Phase 1 Summary
+
+**Completion Date:** 2025-10-17
+**Duration:** ~2 hours (including troubleshooting)
+**Status:** ✅ COMPLETE
+
+**Accomplishments:**
+1. Successfully deployed Crossplane AWS providers via GitOps
+2. Configured AWS authentication using Terraform-managed IAM credentials
+3. Resolved three technical issues:
+   - Fixed cluster-scoped vs namespaced resource confusion
+   - Implemented ArgoCD sync waves for proper CRD installation ordering
+   - Added `SkipDryRunOnMissingResource=true` to handle dry-run validation during CRD installation
+4. All 90 AWS CRDs successfully installed and operational
+5. Crossplane ready to manage AWS infrastructure declaratively
+
+**Files Created:**
+- `terraform/roots/asela-cluster/iam.tf` - Crossplane admin IAM user and credentials
+- `base-apps/crossplane-aws-provider.yaml` - ArgoCD Application
+- `base-apps/crossplane-aws-provider/provider.yaml` - AWS S3 and IAM providers
+- `base-apps/crossplane-aws-provider/provider-config.yaml` - AWS authentication config
+
+**Next Steps:**
+- Proceed to Phase 1.5: Deploy AWS infrastructure (S3 buckets, IAM resources) via Crossplane
 
 ---
 
@@ -3538,3 +3575,4 @@ Example:
 | 2.0 | 2025-10-16 | Claude | Added Prometheus metrics, enhanced Alloy config, merged documents |
 | 3.0 | 2025-10-17 | Claude | **Major Update:** Converted to 100% GitOps with Crossplane AWS provider. Eliminated all manual AWS CLI commands. Added Phase 1 (Crossplane setup) and Phase 1.5 (AWS infrastructure via Crossplane). All S3 buckets, IAM users, policies, and credentials now managed declaratively through Git. Added Terraform IAM resources (`terraform/roots/asela-cluster/iam.tf`) for Crossplane admin user provisioning. |
 | 3.0.1 | 2025-10-17 | Claude | **Bug Fix:** Removed `namespace` field from Provider resources. Provider (pkg.crossplane.io/v1) is a cluster-scoped resource and must not have a namespace specified. This was causing ArgoCD sync timeouts. |
+| 3.1 | 2025-10-17 | Claude | **Phase 1 Complete:** Successfully deployed Crossplane AWS providers (provider-aws-s3, provider-aws-iam, upbound-provider-family-aws). Installed 90 AWS CRDs. Fixed three critical issues: cluster-scoped resource namespacing, CRD installation ordering with sync waves, and dry-run validation with SkipDryRunOnMissingResource. All Tasks 1.1-1.5 marked complete. Ready for Phase 1.5 (AWS infrastructure deployment). |
