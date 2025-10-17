@@ -3537,3 +3537,4 @@ Example:
 | 1.0 | 2025-10-16 | Claude | Initial logs-only implementation plan created |
 | 2.0 | 2025-10-16 | Claude | Added Prometheus metrics, enhanced Alloy config, merged documents |
 | 3.0 | 2025-10-17 | Claude | **Major Update:** Converted to 100% GitOps with Crossplane AWS provider. Eliminated all manual AWS CLI commands. Added Phase 1 (Crossplane setup) and Phase 1.5 (AWS infrastructure via Crossplane). All S3 buckets, IAM users, policies, and credentials now managed declaratively through Git. Added Terraform IAM resources (`terraform/roots/asela-cluster/iam.tf`) for Crossplane admin user provisioning. |
+| 3.0.1 | 2025-10-17 | Claude | **Bug Fix:** Removed `namespace` field from Provider resources. Provider (pkg.crossplane.io/v1) is a cluster-scoped resource and must not have a namespace specified. This was causing ArgoCD sync timeouts. |
