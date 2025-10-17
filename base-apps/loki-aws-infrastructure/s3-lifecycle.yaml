@@ -25,14 +25,17 @@ spec:
     rule:
       - id: cost-optimization
         status: Enabled
+        # filter is an Object with a prefix field
         filter:
-          - prefix: ""  # Apply to all objects in the bucket
+          prefix: ""  # Apply to all objects in the bucket
+        # transition is an array of objects
         transition:
           - days: 30
             storageClass: STANDARD_IA
           - days: 90
             storageClass: DEEP_ARCHIVE
+        # expiration is an Object with a days field
         expiration:
-          - days: 365
+          days: 365
   providerConfigRef:
     name: default
