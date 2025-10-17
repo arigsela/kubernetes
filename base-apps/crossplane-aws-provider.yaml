@@ -30,6 +30,8 @@ spec:
       # Don't create namespace - it already exists in crossplane-system
       - Validate=true
       - RespectIgnoreDifferences=true
+      # Skip dry-run for resources whose CRDs don't exist yet (Providers install CRDs)
+      - SkipDryRunOnMissingResource=true
 
     # Retry on sync failure
     retry:
