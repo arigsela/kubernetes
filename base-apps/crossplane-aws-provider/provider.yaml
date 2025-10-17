@@ -10,6 +10,8 @@ apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-aws-s3
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"  # Install providers first
 spec:
   package: xpkg.upbound.io/upbound/provider-aws-s3:v1.12.0
   packagePullPolicy: IfNotPresent
@@ -24,6 +26,8 @@ apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-aws-iam
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"  # Install providers first
 spec:
   package: xpkg.upbound.io/upbound/provider-aws-iam:v1.12.0
   packagePullPolicy: IfNotPresent
