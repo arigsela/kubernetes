@@ -9,6 +9,7 @@ metadata:
   namespace: crossplane-system
   annotations:
     description: "Default AWS ProviderConfig for Crossplane using crossplane-admin IAM user"
+    argocd.argoproj.io/sync-wave: "2"  # Apply after providers install their CRDs
 spec:
   # Reference the Kubernetes secret containing AWS credentials
   # This secret is created by Terraform and contains:
