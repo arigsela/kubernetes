@@ -8,7 +8,7 @@
 # - Days 90-365: DEEP_ARCHIVE (rarely accessed, 95% cheaper)
 # - After 365 days: Deleted (retention policy compliance)
 
-apiVersion: s3.aws.upbound.io/v1beta1
+apiVersion: s3.aws.upbound.io/v1beta2
 kind: BucketLifecycleConfiguration
 metadata:
   name: loki-logs-lifecycle
@@ -26,13 +26,13 @@ spec:
       - id: cost-optimization
         status: Enabled
         filter:
-          prefix: ""  # Apply to all objects in the bucket
+          - prefix: ""  # Apply to all objects in the bucket
         transition:
           - days: 30
             storageClass: STANDARD_IA
           - days: 90
             storageClass: DEEP_ARCHIVE
         expiration:
-          days: 365
+          - days: 365
   providerConfigRef:
     name: default
