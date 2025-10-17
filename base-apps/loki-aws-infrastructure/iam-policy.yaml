@@ -1,0 +1,43 @@
+# IAM Policy for Loki S3 Access via Crossplane
+# Grants least-privilege access for Loki to read/write logs to S3 bucket
+# Follows AWS best practices for service account permissions
+
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: loki-s3-access
+  labels:
+    app: loki
+    component: iam-policy
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "Allows Loki to read/write log chunks to S3 bucket"
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "LokiS3Access",
+            "Effect": "Allow",
+            "Action": [
+              "s3:ListBucket",
+              "s3:PutObject",
+              "s3:GetObject",
+              "s3:DeleteObject"
+            ],
+            "Resource": [
+              "arn:aws:s3:::asela-chores-loki-logs-20251017",
+              "arn:aws:s3:::asela-chores-loki-logs-20251017/*"
+            ]
+          }
+        ]
+      }
+    tags:
+      Name: "Loki S3 Access Policy"
+      Purpose: "Loki-S3-Access"
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+      Project: "asela-chores"
+  providerConfigRef:
+    name: default
