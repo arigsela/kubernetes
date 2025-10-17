@@ -5,11 +5,11 @@
 ---
 # AWS S3 Provider
 # Manages S3 buckets, lifecycle configurations, and related resources
+# Note: Provider is a cluster-scoped resource and does not have a namespace
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-aws-s3
-  namespace: crossplane-system
 spec:
   package: xpkg.upbound.io/upbound/provider-aws-s3:v1.12.0
   packagePullPolicy: IfNotPresent
@@ -19,11 +19,11 @@ spec:
 ---
 # AWS IAM Provider
 # Manages IAM users, roles, policies, and access keys
+# Note: Provider is a cluster-scoped resource and does not have a namespace
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-aws-iam
-  namespace: crossplane-system
 spec:
   package: xpkg.upbound.io/upbound/provider-aws-iam:v1.12.0
   packagePullPolicy: IfNotPresent
