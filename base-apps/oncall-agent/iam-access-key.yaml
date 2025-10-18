@@ -1,0 +1,23 @@
+# IAM Access Key for OnCall Agent
+# Generates AWS credentials (access key + secret) for the oncall-agent user
+# The credentials will be stored in a Kubernetes secret automatically
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: AccessKey
+metadata:
+  name: oncall-agent-nat-monitor-key
+  labels:
+    app: oncall-agent
+    environment: dev
+spec:
+  forProvider:
+    # Reference to the IAM User
+    userSelector:
+      matchLabels:
+        app: oncall-agent
+        environment: dev
+  # Write the generated credentials to a Kubernetes secret
+  writeConnectionSecretToRef:
+    name: oncall-agent-aws-credentials
+    namespace: crossplane-oncall-agent
+  providerConfigRef:
+    name: aws-provider

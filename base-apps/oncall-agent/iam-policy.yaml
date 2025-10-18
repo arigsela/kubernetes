@@ -1,0 +1,47 @@
+# IAM Policy for OnCall Agent NAT Gateway Monitoring
+# Grants read-only access to CloudWatch metrics and EC2 NAT Gateway information
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: oncall-agent-nat-monitor-policy
+  labels:
+    app: oncall-agent
+    environment: dev
+spec:
+  forProvider:
+    name: oncall-agent-nat-monitor-policy
+    path: "/service-policies/"
+    description: "Read-only access to CloudWatch NAT Gateway metrics and EC2 NAT Gateway information for OnCall Agent"
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "CloudWatchNATMetricsReadOnly",
+            "Effect": "Allow",
+            "Action": [
+              "cloudwatch:GetMetricStatistics",
+              "cloudwatch:ListMetrics"
+            ],
+            "Resource": "*"
+          },
+          {
+            "Sid": "EC2NATGatewayReadOnly",
+            "Effect": "Allow",
+            "Action": [
+              "ec2:DescribeNatGateways",
+              "ec2:DescribeVpcs",
+              "ec2:DescribeSubnets"
+            ],
+            "Resource": "*"
+          }
+        ]
+      }
+    tags:
+      Name: oncall-agent-nat-monitor-policy
+      Environment: dev
+      ManagedBy: crossplane
+      Service: oncall-agent
+      Purpose: NAT Gateway monitoring
+  providerConfigRef:
+    name: aws-provider

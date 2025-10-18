@@ -1,0 +1,209 @@
+---
+# Main agent configuration (non-sensitive)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eks-agent-config
+  labels:
+    app: eks-monitoring-agent
+    component: configuration
+  annotations:
+    description: "Non-sensitive configuration - safe to commit to Git"
+data:
+  # Agent Model Configuration
+  ORCHESTRATOR_MODEL: "claude-sonnet-4-5-20250929"
+  DIAGNOSTIC_MODEL: "claude-sonnet-4-20250514"
+  REMEDIATION_MODEL: "claude-sonnet-4-5-20250929"
+  LOG_ANALYZER_MODEL: "claude-sonnet-4-5-20250929"
+  COST_OPTIMIZER_MODEL: "claude-sonnet-4-20250514"
+  GITHUB_AGENT_MODEL: "claude-sonnet-4-20250514"
+  JIRA_AGENT_MODEL: "claude-sonnet-4-5-20250929"
+
+  # Monitoring Configuration
+  CLUSTER_NAME: "dev-eks"
+  CHECK_INTERVAL: "7200"
+  LOG_LEVEL: "NORMAL"
+  LOG_TO_FILE: "false"
+
+  # Kubernetes MCP Server Configuration
+  K8S_MCP_LOG_LEVEL: "2"
+  K8S_MCP_READ_ONLY: "true"
+  K8S_MCP_DISABLE_DESTRUCTIVE: "false"
+
+  # GitHub MCP Server Configuration
+  GITHUB_TOOLSETS: "context,repos,issues,pull_requests"
+  GITHUB_READ_ONLY: "true"
+  GITHUB_DEFAULT_ORG: "artemishealth"
+  GITHUB_INCIDENT_REPO: "olympus"
+  GITHUB_K8S_CONFIG_REPO: "deployments"
+
+  # Jira Configuration
+  JIRA_PROJECTS_FILTER: "DEVOPS"
+  JIRA_READ_ONLY: "true"
+
+  # Teams Configuration
+  TEAMS_NOTIFICATIONS_ENABLED: "false"
+
+  # AWS Configuration
+  AWS_REGION: "us-east-1"
+
+  # Advanced Configuration
+  DEBUG: "false"
+
+---
+# Cluster context - loaded on every monitoring cycle
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eks-agent-cluster-context
+  labels:
+    app: eks-monitoring-agent
+    component: configuration
+  annotations:
+    description: >-
+      Cluster-specific context loaded on EVERY monitoring cycle
+      (no restart needed)
+data:
+  CLAUDE.md: |
+    # EKS Cluster Monitoring Context
+
+    ## Cluster Information
+    - **Cluster Name**: dev-eks
+    - **Environment**: DEV (not production)
+    - **Region**: us-east-1
+    - **Kubernetes Version**: 1.32
+    - **Node Count**: 40
+
+    ## Critical Infrastructure Namespaces
+    - `kube-system`: System components
+    - `karpenter`: Cluster autoscaling
+    - `datadog-operator-dev`: Monitoring agents
+    - `actions-runner-controller-dev`: GitHub Actions runners
+    - `crossplane-system`: Infrastructure-as-Code provider
+    - `cert-manager-dev`: Certificate management
+    - `keda-controller-dev`: Keda controller
+    - `karpenter-controller-dev`: Karpenter controller
+    - `kyverno-dev`: Kyverno operator
+    - `kyverno-policies-dev`: Kyverno policies
+    - `n8n-dev`: Instance of n8n
+    - `nginx-ingress-dev`: Nginx ingress controller
+    - `versprite-security`: Security sensors
+
+    ## Critical Application Namespaces
+    - `artemis-app-preprod`: Frontend container for preprod
+    - `artemis-auth-kafka-consumer-preprod`: Kafka consumer
+    - `artemish-auth-keycloak-preprod`: Keycloak deployment
+    - `artemis-auth-preprod`: Auth service
+    - `artemis-preprod`: Main artemis HERMES service
+    - `chronos-preprod`: V2 frontend service
+    - `delivery-preprod`: Delivery service
+    - `excel-writer-preprod`: Excel writer service
+    - `export-manager-kafka-preprod`: Kafka consumer
+    - `export-manager-preprod`: Export manager service
+    - `metric-usage-service-preprod`: Metric usage service
+    - `poweproint-writer-preprod`: Poweproint writer service
+    - `proteus-*`: Any that starts with proteus is critical
+
+    ## Known Issues & Patterns
+
+    Currently monitoring dev-eks cluster - no known recurring
+    patterns documented yet.
+
+    ## Standard Operating Procedures
+
+    ### Escalation Criteria
+    Escalate to human if:
+    - Any operation on `kube-system` namespace
+    - Deletion of PersistentVolumes
+    - More than 5 pods failing in same namespace
+
+    ### Approved Auto-Remediation
+    **Note: This is a DEV cluster - more permissive than production**
+
+    Safe Operations:
+    - Rolling restarts of deployments with 2+ replicas
+    - Clear Failed/Evicted pods in any namespace
+    - Scale deployments by ±2 replicas
+    - Pod deletions in non-system namespaces
+
+    **Still Blocked:**
+    - Namespace deletions (requires human approval)
+    - PersistentVolume deletions
+    - Operations on kube-system namespace
+
+    ## Team Contacts
+    - On-call: #oncall-engineering
+    - Kubernetes Team: #devops-team
+
+---
+# Safety hooks configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eks-agent-settings
+  labels:
+    app: eks-monitoring-agent
+    component: configuration
+  annotations:
+    description: >-
+      Safety hooks configuration - REQUIRES POD RESTART to apply
+      changes
+data:
+  settings.json: |
+    {
+      "hooks": {
+        "PreToolUse": [
+          {
+            "matcher": "Bash",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "python .claude/hooks/safety_validator.py"
+              },
+              {
+                "type": "command",
+                "command": "python .claude/hooks/action_logger.py"
+              },
+              {
+                "type": "command",
+                "command": "python .claude/hooks/teams_notifier.py"
+              }
+            ]
+          },
+          {
+            "matcher": "mcp__kubernetes__*",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "python .claude/hooks/safety_validator.py"
+              },
+              {
+                "type": "command",
+                "command": "python .claude/hooks/action_logger.py"
+              },
+              {
+                "type": "command",
+                "command": "python .claude/hooks/teams_notifier.py"
+              }
+            ]
+          },
+          {
+            "matcher": "mcp__github__*",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "python .claude/hooks/safety_validator.py"
+              },
+              {
+                "type": "command",
+                "command": "python .claude/hooks/action_logger.py"
+              },
+              {
+                "type": "command",
+                "command": "python .claude/hooks/teams_notifier.py"
+              }
+            ]
+          }
+        ]
+      }
+    }
