@@ -27,7 +27,7 @@ spec:
 
       containers:
       - name: api
-        image: 082902060548.dkr.ecr.us-east-1.amazonaws.com/oncall-agent:v0.2.0
+        image: 85289345851.dkr.ecr.us-east-2.amazonaws.com/oncall-agent:v0.0.1
         imagePullPolicy: Always
 
         # Container-level security context (required by Kyverno)
