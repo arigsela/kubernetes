@@ -144,5 +144,9 @@ spec:
           timeoutSeconds: 5
           failureThreshold: 3
 
+      # ECR authentication
+      imagePullSecrets:
+      - name: ecr-registry
+
       # Graceful shutdown
       terminationGracePeriodSeconds: 30
