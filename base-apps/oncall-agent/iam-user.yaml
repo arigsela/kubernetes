@@ -1,0 +1,20 @@
+# IAM User for OnCall Agent
+# This user will have permissions to read CloudWatch metrics and EC2 NAT Gateway information
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: User
+metadata:
+  name: oncall-agent-nat-monitor
+  labels:
+    app: oncall-agent
+    environment: dev
+spec:
+  forProvider:
+    path: "/service-accounts/"
+    tags:
+      Name: oncall-agent-nat-monitor
+      Environment: dev
+      ManagedBy: crossplane
+      Service: oncall-agent
+      Purpose: NAT Gateway monitoring
+  providerConfigRef:
+    name: aws-provider

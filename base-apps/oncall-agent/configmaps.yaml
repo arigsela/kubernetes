@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oncall-agent-config
+data:
+  # Agent configuration
+  AGENT_LOG_LEVEL: "DEBUG"
+  AGENT_MAX_THINKING_TOKENS: "12000"
+
+  # Kubernetes configuration
+  K8S_CONTEXT: "dev-eks"
+
+  # GitHub configuration
+  GITHUB_ORG: "artemishealth"
+
+  # AWS configuration (for AWSIntegrator)
+  AWS_REGION: "us-east-1"
+
+  # Safety configuration
+  ALLOWED_CLUSTERS: "dev-eks"
+  PROTECTED_CLUSTERS: "prod-eks"
+
+  # Teams notifications (daemon uses this, API ignores it)
+  TEAMS_NOTIFICATIONS_ENABLED: "true"
+
+  # API Configuration (API mode uses these, daemon ignores them)
+  API_HOST: "0.0.0.0"
+  API_PORT: "8000"
+  SESSION_TTL_MINUTES: "30"
+  MAX_SESSIONS_PER_USER: "5"
+  RATE_LIMIT_AUTHENTICATED: "60"
+  RATE_LIMIT_UNAUTHENTICATED: "10"
+  CORS_ORIGINS: "*"

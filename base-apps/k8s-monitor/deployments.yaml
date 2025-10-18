@@ -1,0 +1,166 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eks-monitoring-agent
+  labels:
+    app: eks-monitoring-agent
+    version: v1.0.0
+spec:
+  replicas: 1  # Single instance (stateful conversation)
+  strategy:
+    type: Recreate  # Avoid duplicate cycles
+  selector:
+    matchLabels:
+      app: eks-monitoring-agent
+  template:
+    metadata:
+      labels:
+        app: eks-monitoring-agent
+        version: v1.0.0
+      annotations:
+        # Annotations to force restart when ConfigMaps change
+        # kubectl.io/restartedAt is automatically updated by ArgoCD
+        # when ConfigMaps change
+        prometheus.io/scrape: "false"  # No Prometheus metrics yet
+    spec:
+      serviceAccountName: eks-monitoring-agent
+
+      # Pod-level security context (Kyverno compliant)
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+
+      containers:
+        - name: agent
+          image: 082902060548.dkr.ecr.us-east-1.amazonaws.com/eks-monitoring-agent:v0.0.2
+          imagePullPolicy: Always
+
+          # SIMPLIFIED: Load ALL environment variables from Secret
+          # and ConfigMap. This is cleaner than 40+ individual env
+          # var definitions
+          envFrom:
+            # Load ALL sensitive credentials from Secret
+            - secretRef:
+                name: eks-agent-credentials
+                # This loads:
+                #   - ANTHROPIC_API_KEY
+                #   - GITHUB_PERSONAL_ACCESS_TOKEN
+                #   - JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN
+                #   - TEAMS_WEBHOOK_URL
+                #   - AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+                #     (if not using IRSA)
+
+            # Load ALL non-sensitive configuration from ConfigMap
+            - configMapRef:
+                name: eks-agent-config
+                # This loads:
+                #   - All model names (ORCHESTRATOR_MODEL, etc.)
+                #   - Monitoring config (CLUSTER_NAME, etc.)
+                #   - MCP server config (K8S_MCP_*, GITHUB_*, JIRA_*)
+                #   - Teams, AWS, Debug settings
+
+          # Volume mounts - Agent behavior via ConfigMaps (GitOps)
+          volumeMounts:
+            # Cluster context - HOT-RELOADS every cycle
+            # (no restart!)
+            - name: cluster-context
+              mountPath: /app/.claude/CLAUDE.md
+              subPath: CLAUDE.md
+              readOnly: true
+
+            # Subagent definitions - requires restart to apply
+            - name: subagents
+              mountPath: /app/.claude/agents
+              readOnly: true
+
+            # Hooks configuration - requires restart to apply
+            - name: settings
+              mountPath: /app/.claude/settings.json
+              subPath: settings.json
+              readOnly: true
+
+            # Safety hooks (*.py) are in the container image
+            # Not mounted from ConfigMap (security - code execution)
+
+          # Resource limits
+          resources:
+            requests:
+              cpu: 500m      # 0.5 cores
+              memory: 1Gi    # 1GB RAM
+            limits:
+              cpu: 2000m     # 2 cores max (for MCP server spawning)
+              memory: 2Gi    # 2GB max
+
+          # Container-level security context (Kyverno compliant)
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+
+          # Liveness probe - check if agent process is alive
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pgrep -f agent || exit 1
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          # Readiness probe - check if agent is ready to serve
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pgrep -f agent || exit 1
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+      # Volumes
+      volumes:
+        # Cluster context ConfigMap
+        - name: cluster-context
+          configMap:
+            name: eks-agent-cluster-context
+
+        # All subagent definitions
+        - name: subagents
+          configMap:
+            name: eks-agent-subagents
+
+        # Settings (hooks config)
+        - name: settings
+          configMap:
+            name: eks-agent-settings
+
+      restartPolicy: Always
+
+      # Graceful shutdown
+      terminationGracePeriodSeconds: 30
+
+      # Optional: Schedule on specific nodes
+      # nodeSelector:
+      #   node-role: monitoring
+
+      # Optional: Tolerate node taints
+      # tolerations:
+      # - key: monitoring
+      #   operator: Equal
+      #   value: "true"
+      #   effect: NoSchedule
