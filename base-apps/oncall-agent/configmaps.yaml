@@ -1,27 +1,29 @@
+# ConfigMap for OnCall Agent configuration
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: oncall-agent-config
+  namespace: oncall-agent
 data:
   # Agent configuration
-  AGENT_LOG_LEVEL: "DEBUG"
+  AGENT_LOG_LEVEL: "INFO"
   AGENT_MAX_THINKING_TOKENS: "12000"
 
   # Kubernetes configuration
-  K8S_CONTEXT: "dev-eks"
+  K8S_CONTEXT: "default"
 
   # GitHub configuration
-  GITHUB_ORG: "artemishealth"
+  GITHUB_ORG: "arigsela"
 
   # AWS configuration (for AWSIntegrator)
-  AWS_REGION: "us-east-1"
+  AWS_REGION: "us-east-2"
 
   # Safety configuration
-  ALLOWED_CLUSTERS: "dev-eks"
+  ALLOWED_CLUSTERS: "default"
   PROTECTED_CLUSTERS: "prod-eks"
 
   # Teams notifications (daemon uses this, API ignores it)
-  TEAMS_NOTIFICATIONS_ENABLED: "true"
+  TEAMS_NOTIFICATIONS_ENABLED: "false"
 
   # API Configuration (API mode uses these, daemon ignores them)
   API_HOST: "0.0.0.0"
@@ -31,3 +33,6 @@ data:
   RATE_LIMIT_AUTHENTICATED: "60"
   RATE_LIMIT_UNAUTHENTICATED: "10"
   CORS_ORIGINS: "*"
+
+  # Datadog Configuration
+  DATADOG_SITE: "datadoghq.com"

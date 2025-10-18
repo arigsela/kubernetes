@@ -1,4 +1,5 @@
-# ClusterRoleBinding
+# ClusterRoleBinding for OnCall Agent
+# Grants the oncall-agent service account permissions to read cluster resources
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -6,7 +7,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: oncall-agent-api-sa
-    namespace: crossplane-oncall-agent
+    namespace: oncall-agent
 roleRef:
   kind: ClusterRole
   name: oncall-agent-reader

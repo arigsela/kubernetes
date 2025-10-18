@@ -1,16 +1,17 @@
-# IAM Policy for OnCall Agent NAT Gateway Monitoring
+# IAM Policy for OnCall Agent via Crossplane
 # Grants read-only access to CloudWatch metrics and EC2 NAT Gateway information
+# Follows AWS best practices for service account permissions
+
 apiVersion: iam.aws.upbound.io/v1beta1
 kind: Policy
 metadata:
   name: oncall-agent-nat-monitor-policy
   labels:
     app: oncall-agent
-    environment: dev
+    component: iam-policy
+    managed-by: crossplane
 spec:
   forProvider:
-    name: oncall-agent-nat-monitor-policy
-    path: "/service-policies/"
     description: "Read-only access to CloudWatch NAT Gateway metrics and EC2 NAT Gateway information for OnCall Agent"
     policy: |
       {
@@ -38,10 +39,10 @@ spec:
         ]
       }
     tags:
-      Name: oncall-agent-nat-monitor-policy
-      Environment: dev
-      ManagedBy: crossplane
-      Service: oncall-agent
-      Purpose: NAT Gateway monitoring
+      Name: "OnCall Agent NAT Monitor Policy"
+      Purpose: "NAT-Gateway-Monitoring"
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+      Project: "asela-chores"
   providerConfigRef:
-    name: aws-provider
+    name: default
