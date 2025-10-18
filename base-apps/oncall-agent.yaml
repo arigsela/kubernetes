@@ -14,7 +14,7 @@ spec:
 
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
+    targetRevision: deploy-oncall-agent
     path: base-apps/oncall-agent
 
   destination:
