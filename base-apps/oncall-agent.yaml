@@ -1,0 +1,74 @@
+# ArgoCD Application for OnCall Agent
+# Deploys the OnCall Agent API and related resources
+# Includes Crossplane AWS infrastructure provisioning
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: oncall-agent
+  namespace: argo-cd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/oncall-agent
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: oncall-agent
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
+      - Validate=true
+      - RespectIgnoreDifferences=true
+      # Skip dry-run for Crossplane resources as their CRDs are dynamically created
+      - SkipDryRunOnMissingResource=true
+
+    # Retry on sync failure
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Ignore status changes on Crossplane resources
+  ignoreDifferences:
+    - group: iam.aws.upbound.io
+      kind: Policy
+      jsonPointers:
+        - /status
+    - group: iam.aws.upbound.io
+      kind: User
+      jsonPointers:
+        - /status
+    - group: iam.aws.upbound.io
+      kind: AccessKey
+      jsonPointers:
+        - /status
+    - group: iam.aws.upbound.io
+      kind: UserPolicyAttachment
+      jsonPointers:
+        - /status
+
+---
+# This application will manage:
+# 1. OnCall Agent API deployment
+# 2. Service and ServiceAccount
+# 3. ConfigMap for configuration
+# 4. ExternalSecret for sensitive data
+# 5. ClusterRole and ClusterRoleBinding for K8s access
+# 6. IAM user: oncall-agent-nat-monitor
+# 7. IAM policy: oncall-agent-nat-monitor-policy
+# 8. IAM access keys for AWS CloudWatch/EC2 access
+#
+# All managed through Git commits - true GitOps!
