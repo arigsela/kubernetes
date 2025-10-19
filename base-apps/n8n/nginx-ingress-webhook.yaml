@@ -46,3 +46,11 @@ spec:
             name: n8n
             port:
               number: 5678
+      # Webhook Test Path - Publicly Accessible (for debugging)
+      - path: /webhook-test
+        pathType: Prefix
+        backend:
+          service:
+            name: n8n
+            port:
+              number: 5678
