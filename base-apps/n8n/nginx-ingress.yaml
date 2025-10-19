@@ -12,13 +12,8 @@ metadata:
     # Backend Protocol
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 
-    # Security Headers
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      more_set_headers "X-Frame-Options: DENY";
-      more_set_headers "X-Content-Type-Options: nosniff";
-      more_set_headers "X-XSS-Protection: 1; mode=block";
-      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
-      more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
+    # Note: Security headers removed - configuration-snippet disabled by ingress controller
+    # Security provided by: IP whitelist, rate limiting, TLS, and n8n authentication
 
     # Rate Limiting (prevent brute force attacks)
     nginx.ingress.kubernetes.io/limit-rps: "10"
