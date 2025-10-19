@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: n8n-nginx
+  name: n8n-admin
   namespace: n8n
   annotations:
     # TLS/SSL Configuration
@@ -12,14 +12,11 @@ metadata:
     # Backend Protocol
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 
-    # Note: Security headers removed - configuration-snippet disabled by ingress controller
-    # Security provided by: IP whitelist, rate limiting, TLS, and n8n authentication
-
-    # Rate Limiting (prevent brute force attacks)
+    # Rate Limiting (prevent brute force attacks on admin UI)
     nginx.ingress.kubernetes.io/limit-rps: "10"
     nginx.ingress.kubernetes.io/limit-connections: "5"
 
-    # 🔒 IP WHITELIST - Admin UI Protection
+    # 🔒 IP WHITELIST - Admin UI Only
     # Only this IP can access the n8n admin interface
     nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32"
 
@@ -36,20 +33,12 @@ spec:
   tls:
   - hosts:
     - n8n.arigsela.com
-    secretName: n8n-tls
+    secretName: n8n-admin-tls
   rules:
   - host: n8n.arigsela.com
     http:
       paths:
-      # Webhook Path: Higher priority, public access for webhooks
-      - path: /webhook
-        pathType: Prefix
-        backend:
-          service:
-            name: n8n
-            port:
-              number: 5678
-      # Admin UI and all other paths: IP restricted
+      # Admin UI - IP Restricted
       - path: /
         pathType: Prefix
         backend:
