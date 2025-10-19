@@ -1,0 +1,64 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: n8n-nginx
+  namespace: n8n
+  annotations:
+    # TLS/SSL Configuration
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Backend Protocol
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+    # Security Headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_set_headers "Permissions-Policy: geolocation=(), microphone=(), camera=()";
+
+    # Rate Limiting (prevent brute force attacks)
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-connections: "5"
+
+    # 🔒 IP WHITELIST - Admin UI Protection
+    # Only this IP can access the n8n admin interface
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32"
+
+    # Timeouts
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+
+    # Client body size (for workflow imports)
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - n8n.arigsela.com
+    secretName: n8n-tls
+  rules:
+  - host: n8n.arigsela.com
+    http:
+      paths:
+      # Webhook Path: Higher priority, public access for webhooks
+      - path: /webhook
+        pathType: Prefix
+        backend:
+          service:
+            name: n8n
+            port:
+              number: 5678
+      # Admin UI and all other paths: IP restricted
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: n8n
+            port:
+              number: 5678
