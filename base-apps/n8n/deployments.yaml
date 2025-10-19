@@ -69,6 +69,10 @@ spec:
         - name: N8N_LOG_LEVEL
           value: "info"
 
+        # Trust proxy for X-Forwarded-For headers (required behind nginx ingress)
+        - name: N8N_PROXY_HOPS
+          value: "1"
+
         # Execution Settings
         - name: EXECUTIONS_DATA_SAVE_ON_ERROR
           value: "all"
