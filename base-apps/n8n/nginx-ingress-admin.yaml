@@ -33,7 +33,7 @@ spec:
   tls:
   - hosts:
     - n8n.arigsela.com
-    secretName: n8n-admin-tls
+    secretName: n8n-tls
   rules:
   - host: n8n.arigsela.com
     http:
