@@ -45,29 +45,51 @@ spec:
             secretKeyRef:
               name: n8n-secrets
               key: db-password
-        # n8n Configuration
+        # n8n Core Configuration
         - name: N8N_ENCRYPTION_KEY
           valueFrom:
             secretKeyRef:
               name: n8n-secrets
               key: encryption-key
+
+        # UPDATED: Webhook URL (changed to HTTPS)
         - name: WEBHOOK_URL
-          valueFrom:
-            secretKeyRef:
-              name: n8n-secrets
-              key: webhook-url
+          value: "https://n8n.arigsela.com/"
+
+        # UPDATED: Protocol changed from http to https
         - name: N8N_PROTOCOL
-          value: "http"
+          value: "https"
+
+        # NEW: Hostname configuration
+        - name: N8N_HOST
+          value: "n8n.arigsela.com"
+
         - name: N8N_PORT
           value: "5678"
         - name: N8N_LOG_LEVEL
           value: "info"
+
+        # Execution Settings
         - name: EXECUTIONS_DATA_SAVE_ON_ERROR
           value: "all"
         - name: EXECUTIONS_DATA_SAVE_ON_SUCCESS
           value: "all"
         - name: EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS
           value: "true"
+
+        # 🔒 NEW: BASIC AUTHENTICATION CONFIGURATION
+        - name: N8N_BASIC_AUTH_ACTIVE
+          value: "true"
+        - name: N8N_BASIC_AUTH_USER
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: basic-auth-user
+        - name: N8N_BASIC_AUTH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: basic-auth-password
         ports:
         - containerPort: 5678
           name: http
