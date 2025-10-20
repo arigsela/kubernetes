@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: k8s-monitor-logs
+  namespace: k8s-monitor
+  labels:
+    app: k8s-monitor
+    component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce  # Single pod access (no concurrent writes)
+  storageClassName: standard  # Uses default storage class (e.g., local-path for K3s)
+  resources:
+    requests:
+      storage: 5Gi  # 5GB for logs and incident history

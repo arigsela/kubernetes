@@ -1,0 +1,47 @@
+# ClusterRole for K8s Monitor
+# Grants read-only access to cluster resources for monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8s-monitor
+  labels:
+    app: k8s-monitor
+rules:
+  # Pod access
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+
+  # Deployment access
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+
+  # Service and Ingress access
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch"]
+
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+
+  # Node access
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+
+  # Event access
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+  # Certificate access (for TLS checks)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+
+  # Namespace access
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]

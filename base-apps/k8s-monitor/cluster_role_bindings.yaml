@@ -1,0 +1,16 @@
+# ClusterRoleBinding for K8s Monitor
+# Binds the k8s-monitor ClusterRole to the k8s-monitor ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-monitor
+  labels:
+    app: k8s-monitor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8s-monitor
+subjects:
+  - kind: ServiceAccount
+    name: k8s-monitor
+    namespace: k8s-monitor
