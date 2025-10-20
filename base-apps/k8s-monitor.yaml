@@ -1,0 +1,64 @@
+# ArgoCD Application for K8s Monitor
+# Deploys the K8s Monitor agent and related resources
+# Includes External Secrets integration with Vault
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k8s-monitor
+  namespace: argo-cd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: update-claude-agent
+    path: base-apps/k8s-monitor
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: k8s-monitor
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+
+    syncOptions:
+      - CreateNamespace=true
+      - Validate=true
+      - RespectIgnoreDifferences=true
+      # Skip dry-run for External Secrets as they depend on runtime Vault access
+      - SkipDryRunOnMissingResource=true
+
+    # Retry on sync failure
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Ignore status changes on External Secrets resources
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /status
+    - group: external-secrets.io
+      kind: SecretStore
+      jsonPointers:
+        - /status
+
+---
+# This application will manage:
+# 1. K8s Monitor deployment
+# 2. ServiceAccount and RBAC (ClusterRole, ClusterRoleBinding)
+# 3. ConfigMaps for agent definitions and orchestrator context
+# 4. PersistentVolumeClaim for log storage
+# 5. SecretStore for Vault integration
+# 6. ExternalSecret for sensitive credentials
+#
+# All managed through Git commits - true GitOps!
