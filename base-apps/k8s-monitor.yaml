@@ -14,7 +14,7 @@ spec:
 
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: update-claude-agent
+    targetRevision: feature/k8s-monitor-deployment
     path: base-apps/k8s-monitor
 
   destination:
@@ -52,7 +52,6 @@ spec:
       jsonPointers:
         - /status
 
----
 # This application will manage:
 # 1. K8s Monitor deployment
 # 2. ServiceAccount and RBAC (ClusterRole, ClusterRoleBinding)
