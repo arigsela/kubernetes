@@ -98,8 +98,6 @@ spec:
 
           # Volume mounts
           volumeMounts:
-            - name: logs
-              mountPath: /app/logs
             - name: agent-definitions
               mountPath: /app/.claude/agents
               readOnly: true
@@ -112,10 +110,6 @@ spec:
 
       # Volumes
       volumes:
-        - name: logs
-          persistentVolumeClaim:
-            claimName: k8s-monitor-logs  # References the PVC for persistent storage
-
         - name: orchestrator-context
           configMap:
             name: k8s-monitor-orchestrator

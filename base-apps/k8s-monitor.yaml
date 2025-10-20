@@ -56,8 +56,7 @@ spec:
 # 1. K8s Monitor deployment
 # 2. ServiceAccount and RBAC (ClusterRole, ClusterRoleBinding)
 # 3. ConfigMaps for agent definitions and orchestrator context
-# 4. PersistentVolumeClaim for log storage
-# 5. SecretStore for Vault integration
-# 6. ExternalSecret for sensitive credentials
+# 4. SecretStore for Vault integration
+# 5. ExternalSecret for sensitive credentials
 #
 # All managed through Git commits - true GitOps!
