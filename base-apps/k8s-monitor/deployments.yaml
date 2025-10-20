@@ -105,6 +105,10 @@ spec:
               mountPath: /app/.claude
               readOnly: true
 
+      # ECR authentication
+      imagePullSecrets:
+      - name: ecr-registry
+
       # Restart policy
       restartPolicy: Always
 
