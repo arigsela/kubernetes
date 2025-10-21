@@ -39,7 +39,7 @@ spec:
       # Containers
       containers:
         - name: k8s-monitor
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/k8s-monitor:v0.0.9
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/k8s-monitor:v0.0.10
 
           # Command (use default from Dockerfile unless overriding)
           command: ["python", "-m"]
