@@ -23,8 +23,8 @@ data:
   SERVICES_FILE: "/app/docs/reference/services.txt"
 
   # Model configuration (can be overridden per environment)
-  ORCHESTRATOR_MODEL: "claude-haiku-4-5-20250514"
-  K8S_ANALYZER_MODEL: "claude-haiku-4-5-20250514"
-  ESCALATION_MANAGER_MODEL: "claude-haiku-4-5-20250514"
-  SLACK_NOTIFIER_MODEL: "claude-haiku-4-5-20250514"
-  GITHUB_REVIEWER_MODEL: "claude-haiku-4-5-20250514"
+  ORCHESTRATOR_MODEL: "claude-haiku-4-5-20251001"
+  K8S_ANALYZER_MODEL: "claude-haiku-4-5-20251001"
+  ESCALATION_MANAGER_MODEL: "claude-haiku-4-5-20251001"
+  SLACK_NOTIFIER_MODEL: "claude-haiku-4-5-20251001"
+  GITHUB_REVIEWER_MODEL: "claude-haiku-4-5-20251001"
