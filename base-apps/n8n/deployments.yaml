@@ -113,7 +113,7 @@ spec:
           httpGet:
             path: /healthz
             port: 5678
-          initialDelaySeconds: 60
+          initialDelaySeconds: 240
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 6
@@ -121,10 +121,10 @@ spec:
           httpGet:
             path: /healthz
             port: 5678
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 3
+          failureThreshold: 6
         volumeMounts:
         - name: n8n-storage
           mountPath: /home/node/.n8n
