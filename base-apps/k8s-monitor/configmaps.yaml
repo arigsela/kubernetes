@@ -10,7 +10,7 @@ data:
   K3S_CONTEXT: "default"
 
   # Monitoring interval (minutes)
-  MONITORING_INTERVAL_MINUTES: "30"
+  MONITORING_INTERVAL_MINUTES: "240"
 
   # Log level
   LOG_LEVEL: "INFO"
