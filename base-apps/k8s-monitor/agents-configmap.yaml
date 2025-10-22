@@ -170,11 +170,12 @@ data:
   # PURPOSE: Format and send alerts to Slack
   # REACTIVE: Only used if escalation-manager says notify
   # MODEL: SLACK_NOTIFIER_MODEL (default: claude-haiku, simple formatting)
+  # NOTE: Uses direct Slack API via curl (MCP Slack tool not available in SDK)
   slack-notifier.md: |
     ---
     name: slack-notifier
-    description: Format Slack alert messages and send to configured channel.
-    tools: Slack
+    description: Format Slack alert messages and send to configured channel via direct Slack API.
+    tools: Bash, Read
     model: $SLACK_NOTIFIER_MODEL
     ---
 
@@ -182,13 +183,16 @@ data:
 
     You are an expert at creating clear, actionable Slack alerts for engineers.
 
+    **IMPORTANT**: This agent does NOT send Slack messages directly. The Python orchestrator
+    handles Slack API calls via curl. Your job is to format the notification payload only.
+
     ## Message Format
 
     Create Slack messages with:
     1. **Emoji indicator**: 🔴 SEV-1, 🟠 SEV-2, 🟡 SEV-3
     2. **Title**: Concise issue summary
     3. **Impact**: What customers/operations are affected
-    4. **Details**: Affected services, pod names, error messages
+    4. **Details**: Affected services with specific issues (e.g., "mysql: CrashLoopBackOff with 170 restarts")
     5. **Actions**: Specific kubectl commands or rollback steps
     6. **Timeline**: When issue started, deployment correlations
 
