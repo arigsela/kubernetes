@@ -9,8 +9,8 @@ data:
   # K3s cluster context (from KUBECONFIG)
   K3S_CONTEXT: "default"
 
-  # Monitoring interval (hours)
-  MONITORING_INTERVAL_HOURS: "24"
+  # Monitoring interval (minutes)
+  MONITORING_INTERVAL_MINUTES: "30"
 
   # Log level
   LOG_LEVEL: "INFO"
@@ -28,3 +28,13 @@ data:
   ESCALATION_MANAGER_MODEL: "claude-haiku-4-5-20251001"
   SLACK_NOTIFIER_MODEL: "claude-haiku-4-5-20251001"
   GITHUB_REVIEWER_MODEL: "claude-haiku-4-5-20251001"
+
+  GITHUB_REPO_OWNER: "arigsela"
+  GITHUB_REPO_NAME: "claude-agents"
+
+  SLACK_ENABLED: "true"
+
+  ENABLE_LONG_CONTEXT: "true"
+  SESSION_ID: "k8s-monitor-production"  # or any identifier
+  MAX_CONTEXT_TOKENS: "120000"
+  CONTEXT_PRUNE_THRESHOLD: "0.8"
