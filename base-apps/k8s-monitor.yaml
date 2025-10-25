@@ -14,7 +14,7 @@ spec:
 
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: feature/k8s-monitor-deployment
+    targetRevision: main
     path: base-apps/k8s-monitor
 
   destination:
