@@ -72,4 +72,4 @@ spec:
       volumes:
       - name: mysql-persistent-storage
         persistentVolumeClaim:
-          claimName: mysql-pvc-fresh
+          claimName: mysql-pvc-v2
