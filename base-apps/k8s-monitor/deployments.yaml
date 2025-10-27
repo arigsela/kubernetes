@@ -36,18 +36,6 @@ spec:
       # Pull policy
       imagePullPolicy: Always
 
-      # Init container to copy ConfigMap to writable emptyDir
-      initContainers:
-        - name: copy-agent-definitions
-          image: busybox:latest
-          command: ['sh', '-c', 'cp -r /agent-configs/* /agents/']
-          volumeMounts:
-            - name: agent-definitions-configmap
-              mountPath: /agent-configs
-              readOnly: true
-            - name: agent-definitions
-              mountPath: /agents
-
       # Containers
       containers:
         - name: k8s-monitor
@@ -113,6 +101,7 @@ spec:
           volumeMounts:
             - name: agent-definitions
               mountPath: /app/.claude/agents
+              readOnly: true
             - name: orchestrator-context
               mountPath: /app/.claude
               readOnly: true
@@ -134,16 +123,11 @@ spec:
               - key: CLAUDE.md
                 path: CLAUDE.md
 
-        # ConfigMap with agent definitions (read-only source)
-        - name: agent-definitions-configmap
+        - name: agent-definitions
           configMap:
             name: k8s-monitor-agents
             # Each key in the ConfigMap becomes a file in /app/.claude/agents
             # Example: k8s-analyzer.md, escalation-manager.md, etc.
-
-        # Writable emptyDir for agent definitions
-        - name: agent-definitions
-          emptyDir: {}
 
       # Node selection (optional - constrain to specific nodes)
       # nodeSelector:
