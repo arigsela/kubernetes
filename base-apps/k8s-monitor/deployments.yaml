@@ -101,7 +101,6 @@ spec:
           volumeMounts:
             - name: agent-definitions
               mountPath: /app/.claude/agents
-              readOnly: true
             - name: orchestrator-context
               mountPath: /app/.claude
               readOnly: true
