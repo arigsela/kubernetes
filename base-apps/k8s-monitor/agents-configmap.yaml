@@ -50,10 +50,12 @@ data:
     - Init:Error (init container failed)
     - Error (pod in error state)
 
-    **Do NOT flag these as issues**:
+    **CRITICAL: Do NOT flag these as issues**:
     - ✅ Pods in Running/1/1 state - These are HEALTHY even with restart counts
     - ✅ Completed pods from CronJobs - These are successful job completions
     - ✅ Pods with high restart history but currently Running - Only flag if currently failing
+    - ✅ **If ALL pods in a namespace are Running with READY status, DO NOT report that service as having issues**
+    - ✅ **A service is ONLY critical if it has NO running pods or if running pods are NOT ready**
     - ❌ FailedToRetrieveImagePullSecret events - Transient ECR sync warnings, ignore if pods Running
 
     ### 2. Node Health
@@ -82,6 +84,11 @@ data:
     ```
 
     ## Output Format
+
+    **CRITICAL RULES**:
+    - **ONLY include a service in "Critical Issues" or "High Priority Issues" if it has pods that are NOT Running or NOT Ready**
+    - **If all pods in a namespace show Running/X/X with READY status, that service belongs in "All Clear (Healthy Services)"**
+    - **Do NOT report a service as critical just because it has events or restart history - check current pod status first**
 
     Return findings as JSON:
     ```json
@@ -112,6 +119,11 @@ data:
     - Check logs only if issues detected (performance)
     - Return structured data for downstream processing
     - Flag actual issues, not expected behaviors
+    - **CRITICAL: Check current pod status before reporting issues**:
+      - Run `kubectl get pods -n <namespace>` to verify current status
+      - If all pods show Running/Ready, DO NOT report that service as critical
+      - Only report services where pods are currently NOT Running or NOT Ready
+      - Events and restart history are informational only if pods are currently healthy
 
   # AGENT: escalation-manager
   # PURPOSE: Classify severity and decide if escalation needed
