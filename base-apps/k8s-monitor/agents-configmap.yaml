@@ -31,16 +31,29 @@ data:
 
     ### 1. Pod Health (Critical Services Priority)
 
+    **CRITICAL: ALWAYS CHECK CURRENT POD STATUS FIRST BEFORE LOOKING AT EVENTS**
+
     ```bash
-    # Get all pods
+    # STEP 1: Check current pod status FIRST (this is the source of truth)
     kubectl get pods --all-namespaces -o wide
 
-    # Find problematic pods
+    # STEP 2: Find ONLY pods that are NOT currently running
     kubectl get pods --all-namespaces --field-selector=status.phase!=Running
 
-    # Check events
-    kubectl get events --all-namespaces --sort-by='.lastTimestamp' | tail -20
+    # STEP 3: Check specific critical namespaces to verify their CURRENT status
+    kubectl get pods -n chores-tracker-backend
+    kubectl get pods -n chores-tracker-frontend
+    kubectl get pods -n mysql
+    kubectl get pods -n n8n
+    kubectl get pods -n postgresql
+    kubectl get pods -n oncall-agent
+    kubectl get pods -n ingress-nginx
     ```
+
+    **CRITICAL DECISION RULE**:
+    - If `kubectl get pods -n <namespace>` shows ALL pods with STATUS=Running and READY=X/X, then that namespace is HEALTHY
+    - Do NOT flag that namespace as having issues, even if you see old events
+    - Events are only relevant for pods that are currently NOT Running or NOT Ready
 
     **Look for** (ONLY flag if pod STATUS is not Running):
     - CrashLoopBackOff (pod failing to start)
@@ -56,9 +69,37 @@ data:
     - ✅ Pods with high restart history but currently Running - Only flag if currently failing
     - ✅ **If ALL pods in a namespace are Running with READY status, DO NOT report that service as having issues**
     - ✅ **A service is ONLY critical if it has NO running pods or if running pods are NOT ready**
-    - ❌ FailedToRetrieveImagePullSecret events - Transient ECR sync warnings, ignore if pods Running
 
-    ### 2. Node Health
+    ### 2. Recent Events (Last 2 Hours)
+
+    **WARNING: Events are HISTORICAL and may not reflect CURRENT pod status. ALWAYS verify current status first!**
+
+    ```bash
+    # Get recent events across all namespaces
+    kubectl get events --all-namespaces --sort-by='.lastTimestamp' | tail -100
+
+    # Filter for warnings and errors
+    kubectl get events --all-namespaces --field-selector type=Warning --sort-by='.lastTimestamp'
+    ```
+
+    **CRITICAL: Only use events to investigate pods that are CURRENTLY failing (NOT Running/Ready)**
+
+    **Focus on**:
+    - OOMKilled events (ONLY if pod is currently NOT Running)
+    - FailedScheduling (ONLY if pod is currently Pending)
+    - BackOff errors (ONLY if pod status is currently CrashLoopBackOff)
+    - Liveness/Readiness probe failures (ONLY if pod is currently NOT Ready)
+    - Volume mount issues (ONLY if pod is currently in error state)
+    - Image pull failures (ONLY if pod status is currently ImagePullBackOff)
+
+    **IMPORTANT - ALWAYS Ignore these benign warnings**:
+    - ❌ `FailedToRetrieveImagePullSecret` - Transient ECR sync warnings, **IGNORE if pods are currently Running**
+    - ❌ High restart counts on Running pods - **IGNORE, only flag if pods are currently in CrashLoop/Error state**
+    - ❌ Completed pods from CronJobs (mysql-backup, etc) - **IGNORE, these are successful completions**
+    - ❌ `BackOff pulling image` - **IGNORE if pod status is currently Running, only flag if currently ImagePullBackOff**
+    - ❌ Old events for pods that recovered - **IGNORE, current status = Running means HEALTHY**
+
+    ### 3. Node Health
 
     ```bash
     # Check node status
@@ -68,7 +109,7 @@ data:
     kubectl describe nodes
     ```
 
-    ### 3. Resource Usage
+    ### 4. Resource Usage
 
     ```bash
     # Check CPU and memory
@@ -76,7 +117,7 @@ data:
     kubectl top pods --all-namespaces
     ```
 
-    ### 4. PVC Status
+    ### 5. PVC Status
 
     ```bash
     # Check storage
