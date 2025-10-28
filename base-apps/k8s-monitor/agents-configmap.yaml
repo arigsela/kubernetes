@@ -161,15 +161,47 @@ data:
     4. **Determine severity**
     5. **Decide notification**
 
+    ## IMPORTANT: Include All Findings
+
+    **Always include ALL findings from k8s-analyzer, organized by severity**:
+    - **Critical Issues (SEV-1/SEV-2)**: Require immediate attention
+    - **Warnings and Observations (SEV-3/SEV-4)**: For context and awareness
+
+    This provides full context to help responders understand the complete cluster state.
+
+    ## Alert Deduplication
+
+    To prevent alert fatigue, check if similar issues were reported in recent cycles:
+
+    1. **Compare with previous cycle** (last 1 hour via logs/cycle_history.json)
+    2. **If SAME issues with SAME affected services**:
+       - First occurrence: Send full detailed notification
+       - Repeat occurrence (within 3 hours): Send brief update instead
+       - Still ongoing (after 3 hours): Send full alert again (escalation)
+
+    **When to send full alert**:
+    - New issues not seen in last cycle
+    - Escalation: Same issue but worse
+    - Time threshold: Same issue ongoing for >3 hours
+    - Service change: Different services affected
+
+    **When to send brief update**:
+    - Identical issues as last cycle
+    - Within 3 hours since last full alert
+    - No escalation in severity
+
     ## Output Format
 
     ```json
     {
       "severity": "SEV-1|SEV-2|SEV-3|SEV-4",
       "should_notify": true|false,
+      "notification_type": "full|brief_update",
       "business_impact": "description of user impact",
-      "affected_services": ["service1", "service2"],
+      "critical_services": ["service1", "service2"],
+      "warnings": ["service3: minor issue", "service4: expected behavior"],
       "recommended_actions": ["action1", "action2"],
+      "previous_alert_id": "INC-2025-10-28-001",
       "confidence": 0.85
     }
     ```
@@ -204,17 +236,42 @@ data:
     5. **Actions**: Specific kubectl commands or rollback steps
     6. **Timeline**: When issue started, deployment correlations
 
-    ## Example Message
+    ## Message Format Guidelines
+
+    **Include both critical issues AND warnings/context**:
+
+    1. **Critical Issues** 🔴: SEV-1/SEV-2 problems requiring immediate action
+    2. **Warnings & Context** ℹ️: SEV-3/SEV-4 observations for situational awareness
+
+    **Brief Update Format** (for repeated issues within 3 hours):
+    ```
+    🔄 **ALERT STATUS UPDATE**
+    **Previous Alert**: INC-2025-10-28-001 | **Time Since Last Full Alert**: 1 hour
+
+    **Status**: Same 2 issues still active
+    🔴 crash-test: Still in CrashLoopBackOff
+    🟠 route53-updater: Still ImagePullBackOff (15 days)
+
+    **Action Required**: Review remediation steps from previous alert
+    **Next Full Alert**: In 2 hours if unresolved
+    ```
+
+    ## Example Full Alert
 
     ```
     🔴 **CRITICAL: chores-tracker-backend Down**
 
     **Impact**: Customer-facing application unavailable (0/2 pods running)
 
-    **Details**:
+    **Critical Issues** 🔴:
     - All pods in CrashLoopBackOff
     - Error: "OOMKilled - memory limit exceeded"
     - Started: 5 minutes ago after deployment v5.9.0
+
+    **Warnings & Context** ℹ️:
+    - 🟢 cert-manager: Certificate renewal attempted, cert valid 60 days
+    - 🟢 vault: Pod restarted, requires manual unseal (expected)
+    - ✅ All other P0 services: Healthy and operational
 
     **Immediate Actions**:
     1. Check logs: `kubectl logs -n chores-tracker-backend <pod-name>`
