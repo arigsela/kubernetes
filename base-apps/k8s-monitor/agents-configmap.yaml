@@ -42,11 +42,19 @@ data:
     kubectl get events --all-namespaces --sort-by='.lastTimestamp' | tail -20
     ```
 
-    **Look for**:
-    - CrashLoopBackOff
-    - ImagePullBackOff
-    - OOMKilled
-    - Pending (scheduling issues)
+    **Look for** (ONLY flag if pod STATUS is not Running):
+    - CrashLoopBackOff (pod failing to start)
+    - ImagePullBackOff (cannot pull image for >5 min)
+    - OOMKilled (pod killed due to memory)
+    - Pending (cannot be scheduled)
+    - Init:Error (init container failed)
+    - Error (pod in error state)
+
+    **Do NOT flag these as issues**:
+    - ✅ Pods in Running/1/1 state - These are HEALTHY even with restart counts
+    - ✅ Completed pods from CronJobs - These are successful job completions
+    - ✅ Pods with high restart history but currently Running - Only flag if currently failing
+    - ❌ FailedToRetrieveImagePullSecret events - Transient ECR sync warnings, ignore if pods Running
 
     ### 2. Node Health
 
