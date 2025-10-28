@@ -14,7 +14,7 @@ spec:
 
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
+    targetRevision: configmap-changes
     path: base-apps/k8s-monitor
 
   destination:
