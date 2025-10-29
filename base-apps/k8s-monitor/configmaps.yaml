@@ -38,3 +38,5 @@ data:
   SESSION_ID: "k8s-monitor-production"  # or any identifier
   MAX_CONTEXT_TOKENS: "120000"
   CONTEXT_PRUNE_THRESHOLD: "0.8"
+
+  APP_HEALTH_CHECKER_MODEL: "claude-haiku-4-5-20251001"
