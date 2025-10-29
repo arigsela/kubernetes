@@ -165,18 +165,24 @@ data:
        - Runs kubectl commands
        - Checks for crashes, errors, resource issues
        - Returns structured findings
-    3. **escalation-manager** (Claude Haiku) assesses severity
+    3. **app-health-checker** (Claude Haiku) - CONDITIONAL (only if pods healthy)
+       - Verifies application-layer health for chores-tracker API
+       - Tests public health endpoints (liveness, readiness, detailed)
+       - Validates authentication system (JWT login)
+       - Tests business logic (chores endpoint)
+       - Returns structured findings (healthy/degraded/critical)
+    4. **escalation-manager** (Claude Haiku) assesses severity
        - Maps findings to P0/P1/P2/P3 services
        - Checks against known issues
        - Determines if escalation needed
-    4. **github-reviewer** (Claude Haiku) - if issues found
+    5. **github-reviewer** (Claude Haiku) - if issues found
        - Searches recent commits
        - Correlates with deployment timing
        - Identifies possible root causes
-    5. **slack-notifier** (Claude Haiku) - if needed
+    6. **slack-notifier** (Claude Haiku) - if needed
        - Formats alert message
        - Sends to appropriate channel
-    6. **Orchestrator** saves cycle report with results
+    7. **Orchestrator** saves cycle report with results
 
     ## Customization Examples
 
