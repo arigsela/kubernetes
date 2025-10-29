@@ -40,7 +40,7 @@ spec:
       containers:
         - name: k8s-monitor
           # monitor:v0.0.3 is working fine
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/k8s-monitor:v0.0.19
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/k8s-monitor:v0.0.20
 
           # Command (use default from Dockerfile unless overriding)
           command: ["python", "-m"]
