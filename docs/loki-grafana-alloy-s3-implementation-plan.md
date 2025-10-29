@@ -1,9 +1,9 @@
 # Grafana Observability Stack: Loki (Logs) + Prometheus (Metrics) + Alloy - Implementation Plan
 
-**Document Version:** 3.2
+**Document Version:** 3.3
 **Created:** 2025-10-16
-**Last Updated:** 2025-10-17
-**Status:** Phase 1 & 1.5 Complete - Ready for Phase 2 (Loki Deployment)
+**Last Updated:** 2025-10-29
+**Status:** Phase 1, 1.5 & 2 Complete - Ready for Phase 2.5 (Prometheus Deployment)
 **Cluster:** K3s Homelab
 **Stack:** Complete Observability (Logs + Metrics)
 
@@ -396,7 +396,7 @@ vault write auth/kubernetes/role/logging \
 |-------|-------------|----------|------------|
 | **Phase 1** | **Crossplane AWS Provider Setup (GitOps)** | **1.5 hours** | ✅ **5/5 tasks** |
 | **Phase 1.5** | **AWS Infrastructure via Crossplane (GitOps)** | **1 hour** | ✅ **6/6 tasks** |
-| Phase 2 | Loki Deployment | 1 hour | ⬜ 0/5 tasks |
+| **Phase 2** | **Loki Deployment** | **1 hour** | ✅ **4/5 tasks** |
 | **Phase 2.5** | **Prometheus Deployment** | **45 min** | ⬜ **0/3 tasks** |
 | Phase 3 | Grafana Alloy Deployment (Enhanced) | 1 hour | ⬜ 0/4 tasks |
 | Phase 4 | Grafana Integration (Complete) | 30 min | ⬜ 0/4 tasks |
@@ -404,8 +404,8 @@ vault write auth/kubernetes/role/logging \
 | Phase 6 | Production Optimization | 30 min | ⬜ 0/4 tasks |
 
 **Total Estimated Time:** 7.25 hours (one-time investment for full GitOps automation)
-**Overall Progress:** 29% (11/38 tasks completed)
-**Phases Complete:** Phase 1 ✅, Phase 1.5 ✅
+**Overall Progress:** 39% (15/38 tasks completed)
+**Phases Complete:** Phase 1 ✅, Phase 1.5 ✅, Phase 2 🔄 (pending PR merge & deployment verification)
 
 ---
 
@@ -887,9 +887,9 @@ aws s3 ls s3://loki-logs-homelab --region us-east-1
 
   **No action needed - skip to Task 2.2!**
 
-- [ ] **Task 2.2:** Create Loki ConfigMap
+- [x] **Task 2.2:** Create Loki ConfigMap ✅ (Completed 2025-10-29)
 
-  Create file: `base-apps/logging/loki-config.yaml`
+  Created file: `base-apps/logging/loki-config.yaml`
   ```yaml
   apiVersion: v1
   kind: ConfigMap
@@ -1001,9 +1001,9 @@ aws s3 ls s3://loki-logs-homelab --region us-east-1
           dir: /loki/wal
   ```
 
-- [ ] **Task 2.3:** Create Loki Deployment
+- [x] **Task 2.3:** Create Loki Deployment ✅ (Completed 2025-10-29)
 
-  Create file: `base-apps/logging/loki-deployment.yaml`
+  Created file: `base-apps/logging/loki-deployment.yaml`
   ```yaml
   apiVersion: v1
   kind: ServiceAccount
@@ -1125,9 +1125,9 @@ aws s3 ls s3://loki-logs-homelab --region us-east-1
       app: loki
   ```
 
-- [ ] **Task 2.4:** Create ArgoCD Application for Loki
+- [x] **Task 2.4:** Create ArgoCD Application for Loki ✅ (Completed 2025-10-29)
 
-  Create file: `base-apps/loki.yaml`
+  Created file: `base-apps/loki.yaml`
   ```yaml
   apiVersion: argoproj.io/v1alpha1
   kind: Application
@@ -1189,11 +1189,45 @@ kubectl exec -n logging deployment/loki -- wget -qO- http://localhost:3100/metri
 ```
 
 #### Success Criteria
-- ✅ Loki pod is Running
-- ✅ Loki `/ready` endpoint returns HTTP 200
-- ✅ No S3 authentication errors in logs
-- ✅ S3 bucket shows objects being created
-- ✅ ExternalSecret synced successfully
+- ⬜ Loki pod is Running (pending PR merge)
+- ⬜ Loki `/ready` endpoint returns HTTP 200 (pending PR merge)
+- ⬜ No S3 authentication errors in logs (pending PR merge)
+- ⬜ S3 bucket shows objects being created (pending PR merge)
+- ✅ ExternalSecret synced successfully (completed in Phase 1.5)
+
+#### Phase 2 Completion Summary (2025-10-29)
+
+**What Was Accomplished:**
+- ✅ Created Loki ConfigMap with S3 storage configuration
+- ✅ Created Loki Deployment with proper security context and resource limits
+- ✅ Created Loki Service for HTTP (3100) and gRPC (9096) endpoints
+- ✅ Created ArgoCD Application for GitOps deployment
+- ✅ Committed and pushed to `finish-loki` branch
+
+**Key Technical Details:**
+1. **S3 Integration**: Uses bucket `asela-chores-loki-logs-20251017` created by Crossplane
+2. **Credentials**: References `loki-s3-credentials` secret with `username`/`password` keys
+3. **Configuration**: 30-day retention, Snappy compression, TSDB v13 schema
+4. **Security**: Non-root container (user 10001), fsGroup 10001
+5. **Resources**: 512Mi-1Gi memory, 200m-500m CPU
+
+**Files Created:**
+```
+✅ base-apps/logging/loki-config.yaml (108 lines)
+✅ base-apps/logging/loki-deployment.yaml (110 lines)
+✅ base-apps/loki.yaml (20 lines)
+```
+
+**Next Steps:**
+1. Create and merge PR from `finish-loki` branch → `main`
+2. Wait for ArgoCD to sync the `loki` application
+3. Verify Loki pod deployment and S3 connectivity
+4. Run testing commands to validate endpoints
+5. Proceed to Phase 2.5: Prometheus Deployment
+
+**Branch**: `finish-loki`
+**PR URL**: https://github.com/arigsela/kubernetes/pull/new/finish-loki
+**Status**: Ready for PR creation and merge
 
 ---
 
