@@ -115,8 +115,6 @@ data:
     loki.write "loki" {
       endpoint {
         url = "http://loki.logging.svc.cluster.local:3100/loki/api/v1/push"
-        batch_wait = "1s"
-        batch_size = 1048576 // 1MB
       }
 
       external_labels = {
@@ -210,7 +208,7 @@ data:
 
     // Relabel nodes
     discovery.relabel "nodes" {
-      targets = discovery.kubernetes.nodes.output
+      targets = discovery.kubernetes.nodes.targets
 
       rule {
         source_labels = ["__meta_kubernetes_node_name"]
