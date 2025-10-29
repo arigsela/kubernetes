@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mysql-data-cleanup-v2
+  namespace: mysql
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      hostNetwork: true
+      hostPID: true
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker-2
+      containers:
+      - name: cleanup
+        image: busybox:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Cleaning MySQL data directory on k3s-worker-2..."
+          TARGET_DIR="/host/var/lib/rancher/k3s/storage/pvc-25efaace-ebaa-42ce-ab97-6b2dcff688c5_mysql_mysql-pvc-v2"
+
+          if [ -d "$TARGET_DIR" ]; then
+            echo "Found directory: $TARGET_DIR"
+            ls -la "$TARGET_DIR"
+
+            echo "Removing all contents..."
+            rm -rf "$TARGET_DIR"/*
+            rm -rf "$TARGET_DIR"/.*  2>/dev/null || true
+
+            echo "Cleanup complete. Directory contents:"
+            ls -la "$TARGET_DIR"
+          else
+            echo "Directory not found: $TARGET_DIR"
+          fi
+        volumeMounts:
+        - name: host-storage
+          mountPath: /host/var/lib/rancher/k3s/storage
+        securityContext:
+          privileged: true
+      volumes:
+      - name: host-storage
+        hostPath:
+          path: /var/lib/rancher/k3s/storage
+          type: Directory
