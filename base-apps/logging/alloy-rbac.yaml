@@ -20,6 +20,10 @@ rules:
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
   resources:
+  - pods/log
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources:
   - configmaps
   verbs: ["get"]
 - nonResourceURLs: ["/metrics"]
