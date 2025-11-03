@@ -13,6 +13,15 @@ spec:
       labels:
         app: mysql
     spec:
+      initContainers:
+      - name: init-permissions
+        image: busybox:latest
+        command: ['sh', '-c', 'chown -R 999:999 /var/lib/mysql && chmod -R 755 /var/lib/mysql']
+        volumeMounts:
+        - name: mysql-persistent-storage
+          mountPath: /var/lib/mysql
+        securityContext:
+          runAsUser: 0  # Run as root to change ownership
       containers:
       - name: mysql
         image: mysql:8.4.0-oraclelinux8
