@@ -1,9 +1,9 @@
 # Kubernetes Cluster Phased Deployment Implementation Plan
 
-**Status**: Phase 1 Complete ✅
+**Status**: Phase 2 Complete ✅
 **Last Updated**: 2025-11-03
 **Branch**: maintenance-mode
-**Overall Progress**: 33% (Phase 1 of 5 complete)
+**Overall Progress**: 40% (Phase 2 of 6 complete)
 
 ---
 
@@ -179,16 +179,18 @@ kubectl delete helmchart traefik traefik-crd -n kube-system
 
 ---
 
-### Phase 2: Cloud Integration & Secrets (IN PROGRESS 🔄)
+### Phase 2: Cloud Integration & Secrets (COMPLETED ✅)
 **Goal**: Enable cloud provider integration and secret synchronization
-**Status**: 🔄 Prerequisites Complete - Ready for Application Deployment
+**Status**: ✅ Complete
+**Duration**: ~1 hour
 **Dependencies**: Phase 1 (Vault must be healthy)
 
 #### Applications
 1. **crossplane** - Cloud resource provisioning
 2. **crossplane-aws-provider** - AWS provider for Crossplane
 3. **crossplane-config** - Crossplane configuration
-4. **ecr-auth** - ECR authentication helper
+4. **external-secrets** - External Secrets Operator for Vault integration
+5. **ecr-auth** - ECR authentication helper
 
 #### Prerequisites
 - [x] Vault fully operational and unsealed ✅
@@ -208,19 +210,45 @@ kubectl delete helmchart traefik traefik-crd -n kube-system
   - Role `ecr-credentials-sync`: bound to `ecr-credentials-sync` SA in `kube-system` namespace
 
 #### Implementation Tasks
-- [ ] Enable crossplane.yaml (rename from .disabled)
-- [ ] Wait for Crossplane CRDs to be installed
-- [ ] Enable crossplane-aws-provider.yaml
-- [ ] Configure AWS provider with credentials
-- [ ] Enable crossplane-config.yaml
-- [ ] Enable ecr-auth.yaml for ECR image pulling
-- [ ] Verify all pods healthy
-- [ ] Test Crossplane by creating a simple AWS resource
+- [x] Enable crossplane.yaml (renamed from .disabled)
+- [x] Wait for Crossplane CRDs to be installed
+- [x] Enable crossplane-aws-provider.yaml
+- [x] Configure AWS provider with credentials
+- [x] Enable crossplane-config.yaml
+- [x] Deploy External Secrets Operator (v0.11.0)
+- [x] Enable ecr-auth.yaml for ECR image pulling
+- [x] Fix duplicate SecretStore definition in ecr-auth
+- [x] Verify all pods healthy
+- [x] Verify ExternalSecret syncing from Vault
 
 #### Success Criteria
-- Crossplane controller running and healthy
-- AWS provider authenticated and ready
-- ECR authentication working for image pulls
+- [x] Crossplane controller running and healthy
+- [x] AWS provider authenticated and ready
+- [x] External Secrets Operator deployed and functional
+- [x] ECR authentication working for image pulls
+- [x] ExternalSecrets syncing from Vault successfully
+
+#### Phase 2 Final Status
+
+| Application | Sync Status | Health Status | Pods Ready | Namespace |
+|------------|-------------|---------------|------------|-----------|
+| crossplane | Synced | Healthy | 1/1 | crossplane-system |
+| crossplane-aws-provider | Synced | Healthy | 2/2 | crossplane-system |
+| crossplane-config | Synced | Healthy | - | crossplane-system |
+| external-secrets | Synced | Healthy | 3/3 | external-secrets |
+| ecr-auth | Synced | Healthy | - | kube-system |
+
+**External Secrets Resources**:
+- ExternalSecret `ecr-auth-secrets`: SecretSynced=True, Ready=True
+- SecretStore `vault-backend`: Status=Valid, Ready=True
+- Secret `aws-credentials` created with AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+- CronJob `ecr-credentials-sync` scheduled hourly (0 * * * *)
+
+**Issues Resolved During Phase 2**:
+1. **Missing External Secrets Operator**: Discovered ECR auth required External Secrets Operator CRDs. Created `base-apps/external-secrets.yaml` deploying Helm chart v0.11.0.
+2. **Duplicate SecretStore Warning**: SecretStore was defined in both `external-secret.yaml` and `secret-store.yaml`. Removed duplicate from `external-secret.yaml`, keeping single source of truth in `secret-store.yaml`.
+
+**Phase 2 Complete** ✅
 
 ---
 
@@ -473,6 +501,22 @@ Current infra node: **k3s-worker-1**
 **Solution**: Removed Traefik HelmCharts
 **Impact**: No default k3s ingress controller, nginx-ingress is now primary
 
+### Issue 4: Missing External Secrets Operator
+**Status**: ✅ Resolved
+**Problem**: ECR auth application couldn't sync - ExternalSecret and SecretStore CRDs missing
+**Root Cause**: External Secrets Operator not deployed, only ecr-auth application existed
+**Solution**: Created `base-apps/external-secrets.yaml` deploying Helm chart v0.11.0 from https://charts.external-secrets.io
+**Impact**: Enabled Vault secret synchronization for all applications
+**Files**: `base-apps/external-secrets.yaml` (created), `base-apps/ecr-auth/external-secret.yaml` (now functional)
+
+### Issue 5: Duplicate SecretStore Definition
+**Status**: ✅ Resolved
+**Problem**: ArgoCD warning "Resource external-secrets.io/SecretStore/kube-system/vault-backend appeared 2 times"
+**Root Cause**: SecretStore defined in both `external-secret.yaml` and `secret-store.yaml`
+**Solution**: Removed duplicate SecretStore from `external-secret.yaml:1-18`, kept canonical definition in `secret-store.yaml`
+**Impact**: Cleaner resource organization, follows separation of concerns pattern
+**Files**: `base-apps/ecr-auth/external-secret.yaml` (modified)
+
 ---
 
 ## Rollback Procedures
@@ -526,16 +570,16 @@ git push origin maintenance-mode
 
 ## Progress Tracking
 
-**Phases Completed**: 1 / 6
-**Applications Enabled**: 3 / 19
+**Phases Completed**: 2 / 6
+**Applications Enabled**: 8 / 19
 **Applications Created**: 13
-**Issues Resolved**: 3 (Vault affinity, cert-manager CRDs, nginx-ingress ports)
+**Issues Resolved**: 5 (Vault affinity, cert-manager CRDs, nginx-ingress ports, External Secrets Operator missing, duplicate SecretStore)
 
 ### Phase Completion Dates
 - Phase 0 (Baseline): 2025-11-03 ✅
 - Phase 1 (Core Infra): 2025-11-03 ✅
-- Phase 2 (Cloud Integration): TBD
-- Phase 3 (External Secrets): TBD
+- Phase 2 (Cloud Integration & Secrets): 2025-11-03 ✅
+- Phase 3 (External Secrets & TLS): TBD
 - Phase 4 (Data Layer): TBD
 - Phase 5 (Observability): TBD
 - Phase 6 (Applications): TBD
