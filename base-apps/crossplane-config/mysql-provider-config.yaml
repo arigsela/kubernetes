@@ -7,6 +7,6 @@ spec:
   credentials:
     source: MySQLConnectionSecret
     connectionSecretRef:
-      namespace: mysql
+      namespace: crossplane-system
       name: mysql-credentials
-  tls: "skip-verify"
+  tls: preferred
