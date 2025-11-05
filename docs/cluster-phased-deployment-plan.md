@@ -1,9 +1,9 @@
 # Kubernetes Cluster Phased Deployment Implementation Plan
 
-**Status**: Phase 4 Complete ✅
-**Last Updated**: 2025-11-04
+**Status**: Phase 6 In Progress 🔄
+**Last Updated**: 2025-11-05
 **Branch**: maintenance-mode
-**Overall Progress**: 67% (Phase 4 of 6 complete)
+**Overall Progress**: 73% (Phase 6 started - nginx-ingress fixed, first application deployed)
 
 ---
 
@@ -468,9 +468,10 @@ spec:
 
 ---
 
-### Phase 6: Application Workloads (PENDING ⬜)
+### Phase 6: Application Workloads (IN PROGRESS 🔄)
 **Goal**: Deploy application services
-**Status**: ⬜ Not Started
+**Status**: 🔄 In Progress
+**Started**: 2025-11-05
 **Dependencies**: All previous phases (databases, ingress, secrets, monitoring)
 
 #### Applications
@@ -482,7 +483,8 @@ spec:
 6. **whoami-test** - Test application
 
 #### Prerequisites
-- [ ] Databases (MySQL for chores-tracker) healthy
+- [x] Databases (MySQL RDS for chores-tracker) healthy ✅
+- [x] nginx-ingress controller operational ✅
 - [ ] Vault secrets configured for each application
 - [ ] SecretStore created in each application namespace
 - [ ] ExternalSecrets created for database credentials
@@ -490,23 +492,82 @@ spec:
 - [ ] TLS certificates available
 
 #### Implementation Tasks
-- [ ] Enable chores-tracker-backend.yaml
-- [ ] Verify database connectivity
+
+##### 1. Fix nginx-ingress Controller Deployment (COMPLETED ✅)
+**Issue**: nginx-ingress pods couldn't schedule due to Traefik port conflicts
+**Status**: ✅ Resolved (2025-11-05)
+
+**Problem Details**:
+- nginx-ingress controller DaemonSet pods stuck in Pending
+- ArgoCD webhook validation failing: "failed calling webhook 'validate.nginx.ingress.kubernetes.io': no endpoints available"
+- Root cause: K3s's built-in Traefik occupying ports 80/443
+
+**Solution Implemented**:
+- [x] Removed K3s Traefik deployment and service (user requirement: "we dont want traefik, we want nginx")
+- [x] Deleted nginx-ingress HelmChart to trigger reinstall
+- [x] ArgoCD auto-recreated HelmChart via GitOps
+- [x] Verified all 4 nginx-ingress controller pods Running (1 per node)
+- [x] ValidatingWebhookConfiguration recreated successfully
+- [x] Verified ArgoCD application showing Healthy/Synced
+
+**Commands Used**:
+```bash
+# Remove Traefik
+kubectl delete deployment traefik -n kube-system
+kubectl delete svc traefik -n kube-system
+
+# Trigger nginx-ingress reinstall
+kubectl delete helmchart ingress-nginx -n kube-system
+# ArgoCD automatically recreates it
+```
+
+**Result**:
+- All 4 nginx-ingress controller pods: Running and Ready (1/1)
+- Ports 80/443 now available for nginx-ingress
+- ArgoCD sync working without webhook errors
+- Traefik completely removed from cluster ✅
+
+##### 2. Deploy chores-tracker-backend (COMPLETED ✅)
+**Status**: ✅ Complete (2025-11-05)
+
+- [x] Enable chores-tracker-backend.yaml (renamed from .disabled)
+- [x] Application synced successfully via ArgoCD
+- [x] Deployment created: 2 pods running
+- [x] Service created: ClusterIP on port 80
+- [x] Health checks passing (HTTP 200 OK on /health endpoint)
+- [x] Pods scheduled successfully across cluster
+
+**Pod Status**:
+- chores-tracker-backend-5bb4ccd766-thlk7: Running (1/1)
+- chores-tracker-backend-5bb4ccd766-wgmck: Running (1/1)
+
+**Service Details**:
+- Name: chores-tracker-backend
+- Type: ClusterIP
+- ClusterIP: 10.43.1.201
+- Port: 80/TCP
+- Namespace: chores-tracker-backend
+
+##### 3. Remaining Implementation Tasks
 - [ ] Enable chores-tracker-frontend.yaml
+- [ ] Verify frontend connectivity to backend
 - [ ] Enable chores-tracker.yaml (if separate component)
+- [ ] Configure Ingress resources for external access
 - [ ] Test chores-tracker via Ingress
 - [ ] Enable n8n.yaml
-- [ ] Configure n8n workflows
+- [ ] Configure n8n database and workflows
 - [ ] Enable oncall-agent.yaml
 - [ ] Enable whoami-test.yaml for ingress testing
 - [ ] Verify all applications healthy
 
 #### Success Criteria
-- All application pods running
-- Applications accessible via Ingress
-- TLS certificates working
-- Database connectivity confirmed
-- No errors in logs
+- [x] nginx-ingress controller fully operational ✅
+- [x] chores-tracker-backend pods running ✅
+- [x] Backend health checks passing ✅
+- [ ] Applications accessible via Ingress
+- [ ] TLS certificates working
+- [ ] Frontend-to-backend connectivity confirmed
+- [ ] No errors in application logs
 
 ---
 
@@ -662,6 +723,27 @@ Current infra node: **k3s-worker-1**
 **Impact**: Database resource successfully created on RDS (READY=True, SYNCED=True)
 **File**: `base-apps/crossplane-mysql/provider-config.yaml`
 
+### Issue 9: nginx-ingress Controller Not Deploying After Traefik Removal
+**Status**: ✅ Resolved (Phase 6 - 2025-11-05)
+**Problem**: nginx-ingress HelmChart existed and showed as deployed, but no pods were running in ingress-nginx namespace
+**Root Cause**: Helm release was deployed before Traefik removal, but actual pods were deleted during Traefik cleanup. HelmChart status showed "Complete" but resources were missing.
+**Investigation**:
+- HelmChart `ingress-nginx` existed in kube-system namespace
+- Helm install job showed "Complete" status from 33 hours ago
+- No resources existed in ingress-nginx namespace
+- ArgoCD showed application as Healthy/Synced but ValidatingWebhookConfiguration had no endpoints
+**Solution**:
+- Deleted HelmChart to trigger fresh installation: `kubectl delete helmchart ingress-nginx -n kube-system`
+- ArgoCD automatically recreated HelmChart via GitOps (selfHeal enabled)
+- New Helm install job created nginx-ingress resources successfully
+- All 4 DaemonSet pods deployed and running
+**Impact**:
+- nginx-ingress controller fully operational with 4/4 pods running
+- ValidatingWebhookConfiguration recreated and functional
+- ArgoCD can now sync Ingress resources without webhook errors
+- Ports 80/443 available for nginx-ingress (Traefik fully removed)
+**Files**: `base-apps/nginx-ingress.yaml`, `base-apps/nginx-ingress/nginx-ingress-controller.yaml`
+
 ---
 
 ## Rollback Procedures
@@ -715,10 +797,10 @@ git push origin maintenance-mode
 
 ## Progress Tracking
 
-**Phases Completed**: 4 / 6
-**Applications Enabled**: 9 / 19 (added crossplane-mysql)
+**Phases Completed**: 4 / 6 (Phase 6 in progress)
+**Applications Enabled**: 10 / 19 (added chores-tracker-backend)
 **Applications Created**: 13
-**Issues Resolved**: 8 (Vault affinity, cert-manager CRDs, nginx-ingress ports, External Secrets Operator missing, duplicate SecretStore, duplicate ProviderConfig, wrong credentials namespace, MySQL connection refused)
+**Issues Resolved**: 9 (Vault affinity, cert-manager CRDs, nginx-ingress ports, External Secrets Operator missing, duplicate SecretStore, duplicate ProviderConfig, wrong credentials namespace, MySQL connection refused, nginx-ingress not deploying after Traefik removal)
 
 ### Phase Completion Dates
 - Phase 0 (Baseline): 2025-11-03 ✅
@@ -727,7 +809,7 @@ git push origin maintenance-mode
 - Phase 3 (External Secrets & TLS): TBD (skipped - functionality covered in Phase 2)
 - Phase 4 (Data Layer): 2025-11-04 ✅
 - Phase 5 (Observability): TBD
-- Phase 6 (Applications): TBD
+- Phase 6 (Applications): Started 2025-11-05 (in progress)
 
 ---
 
