@@ -10,3 +10,4 @@ terraform/roots/asela-cluster/.terraform/providers/registry.terraform.io/hashico
 terraform/roots/asela-cluster/.terraform/providers/registry.terraform.io/hashicorp/helm/2.16.1/linux_amd64/terraform-provider-helm_v2.16.1_x5
 terraform/roots/asela-cluster/.terraform/providers/registry.terraform.io/hashicorp/kubernetes/2.34.0/linux_amd64/LICENSE.txt
 terraform/roots/asela-cluster/.terraform/providers/registry.terraform.io/hashicorp/kubernetes/2.34.0/linux_amd64/terraform-provider-kubernetes_v2.34.0_x5
+terraform/roots/asela-cluster/.terraform/
