@@ -24,6 +24,10 @@ spec:
     spec:
       restartPolicy: OnFailure  # Retry on failure, not Never
 
+      # ECR credentials for pulling the image
+      imagePullSecrets:
+      - name: ecr-registry
+
       containers:
       - name: migration
         # Use the same image as the main backend deployment
