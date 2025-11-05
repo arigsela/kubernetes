@@ -46,23 +46,17 @@ spec:
             imagePullPolicy: Always
 
             env:
-            # MySQL connection details
+            # MySQL connection details (RDS)
             - name: MYSQL_HOST
-              value: "mysql.mysql.svc.cluster.local"
+              value: "asela-cluster-mysql.c9ke2o0oe6ir.us-east-2.rds.amazonaws.com"
             - name: MYSQL_PORT
               value: "3306"
             - name: MYSQL_USER
-              value: "root"
+              value: "mysqladmin"
             - name: MYSQL_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: mysql-credentials
-                  key: password
+              value: "271h0lDb6Nhhmh1("
             - name: MYSQL_DATABASE
-              valueFrom:
-                secretKeyRef:
-                  name: mysql-credentials
-                  key: database
+              value: "chores-db"
 
             # AWS credentials (from Vault via ExternalSecret)
             - name: AWS_ACCESS_KEY_ID
