@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: maintenance-mode
+    targetRevision: main
     path: base-apps/loki-aws-infrastructure
   destination:
     server: https://kubernetes.default.svc
