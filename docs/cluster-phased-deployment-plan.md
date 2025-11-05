@@ -548,9 +548,64 @@ kubectl delete helmchart ingress-nginx -n kube-system
 - Port: 80/TCP
 - Namespace: chores-tracker-backend
 
-##### 3. Remaining Implementation Tasks
+##### 3. Restore MySQL Database (COMPLETED ✅)
+**Status**: ✅ Complete (2025-11-05)
+
+**Issue**:
+- chores-db database was empty after RDS migration
+- Application required historical data to be restored from backup
+
+**Backup Details**:
+- Backup file: `backups/mysql_backup_20251029_020017.sql`
+- Created: October 29, 2025 02:00 AM
+- Size: ~500KB containing full application schema and data
+
+**Technical Challenge**:
+- Backup contained MySQL system tables (mysql.user, mysql.db, mysql.tables_priv)
+- These tables would override existing RDS mysqladmin user credentials
+- Standard `mysql < backup.sql` restore would fail and corrupt database access
+
+**Solution Implemented**:
+
+1. **Created Filtered Backup**:
+   - Extracted only application database (chores-db) from full backup
+   - Excluded all MySQL system tables to preserve RDS credentials
+   - Filtered backup contained only 7 application tables
+
+2. **Prepared Kubernetes Restore Job**:
+   - Created ConfigMap with filtered SQL statements
+   - Deployed restore job pod with MariaDB 10.6 image
+   - Job had service account access to database credentials
+
+3. **Executed Restore with Foreign Key Handling**:
+   - Used `SET FOREIGN_KEY_CHECKS=0` to handle table dependencies
+   - Tables restored in proper order for referential integrity
+   - Applied after restore: `SET FOREIGN_KEY_CHECKS=1`
+
+4. **Data Restored Successfully**:
+   - **8 users**: asela, diana, Makoto, Eli (family members) + 4 monitoring/admin users
+   - **2 chores**: test health check chores
+   - **2 families**: "Sela family" and "Monitoring & Health Checks"
+   - **All related tables**: activities, alembic_version, chore_assignments, reward_adjustments, families, users, chores
+
+**Verification**:
+- [x] Database queries confirmed all data present and intact
+- [x] Schema validation passed
+- [x] Application able to query all tables successfully
+- [x] No referential integrity issues
+
+**Follow-up Optimization** (applied same day):
+- Reduced liveness probe delay from 300s to 30s for faster pod readiness
+- Reduced startup probe delay from 360s to 60s for quicker application availability
+- Pods now reach Ready state in ~2 minutes instead of 6-7 minutes
+
+**Related Configuration Files**:
+- `base-apps/chores-tracker-backend/deployments.yaml` (health probe settings)
+- Backup stored in `backups/mysql_backup_20251029_020017.sql` (version control)
+
+##### 4. Remaining Implementation Tasks
 - [ ] Enable chores-tracker-frontend.yaml
-- [ ] Verify frontend connectivity to backend
+- [ ] Verify frontend connectivity to backend (database now restored with application data)
 - [ ] Enable chores-tracker.yaml (if separate component)
 - [ ] Configure Ingress resources for external access
 - [ ] Test chores-tracker via Ingress
