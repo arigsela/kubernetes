@@ -3,7 +3,7 @@
 **Status**: Phase 6 In Progress 🔄
 **Last Updated**: 2025-11-05
 **Branch**: maintenance-mode
-**Overall Progress**: 73% (Phase 6 started - nginx-ingress fixed, first application deployed)
+**Overall Progress**: 83% (Phase 5 complete - observability deployed, Phase 6 in progress)
 
 ---
 
@@ -434,37 +434,202 @@ spec:
 
 ---
 
-### Phase 5: Observability (PENDING ⬜)
+### Phase 5: Observability (COMPLETED ✅)
 **Goal**: Enable logging and monitoring infrastructure
-**Status**: ⬜ Not Started
-**Dependencies**: Phase 1 (nginx-ingress for dashboards), Phase 2 (AWS S3 for Loki)
+**Status**: ✅ Complete (Core stack deployed, k8s-monitor disabled pending secrets)
+**Duration**: ~1 hour
+**Started**: 2025-11-05
+**Completed**: 2025-11-05
+**Dependencies**: Phase 1 (nginx-ingress for dashboards), Phase 2 (AWS S3 for Loki, Crossplane)
 
 #### Applications
-1. **logging** - Logging infrastructure (likely Promtail/Loki)
-2. **loki-aws-infrastructure** - Loki with S3 backend
-3. **k8s-monitor** - Kubernetes monitoring (likely Prometheus/Grafana)
+1. **logging** - Loki, Prometheus, and Alloy (log collection DaemonSet)
+2. **loki-aws-infrastructure** - AWS resources for Loki S3 backend (bucket, IAM, lifecycle policies)
+3. **k8s-monitor** - AI-powered Kubernetes monitoring agent (DISABLED - pending Vault secrets)
 
 #### Prerequisites
-- [ ] S3 bucket created for Loki storage (via Crossplane or manual)
-- [ ] AWS credentials configured for Loki
-- [ ] Ingress available for Grafana dashboard
-- [ ] Storage for Prometheus metrics
+- [x] S3 bucket created for Loki storage via Crossplane ✅
+- [x] AWS credentials configured for Loki ✅
+- [x] Crossplane AWS providers healthy ✅
+- [ ] Ingress available for Grafana dashboard (pending future deployment)
+- [x] Storage for Prometheus metrics (using in-cluster storage) ✅
 
 #### Implementation Tasks
-- [ ] Enable loki-aws-infrastructure.yaml
-- [ ] Verify Loki can write to S3
-- [ ] Enable logging.yaml (Promtail)
-- [ ] Verify log collection working
-- [ ] Enable k8s-monitor.yaml
-- [ ] Access Grafana dashboard via Ingress
-- [ ] Import default Kubernetes dashboards
-- [ ] Configure alerting rules
+
+##### 1. Enable loki-aws-infrastructure Application (COMPLETED ✅)
+**Status**: ✅ Complete
+
+- [x] Renamed `base-apps/loki-aws-infrastructure.yaml.disabled` to `.yaml`
+- [x] Committed and pushed changes to GitHub
+- [x] ArgoCD synced application automatically
+- [x] Verified application Synced and Healthy
+
+**AWS Resources Provisioned via Crossplane**:
+- **S3 Bucket**: `asela-loki-logs` (us-east-2)
+  - Encryption: AES256
+  - Versioning: Enabled
+  - Lifecycle Policy: Delete logs after 30 days
+  - Public Access: Blocked
+- **IAM User**: `loki-s3-user`
+  - Purpose: Loki authentication to S3
+  - Permissions: PutObject, GetObject, ListBucket, DeleteObject on asela-loki-logs
+- **IAM Policy**: `loki-s3-access-policy`
+  - Attached to loki-s3-user
+  - Scoped to asela-loki-logs bucket only
+
+**Crossplane Resources Status**:
+- Bucket: READY=True, SYNCED=True ✅
+- IAM User: READY=True, SYNCED=True ✅
+- IAM Policy: READY=True, SYNCED=True ✅
+- UserPolicyAttachment: READY=True, SYNCED=True ✅
+
+##### 2. Enable logging Application (COMPLETED ✅)
+**Status**: ✅ Complete
+
+- [x] Renamed `base-apps/logging.yaml.disabled` to `.yaml`
+- [x] Committed and pushed changes
+- [x] ArgoCD synced application
+- [x] Verified all pods Running and Healthy
+
+**Deployed Components**:
+1. **Loki** (Log Aggregation System)
+   - Version: 3.3.1
+   - Deployment: 1 replica (single pod)
+   - Storage: S3 backend at s3://asela-loki-logs
+   - Retention: 30 days (enforced by S3 lifecycle policy)
+   - API: http://loki.logging.svc.cluster.local:3100
+
+2. **Prometheus** (Metrics Collection)
+   - Version: v3.1.0
+   - Deployment: 1 replica
+   - Scrape Interval: 15s
+   - Storage: In-cluster persistent volume
+   - API: http://prometheus.logging.svc.cluster.local:9090
+   - Targets: 25+ active scrape targets
+     - kubernetes-nodes (3 worker nodes)
+     - kubernetes-pods (cert-manager, crossplane providers, prometheus)
+     - kubernetes-apiservers
+     - kubernetes-service-endpoints (CoreDNS)
+
+3. **Alloy** (Log Collection Agent)
+   - Deployment: DaemonSet (1 pod per node)
+   - Pods: 4/4 Running (master + 3 workers)
+   - Function: Collects logs from all pods, forwards to Loki
+   - Successor to: Promtail
+
+**Pod Status**:
+- loki-65f558cbd6-9fl45: Running (1/1) in logging namespace
+- prometheus-5bc8bfdc9-7qzp7: Running (1/1) in logging namespace
+- alloy-xxxxx (4 pods): Running (1/1) on each node
+
+##### 3. Enable k8s-monitor Application (DISABLED ⚠️)
+**Status**: ⚠️ Disabled (pending Vault secret population)
+
+**Initial Deployment Attempt**:
+- [x] Renamed `base-apps/k8s-monitor.yaml.disabled` to `.yaml`
+- [x] Committed and pushed changes
+- [x] ArgoCD synced application
+- [x] Created Vault Kubernetes auth role for k8s-monitor namespace
+- [x] Created Vault policy for k8s-monitor secret access
+
+**Vault Configuration Created**:
+```bash
+# Created Kubernetes auth role
+vault write auth/kubernetes/role/k8s-monitor \
+    bound_service_account_names=default \
+    bound_service_account_namespaces=k8s-monitor \
+    policies=k8s-monitor \
+    ttl=1h
+
+# Created Vault policy
+path "k8s-secrets/data/k8s-monitor" {
+  capabilities = ["read"]
+}
+```
+
+**Issue Encountered**:
+- Pod stuck in CreateContainerConfigError
+- Error: "secret 'k8s-monitor-secrets' not found"
+- Root cause: ExternalSecret could not sync - Vault path `k8s-secrets/k8s-monitor` does not exist
+- Required secrets (7 values):
+  - anthropic-api-key
+  - github-token
+  - slack-bot-token
+  - slack-channel
+  - chores-tracker-api-base-url
+  - chores-tracker-monitoring-username
+  - chores-tracker-monitoring-password
+
+**Resolution**:
+- [x] User decision: Disable k8s-monitor until secrets can be populated
+- [x] Renamed `base-apps/k8s-monitor.yaml` to `base-apps/k8s-monitor.yaml.disabled`
+- [x] Committed and pushed changes
+- [x] ArgoCD pruned k8s-monitor resources
+
+**Status**: Infrastructure ready, application disabled pending secret configuration
+
+##### 4. Verify Observability Stack Health (COMPLETED ✅)
+**Status**: ✅ Complete
+
+- [x] Verified ArgoCD applications Synced and Healthy
+  - loki-aws-infrastructure: Synced, Healthy ✅
+  - logging: Synced, Healthy ✅
+  - k8s-monitor: Disabled (pruned by ArgoCD) ⚠️
+
+- [x] Verified Loki receiving logs
+  - Queried Loki API: `http://loki.logging.svc.cluster.local:3100/loki/api/v1/query`
+  - Response: `{"status":"success"}` ✅
+  - Logs showing "entry too far behind" warnings (expected for old pod logs)
+
+- [x] Verified Prometheus collecting metrics
+  - Queried Prometheus API: `http://prometheus.logging.svc.cluster.local:9090/api/v1/targets`
+  - 25+ active scrape targets across cluster ✅
+  - All kubernetes-nodes targets showing "up" status = 1 (healthy)
+  - Metrics being collected from:
+    - 3 worker nodes (k3s-worker-1, k3s-worker-2, k3s-worker-3)
+    - cert-manager pods
+    - crossplane provider pods
+    - prometheus self-monitoring
+    - CoreDNS service endpoints
+
+- [x] Verified log collection agents operational
+  - 4 Alloy pods running (1 per node)
+  - All pods in Running state (1/1 Ready)
+  - Logs flowing from all cluster nodes to Loki
 
 #### Success Criteria
-- Logs flowing to Loki and queryable
-- Metrics being collected by Prometheus
-- Grafana accessible and showing data
-- No excessive resource usage
+- [x] Logs flowing to Loki and queryable ✅
+- [x] Metrics being collected by Prometheus ✅
+- [x] S3 backend configured with lifecycle policies ✅
+- [x] No excessive resource usage ✅
+- [ ] Grafana accessible and showing data (pending future deployment)
+- [ ] k8s-monitor operational (disabled pending secrets)
+
+#### Phase 5 Final Status
+
+| Application | Sync Status | Health Status | Pods Ready | Namespace |
+|------------|-------------|---------------|------------|-----------|
+| loki-aws-infrastructure | Synced | Healthy | - | loki |
+| logging | Synced | Healthy | 6/6* | logging |
+| k8s-monitor | Disabled | - | - | - |
+
+*Logging pod breakdown: 1 Loki, 1 Prometheus, 4 Alloy DaemonSet pods
+
+**AWS Resources**:
+- S3 Bucket `asela-loki-logs`: Active, 30-day lifecycle policy configured
+- IAM User `loki-s3-user`: Active with scoped permissions
+- IAM Policy `loki-s3-access-policy`: Attached and active
+
+**Vault Resources Created for Future Use**:
+- Kubernetes auth role `k8s-monitor`: Configured for k8s-monitor namespace
+- Vault policy `k8s-monitor`: Read access to k8s-secrets/data/k8s-monitor path
+
+**Notes**:
+- k8s-monitor application infrastructure is ready but disabled pending secret population
+- When secrets are added to Vault path `k8s-secrets/k8s-monitor`, the application can be re-enabled by renaming `k8s-monitor.yaml.disabled` to `k8s-monitor.yaml`
+- Core observability stack (Loki + Prometheus + Alloy) is fully operational
+
+**Phase 5 Complete** ✅
 
 ---
 
@@ -852,8 +1017,8 @@ git push origin maintenance-mode
 
 ## Progress Tracking
 
-**Phases Completed**: 4 / 6 (Phase 6 in progress)
-**Applications Enabled**: 10 / 19 (added chores-tracker-backend)
+**Phases Completed**: 5 / 6 (Phase 6 in progress)
+**Applications Enabled**: 12 / 19 (added loki-aws-infrastructure, logging; k8s-monitor disabled)
 **Applications Created**: 13
 **Issues Resolved**: 9 (Vault affinity, cert-manager CRDs, nginx-ingress ports, External Secrets Operator missing, duplicate SecretStore, duplicate ProviderConfig, wrong credentials namespace, MySQL connection refused, nginx-ingress not deploying after Traefik removal)
 
@@ -863,7 +1028,7 @@ git push origin maintenance-mode
 - Phase 2 (Cloud Integration & Secrets): 2025-11-03 ✅
 - Phase 3 (External Secrets & TLS): TBD (skipped - functionality covered in Phase 2)
 - Phase 4 (Data Layer): 2025-11-04 ✅
-- Phase 5 (Observability): TBD
+- Phase 5 (Observability): 2025-11-05 ✅
 - Phase 6 (Applications): Started 2025-11-05 (in progress)
 
 ---
