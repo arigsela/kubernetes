@@ -14,7 +14,7 @@ spec:
 
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: maintenance-mode
+    targetRevision: main
     path: base-apps/crossplane-aws-provider
 
   destination:
