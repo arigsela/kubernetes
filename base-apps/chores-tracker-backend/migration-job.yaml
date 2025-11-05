@@ -1,0 +1,57 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: chores-tracker-migration
+  namespace: chores-tracker-backend
+  labels:
+    app: chores-tracker-backend
+    component: migration
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"  # Run before deployment (wave 2)
+    argocd.argoproj.io/hook: PreSync    # Run before main sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation  # Delete old job before creating new one
+spec:
+  # Retry configuration
+  backoffLimit: 4  # Allow up to 4 retries on failure
+  activeDeadlineSeconds: 300  # 5 minute timeout for entire job
+  ttlSecondsAfterFinished: 86400  # Keep job for 24 hours after completion for debugging
+
+  template:
+    metadata:
+      labels:
+        app: chores-tracker-backend
+        component: migration
+    spec:
+      restartPolicy: OnFailure  # Retry on failure, not Never
+
+      containers:
+      - name: migration
+        # Use the same image as the main backend deployment
+        # This will be updated by your CI/CD pipeline
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:latest
+        imagePullPolicy: Always
+
+        # Override entrypoint to use migration script
+        command: ["/app/migrate-entrypoint.sh"]
+
+        # Use same environment configuration as main deployment
+        envFrom:
+        - configMapRef:
+            name: chores-tracker-backend-config
+        - secretRef:
+            name: chores-tracker-backend-secrets
+
+        # Resource limits for migration job
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        # Security context
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: false  # May need root for certain operations
+          readOnlyRootFilesystem: false  # Alembic needs to write temporary files
