@@ -28,7 +28,7 @@ spec:
       - name: migration
         # Use the same image as the main backend deployment
         # This will be updated by your CI/CD pipeline
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:latest
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:5.13.0
         imagePullPolicy: Always
 
         # Override entrypoint to use migration script
