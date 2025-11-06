@@ -1,0 +1,221 @@
+{
+  "dashboard": {
+    "title": "Kubernetes Observability - Basic",
+    "uid": "k8s-observability-basic",
+    "tags": ["kubernetes", "logs", "metrics"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "30s",
+    "time": {
+      "from": "now-15m",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Pod CPU Usage",
+        "type": "timeseries",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "PBFA97CFB590B2093"
+        },
+        "targets": [
+          {
+            "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", pod=~\"$pod\", container!=\"\"}[5m])) by (pod, container)",
+            "legendFormat": "{{pod}} - {{container}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Pod Memory Usage",
+        "type": "timeseries",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "PBFA97CFB590B2093"
+        },
+        "targets": [
+          {
+            "expr": "sum(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$pod\", container!=\"\"}) by (pod, container)",
+            "legendFormat": "{{pod}} - {{container}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "bytes",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Pod Restart Count",
+        "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "PBFA97CFB590B2093"
+        },
+        "targets": [
+          {
+            "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"$namespace\", pod=~\"$pod\"}) by (pod)",
+            "legendFormat": "{{pod}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 8, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 1, "color": "yellow"},
+                {"value": 5, "color": "red"}
+              ]
+            }
+          }
+        },
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Running Pods",
+        "type": "stat",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "PBFA97CFB590B2093"
+        },
+        "targets": [
+          {
+            "expr": "count(kube_pod_info{namespace=\"$namespace\", pod=~\"$pod\"})",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x": 6, "y": 8, "w": 6, "h": 4},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {"mode": "thresholds"},
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 1, "color": "green"}
+              ]
+            }
+          }
+        },
+        "options": {
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Error Rate (from logs)",
+        "type": "timeseries",
+        "datasource": {
+          "type": "loki",
+          "uid": "P8E80F9AEF21F6940"
+        },
+        "targets": [
+          {
+            "expr": "sum by (namespace, pod) (rate({namespace=\"$namespace\", pod=~\"$pod\"} |~ \"(?i)error\" [5m]))",
+            "legendFormat": "{{namespace}}/{{pod}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Recent Logs",
+        "type": "logs",
+        "datasource": {
+          "type": "loki",
+          "uid": "P8E80F9AEF21F6940"
+        },
+        "targets": [
+          {
+            "expr": "{namespace=\"$namespace\", pod=~\"$pod\"}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 16, "w": 24, "h": 10},
+        "options": {
+          "showTime": true,
+          "showLabels": true,
+          "wrapLogMessage": true,
+          "prettifyLogMessage": false,
+          "enableLogDetails": true,
+          "dedupStrategy": "none",
+          "sortOrder": "Descending"
+        }
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "namespace",
+          "type": "query",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "query": "label_values(kube_pod_info, namespace)",
+          "current": {
+            "text": "logging",
+            "value": "logging"
+          },
+          "refresh": 1,
+          "multi": false,
+          "includeAll": false
+        },
+        {
+          "name": "pod",
+          "type": "query",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "query": "label_values(kube_pod_info{namespace=\"$namespace\"}, pod)",
+          "current": {
+            "text": "All",
+            "value": "$__all"
+          },
+          "refresh": 1,
+          "multi": true,
+          "includeAll": true,
+          "allValue": ".*"
+        }
+      ]
+    }
+  },
+  "overwrite": true
+}
