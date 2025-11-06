@@ -243,6 +243,48 @@ data:
       }
     }
 
+    // Relabel nodes for cAdvisor scraping
+    discovery.relabel "cadvisor" {
+      targets = discovery.kubernetes.nodes.targets
+
+      rule {
+        source_labels = ["__meta_kubernetes_node_name"]
+        target_label  = "node"
+      }
+
+      rule {
+        source_labels = ["__address__"]
+        target_label  = "__address__"
+        regex         = "([^:]+)(?::\\d+)?"
+        replacement   = "$1:10250"
+      }
+
+      rule {
+        target_label = "__metrics_path__"
+        replacement  = "/metrics/cadvisor"
+      }
+
+      rule {
+        target_label = "cluster"
+        replacement  = "homelab"
+      }
+    }
+
+    // Scrape cAdvisor metrics (container CPU/memory)
+    prometheus.scrape "cadvisor" {
+      targets    = discovery.relabel.cadvisor.output
+      forward_to = [prometheus.remote_write.prometheus.receiver]
+
+      scrape_interval = "15s"
+      scrape_timeout  = "10s"
+      bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+      tls_config {
+        ca_file             = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        insecure_skip_verify = false
+      }
+    }
+
     // Send metrics to Prometheus
     prometheus.remote_write "prometheus" {
       endpoint {
