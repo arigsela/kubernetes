@@ -7,9 +7,11 @@ metadata:
     app: chores-tracker-backend
     component: migration
   annotations:
-    argocd.argoproj.io/sync-wave: "1"  # Run before deployment (wave 2)
-    argocd.argoproj.io/hook: PreSync    # Run before main sync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation  # Delete old job before creating new one
+    # DISABLED: Migration job causing timeouts
+    # argocd.argoproj.io/sync-wave: "1"  # Run before deployment (wave 2)
+    # argocd.argoproj.io/hook: PreSync    # Run before main sync
+    # argocd.argoproj.io/hook-delete-policy: BeforeHookCreation  # Delete old job before creating new one
+    disabled: "true"  # Job disabled until migration timing issues are resolved
 spec:
   # Retry configuration
   backoffLimit: 4  # Allow up to 4 retries on failure
