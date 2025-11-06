@@ -74,8 +74,6 @@ spec:
           - '--web.console.templates=/usr/share/prometheus/consoles'
           - '--web.enable-lifecycle'
           - '--web.enable-remote-write-receiver'
-          - '--enable-feature=out-of-order-time-windows'
-          - '--out-of-order-time-window=30m'
         ports:
         - containerPort: 9090
           name: http
