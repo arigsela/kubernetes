@@ -40,6 +40,7 @@ variable "mod_dependency" {
 }
 
 variable "settings" {
-  type = map
+  type = any
   default = {}
+  description = "Helm chart values to pass to ArgoCD. Supports nested maps for complex configurations."
 }
