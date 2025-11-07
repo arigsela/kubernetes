@@ -31,6 +31,34 @@ spec:
         component: server
         helm.sh/chart: vault-0.29.1
     spec:
+      initContainers:
+        - name: vault-unseal
+          image: hashicorp/vault:1.18.1
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - /vault/scripts/unseal.sh
+          env:
+            - name: VAULT_ADDR
+              value: http://127.0.0.1:8200
+            - name: VAULT_UNSEAL_KEY_1
+              valueFrom:
+                secretKeyRef:
+                  name: vault-unseal-keys
+                  key: key1
+            - name: VAULT_UNSEAL_KEY_2
+              valueFrom:
+                secretKeyRef:
+                  name: vault-unseal-keys
+                  key: key2
+            - name: VAULT_UNSEAL_KEY_3
+              valueFrom:
+                secretKeyRef:
+                  name: vault-unseal-keys
+                  key: key3
+          volumeMounts:
+            - mountPath: /vault/scripts
+              name: vault-unseal-script
       containers:
         - args:
             - |
@@ -138,6 +166,10 @@ spec:
         - name: vault-config
           configMap:
             name: vault-config
+        - name: vault-unseal-script
+          configMap:
+            name: vault-unseal-script
+            defaultMode: 0755
   updateStrategy:
     type: OnDelete
   volumeClaimTemplates:
