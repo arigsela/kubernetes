@@ -24,22 +24,27 @@ spec:
             name: chores-tracker-backend-config
         - secretRef:
             name: chores-tracker-backend-secrets
+        # Health checks
         livenessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 60
+            scheme: HTTP
+          initialDelaySeconds: 90  # Increased to allow for application startup and import time
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
+          successThreshold: 1
         readinessProbe:
           httpGet:
             path: /health
             port: 8000
-          initialDelaySeconds: 30
+            scheme: HTTP
+          initialDelaySeconds: 60  # Increased to allow for application startup
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
+          successThreshold: 1
         resources:
           requests:
             memory: "256Mi"
