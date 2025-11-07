@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: chores-tracker-backend
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:5.14.0
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:5.15.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
