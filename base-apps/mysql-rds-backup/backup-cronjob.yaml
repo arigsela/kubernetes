@@ -48,15 +48,30 @@ spec:
             env:
             # MySQL connection details (RDS)
             - name: MYSQL_HOST
-              value: "asela-cluster-mysql.c9ke2o0oe6ir.us-east-2.rds.amazonaws.com"
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-backup-credentials
+                  key: MYSQL_HOST
             - name: MYSQL_PORT
-              value: "3306"
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-backup-credentials
+                  key: MYSQL_PORT
             - name: MYSQL_USER
-              value: "mysqladmin"
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-backup-credentials
+                  key: MYSQL_USER
             - name: MYSQL_PASSWORD
-              value: "271h0lDb6Nhhmh1("
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-backup-credentials
+                  key: MYSQL_PASSWORD
             - name: MYSQL_DATABASE
-              value: "chores-db"
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-backup-credentials
+                  key: MYSQL_DATABASE
 
             # AWS credentials (from Vault via ExternalSecret)
             - name: AWS_ACCESS_KEY_ID

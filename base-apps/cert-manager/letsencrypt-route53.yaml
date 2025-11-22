@@ -16,9 +16,10 @@ spec:
     - dns01:
         route53:
           region: us-east-1
-          # AWS access key ID (can also be set as environment variable)
-          accessKeyID: AKIA4NFDJMBLDENYEH5Z
-          # AWS secret access key
+          # AWS credentials from secret
+          accessKeyIDSecretRef:
+            name: route53-credentials
+            key: access-key-id
           secretAccessKeySecretRef:
             name: route53-credentials
             key: secret-access-key
