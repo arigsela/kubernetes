@@ -14,7 +14,7 @@ spec:
 
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
+    targetRevision: incremental-service-rollout
     path: base-apps/crossplane-aws-provider
 
   destination:

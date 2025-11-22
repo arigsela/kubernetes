@@ -13,6 +13,8 @@ spec:
       labels:
         app: n8n
     spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
       # Set ownership for the mounted volume
       securityContext:
         fsGroup: 1000

@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: chores-tracker-backend-config
-  namespace: chores-tracker-backend
+  namespace: chores-tracker
 data:
   ENVIRONMENT: "production"
   DEBUG: "False"

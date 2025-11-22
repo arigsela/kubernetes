@@ -15,13 +15,22 @@ spec:
           value: "true"
       values: |
         nodeSelector:
-          workload: infra
+          node.kubernetes.io/workload: infrastructure
+        tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
         webhook:
           nodeSelector:
-            workload: infra
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
         cainjector:
           nodeSelector:
-            workload: infra
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager

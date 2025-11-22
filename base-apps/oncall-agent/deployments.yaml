@@ -18,6 +18,8 @@ spec:
         app: oncall-agent-api
         version: v1
     spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
       serviceAccountName: oncall-agent-api-sa
 
       # Pod-level security context (required by Kyverno)

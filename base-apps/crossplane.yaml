@@ -11,6 +11,10 @@ spec:
     targetRevision: 2.0.2
     helm:
       values: |
+        # Node placement for application workload
+        nodeSelector:
+          node.kubernetes.io/workload: application
+
         # Enable Crossplane v2 features (updated for v2.0.2)
         args:
           - --enable-realtime-compositions

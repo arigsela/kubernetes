@@ -35,6 +35,11 @@ spec:
         app.kubernetes.io/name: vault-agent-injector
         component: webhook
     spec:
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -128,8 +133,7 @@ spec:
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
-      nodeSelector:
-        workload: infra
+      # nodeSelector removed - no workload labels on Talos nodes yet
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000

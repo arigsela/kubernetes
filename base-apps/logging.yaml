@@ -1,17 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: vault
+  name: logging
   namespace: argo-cd
 spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
-    path: base-apps/vault
+    targetRevision: incremental-service-rollout
+    path: base-apps/logging
   destination:
     server: https://kubernetes.default.svc
-    namespace: vault
+    namespace: logging
   syncPolicy:
     automated:
       prune: true

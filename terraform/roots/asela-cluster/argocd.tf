@@ -3,11 +3,85 @@ module "argocd" {
   enabled = true
   namespace = "argo-cd"
   
-  # Configure ArgoCD to ignore Crossplane-generated resources
+  # Configure ArgoCD with node placement and Crossplane resource exclusions
   settings = {
+    # Global node placement - applies to all ArgoCD components
+    global = {
+      nodeSelector = {
+        "node.kubernetes.io/workload" = "infrastructure"
+      }
+      tolerations = [
+        {
+          key    = "node-role.kubernetes.io/control-plane"
+          effect = "NoSchedule"
+        }
+      ]
+    }
+
+    # Controller node placement
+    controller = {
+      nodeSelector = {
+        "node.kubernetes.io/workload" = "infrastructure"
+      }
+      tolerations = [
+        {
+          key    = "node-role.kubernetes.io/control-plane"
+          effect = "NoSchedule"
+        }
+      ]
+    }
+
+    # Dex server node placement
+    dex = {
+      nodeSelector = {
+        "node.kubernetes.io/workload" = "infrastructure"
+      }
+      tolerations = [
+        {
+          key    = "node-role.kubernetes.io/control-plane"
+          effect = "NoSchedule"
+        }
+      ]
+    }
+
+    # Redis node placement
+    redis = {
+      nodeSelector = {
+        "node.kubernetes.io/workload" = "infrastructure"
+      }
+      tolerations = [
+        {
+          key    = "node-role.kubernetes.io/control-plane"
+          effect = "NoSchedule"
+        }
+      ]
+    }
+
+    # Repo server node placement
+    repoServer = {
+      nodeSelector = {
+        "node.kubernetes.io/workload" = "infrastructure"
+      }
+      tolerations = [
+        {
+          key    = "node-role.kubernetes.io/control-plane"
+          effect = "NoSchedule"
+        }
+      ]
+    }
+
+    # Server node placement and config
     server = {
+      nodeSelector = {
+        "node.kubernetes.io/workload" = "infrastructure"
+      }
+      tolerations = [
+        {
+          key    = "node-role.kubernetes.io/control-plane"
+          effect = "NoSchedule"
+        }
+      ]
       config = {
-        # Exclude Crossplane composite resources from being tracked
         "resource.exclusions" = <<-EOT
           - apiGroups:
             - platform.io
@@ -31,4 +105,6 @@ module "argocd" {
 
 module "argocd_applicationsets" {
   source = "../../modules/application-sets"
+
+  depends_on = [module.argocd]
 }

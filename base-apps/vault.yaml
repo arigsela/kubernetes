@@ -1,17 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: loki-aws-infrastructure
+  name: vault
   namespace: argo-cd
 spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
-    path: base-apps/loki-aws-infrastructure
+    targetRevision: incremental-service-rollout
+    path: base-apps/vault
   destination:
     server: https://kubernetes.default.svc
-    namespace: logging
+    namespace: vault
   syncPolicy:
     automated:
       prune: true

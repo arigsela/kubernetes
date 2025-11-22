@@ -11,6 +11,11 @@ spec:
   version: v4.11.2
   valuesContent: |-
     controller:
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
       kind: DaemonSet
       hostNetwork: true
       service:

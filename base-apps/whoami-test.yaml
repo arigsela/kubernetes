@@ -1,18 +1,20 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ecr-auth
+  name: whoami-test
   namespace: argo-cd
 spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
-    path: base-apps/ecr-auth
+    targetRevision: incremental-service-rollout
+    path: base-apps/whoami-test
   destination:
     server: https://kubernetes.default.svc
-    namespace: kube-system
+    namespace: whoami-test
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

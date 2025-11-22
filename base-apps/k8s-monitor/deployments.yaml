@@ -149,8 +149,8 @@ spec:
             # Example: k8s-analyzer.md, escalation-manager.md, etc.
 
       # Node selection (optional - constrain to specific nodes)
-      # nodeSelector:
-      #   workload: monitoring
+      nodeSelector:
+        node.kubernetes.io/workload: application
 
       # Tolerations (optional - allow scheduling on tainted nodes)
       # tolerations:

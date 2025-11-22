@@ -12,6 +12,8 @@ spec:
       labels:
         app: whoami
     spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
       containers:
       - name: whoami
         image: traefik/whoami

@@ -1,20 +1,20 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: cert-manager-config
+  name: crossplane-mysql-provider
   namespace: argo-cd
 spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
-    path: base-apps/cert-manager
+    targetRevision: incremental-service-rollout
+    path: base-apps/crossplane-mysql-provider
   destination:
     server: https://kubernetes.default.svc
-    namespace: cert-manager
+    namespace: crossplane-system
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
+      - Validate=true

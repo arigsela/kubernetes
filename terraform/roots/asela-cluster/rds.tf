@@ -41,7 +41,7 @@ resource "aws_security_group" "rds_mysql_sg" {
 resource "aws_db_instance" "rds_mysql" {
   # Engine configuration
   engine               = "mysql"
-  engine_version       = "8.0.39"  # Latest MySQL 8.0 version
+  engine_version       = "8.0.42"  # Latest MySQL 8.0 version
   instance_class       = "db.t4g.micro"  # Cheapest option: ~$0.016/hour = ~$12/month
 
   # Database identification

@@ -1,17 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: whoami-test
+  name: cert-manager-config
   namespace: argo-cd
 spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
-    path: base-apps/whoami-test
+    targetRevision: incremental-service-rollout
+    path: base-apps/cert-manager
   destination:
     server: https://kubernetes.default.svc
-    namespace: whoami-test
+    namespace: cert-manager
   syncPolicy:
     automated:
       prune: true

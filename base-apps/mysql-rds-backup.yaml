@@ -1,17 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: logging
+  name: mysql-rds-backup
   namespace: argo-cd
 spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
-    path: base-apps/logging
+    targetRevision: incremental-service-rollout
+    path: base-apps/mysql-rds-backup
   destination:
     server: https://kubernetes.default.svc
-    namespace: logging
+    namespace: mysql
   syncPolicy:
     automated:
       prune: true

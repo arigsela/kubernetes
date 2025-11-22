@@ -18,6 +18,8 @@ spec:
         app: chores-tracker-frontend
         component: frontend
     spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
       containers:
       - name: frontend
         image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker-frontend:1.5.0

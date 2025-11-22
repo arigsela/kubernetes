@@ -31,6 +31,11 @@ spec:
         component: server
         helm.sh/chart: vault-0.29.1
     spec:
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
       initContainers:
         - name: vault-unseal
           image: hashicorp/vault:1.18.1
@@ -150,8 +155,7 @@ spec:
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
-      nodeSelector:
-        workload: infra
+      # nodeSelector removed - no workload labels on Talos nodes yet
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000
