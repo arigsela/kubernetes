@@ -11,7 +11,7 @@ spec:
     path: base-apps/chores-tracker-frontend
   destination:
     server: https://kubernetes.default.svc
-    namespace: chores-tracker
+    namespace: chores-tracker-frontend
   syncPolicy:
     automated:
       prune: true
