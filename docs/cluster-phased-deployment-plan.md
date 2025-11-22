@@ -198,7 +198,7 @@ kubectl delete helmchart traefik traefik-crd -n kube-system
 - [x] Kubernetes auth method configured in Vault ✅
 - [x] AWS credentials stored in Vault for Crossplane ✅
   - Stored at: `k8s-secrets/crossplane-system/aws-credentials`
-  - Access Key ID: AKIA4NFDJMBLDENYEH5Z (us-east-2)
+  - Region: us-east-2
 - [x] AWS credentials stored in Vault for ECR Auth ✅
   - Stored at: `k8s-secrets/ecr-auth`
   - Region: us-east-2
