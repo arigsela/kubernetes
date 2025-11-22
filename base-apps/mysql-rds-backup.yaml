@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: incremental-service-rollout
+    targetRevision: main
     path: base-apps/mysql-rds-backup
   destination:
     server: https://kubernetes.default.svc
