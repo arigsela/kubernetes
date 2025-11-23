@@ -95,11 +95,12 @@ Warehouse (monitors images) → Test Stage → UAT Stage → Prod Stage
 | **ArgoCD** | GitOps continuous deployment | v7.8.13 (Helm chart) |
 | **Kargo** | Progressive delivery orchestration | Latest |
 | **Terraform** | Infrastructure provisioning | AWS ~> 5.78, Kubernetes 2.34.0 |
-| **Crossplane** | Cloud resource provisioning | Latest |
-| **Vault** | Secret management | Latest with persistence |
-| **External Secrets** | Secret synchronization | AWS Secrets Manager integration |
-| **Traefik** | Ingress controller | For HTTP/HTTPS routing |
-| **Cert Manager** | TLS certificate management | Automated cert lifecycle |
+| **Crossplane** | Cloud resource provisioning | AWS Provider (IAM, S3), MySQL Provider |
+| **Vault** | Secret management | Latest with Kubernetes auth |
+| **External Secrets** | Secret synchronization | Vault integration with hourly refresh |
+| **Nginx Ingress** | Ingress controller | v4.11.2 with hostNetwork mode |
+| **Cert Manager** | TLS certificate management | LetsEncrypt production issuer |
+| **Loki** | Log aggregation | v3.2.1 with S3 backend (30-day retention) |
 
 ### Monitoring Stack
 - **ELK Stack**: Centralized logging
@@ -107,6 +108,7 @@ Warehouse (monitors images) → Test Stage → UAT Stage → Prod Stage
 
 ### Container Registry
 - **AWS ECR**: Private container images (us-east-2)
+- **ECR Auth**: Automated credential sync via CronJob to chores-tracker, chores-tracker-frontend, and mysql namespaces
 - **Public Registries**: Docker Hub, Quay.io for OSS components
 
 ## Infrastructure Components
@@ -144,15 +146,19 @@ backend "s3" {
 
 | Application | Type | Namespace | Purpose |
 |-------------|------|-----------|---------|
-| chores-tracker | Custom App | chores-tracker | Task management system |
-| vault | Infrastructure | vault | Secret storage |
-| external-secrets | Infrastructure | external-secrets | Secret synchronization |
-| crossplane | Infrastructure | crossplane-system | Cloud resource provisioning |
-| cert-manager | Infrastructure | cert-manager | TLS certificates |
-| mysql | Database | mysql | Persistent data storage |
-| elk | Monitoring | elastic-system | Log aggregation |
-| monitoring | Monitoring | monitoring | Metrics and alerts |
-| ecr-credentials-sync | Utility | ecr-sync | AWS ECR authentication |
+| chores-tracker-backend | Custom App | chores-tracker | FastAPI backend (v5.20.0) with MySQL RDS |
+| chores-tracker-frontend | Custom App | chores-tracker-frontend | Node.js frontend (v1.5.0) |
+| vault | Infrastructure | vault | Secret storage with Kubernetes auth |
+| external-secrets | Infrastructure | external-secrets | Vault secret synchronization (1h refresh) |
+| crossplane-aws-provider | Infrastructure | crossplane-system | AWS resource provisioning (S3, IAM) |
+| crossplane-mysql-provider | Infrastructure | crossplane-system | MySQL user/database/grant management |
+| cert-manager | Infrastructure | cert-manager | TLS certificates via LetsEncrypt |
+| nginx-ingress | Infrastructure | ingress-nginx | Ingress controller (hostNetwork mode) |
+| loki-aws-infrastructure | Infrastructure | logging | Loki S3 bucket and IAM resources |
+| logging (Loki) | Monitoring | logging | Log aggregation with S3 backend (30d retention) |
+| mysql-rds-backup | Backup | mysql | Daily MySQL RDS backups to S3 (30d retention) |
+| ecr-auth | Utility | kube-system | Hourly ECR credential sync CronJob |
+| whoami-test | Testing | whoami-test | Ingress testing application |
 
 ### Chores Tracker Application
 
@@ -425,7 +431,58 @@ git push origin main
 4. Monitor resource usage and costs
 5. Regular security updates for base images
 
+## Recent Updates (November 2025)
+
+### Infrastructure Improvements
+- **Crossplane AWS Credentials**: Rotated and updated with least-privilege IAM policy
+  - Scoped S3 permissions to `asela-chores-*` bucket prefix only
+  - Limited IAM operations to `/serviceaccounts/` path and `loki-*` policies
+  - Added ECR permissions for container image pulls
+- **MySQL User Management**: Fixed password synchronization between Vault and RDS
+  - Recreated Crossplane MySQL user to sync new passwords from Vault
+  - Resolved 503 errors caused by database authentication failures
+
+### Application Deployments
+- **Chores Tracker Frontend**: Enabled and deployed
+  - Namespace: `chores-tracker-frontend`
+  - Image: `852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker-frontend:1.5.0`
+  - Ingress: Priority 50 (handles all non-API traffic)
+- **ECR Authentication**: Updated namespace configuration
+  - Now syncs to: `chores-tracker`, `chores-tracker-frontend`, `mysql`
+  - Removed references to non-deployed services (`oncall-agent`, `k8s-monitor`)
+  - Hourly automated credential refresh
+
+### Security & Access Control
+- **IAM Policy Refinement**: Implemented least-privilege policies for Crossplane
+  - S3: Bucket management scoped to project prefix
+  - IAM: User management limited to service account path
+  - ECR: Read-only access for image pulls
+- **Secret Management**: All credentials now managed through Vault
+  - External Secrets refresh every 1 hour
+  - No hardcoded credentials in manifests
+
+### Monitoring & Logging
+- **Loki**: S3-backed log aggregation with 30-day retention
+  - Bucket: `asela-chores-loki-logs-20251017`
+  - Lifecycle policies for automated cleanup
+  - IAM user `loki-s3-user` with least-privilege S3 access
+
+### Networking
+- **Nginx Ingress Controller**: Configured with hostNetwork mode
+  - Runs on `k3s-control-01` node (10.0.1.50)
+  - Requires pfSense port forwarding: 80/443 → 10.0.1.50
+  - Domain: `chores.arigsela.com` (DNS: 73.7.190.154)
+- **Ingress Priority**: Backend (100) > Frontend (50)
+  - Backend handles `/api/*` paths
+  - Frontend handles all other paths
+
+### Database & Backups
+- **MySQL RDS**: Production database for chores-tracker
+  - Managed users via Crossplane MySQL Provider
+  - Automated daily backups to S3
+  - 30-day retention policy
+
 ---
 
-*Last Updated: 2025-06-27*
+*Last Updated: 2025-11-22*
 *Repository: https://github.com/arigsela/kubernetes*
