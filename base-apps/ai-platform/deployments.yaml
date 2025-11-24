@@ -57,8 +57,6 @@ spec:
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 30
-            tcpSocket:
-              port: http
             timeoutSeconds: 5
           readinessProbe:
             failureThreshold: 3
@@ -67,8 +65,6 @@ spec:
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 10
-            tcpSocket:
-              port: http
             timeoutSeconds: 3
           resources:
             limits:
