@@ -8,15 +8,19 @@ metadata:
 spec:
   project: default
 
-  source:
-    repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: feature/caipe-deployment
-    path: base-apps/ai-platform
+  sources:
+    # CAIPE Helm Chart from remote repository
+    - repoURL: https://cnoe-io.github.io/ai-platform-engineering
+      chart: ai-platform-engineering
+      targetRevision: 0.4.11
+      helm:
+        valueFiles:
+          - $values/base-apps/ai-platform/values.yaml
 
-    # Helm chart configuration
-    helm:
-      valueFiles:
-        - values.yaml
+    # Values file from our Git repository
+    - repoURL: https://github.com/arigsela/kubernetes
+      targetRevision: feature/caipe-deployment
+      ref: values
 
   destination:
     server: https://kubernetes.default.svc
