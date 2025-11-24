@@ -1,0 +1,357 @@
+---
+# Source: ai-platform-engineering/charts/supervisor-agent/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-platform-supervisor-agent
+  labels:
+    helm.sh/chart: supervisor-agent-0.2.2
+    app.kubernetes.io/name: supervisor-agent
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: supervisor-agent
+      app.kubernetes.io/instance: ai-platform
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: supervisor-agent-0.2.2
+        app.kubernetes.io/name: supervisor-agent
+        app.kubernetes.io/instance: ai-platform
+        app.kubernetes.io/version: "0.2.2"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: ai-platform-supervisor-agent
+      containers:
+        - name: supervisor-agent
+          image: "ghcr.io/cnoe-io/ai-platform-engineering:stable"
+          imagePullPolicy: Always
+          args:
+            - "platform-engineer"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: llm-secret
+            - configMapRef:
+                name: ai-platform-supervisor-agent-env
+          env:
+            - name: AGENT_PROTOCOL
+              value: "a2a"
+            - name: AGENT_CONNECTIVITY_ENABLE_BACKGROUND
+              value: "true"
+            - name: EXTERNAL_URL
+              value: "http://localhost:8000"
+            - name: SKIP_AGENT_CONNECTIVITY_CHECK
+              value: "false"
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            tcpSocket:
+              port: http
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            tcpSocket:
+              port: http
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+          volumeMounts:
+            - name: prompt-config
+              mountPath: /app/prompt_config.yaml
+              subPath: prompt_config.yaml
+              readOnly: true
+      volumes:
+        - name: prompt-config
+          configMap:
+            name: prompt-config
+---
+# Source: ai-platform-engineering/charts/agent-github/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-platform-agent-github
+  labels:
+    helm.sh/chart: agent-github-0.3.2
+    app.kubernetes.io/name: agent-github
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.3.2"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-github
+      app.kubernetes.io/instance: ai-platform
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: agent-github-0.3.2
+        app.kubernetes.io/name: agent-github
+        app.kubernetes.io/instance: ai-platform
+        app.kubernetes.io/version: "0.3.2"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: ai-platform-agent-github
+      containers:
+        - name: agent-github
+          image: "ghcr.io/cnoe-io/agent-github:stable"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: llm-secret
+            - secretRef:
+                name: github-agent-secret
+          env:
+            - name: ANTHROPIC_MODEL_NAME
+              value: "claude-3-5-haiku-20241022"
+            - name: MCP_MODE
+              value: http
+            - name: MCP_PORT
+              value: "8000"
+            - name: MCP_HOST
+              value: ai-platform-agent-github-mcp
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            tcpSocket:
+              port: http
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            tcpSocket:
+              port: http
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+      volumes:
+---
+# Source: ai-platform-engineering/charts/agent-argocd/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-platform-agent-argocd
+  labels:
+    helm.sh/chart: agent-argocd-0.3.2
+    app.kubernetes.io/name: agent-argocd
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.3.2"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-argocd
+      app.kubernetes.io/instance: ai-platform
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: agent-argocd-0.3.2
+        app.kubernetes.io/name: agent-argocd
+        app.kubernetes.io/instance: ai-platform
+        app.kubernetes.io/version: "0.3.2"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: ai-platform-agent-argocd
+      containers:
+        - name: agent-argocd
+          image: "ghcr.io/cnoe-io/agent-argocd:stable"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: llm-secret
+            - secretRef:
+                name: argocd-agent-secret
+          env:
+            - name: ANTHROPIC_MODEL_NAME
+              value: "claude-3-5-haiku-20241022"
+            - name: MCP_MODE
+              value: http
+            - name: MCP_PORT
+              value: "8000"
+            - name: MCP_HOST
+              value: ai-platform-agent-argocd-mcp
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            tcpSocket:
+              port: http
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            tcpSocket:
+              port: http
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+      volumes:
+---
+# Source: ai-platform-engineering/charts/agent-argocd/templates/mcp-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-platform-agent-argocd-mcp
+  labels:
+    helm.sh/chart: agent-argocd-0.3.2
+    app.kubernetes.io/name: agent-argocd
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.3.2"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: ai-platform-agent-argocd-mcp
+    app.kubernetes.io/component: mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-argocd
+      app.kubernetes.io/instance: ai-platform
+      app.kubernetes.io/name: ai-platform-agent-argocd-mcp
+      app.kubernetes.io/component: mcp
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: agent-argocd-0.3.2
+        app.kubernetes.io/name: agent-argocd
+        app.kubernetes.io/instance: ai-platform
+        app.kubernetes.io/version: "0.3.2"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: ai-platform-agent-argocd-mcp
+        app.kubernetes.io/component: mcp
+    spec:
+      serviceAccountName: ai-platform-agent-argocd
+      containers:
+        - name: mcp
+          image: "ghcr.io/cnoe-io/mcp-argocd:stable"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: llm-secret
+            - secretRef:
+                name: argocd-agent-secret
+          env:
+            - name: MCP_MODE
+              value: http
+            - name: MCP_HOST
+              value: "0.0.0.0"
+            - name: MCP_PORT
+              value: "8000"
+          resources:
+            limits:
+              cpu: 100m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+---
+# Source: ai-platform-engineering/charts/backstage-plugin-agent-forge/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-platform-backstage-forge
+  labels:
+    helm.sh/chart: backstage-plugin-agent-forge-0.1.0
+    app.kubernetes.io/name: backstage-forge
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backstage-forge
+      app.kubernetes.io/instance: ai-platform
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: backstage-plugin-agent-forge-0.1.0
+        app.kubernetes.io/name: backstage-forge
+        app.kubernetes.io/instance: ai-platform
+        app.kubernetes.io/version: "0.1.0"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: ai-platform-backstage-forge
+      containers:
+        - name: backstage-plugin-agent-forge
+          image: "ghcr.io/cnoe-io/backstage-plugin-agent-forge:latest"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: backend
+              containerPort: 7007
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            tcpSocket:
+              port: http
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            tcpSocket:
+              port: http
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+          volumeMounts:
+      volumes:

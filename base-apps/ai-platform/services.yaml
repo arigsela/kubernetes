@@ -1,0 +1,118 @@
+---
+# Source: ai-platform-engineering/charts/supervisor-agent/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-platform-supervisor-agent
+  labels:
+    helm.sh/chart: supervisor-agent-0.2.2
+    app.kubernetes.io/name: supervisor-agent
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: supervisor-agent
+    app.kubernetes.io/instance: ai-platform
+---
+# Source: ai-platform-engineering/charts/agent-github/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-platform-agent-github
+  labels:
+    helm.sh/chart: agent-github-0.3.2
+    app.kubernetes.io/name: agent-github
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.3.2"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: agent-github
+    app.kubernetes.io/instance: ai-platform
+---
+# Source: ai-platform-engineering/charts/agent-argocd/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-platform-agent-argocd
+  labels:
+    helm.sh/chart: agent-argocd-0.3.2
+    app.kubernetes.io/name: agent-argocd
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.3.2"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: agent-argocd
+    app.kubernetes.io/instance: ai-platform
+---
+# Source: ai-platform-engineering/charts/agent-argocd/templates/mcp-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-platform-agent-argocd-mcp
+  labels:
+    helm.sh/chart: agent-argocd-0.3.2
+    app.kubernetes.io/name: agent-argocd
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.3.2"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: ai-platform-agent-argocd-mcp
+    app.kubernetes.io/component: mcp
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: agent-argocd
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/name: ai-platform-agent-argocd-mcp
+    app.kubernetes.io/component: mcp
+---
+# Source: ai-platform-engineering/charts/backstage-plugin-agent-forge/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-platform-backstage-forge
+  labels:
+    helm.sh/chart: backstage-plugin-agent-forge-0.1.0
+    app.kubernetes.io/name: backstage-forge
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: 7007
+      targetPort: backend
+      protocol: TCP
+      name: backend
+  selector:
+    app.kubernetes.io/name: backstage-forge
+    app.kubernetes.io/instance: ai-platform
