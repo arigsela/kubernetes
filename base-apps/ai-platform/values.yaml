@@ -1,0 +1,212 @@
+# CAIPE Helm Chart Values
+# Chart: ai-platform-engineering v0.4.11
+# Customized for: Internal deployment (no ingress), Haiku 3.5 cost optimization
+
+# Enable specific agents via tags
+tags:
+  basic: false
+  complete: false
+  backstage-agent-forge: true  # Enable Backstage UI
+  agent-github: true            # Enable GitHub agent
+  agent-argocd: true            # Enable ArgoCD agent
+  # All other agents disabled
+  agent-aws: false
+  agent-backstage: false
+  agent-confluence: false
+  agent-jira: false
+  agent-komodor: false
+  agent-pagerduty: false
+  agent-slack: false
+  agent-splunk: false
+  agent-webex: false
+  rag-stack: false
+
+# Global configuration
+global:
+  # Use External Secrets Operator for secret management
+  createLlmSecret: false  # Secrets managed by ExternalSecret CRDs
+  externalSecrets:
+    enabled: true
+    apiVersion: "v1beta1"
+
+  llmSecrets:
+    create: false
+    secretName: "llm-secret"  # Created by ExternalSecret
+
+  # Disable SLIM (multi-cluster) - we're using p2p (single cluster)
+  slim:
+    enabled: false
+
+# Prompt configuration
+promptConfigType: "default"  # Options: "default" or "deep_agent" (stricter mode)
+# Custom prompt config loaded from ConfigMap (see configmaps/prompt-config.yaml)
+
+######### Supervisor Agent Configuration #########
+supervisor-agent:
+  nameOverride: "supervisor-agent"
+
+  image:
+    repository: "ghcr.io/cnoe-io/ai-platform-engineering"
+    tag: "stable"
+    pullPolicy: "Always"
+    args: ["platform-engineer"]
+
+  # Environment variables from ConfigMap
+  envFrom:
+    - configMapRef:
+        name: supervisor-env-config
+
+  # LLM secret reference
+  envFromSecrets:
+    - secretRef:
+        name: llm-secret
+
+  # A2A protocol configuration
+  multiAgentConfig:
+    protocol: "a2a"
+    port: "8000"
+
+  # Resource limits
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 30
+    periodSeconds: 30
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 10
+
+######### Agent-GitHub Configuration #########
+agent-github:
+  nameOverride: "agent-github"
+
+  image:
+    repository: "ghcr.io/cnoe-io/agent-github"
+    tag: "stable"
+    pullPolicy: "Always"
+
+  # GitHub agent uses remote MCP server (no local MCP deployment)
+  mcp:
+    useRemoteMcpServer: true
+
+  # Agent-specific secrets
+  agentSecrets:
+    create: false  # Managed by ExternalSecret
+    secretName: "github-agent-secret"
+
+  # LLM secret reference
+  llmSecrets:
+    secretName: "llm-secret"
+
+  # Using Haiku 3.5 for cost savings (fast, cheap for simple ops)
+  env:
+    ANTHROPIC_MODEL_NAME: "claude-3-5-haiku-20241022"
+
+  # Resource limits
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+
+######### Agent-ArgoCD Configuration #########
+agent-argocd:
+  nameOverride: "agent-argocd"
+
+  image:
+    repository: "ghcr.io/cnoe-io/agent-argocd"
+    tag: "stable"
+    pullPolicy: "Always"
+
+  # ArgoCD MCP server configuration
+  mcp:
+    image:
+      repository: "ghcr.io/cnoe-io/mcp-argocd"
+      tag: "stable"
+      pullPolicy: "Always"
+    mode: "http"  # Options: stdio, http (use http for network deployment)
+    port: 8000
+
+    # MCP server resource limits
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "50m"
+      limits:
+        memory: "256Mi"
+        cpu: "100m"
+
+  # Agent-specific secrets
+  agentSecrets:
+    create: false  # Managed by ExternalSecret
+    secretName: "argocd-agent-secret"
+
+  # LLM secret reference
+  llmSecrets:
+    secretName: "llm-secret"
+
+  # Using Haiku 3.5 for cost savings
+  env:
+    ANTHROPIC_MODEL_NAME: "claude-3-5-haiku-20241022"
+
+  # Resource limits
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+
+######### Backstage Agent Forge Configuration #########
+backstage-plugin-agent-forge:
+  nameOverride: "backstage-forge"
+
+  image:
+    repository: "ghcr.io/cnoe-io/backstage-plugin-agent-forge"
+    tag: "latest"
+    pullPolicy: "Always"
+
+  # Service configuration (ClusterIP only - no ingress)
+  service:
+    type: ClusterIP
+    ports:
+      - name: http
+        port: 3000
+        targetPort: 3000
+      - name: backend
+        port: 7007
+        targetPort: 7007
+
+  # Environment variables
+  env:
+    SUPERVISOR_URL: "http://supervisor-agent:8000"
+
+  # Resource limits
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+  # Ingress disabled - access via kubectl port-forward
+  ingress:
+    enabled: false

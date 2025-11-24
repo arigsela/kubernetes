@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-platform
+  namespace: argo-cd
+  labels:
+    app.kubernetes.io/name: ai-platform
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: feature/caipe-deployment
+    path: base-apps/ai-platform
+
+    # Helm chart configuration
+    helm:
+      valueFiles:
+        - values.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-platform
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

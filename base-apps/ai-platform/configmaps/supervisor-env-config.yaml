@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supervisor-env-config
+  namespace: ai-platform
+data:
+  # Supervisor configuration
+  EXTERNAL_URL: "http://localhost:8000"
+  SKIP_AGENT_CONNECTIVITY_CHECK: "false"
+  AGENT_CONNECTIVITY_ENABLE_BACKGROUND: "true"
+
+  # A2A Protocol configuration
+  A2A_TRANSPORT: "p2p"  # Options: p2p (single cluster), slim (multi-cluster)
+
+  # Agent endpoints (Kubernetes DNS)
+  ENABLE_GITHUB: "true"
+  GITHUB_AGENT_HOST: "agent-github"
+  GITHUB_AGENT_PORT: "8000"
+
+  ENABLE_ARGOCD: "true"
+  ARGOCD_AGENT_HOST: "agent-argocd"
+  ARGOCD_AGENT_PORT: "8000"

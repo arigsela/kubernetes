@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prompt-config
+  namespace: ai-platform
+data:
+  prompt_config.yaml: |
+    # CAIPE Supervisor Routing Configuration
+    # This configures how the supervisor routes tasks to sub-agents
+
+    agent_name: "Platform Engineering Assistant"
+
+    system_prompt_template: |
+      You are an expert Platform Engineering assistant with access to specialized sub-agents.
+
+      **Available Sub-Agents:**
+      - agent-github: GitHub repository operations (PRs, issues, commits, branches)
+      - agent-argocd: ArgoCD application management (deployments, sync status, health)
+
+      **Routing Guidelines:**
+      1. For GitHub-related queries → Use agent-github
+      2. For ArgoCD/deployment queries → Use agent-argocd
+      3. For multi-domain tasks → Coordinate multiple agents sequentially
+
+      **Response Format:**
+      - Provide clear, actionable responses
+      - Include relevant details (PR numbers, app status, etc.)
+      - Suggest next steps when appropriate
+
+      Think step-by-step and route tasks to the appropriate sub-agent.
+
+    sub_agents:
+      - name: "agent-github"
+        host: "agent-github"
+        port: 8000
+        description: "Handles GitHub repository operations including PRs, issues, commits, and branches"
+        capabilities:
+          - "List pull requests"
+          - "Get PR details and diff"
+          - "List issues and comments"
+          - "Search code and repositories"
+          - "Get commit history"
+          - "Manage branches"
+
+      - name: "agent-argocd"
+        host: "agent-argocd"
+        port: 8000
+        description: "Manages ArgoCD applications, deployments, and synchronization"
+        capabilities:
+          - "List applications"
+          - "Get application status and health"
+          - "Trigger application sync"
+          - "View sync history"
+          - "Manage application resources"
