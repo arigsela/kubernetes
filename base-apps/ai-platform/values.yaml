@@ -23,15 +23,18 @@ tags:
 
 # Global configuration
 global:
-  # Use External Secrets Operator for secret management
-  createLlmSecret: false  # Secrets managed by ExternalSecret CRDs
+  # Disable chart's external secrets generation - we manage them separately
+  createLlmSecret: false  # Secrets managed by our ExternalSecret CRDs
   externalSecrets:
-    enabled: true
+    enabled: false  # Disable chart's ExternalSecret generation
     apiVersion: "v1beta1"
 
   llmSecrets:
     create: false
-    secretName: "llm-secret"  # Created by ExternalSecret
+    secretName: "llm-secret"  # Created by our ExternalSecret CRDs
+
+  agentSecrets:
+    create: false  # We manage agent secrets separately
 
   # Disable SLIM (multi-cluster) - we're using p2p (single cluster)
   slim:

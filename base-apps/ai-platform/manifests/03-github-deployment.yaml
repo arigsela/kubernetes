@@ -1,0 +1,73 @@
+---
+# Source: ai-platform-engineering/charts/agent-github/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-platform-agent-github
+  labels:
+    helm.sh/chart: agent-github-0.3.2
+    app.kubernetes.io/name: agent-github
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.3.2"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-github
+      app.kubernetes.io/instance: ai-platform
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: agent-github-0.3.2
+        app.kubernetes.io/name: agent-github
+        app.kubernetes.io/instance: ai-platform
+        app.kubernetes.io/version: "0.3.2"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: ai-platform-agent-github
+      containers:
+        - name: agent-github
+          image: "ghcr.io/cnoe-io/agent-github:stable"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: llm-secret
+            - secretRef:
+                name: github-agent-secret
+          env:
+            - name: ANTHROPIC_MODEL_NAME
+              value: "claude-3-5-haiku-20241022"
+            - name: MCP_MODE
+              value: http
+            - name: MCP_PORT
+              value: "8000"
+            - name: MCP_HOST
+              value: ai-platform-agent-github-mcp
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            tcpSocket:
+              port: http
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            tcpSocket:
+              port: http
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          volumeMounts:
+      volumes:

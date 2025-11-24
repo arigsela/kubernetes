@@ -1,0 +1,62 @@
+---
+# Source: ai-platform-engineering/charts/backstage-plugin-agent-forge/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-platform-backstage-forge
+  labels:
+    helm.sh/chart: backstage-plugin-agent-forge-0.1.0
+    app.kubernetes.io/name: backstage-forge
+    app.kubernetes.io/instance: ai-platform
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backstage-forge
+      app.kubernetes.io/instance: ai-platform
+  template:
+    metadata:
+      labels:
+        helm.sh/chart: backstage-plugin-agent-forge-0.1.0
+        app.kubernetes.io/name: backstage-forge
+        app.kubernetes.io/instance: ai-platform
+        app.kubernetes.io/version: "0.1.0"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      serviceAccountName: ai-platform-backstage-forge
+      containers:
+        - name: backstage-plugin-agent-forge
+          image: "ghcr.io/cnoe-io/backstage-plugin-agent-forge:latest"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: backend
+              containerPort: 7007
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            tcpSocket:
+              port: http
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            tcpSocket:
+              port: http
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 250m
+              memory: 512Mi
+          volumeMounts:
+      volumes:
