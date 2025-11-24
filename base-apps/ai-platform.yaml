@@ -12,7 +12,7 @@ spec:
     # CAIPE Helm Chart from GitHub repository
     - repoURL: https://github.com/cnoe-io/ai-platform-engineering
       path: charts/ai-platform-engineering
-      targetRevision: v0.4.11
+      targetRevision: stable
       helm:
         valueFiles:
           - $values/base-apps/ai-platform/values.yaml
