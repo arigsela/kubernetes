@@ -9,10 +9,10 @@ spec:
   project: default
 
   sources:
-    # CAIPE Helm Chart from remote repository
-    - repoURL: https://cnoe-io.github.io/ai-platform-engineering
-      chart: ai-platform-engineering
-      targetRevision: 0.4.11
+    # CAIPE Helm Chart from GitHub repository
+    - repoURL: https://github.com/cnoe-io/ai-platform-engineering
+      path: charts/ai-platform-engineering
+      targetRevision: v0.4.11
       helm:
         valueFiles:
           - $values/base-apps/ai-platform/values.yaml
