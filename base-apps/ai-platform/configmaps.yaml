@@ -52,6 +52,7 @@ data:
           - "Trigger application sync"
           - "View sync history"
           - "Manage application resources"
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -74,3 +75,4 @@ data:
   ENABLE_ARGOCD: "true"
   ARGOCD_AGENT_HOST: "agent-argocd"
   ARGOCD_AGENT_PORT: "8000"
+---
