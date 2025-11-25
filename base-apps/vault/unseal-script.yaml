@@ -17,7 +17,7 @@ data:
     done
 
     echo "Checking Vault seal status..."
-    SEALED=$(vault status -address=${VAULT_ADDR} -format=json | grep -o '"sealed":[^,}]*' | awk -F':' '{print $2}')
+    SEALED=$(vault status -address=${VAULT_ADDR} -format=json | grep -o '"sealed":[^,}]*' | awk -F':' '{gsub(/ /,""); print $2}')
 
     if [ "$SEALED" = "true" ]; then
       echo "Vault is sealed. Attempting to unseal..."
