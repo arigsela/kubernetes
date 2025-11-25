@@ -52,8 +52,7 @@ spec:
               value: "false"
           livenessProbe:
             failureThreshold: 5
-            httpGet:
-              path: /health
+            tcpSocket:
               port: 8000
             initialDelaySeconds: 60
             periodSeconds: 30
@@ -61,7 +60,7 @@ spec:
           readinessProbe:
             failureThreshold: 5
             httpGet:
-              path: /health
+              path: /.well-known/agent-card.json
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 10
