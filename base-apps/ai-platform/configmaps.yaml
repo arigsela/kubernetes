@@ -69,10 +69,10 @@ data:
 
   # Agent endpoints (Kubernetes DNS)
   ENABLE_GITHUB: "true"
-  GITHUB_AGENT_HOST: "agent-github"
+  GITHUB_AGENT_HOST: "ai-platform-agent-github"
   GITHUB_AGENT_PORT: "8000"
 
   ENABLE_ARGOCD: "true"
-  ARGOCD_AGENT_HOST: "agent-argocd"
+  ARGOCD_AGENT_HOST: "ai-platform-agent-argocd"
   ARGOCD_AGENT_PORT: "8000"
 ---
