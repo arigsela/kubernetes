@@ -148,11 +148,11 @@ spec:
             timeoutSeconds: 3
           resources:
             limits:
-              cpu: 200m
-              memory: 512Mi
+              cpu: 500m
+              memory: 1Gi
             requests:
-              cpu: 100m
-              memory: 256Mi
+              cpu: 250m
+              memory: 512Mi
           volumeMounts:
       volumes:
 ---
@@ -221,11 +221,11 @@ spec:
             timeoutSeconds: 3
           resources:
             limits:
-              cpu: 200m
-              memory: 512Mi
+              cpu: 500m
+              memory: 1Gi
             requests:
-              cpu: 100m
-              memory: 256Mi
+              cpu: 250m
+              memory: 512Mi
           volumeMounts:
       volumes:
 ---
@@ -284,11 +284,11 @@ spec:
               value: "8000"
           resources:
             limits:
+              cpu: 200m
+              memory: 512Mi
+            requests:
               cpu: 100m
               memory: 256Mi
-            requests:
-              cpu: 50m
-              memory: 128Mi
 ---
 # Source: ai-platform-engineering/charts/backstage-plugin-agent-forge/templates/deployment.yaml
 apiVersion: apps/v1
