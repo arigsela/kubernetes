@@ -28,7 +28,7 @@ spec:
       serviceAccountName: ai-platform-supervisor-agent
       containers:
         - name: supervisor-agent
-          image: "ghcr.io/cnoe-io/ai-platform-engineering:0.1.19"
+          image: "ghcr.io/cnoe-io/ai-platform-engineering:stable"
           imagePullPolicy: Always
           args:
             - "platform-engineer"
