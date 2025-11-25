@@ -24,7 +24,7 @@ spec:
             - /vault/scripts/unseal.sh
           env:
             - name: VAULT_ADDR
-              value: http://vault.vault.svc.cluster.local:8200
+              value: http://vault-internal.vault.svc.cluster.local:8200
             - name: VAULT_UNSEAL_KEY_1
               valueFrom:
                 secretKeyRef:
