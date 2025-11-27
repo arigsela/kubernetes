@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: oci://ghcr.io/kagent-dev/kmcp/helm/kmcp
     chart: kmcp
-    targetRevision: 1.0.0
+    targetRevision: 0.2.1
     helm:
       releaseName: kmcp
       values: |

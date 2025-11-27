@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: oci://ghcr.io/kagent-dev/kmcp/helm/kmcp-crds
     chart: kmcp-crds
-    targetRevision: 1.0.0
+    targetRevision: 0.2.1
     helm:
       releaseName: kmcp-crds
   destination:
