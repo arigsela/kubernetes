@@ -8,14 +8,11 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: deploy-kagent
-    path: base-apps/kmcp-crds
+    repoURL: https://kagent-dev.github.io/kmcp
+    chart: kmcp-crds
+    targetRevision: 1.0.0
     helm:
       releaseName: kmcp-crds
-      chart: kmcp-crds
-      repo: https://kagent-dev.github.io/kmcp
-      version: 1.0.0
   destination:
     server: https://kubernetes.default.svc
     namespace: kmcp
