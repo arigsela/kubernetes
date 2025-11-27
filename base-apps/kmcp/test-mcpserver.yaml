@@ -1,0 +1,19 @@
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: echo-mcp-server
+  namespace: kmcp-system
+  labels:
+    app.kubernetes.io/name: echo-mcp-server
+    app.kubernetes.io/part-of: ai-platform
+    app.kubernetes.io/managed-by: kmcp
+spec:
+  # Deploy the official MCP "everything" server for testing
+  # This server includes echo, add, and other sample tools
+  deployment:
+    port: 3000
+    cmd: npx
+    args:
+      - "-y"
+      - "@modelcontextprotocol/server-everything"
+  transportType: stdio

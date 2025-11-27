@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kmcp-test
+  namespace: argo-cd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"  # After kmcp controller
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: deploy-kagent
+    path: base-apps/kmcp
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kmcp-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
