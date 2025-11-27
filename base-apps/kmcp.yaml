@@ -8,9 +8,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: oci://ghcr.io/kagent-dev/kmcp/helm
+    repoURL: oci://ghcr.io/kagent-dev/kmcp/helm/kmcp
     chart: kmcp
-    targetRevision: 1.0.0
+    targetRevision: v0.2.1
     helm:
       releaseName: kmcp
       values: |
@@ -85,7 +85,7 @@ spec:
           targetPort: 8443
   destination:
     server: https://kubernetes.default.svc
-    namespace: kmcp
+    namespace: kmcp-system
   syncPolicy:
     automated:
       prune: true

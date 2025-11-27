@@ -8,14 +8,14 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: oci://ghcr.io/kagent-dev/kmcp/helm
+    repoURL: oci://ghcr.io/kagent-dev/kmcp/helm/kmcp-crds
     chart: kmcp-crds
-    targetRevision: 1.0.0
+    targetRevision: v0.2.1
     helm:
       releaseName: kmcp-crds
   destination:
     server: https://kubernetes.default.svc
-    namespace: kmcp
+    namespace: kmcp-system
   syncPolicy:
     automated:
       prune: true
