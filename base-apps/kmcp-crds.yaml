@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://kagent-dev.github.io/kmcp
     chart: kmcp-crds
-    targetRevision: 1.0.0  # Pin to specific version
+    targetRevision: 1.0.0  # Helm chart version
     helm:
       releaseName: kmcp-crds
   destination:
