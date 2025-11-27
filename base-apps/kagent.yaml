@@ -1,0 +1,149 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kagent
+  namespace: argo-cd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"  # After CRDs (wave 1)
+spec:
+  project: default
+  source:
+    repoURL: oci://ghcr.io/kagent-dev/kagent/helm/kagent
+    chart: kagent
+    targetRevision: 0.7.5
+    helm:
+      releaseName: kagent
+      values: |
+        # Global settings
+        registry: "cr.kagent.dev"
+        imagePullPolicy: IfNotPresent
+
+        # Database - using SQLite for simplicity
+        database:
+          type: sqlite
+          sqlite:
+            databaseName: kagent.db
+
+        # Controller configuration
+        controller:
+          replicas: 1
+          loglevel: "info"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 2
+              memory: 512Mi
+
+        # UI configuration
+        ui:
+          replicas: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+
+        # LLM Provider Configuration - Anthropic
+        providers:
+          default: anthropic
+          anthropic:
+            provider: Anthropic
+            model: "claude-sonnet-4-20250514"
+            apiKeySecretRef: kagent-anthropic
+            apiKeySecretKey: ANTHROPIC_API_KEY
+
+        # Disable kMCP subchart - we already deployed it separately
+        kmcp:
+          enabled: false
+
+        # Built-in tools
+        kagent-tools:
+          fullnameOverride: kagent-tools
+          enabled: true
+          replicaCount: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+
+        # Agents configuration - enable only what we need
+        agents:
+          k8s-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 1000m
+                memory: 1Gi
+          helm-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 1000m
+                memory: 1Gi
+          promql-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 1000m
+                memory: 1Gi
+          observability-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 1000m
+                memory: 1Gi
+          # Disable agents we don't need
+          kgateway-agent:
+            enabled: false
+          istio-agent:
+            enabled: false  # No Istio in cluster
+          argo-rollouts-agent:
+            enabled: false
+          cilium-policy-agent:
+            enabled: false  # No Cilium
+          cilium-manager-agent:
+            enabled: false
+          cilium-debug-agent:
+            enabled: false
+
+        # MCP Tools
+        tools:
+          grafana-mcp:
+            enabled: false  # Enable if you have Grafana
+          querydoc:
+            enabled: true
+
+        # Node scheduling - schedule on infrastructure nodes
+        nodeSelector:
+          node.kubernetes.io/workload: infrastructure
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kagent
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

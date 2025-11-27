@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kagent-crds
+  namespace: argo-cd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"  # After kMCP (which is at wave 0)
+spec:
+  project: default
+  source:
+    repoURL: oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds
+    chart: kagent-crds
+    targetRevision: 0.7.5
+    helm:
+      releaseName: kagent-crds
+      values: |
+        # Disable kmcp-crds subchart - we already deployed kMCP separately
+        kmcp:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kagent
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true  # Required for CRDs
