@@ -1,0 +1,39 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: test-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/name: test-agent
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: Declarative
+  description: "Simple test agent to verify kagent deployment is working"
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |
+      You are a friendly test agent for verifying the kagent deployment.
+
+      Your purpose is to:
+      1. Confirm that the kagent system is working correctly
+      2. Help users understand their Kubernetes cluster status
+      3. Answer basic questions about Kubernetes
+
+      When asked to check the cluster, use the available tools to:
+      - List namespaces
+      - Check pod status
+      - Get cluster information
+
+      Always be helpful and explain what you're doing.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+          toolNames:
+            - k8s_get_resources
+            - k8s_describe_resource
+            - k8s_get_events
+            - k8s_get_pod_logs
+            - k8s_get_cluster_configuration
