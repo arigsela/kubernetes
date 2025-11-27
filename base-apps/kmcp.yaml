@@ -8,11 +8,14 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://kagent-dev.github.io/kmcp
-    chart: kmcp
-    targetRevision: 1.0.0  # Helm chart version
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: deploy-kagent
+    path: base-apps/kmcp
     helm:
       releaseName: kmcp
+      chart: kmcp
+      repo: https://kagent-dev.github.io/kmcp
+      version: 1.0.0
       values: |
         # Image configuration
         image:
