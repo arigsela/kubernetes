@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://kagent-dev.github.io/kmcp
+    repoURL: oci://ghcr.io/kagent-dev/kmcp/helm
     chart: kmcp
     targetRevision: 1.0.0
     helm:
