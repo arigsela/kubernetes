@@ -14,10 +14,8 @@ spec:
     helm:
       releaseName: kmcp
       values: |
-        # Image configuration
+        # Image configuration - use chart's default appVersion
         image:
-          repository: ghcr.io/kagent-dev/kmcp/controller
-          tag: "v0.2.1"  # Latest version as of 2025-11-24
           pullPolicy: IfNotPresent
 
         # Controller configuration
