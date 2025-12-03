@@ -59,7 +59,7 @@ spec:
   # Backup configuration using Barman to S3
   backup:
     barmanObjectStore:
-      destinationPath: s3://asela-mysql-backups/postgresql/
+      destinationPath: s3://mysql-backups-asela-cluster/postgresql/
       s3Credentials:
         accessKeyId:
           name: postgresql-backup-credentials
