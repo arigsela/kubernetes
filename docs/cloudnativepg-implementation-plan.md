@@ -518,12 +518,12 @@ If issues occur:
 
 ## Testing Checklist
 
-- [ ] Operator pods running in `cnpg-system` namespace
-- [ ] Cluster pod running in `postgresql` namespace
-- [ ] Primary instance accepting connections
+- [x] Operator pods running in `cnpg-system` namespace
+- [x] Cluster pod running in `postgresql` namespace
+- [x] Primary instance accepting connections
 - [ ] Prometheus scraping metrics from port 9187
-- [ ] Scheduled backup created successfully
-- [ ] Backup files appearing in S3 bucket `asela-mysql-backups` under `postgresql/` prefix
+- [x] Scheduled backup created successfully
+- [x] Backup files appearing in S3 bucket `mysql-backups-asela-cluster` under `postgresql/` prefix
 - [ ] n8n successfully connected to new cluster
 
 ---
@@ -536,10 +536,10 @@ If issues occur:
 | Phase 1: Operator Installation | ✅ Complete | 3/3 |
 | Phase 2: Cluster Deployment | ✅ Complete | 5/5 |
 | Phase 3: Prometheus Integration | ✅ Complete | 1/2 |
-| Phase 4: Backup Configuration | ✅ Complete | 3/4 |
+| Phase 4: Backup Configuration | ✅ Complete | 4/4 |
 | Phase 5: Migration | ⬜ Not Started | 0/4 |
 
-**Total Progress**: 15/21 tasks (71%)
+**Total Progress**: 16/21 tasks (76%)
 
 ---
 
