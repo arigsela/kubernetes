@@ -1,37 +1,13 @@
-apiVersion: mysql.sql.crossplane.io/v1alpha1
-kind: User
-metadata:
-  name: chores-user
-  namespace: chores-tracker
-spec:
-  providerConfigRef:
-    name: mysql-provider
-  forProvider:
-    passwordSecretRef:
-      name: chores-tracker-backend-secrets
-      key: DB_PASSWORD
-      namespace: chores-tracker
----
-apiVersion: mysql.sql.crossplane.io/v1alpha1
-kind: Database
-metadata:
-  name: chores-db
-  namespace: chores-tracker
-spec:
-  providerConfigRef:
-    name: mysql-provider
-  forProvider: {}
----
-apiVersion: mysql.sql.crossplane.io/v1alpha1
-kind: Grant
-metadata:
-  name: chores-db-grant
-  namespace: chores-tracker
-spec:
-  providerConfigRef:
-    name: mysql-provider
-  forProvider:
-    user: chores-user
-    privileges:
-      - ALL
-    database: chores-db  # Match the database name
+# Crossplane MySQL resources removed - migrated to CloudNativePG
+#
+# The chores-tracker database is now managed by CloudNativePG:
+#   - Database: chores_tracker
+#   - User: chores_user
+#   - Host: postgresql-cluster-rw.postgresql.svc.cluster.local
+#   - Port: 5432
+#
+# Credentials are stored in Vault at: k8s-secrets/chores-tracker-backend
+#   - database-url: postgresql+asyncpg://chores_user:***@postgresql-cluster-rw.postgresql.svc.cluster.local:5432/chores_tracker
+#   - db-password: <password>
+#
+# See docs/cloudnativepg-deployment-details.md for more information.
