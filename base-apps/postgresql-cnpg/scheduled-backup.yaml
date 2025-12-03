@@ -1,0 +1,20 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgresql-daily-backup
+  namespace: postgresql
+spec:
+  # Daily at 2 AM UTC (matches MySQL backup schedule)
+  # Note: CNPG uses 6-field cron with seconds
+  schedule: "0 0 2 * * *"
+
+  backupOwnerReference: self
+
+  cluster:
+    name: postgresql-cluster
+
+  # Take first backup immediately upon creation
+  immediate: true
+
+  # Keep the schedule active
+  suspend: false

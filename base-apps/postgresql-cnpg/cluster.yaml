@@ -1,0 +1,84 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgresql-cluster
+  namespace: postgresql
+spec:
+  instances: 1  # Single instance for homelab
+
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "256MB"
+      effective_cache_size: "512MB"
+      maintenance_work_mem: "64MB"
+      checkpoint_completion_target: "0.9"
+      wal_buffers: "16MB"
+      default_statistics_target: "100"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+
+  # Bootstrap configuration - initializes the database cluster
+  bootstrap:
+    initdb:
+      database: n8n
+      owner: n8n
+      secret:
+        name: postgresql-credentials
+
+  storage:
+    storageClass: local-path
+    size: 20Gi
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      # No CPU limit - allows bursting
+
+  # Enable monitoring with Prometheus annotations
+  managed:
+    roles:
+      - name: n8n
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        passwordSecret:
+          name: postgresql-credentials
+
+  # Pod template for Prometheus annotations
+  monitoring:
+    enablePodMonitor: false
+
+  # Backup configuration using Barman to S3
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://asela-mysql-backups/postgresql/
+      endpointURL: https://s3.us-east-2.amazonaws.com
+      s3Credentials:
+        accessKeyId:
+          name: postgresql-backup-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: postgresql-backup-credentials
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+    retentionPolicy: "30d"
+
+  # Node selection - infrastructure nodes
+  affinity:
+    nodeSelector:
+      node.kubernetes.io/workload: infrastructure
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
