@@ -60,7 +60,6 @@ spec:
   backup:
     barmanObjectStore:
       destinationPath: s3://asela-mysql-backups/postgresql/
-      endpointURL: https://s3.us-east-2.amazonaws.com
       s3Credentials:
         accessKeyId:
           name: postgresql-backup-credentials
@@ -68,6 +67,9 @@ spec:
         secretAccessKey:
           name: postgresql-backup-credentials
           key: ACCESS_SECRET_KEY
+        region:
+          name: postgresql-backup-credentials
+          key: AWS_REGION
       wal:
         compression: gzip
         maxParallel: 2
