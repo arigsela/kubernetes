@@ -18575,6 +18575,9 @@ spec:
       terminationGracePeriodSeconds: 10
       nodeSelector:
         node.kubernetes.io/workload: infrastructure
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
       volumes:
       - emptyDir: {}
         name: scratch-data
