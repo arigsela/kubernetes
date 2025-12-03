@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
+    targetRevision: feature/cloudnativepg
     path: base-apps/cloudnative-pg
   destination:
     server: https://kubernetes.default.svc
