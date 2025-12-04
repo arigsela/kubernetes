@@ -3,11 +3,6 @@ kind: Deployment
 metadata:
   name: chores-tracker-backend
   namespace: chores-tracker
-  annotations:
-    # Prometheus metrics scraping configuration
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "8000"
-    prometheus.io/path: "/metrics"
 spec:
   replicas: 2
   selector:
@@ -17,6 +12,11 @@ spec:
     metadata:
       labels:
         app: chores-tracker-backend
+      annotations:
+        # Prometheus metrics scraping configuration
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
