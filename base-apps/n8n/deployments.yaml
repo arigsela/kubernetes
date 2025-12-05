@@ -80,6 +80,10 @@ spec:
         - name: N8N_PROXY_HOPS
           value: "1"
 
+        # Enforce correct file permissions for settings
+        - name: N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS
+          value: "true"
+
         # Execution Settings
         - name: EXECUTIONS_DATA_SAVE_ON_ERROR
           value: "all"
