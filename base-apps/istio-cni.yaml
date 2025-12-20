@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-cni
+  namespace: argo-cd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: cni
+    targetRevision: 1.24.0
+    helm:
+      values: |
+        profile: ambient
+        cni:
+          # K3s CNI bin/conf directories
+          cniBinDir: /var/lib/rancher/k3s/data/current/bin
+          cniConfDir: /var/lib/rancher/k3s/agent/etc/cni/net.d
+          tolerations:
+          - effect: NoSchedule
+            operator: Exists
+          - effect: NoExecute
+            operator: Exists
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

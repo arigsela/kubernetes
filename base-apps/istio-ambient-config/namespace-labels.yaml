@@ -1,0 +1,9 @@
+# Namespace configuration for Istio Ambient Mesh enrollment
+# The label istio.io/dataplane-mode=ambient enrolls the namespace in the mesh
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chores-tracker
+  labels:
+    istio.io/dataplane-mode: ambient
