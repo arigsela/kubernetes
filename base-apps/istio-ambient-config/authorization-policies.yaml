@@ -1,0 +1,42 @@
+# Istio Authorization Policies for chores-tracker namespace
+# These policies demonstrate zero-trust security with Ambient Mesh
+---
+# Policy: Allow frontend to access backend API
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: chores-tracker
+spec:
+  selector:
+    matchLabels:
+      app: chores-tracker-backend
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/chores-tracker/sa/chores-tracker-frontend
+      to:
+        - operation:
+            methods: ["GET", "POST", "PUT", "DELETE"]
+            paths: ["/api/*", "/health", "/docs", "/openapi.json"]
+---
+# Policy: Allow ingress controller to access frontend
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-frontend
+  namespace: chores-tracker
+spec:
+  selector:
+    matchLabels:
+      app: chores-tracker-frontend
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["ingress-nginx", "nginx-ingress"]
+      to:
+        - operation:
+            methods: ["GET", "POST", "PUT", "DELETE"]
