@@ -358,8 +358,8 @@ spec:
 
 ### Step 4: Commit and Push
 
-- [ ] Commit all files to git
-- [ ] Push to remote
+- [x] Commit all files to git
+- [x] Push to remote
 - [ ] ArgoCD will automatically sync (sync waves ensure correct order)
 
 ### Step 5: Verification
