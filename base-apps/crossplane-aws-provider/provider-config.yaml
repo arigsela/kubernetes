@@ -1,0 +1,39 @@
+# ProviderConfig for AWS
+# This tells Crossplane how to authenticate with AWS
+# It references the aws-secret created by Terraform (IAM user: crossplane-admin)
+
+apiVersion: aws.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+  namespace: crossplane-system
+  annotations:
+    description: "Default AWS ProviderConfig for Crossplane using crossplane-admin IAM user"
+    argocd.argoproj.io/sync-wave: "2"  # Apply after providers install their CRDs
+spec:
+  # Reference the Kubernetes secret containing AWS credentials
+  # This secret is created by Terraform and contains:
+  # - aws_access_key_id (from crossplane-admin IAM user)
+  # - aws_secret_access_key (from crossplane-admin access key)
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: aws-secret          # Secret name created by Terraform
+      key: creds                # Key in the secret containing credentials
+
+  # Optional: Skip TLS verification for testing only
+  # skipTLSVerify: false
+
+  # Optional: Assume role (if needed for cross-account access)
+  # assumeRoleARN: "arn:aws:iam::123456789012:role/SomeRole"
+  # assumeRoleDuration: "15m"
+
+---
+# ServiceAccount for Crossplane to use
+# This allows Crossplane to access the aws-secret
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crossplane-provider-aws
+  namespace: crossplane-system

@@ -1,0 +1,24 @@
+# S3 Bucket for Loki Logs via Crossplane
+# This bucket will store all Loki log chunks with cost-optimized lifecycle rules
+# Managed declaratively through GitOps - no manual AWS CLI commands needed!
+
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: asela-chores-loki-logs-20251017
+  labels:
+    app: loki
+    component: storage
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-1
+    tags:
+      Name: "Asela Chores Loki Logs Storage"
+      Environment: "homelab"
+      ManagedBy: "Crossplane"
+      Purpose: "Loki log chunk storage"
+      CostCenter: "observability"
+      Project: "asela-chores"
+  providerConfigRef:
+    name: default

@@ -1,0 +1,24 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ecr-credentials-sync
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create", "delete", "get", "list", "patch", "update"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]  # Full namespace management
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ecr-credentials-sync
+subjects:
+- kind: ServiceAccount
+  name: ecr-credentials-sync
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: ecr-credentials-sync
+  apiGroup: rbac.authorization.k8s.io

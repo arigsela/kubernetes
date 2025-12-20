@@ -1,0 +1,56 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: n8n-webhook
+  namespace: n8n
+  annotations:
+    # TLS/SSL Configuration
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Backend Protocol
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+    # Rate Limiting (higher limits for webhooks)
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+
+    # 🌐 PUBLIC ACCESS - No IP Whitelist
+    # Webhooks need to be accessible from Slack and other services
+
+    # Timeouts
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+
+    # Client body size
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - n8n.arigsela.com
+    secretName: n8n-tls
+  rules:
+  - host: n8n.arigsela.com
+    http:
+      paths:
+      # Webhook Path - Publicly Accessible
+      # Security provided by n8n's webhook tokens (unique URLs per workflow)
+      - path: /webhook
+        pathType: Prefix
+        backend:
+          service:
+            name: n8n
+            port:
+              number: 5678
+      # Webhook Test Path - Publicly Accessible (for debugging)
+      - path: /webhook-test
+        pathType: Prefix
+        backend:
+          service:
+            name: n8n
+            port:
+              number: 5678

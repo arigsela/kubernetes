@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chores-tracker-nginx
+  namespace: chores-tracker
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    # Rewrite /api requests to / for the backend
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    # Higher priority than frontend for /api paths
+    nginx.ingress.kubernetes.io/priority: "100"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: chores.arigsela.com
+    http:
+      paths:
+      - path: /api/(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: chores-tracker
+            port:
+              number: 80

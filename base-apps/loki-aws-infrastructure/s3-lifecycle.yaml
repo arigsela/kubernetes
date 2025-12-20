@@ -1,0 +1,41 @@
+# S3 Lifecycle Configuration for Loki Logs
+# Automatically transitions logs to cheaper storage tiers over time
+# This dramatically reduces storage costs while maintaining compliance
+#
+# Cost optimization strategy:
+# - Days 0-30: STANDARD storage (hot data, frequently accessed)
+# - Days 30-90: STANDARD_IA (infrequent access, 50% cheaper)
+# - Days 90-365: DEEP_ARCHIVE (rarely accessed, 95% cheaper)
+# - After 365 days: Deleted (retention policy compliance)
+
+apiVersion: s3.aws.upbound.io/v1beta2
+kind: BucketLifecycleConfiguration
+metadata:
+  name: loki-logs-lifecycle
+  labels:
+    app: loki
+    component: storage-lifecycle
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-1
+    # Reference the bucket by name - Crossplane will wait for it to exist
+    bucketRef:
+      name: asela-chores-loki-logs-20251017
+    rule:
+      - id: cost-optimization
+        status: Enabled
+        # filter is an Object with a prefix field
+        filter:
+          prefix: ""  # Apply to all objects in the bucket
+        # transition is an array of objects
+        transition:
+          - days: 30
+            storageClass: STANDARD_IA
+          - days: 90
+            storageClass: DEEP_ARCHIVE
+        # expiration is an Object with a days field
+        expiration:
+          days: 365
+  providerConfigRef:
+    name: default

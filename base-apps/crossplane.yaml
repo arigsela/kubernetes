@@ -1,0 +1,60 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: crossplane
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.crossplane.io/stable
+    chart: crossplane
+    targetRevision: 2.0.2
+    helm:
+      values: |
+        # Node placement for application workload
+        nodeSelector:
+          node.kubernetes.io/workload: application
+
+        # Enable Crossplane v2 features (updated for v2.0.2)
+        args:
+          - --enable-realtime-compositions
+          - --enable-ssa-claims
+
+        # Install SQL provider at startup
+        provider:
+          packages:
+            - xpkg.upbound.io/crossplane-contrib/provider-sql:v0.9.0
+
+        # Resource limits for main Crossplane pod
+        resourcesCrossplane:
+          limits:
+            cpu: 500m
+            memory: 1024Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+
+        # Resource limits for RBAC Manager
+        resourcesRBACManager:
+          limits:
+            cpu: 100m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+
+        # Security context
+        securityContextCrossplane:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsUser: 65532
+          runAsGroup: 65532
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: crossplane-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

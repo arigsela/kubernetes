@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chores-tracker-config
+  namespace: chores-tracker
+data:
+  ENVIRONMENT: "production"
+  DEBUG: "False"
+  BACKEND_CORS_ORIGINS: "https://chores.arigsela.com"

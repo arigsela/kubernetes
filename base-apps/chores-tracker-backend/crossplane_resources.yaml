@@ -1,0 +1,13 @@
+# Crossplane MySQL resources removed - migrated to CloudNativePG
+#
+# The chores-tracker database is now managed by CloudNativePG:
+#   - Database: chores_tracker
+#   - User: chores_user
+#   - Host: postgresql-cluster-rw.postgresql.svc.cluster.local
+#   - Port: 5432
+#
+# Credentials are stored in Vault at: k8s-secrets/chores-tracker-backend
+#   - database-url: postgresql+asyncpg://chores_user:***@postgresql-cluster-rw.postgresql.svc.cluster.local:5432/chores_tracker
+#   - db-password: <password>
+#
+# See docs/cloudnativepg-deployment-details.md for more information.

@@ -1,0 +1,154 @@
+# Deployment for OnCall Agent API
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oncall-agent-api
+  namespace: oncall-agent
+  labels:
+    app: oncall-agent-api
+    version: v1
+spec:
+  replicas: 2  # Multiple replicas for HA
+  selector:
+    matchLabels:
+      app: oncall-agent-api
+  template:
+    metadata:
+      labels:
+        app: oncall-agent-api
+        version: v1
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      serviceAccountName: oncall-agent-api-sa
+
+      # Pod-level security context (required by Kyverno)
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+      - name: api
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/oncall-agent:v0.0.2
+        imagePullPolicy: Always
+
+        # Container-level security context (required by Kyverno)
+        securityContext:
+          seccompProfile:
+            type: RuntimeDefault
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          capabilities:
+            drop:
+              - ALL
+
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+
+        # Import shared configuration from ConfigMap
+        envFrom:
+        - configMapRef:
+            name: oncall-agent-config
+
+        env:
+        # Run mode - API specific
+        - name: RUN_MODE
+          value: "api"
+
+        # Secrets from API Secret
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-api-secrets
+              key: anthropic-api-key
+
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-api-secrets
+              key: github-token
+
+        # API Keys (secret, not in configmap)
+        - name: API_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-api-secrets
+              key: api-keys
+        # AWS Credentials for NAT Gateway analysis (CloudWatch + EC2)
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-api-secrets
+              key: aws-access-key-id
+
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-api-secrets
+              key: aws-secret-access-key
+
+        - name: AWS_REGION
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-api-secrets
+              key: aws-region
+              optional: true  # Falls back to us-east-1 default
+
+        # Datadog Credentials for metrics queries
+        - name: DATADOG_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-api-secrets
+              key: datadog-api-key
+
+        - name: DATADOG_APP_KEY
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-api-secrets
+              key: datadog-app-key
+
+        - name: DATADOG_SITE
+          value: "datadoghq.com"  # or datadoghq.eu for EU region
+
+        # Note: API_HOST, API_PORT, SESSION_TTL_MINUTES, MAX_SESSIONS_PER_USER,
+        # RATE_LIMIT_*, and CORS_ORIGINS are now loaded from oncall-agent-config ConfigMap
+        # AGENT_LOG_LEVEL, K8S_CONTEXT, GITHUB_ORG, AWS_REGION, etc. also from ConfigMap
+
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+
+        # Liveness probe - check if API is responding
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        # Readiness probe - check if API is ready to serve
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+      # ECR authentication
+      imagePullSecrets:
+      - name: ecr-registry
+
+      # Graceful shutdown
+      terminationGracePeriodSeconds: 30

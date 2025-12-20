@@ -1,0 +1,24 @@
+# IAM Policy Attachment via Crossplane
+# Links the loki-s3-access policy to the loki-s3-user
+# Uses Crossplane references to ensure proper dependency ordering
+
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: UserPolicyAttachment
+metadata:
+  name: loki-s3-user-policy
+  labels:
+    app: loki
+    component: iam-policy-attachment
+    managed-by: crossplane
+spec:
+  forProvider:
+    # Reference the policy by ARN selector
+    policyArnSelector:
+      matchLabels:
+        app: loki
+        component: iam-policy
+    # Reference the user by name
+    userRef:
+      name: loki-s3-user
+  providerConfigRef:
+    name: default

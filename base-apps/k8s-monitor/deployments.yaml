@@ -1,0 +1,174 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-monitor
+  namespace: k8s-monitor
+  labels:
+    app: k8s-monitor
+    version: v1
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Single instance, no rolling updates needed
+
+  selector:
+    matchLabels:
+      app: k8s-monitor
+
+  template:
+    metadata:
+      labels:
+        app: k8s-monitor
+        version: v1
+      annotations:
+        prometheus.io/scrape: "false"
+
+    spec:
+      # Use service account with cluster read access
+      serviceAccountName: k8s-monitor
+
+      # Security context
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        fsGroup: 0
+
+      # Pull policy
+      imagePullPolicy: Always
+
+      # Containers
+      containers:
+        - name: k8s-monitor
+          # monitor:v0.0.3 is working fine
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/k8s-monitor:v0.0.21
+
+          # Command (use default from Dockerfile unless overriding)
+          command: ["python", "-m"]
+          args: ["src.main"]
+
+          # Environment from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: k8s-monitor-config
+
+          # Environment from Secret
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: k8s-monitor-secrets
+                  key: anthropic-api-key
+
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: k8s-monitor-secrets
+                  key: github-token
+
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: k8s-monitor-secrets
+                  key: slack-bot-token
+
+            - name: SLACK_CHANNEL
+              valueFrom:
+                secretKeyRef:
+                  name: k8s-monitor-secrets
+                  key: slack-channel
+
+            # Chores Tracker Application Health Monitoring
+            - name: CHORES_TRACKER_API_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: k8s-monitor-secrets
+                  key: chores-tracker-api-base-url
+
+            - name: CHORES_TRACKER_MONITORING_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: k8s-monitor-secrets
+                  key: chores-tracker-monitoring-username
+
+            - name: CHORES_TRACKER_MONITORING_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: k8s-monitor-secrets
+                  key: chores-tracker-monitoring-password
+
+          # Resource limits
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+
+          # Health check
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import sys; sys.exit(0)"
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          # Volume mounts
+          volumeMounts:
+            - name: agent-definitions
+              mountPath: /app/.claude/agents
+              readOnly: true
+            - name: orchestrator-context
+              mountPath: /app/.claude
+              readOnly: true
+
+      # ECR authentication
+      imagePullSecrets:
+      - name: ecr-registry
+
+      # Restart policy
+      restartPolicy: Always
+
+      # Volumes
+      volumes:
+        - name: orchestrator-context
+          configMap:
+            name: k8s-monitor-orchestrator
+            # Maps CLAUDE.md from ConfigMap to /app/.claude/CLAUDE.md
+            items:
+              - key: CLAUDE.md
+                path: CLAUDE.md
+
+        - name: agent-definitions
+          configMap:
+            name: k8s-monitor-agents
+            # Each key in the ConfigMap becomes a file in /app/.claude/agents
+            # Example: k8s-analyzer.md, escalation-manager.md, etc.
+
+      # Node selection (optional - constrain to specific nodes)
+      nodeSelector:
+        node.kubernetes.io/workload: application
+
+      # Tolerations (optional - allow scheduling on tainted nodes)
+      # tolerations:
+      #   - key: monitoring
+      #     operator: Equal
+      #     value: "true"
+      #     effect: NoSchedule
+
+      # Affinity (optional - spread across nodes)
+      # affinity:
+      #   podAntiAffinity:
+      #     preferredDuringSchedulingIgnoredDuringExecution:
+      #       - weight: 100
+      #         podAffinityTerm:
+      #           labelSelector:
+      #             matchExpressions:
+      #               - key: app
+      #                 operator: In
+      #                 values:
+      #                   - k8s-monitor
+      #           topologyKey: kubernetes.io/hostname

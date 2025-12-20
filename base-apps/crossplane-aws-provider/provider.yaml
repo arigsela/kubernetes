@@ -1,0 +1,35 @@
+# Crossplane AWS Providers for managing AWS resources via GitOps
+# Version: v1.12.0 (from provider-family-aws v2.1.1)
+# Purpose: Enable declarative infrastructure management for Loki observability stack
+
+---
+# AWS S3 Provider
+# Manages S3 buckets, lifecycle configurations, and related resources
+# Note: Provider is a cluster-scoped resource and does not have a namespace
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-s3
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"  # Install providers first
+spec:
+  package: xpkg.upbound.io/upbound/provider-aws-s3:v1.12.0
+  packagePullPolicy: IfNotPresent
+  revisionActivationPolicy: Automatic
+  revisionHistoryLimit: 1
+
+---
+# AWS IAM Provider
+# Manages IAM users, roles, policies, and access keys
+# Note: Provider is a cluster-scoped resource and does not have a namespace
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-iam
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"  # Install providers first
+spec:
+  package: xpkg.upbound.io/upbound/provider-aws-iam:v1.12.0
+  packagePullPolicy: IfNotPresent
+  revisionActivationPolicy: Automatic
+  revisionHistoryLimit: 1

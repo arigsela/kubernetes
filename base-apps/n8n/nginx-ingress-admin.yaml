@@ -1,0 +1,49 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: n8n-admin
+  namespace: n8n
+  annotations:
+    # TLS/SSL Configuration
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Backend Protocol
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+    # Rate Limiting (prevent brute force attacks on admin UI)
+    # Increased from 10 to 100 to allow n8n's many JS assets to load on initial page load
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+
+    # 🔒 IP WHITELIST - Admin UI Only
+    # Only this IP can access the n8n admin interface
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32"
+
+    # Timeouts
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+
+    # Client body size (for workflow imports)
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - n8n.arigsela.com
+    secretName: n8n-tls
+  rules:
+  - host: n8n.arigsela.com
+    http:
+      paths:
+      # Admin UI - IP Restricted
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: n8n
+            port:
+              number: 5678

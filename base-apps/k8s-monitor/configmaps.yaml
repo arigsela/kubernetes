@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-monitor-config
+  namespace: k8s-monitor
+  labels:
+    app: k8s-monitor
+data:
+  # K3s cluster context (from KUBECONFIG)
+  K3S_CONTEXT: "default"
+
+  # Monitoring interval (minutes)
+  MONITORING_INTERVAL_MINUTES: "240"
+
+  # Log level
+  LOG_LEVEL: "INFO"
+
+  # MCP server paths (same as in container)
+  GITHUB_MCP_PATH: "/app/mcp-servers/github/dist/index.js"
+  SLACK_MCP_PATH: "/app/mcp-servers/slack/dist/index.js"
+
+  # Services reference file path
+  SERVICES_FILE: "/app/docs/reference/services.txt"
+
+  # Model configuration (can be overridden per environment)
+  ORCHESTRATOR_MODEL: "claude-haiku-4-5-20251001"
+  K8S_ANALYZER_MODEL: "claude-haiku-4-5-20251001"
+  ESCALATION_MANAGER_MODEL: "claude-haiku-4-5-20251001"
+  SLACK_NOTIFIER_MODEL: "claude-haiku-4-5-20251001"
+  GITHUB_REVIEWER_MODEL: "claude-haiku-4-5-20251001"
+
+  GITHUB_REPO_OWNER: "arigsela"
+  GITHUB_REPO_NAME: "claude-agents"
+
+  SLACK_ENABLED: "true"
+
+  ENABLE_LONG_CONTEXT: "true"
+  SESSION_ID: "k8s-monitor-production"  # or any identifier
+  MAX_CONTEXT_TOKENS: "120000"
+  CONTEXT_PRUNE_THRESHOLD: "0.8"
+
+  APP_HEALTH_CHECKER_MODEL: "claude-haiku-4-5-20251001"

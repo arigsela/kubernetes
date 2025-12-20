@@ -1,0 +1,270 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-monitor-orchestrator
+  namespace: k8s-monitor
+  labels:
+    app: k8s-monitor
+    component: orchestrator
+data:
+  # ORCHESTRATOR CONTEXT: CLAUDE.md
+  # PURPOSE: Provides cluster-specific context to the orchestrator agent
+  # This is the most frequently customized file!
+  #
+  # CUSTOMIZATION SCENARIOS:
+  # 1. Change critical services list for your cluster
+  # 2. Update known issues (quirks that aren't real incidents)
+  # 3. Modify escalation policies for your team
+  # 4. Add new services or namespaces to monitor
+  # 5. Update team contact info or runbook links
+  #
+  # Changes take effect on next monitoring cycle (within 1 hour)
+  # Or force immediate: kubectl delete pod -n k8s-monitor -l app=k8s-monitor
+
+  CLAUDE.md: |
+    # K3s Monitoring Agent - Orchestrator Context
+
+    This file provides cluster-specific context for the k8s-monitor orchestrator.
+
+    **Last Updated**: 2025-10-20
+    **Cluster**: dev-eks (or your cluster name)
+    **Environment**: Development (or Production)
+
+    ## Cluster Information
+
+    - **Type**: K3s homelab cluster
+    - **Monitoring Frequency**: Every 1 hour (configurable)
+    - **Critical Services**: See services list below
+
+    ## Critical Services (P0 - Business Critical)
+
+    These services have 0 minutes max downtime. If ANY P0 service is down:
+    → ALERT IMMEDIATELY (SEV-1)
+
+    **Add/remove services based on YOUR cluster:**
+
+    - service-name-1: Description of what this service does
+    - service-name-2: Description of what this service does
+    - service-name-3: Description of what this service does
+
+    ## Infrastructure Services (P1 - Infrastructure Dependencies)
+
+    These services support P0 services. If down, deployment pipeline affected:
+    → ALERT if affecting P0 or max downtime exceeded (SEV-2)
+
+    - vault: Secret management
+    - external-secrets-operator: Secret syncing
+    - cert-manager: TLS certificate automation
+
+    ## Support Services (P2-P3)
+
+    Non-critical infrastructure:
+    → LOG ONLY, no alerts (SEV-4)
+
+    - monitoring-tools
+    - logging-infrastructure
+    - development-only-services
+
+    ## Known Issues & Quirks
+
+    **IMPORTANT**: These are expected behaviors, NOT incidents!
+
+    If you see these, do NOT escalate:
+
+    ### Service Slow Startup (> 5 minutes)
+    - Which services: (list any services with slow startup)
+    - Why: Initial data loading, DB migrations, etc.
+    - Solution: This is expected - DO NOT FLAG
+
+    ### Vault Manual Unseal
+    - After pod restart, vault requires manual unseal
+    - Why: Security design - sealed vault can't serve secrets
+    - Solution: This is expected - DO NOT FLAG (operational procedure)
+
+    ### Single Replica Services
+    - Services with no HA: (list them)
+    - Why: Architectural choice for this cluster
+    - Solution: This is expected - DO NOT FLAG (but monitor for crashes)
+
+    ### Database/Storage Services
+    - Single instance services: mysql, postgresql
+    - Why: Simplicity for homelab cluster
+    - Solution: This is expected - monitor backup status instead
+
+    ## Health Check Patterns
+
+    How to verify services are healthy:
+
+    | Service | Health Check | Healthy State |
+    |---------|-------------|---------------|
+    | service-1 | `kubectl get pods -n ns-1` | Running, Ready 1/1 |
+    | service-2 | HTTP `/health` endpoint | Status 200 OK |
+    | database | TCP port probe | Port 3306 responding |
+
+    ## Escalation Policy
+
+    When to alert your team:
+
+    ### SEV-1: Immediate Alert Required
+    - **When**: Any P0 service completely down
+    - **Who to alert**: On-call engineer
+    - **Channel**: #critical-alerts
+    - **Timing**: Immediately (no delay)
+
+    ### SEV-2: High Priority Alert
+    - **When**: P1 service down OR P0 service degraded
+    - **Who to alert**: Engineering team lead
+    - **Channel**: #infrastructure-alerts
+    - **Timing**: Immediately
+
+    ### SEV-3: Medium Priority
+    - **When**: P2 service down OR warnings detected
+    - **Who to alert**: Team for review
+    - **Channel**: #infrastructure-alerts
+    - **Timing**: Business hours only (9 AM - 5 PM)
+
+    ### SEV-4: Info Only
+    - **When**: All healthy, expected behaviors, maintenance
+    - **Who to alert**: Nobody
+    - **Channel**: None (logs only)
+    - **Timing**: N/A
+
+    ## Team & Contact Information
+
+    **On-Call Engineer**: (Rotate to next person)
+    **Primary Team**: (Engineering team responsible)
+    **Slack Channels**:
+    - #critical-alerts: For SEV-1/SEV-2
+    - #infrastructure-alerts: For SEV-2/SEV-3
+    - #monitoring: General monitoring discussions
+
+    **Documentation**:
+    - Runbooks: (link to your runbook repository)
+    - Service Architecture: (link to documentation)
+    - Incident Response Playbook: (link to playbook)
+
+    ## Deployment Information
+
+    How applications are deployed to this cluster:
+
+    - **Deployment Tool**: (GitOps, ArgoCD, kubectl, Helm, etc.)
+    - **Repository**: (GitHub/GitLab repo for manifests)
+    - **Sync Frequency**: (How often deployments sync)
+    - **Rollback Process**: (How to rollback failed deployments)
+
+    **Recent Deployments** (last 7 days):
+    - Timestamp: Changes made
+    - Timestamp: Changes made
+
+    ## Monitoring Cycle Workflow
+
+    Here's what happens each monitoring cycle:
+
+    1. **Orchestrator** (Claude Haiku) starts monitoring cycle
+    2. **k8s-analyzer** (Claude Haiku) checks pod health
+       - Runs kubectl commands
+       - Checks for crashes, errors, resource issues
+       - Returns structured findings
+    3. **app-health-checker** (Claude Haiku) - CONDITIONAL (only if pods healthy)
+       - Verifies application-layer health for chores-tracker API
+       - Tests public health endpoints (liveness, readiness, detailed)
+       - Validates authentication system (JWT login)
+       - Tests business logic (chores endpoint)
+       - Returns structured findings (healthy/degraded/critical)
+    4. **escalation-manager** (Claude Haiku) assesses severity
+       - Maps findings to P0/P1/P2/P3 services
+       - Checks against known issues
+       - Determines if escalation needed
+    5. **github-reviewer** (Claude Haiku) - if issues found
+       - Searches recent commits
+       - Correlates with deployment timing
+       - Identifies possible root causes
+    6. **slack-notifier** (Claude Haiku) - if needed
+       - Formats alert message
+       - Sends to appropriate channel
+    7. **Orchestrator** saves cycle report with results
+
+    ## Customization Examples
+
+    ### Example 1: Add a New Service to Monitor
+
+    1. Add to Critical Services (P0/P1/P2):
+       ```
+       - my-new-service: Brief description
+       ```
+
+    2. Next cycle, analyzer will monitor it
+    3. Escalation-manager will map issues to appropriate severity
+
+    ### Example 2: Mark Service as Expected to Be Down
+
+    1. Add to Known Issues:
+       ```
+       ### my-service Maintenance
+       - Every Sunday 2-3 AM for backups
+       - Why: Backup process
+       - Solution: This is expected - DO NOT FLAG
+       ```
+
+    2. Next cycle, no alert if service down during maintenance window
+
+    ### Example 3: Change Alert Channel
+
+    1. Update Escalation Policy section:
+       ```
+       - **Channel**: #my-custom-channel
+       ```
+
+    2. Next cycle, alerts go to new channel
+
+    ### Example 4: Add New Known Issue
+
+    1. Add to Known Issues & Quirks:
+       ```
+       ### Service Restart Behavior
+       - Why: Expected after configuration change
+       - Solution: This is expected - DO NOT FLAG for 5 minutes
+       ```
+
+    2. Next cycle, analyzer knows this is normal
+
+    ## Performance Metrics
+
+    Typical monitoring cycle performance:
+
+    - **Total time per cycle**: 2-5 minutes
+    - **k8s-analyzer execution**: 1-2 minutes (kubectl commands)
+    - **escalation-manager decision**: 30-60 seconds
+    - **Slack notification**: 10-20 seconds
+    - **Report generation**: 10-20 seconds
+
+    ## Environment Variables
+
+    ConfigMap also handles these settings:
+
+    - `MONITORING_INTERVAL_HOURS`: Frequency (default: 1)
+    - `LOG_LEVEL`: Verbosity (INFO, DEBUG, WARNING)
+    - `K3S_CONTEXT`: Kubernetes context name
+
+    ## Troubleshooting
+
+    If something seems wrong:
+
+    1. **Check logs**: `kubectl logs -n k8s-monitor -l app=k8s-monitor -f`
+    2. **View cycle report**: `kubectl exec -n k8s-monitor deployment/k8s-monitor -- ls -la /app/logs/`
+    3. **Verify services list**: Compare active services vs. this file
+    4. **Check known issues**: Add any unexpected behaviors here
+
+    ## Change Log
+
+    Track changes to this orchestrator context:
+
+    - **2025-10-20**: Initial release, hot-reload enabled
+    - **YYYY-MM-DD**: Description of change
+    - **YYYY-MM-DD**: Description of change
+
+    ---
+
+    **Version**: 1.0.0 (Hot-Reload Enabled)
+    **Format**: YAML-based, loaded from Kubernetes ConfigMap
+    **Update Frequency**: Typically updated every 1-2 weeks as cluster evolves

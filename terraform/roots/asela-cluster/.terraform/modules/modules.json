@@ -1,0 +1,1 @@
+{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"argocd","Source":"../../modules/argocd","Dir":"../../modules/argocd"},{"Key":"argocd_applicationsets","Source":"../../modules/application-sets","Dir":"../../modules/application-sets"}]}

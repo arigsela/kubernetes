@@ -1,0 +1,26 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-route53
+spec:
+  acme:
+    # The ACME production server URL
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Email address used for ACME registration
+    email: admin@arigsela.com
+    # Name of a secret used to store the ACME account private key
+    privateKeySecretRef:
+      name: letsencrypt-route53-prod
+    # Enable the DNS-01 challenge provider with Route 53
+    solvers:
+    - dns01:
+        route53:
+          region: us-east-1
+          # AWS credentials from secret
+          accessKeyIDSecretRef:
+            name: route53-credentials
+            key: access-key-id
+          secretAccessKeySecretRef:
+            name: route53-credentials
+            key: secret-access-key
+      # DNS-01 solver for Route 53 (applies to all domains)

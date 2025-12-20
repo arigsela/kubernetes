@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mysql-restore-job
+  namespace: chores-tracker-backend
+spec:
+  restartPolicy: Never
+  containers:
+  - name: mysql-restore
+    image: mariadb:10.6
+    command:
+    - bash
+    - -c
+    - |
+      echo "Starting MySQL restore..."
+      echo "Disabling foreign key checks..."
+      mysql -h asela-cluster-mysql.c9ke2o0oe6ir.us-east-2.rds.amazonaws.com \
+            -u mysqladmin \
+            -p'271h0lDb6Nhhmh1(' \
+            -e "SET FOREIGN_KEY_CHECKS=0; SOURCE /restore-data/restore.sql; SET FOREIGN_KEY_CHECKS=1;"
+
+      if [ $? -eq 0 ]; then
+        echo "✅ Restore completed successfully!"
+      else
+        echo "❌ Restore failed!"
+        exit 1
+      fi
+
+      echo "Sleeping for 30 seconds before pod exits..."
+      sleep 30
+    volumeMounts:
+    - name: restore-sql
+      mountPath: /restore-data
+  volumes:
+  - name: restore-sql
+    configMap:
+      name: chores-db-restore

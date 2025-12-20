@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chores-tracker-frontend
+  namespace: chores-tracker-frontend
+  labels:
+    app: chores-tracker-frontend
+    component: frontend
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: chores-tracker-frontend
+  template:
+    metadata:
+      labels:
+        app: chores-tracker-frontend
+        component: frontend
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      containers:
+      - name: frontend
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker-frontend:1.5.2
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: API_URL
+          value: "https://chores.arigsela.com/api/v1"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1001
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: nginx-cache
+          mountPath: /var/cache/nginx
+        - name: nginx-run
+          mountPath: /var/run
+        - mountPath: /etc/nginx/conf.d
+          name: nginx-conf-d  # Add this line
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: nginx-cache
+        emptyDir: {}
+      - name: nginx-run
+        emptyDir: {}
+      - emptyDir: {}
+        name: nginx-conf-d  # Add this line
+      imagePullSecrets:
+      - name: ecr-registry
+      securityContext:
+        fsGroup: 1001
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30

@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chores-tracker-backend
+  namespace: chores-tracker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: chores-tracker-backend
+  template:
+    metadata:
+      labels:
+        app: chores-tracker-backend
+      annotations:
+        # Prometheus metrics scraping configuration
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      containers:
+      - name: chores-tracker-backend
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:7.0.2
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: chores-tracker-backend-config
+        - secretRef:
+            name: chores-tracker-backend-secrets
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 90  # Increased to allow for application startup and import time
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+            scheme: HTTP
+          initialDelaySeconds: 60  # Increased to allow for application startup
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      imagePullSecrets:
+      - name: ecr-registry

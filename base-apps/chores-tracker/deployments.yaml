@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chores-tracker
+  namespace: chores-tracker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: chores-tracker
+  template:
+    metadata:
+      labels:
+        app: chores-tracker
+    spec:
+      containers:
+      - name: chores-tracker
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:5.3.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - configMapRef:
+            name: chores-tracker-config
+        - secretRef:
+            name: chores-tracker-secrets
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 360
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 300
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      imagePullSecrets:
+      - name: ecr-registry

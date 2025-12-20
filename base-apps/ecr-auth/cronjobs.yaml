@@ -1,0 +1,64 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ecr-credentials-sync
+  namespace: kube-system
+spec:
+  schedule: "0 * * * *"
+  successfulJobsHistoryLimit: 3  # Keep last 3 successful jobs
+  failedJobsHistoryLimit: 3       # Keep last 3 failed jobs
+  concurrencyPolicy: Forbid        # Don't run concurrent jobs
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 3600  # Delete job 1 hour after completion
+      template:
+        spec:
+          nodeSelector:
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+          serviceAccountName: ecr-credentials-sync
+          containers:
+          - name: ecr-credentials-sync
+            image: heyvaldemar/aws-kubectl:latest
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: AWS_REGION
+            command:
+            - /bin/sh
+            - -c
+            - |
+              # Namespaces to synchronize secrets to
+
+              for NAMESPACE in chores-tracker chores-tracker-frontend mysql; do
+                # Check if namespace exists
+                if ! kubectl get namespace $NAMESPACE > /dev/null 2>&1; then
+                  echo "Namespace $NAMESPACE doesn't exist. Please create it first."
+                  continue
+                fi
+
+                # Create or update secret in the namespace
+                echo "Syncing ECR credentials in namespace $NAMESPACE"
+                aws ecr get-login-password --region $AWS_REGION | kubectl delete secret --ignore-not-found=true docker-registry ecr-registry -n $NAMESPACE
+                aws ecr get-login-password --region $AWS_REGION | kubectl create secret docker-registry ecr-registry \
+                  --docker-server=852893458518.dkr.ecr.$AWS_REGION.amazonaws.com \
+                  --docker-username=AWS \
+                  --docker-password=$(aws ecr get-login-password --region $AWS_REGION) \
+                  -n $NAMESPACE
+              done
+          restartPolicy: OnFailure
+
