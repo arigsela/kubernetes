@@ -90,7 +90,9 @@ spec:
         - name: dashboard-provider
           mountPath: /etc/grafana/provisioning/dashboards
         - name: dashboards
-          mountPath: /var/lib/grafana/dashboards
+          mountPath: /var/lib/grafana/dashboards/k8s
+        - name: dashboards-istio
+          mountPath: /var/lib/grafana/dashboards/istio
         resources:
           requests:
             cpu: 100m
@@ -127,6 +129,9 @@ spec:
       - name: dashboards
         configMap:
           name: grafana-dashboard-k8s-basic
+      - name: dashboards-istio
+        configMap:
+          name: grafana-dashboard-istio-ambient
 ---
 apiVersion: v1
 kind: Service
