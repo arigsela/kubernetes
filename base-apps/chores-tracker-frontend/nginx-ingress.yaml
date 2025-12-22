@@ -1,0 +1,38 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chores-tracker-frontend-nginx
+  namespace: chores-tracker-frontend
+  annotations:
+    # TLS/SSL Configuration
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Backend Protocol
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+    # Timeouts
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+
+    # Lower priority than backend (backend uses 100 for /api paths)
+    nginx.ingress.kubernetes.io/priority: "50"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - chores.arigsela.com
+    secretName: chores-tracker-tls
+  rules:
+  - host: chores.arigsela.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: chores-tracker-frontend
+            port:
+              number: 80
