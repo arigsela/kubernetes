@@ -14,13 +14,12 @@ spec:
     helm:
       values: |
         profile: ambient
-        # K3s platform setting for correct CNI paths
         global:
           platform: k3s
+        # K3s CNI paths - set at top level for Helm chart
+        cniBinDir: /var/lib/rancher/k3s/data/cni
+        cniConfDir: /etc/cni/net.d
         cni:
-          # Explicit K3s CNI bin/conf directories (fallback)
-          cniBinDir: /var/lib/rancher/k3s/data/current/bin
-          cniConfDir: /var/lib/rancher/k3s/agent/etc/cni/net.d
           tolerations:
           - effect: NoSchedule
             operator: Exists
