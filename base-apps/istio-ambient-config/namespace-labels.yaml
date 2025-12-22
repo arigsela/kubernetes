@@ -1,5 +1,6 @@
 # Namespace configuration for Istio Ambient Mesh enrollment
-# The label istio.io/dataplane-mode=ambient enrolls the namespace in the mesh
+# - istio.io/dataplane-mode=ambient: enrolls namespace in the mesh (L4/mTLS)
+# - istio.io/use-waypoint: enables L7 processing via waypoint proxy
 ---
 apiVersion: v1
 kind: Namespace
@@ -7,3 +8,4 @@ metadata:
   name: chores-tracker
   labels:
     istio.io/dataplane-mode: ambient
+    istio.io/use-waypoint: chores-tracker-waypoint
