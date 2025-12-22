@@ -14,6 +14,8 @@ spec:
     helm:
       values: |
         profile: ambient
+        global:
+          platform: k3s
         pilot:
           nodeSelector:
             node.kubernetes.io/workload: infrastructure
