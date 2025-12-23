@@ -9,7 +9,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: deploy-service-mesh
+    targetRevision: main
     path: base-apps/istio-ambient-config
   destination:
     server: https://kubernetes.default.svc
