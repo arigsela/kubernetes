@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
+    targetRevision: deploy-service-mesh
     path: base-apps/logging
   destination:
     server: https://kubernetes.default.svc
