@@ -64,10 +64,30 @@ Production-grade GitOps infrastructure managing containerized applications with 
 | **IAM** | Service accounts | Least-privilege policies per service |
 | **Route 53** | DNS management | Cert-manager DNS-01 challenges |
 
+### Service Mesh (Istio Ambient)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Istio Ambient Mesh Architecture                            │
+├─────────────────────────────────────────────────────────────┤
+│  ztunnel (L4)     - Per-node DaemonSet, mTLS, TCP metrics   │
+│  Waypoint (L7)    - Per-namespace, HTTP metrics & policies  │
+│  istiod           - Control plane (ambient profile)         │
+│  istio-cni        - Traffic interception for K3s            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **Sidecar-less architecture** - No per-pod proxies, reduced resource overhead
+- **Automatic mTLS** - Zero-config encryption between mesh workloads
+- **L4/L7 metrics** - TCP and HTTP telemetry via Prometheus/Grafana
+- **Waypoint proxies** - Optional L7 processing for HTTP features
+
 ### Observability Stack
 
 - **Loki** - Log aggregation with S3 backend (30-day retention)
 - **Grafana Alloy** - Log collection agent
+- **Prometheus** - Metrics collection for Istio and applications
+- **Grafana Dashboards** - Istio Ambient Mesh L4/L7 visualization
 - **Structured logging** - JSON format for queryability
 
 ### Security Implementation
@@ -126,6 +146,16 @@ Production-grade GitOps infrastructure managing containerized applications with 
 | **logging (Loki)** | Centralized log aggregation |
 | **mysql-rds-backup** | Automated daily S3 backups |
 
+### Service Mesh Components
+| Component | Purpose |
+|-----------|---------|
+| **istio-base** | Istio CRDs and cluster resources |
+| **istiod** | Control plane (ambient profile) |
+| **istio-cni** | CNI plugin for K3s traffic interception |
+| **ztunnel** | L4 proxy DaemonSet (mTLS, TCP metrics) |
+| **waypoint** | L7 proxy for HTTP metrics and policies |
+| **istio-gateway-api** | Kubernetes Gateway API CRDs |
+
 ## Key Patterns Implemented
 
 ### 1. Master App Pattern
@@ -179,10 +209,11 @@ path: /api/(.*)
 |----------|--------------|
 | **GitOps** | ArgoCD, GitHub |
 | **IaC** | Terraform, Crossplane |
-| **Containers** | Kubernetes, Docker, AWS ECR |
+| **Containers** | Kubernetes (K3s), Docker, AWS ECR |
+| **Service Mesh** | Istio Ambient (ztunnel, waypoint, istiod) |
 | **Secrets** | HashiCorp Vault, External Secrets Operator |
 | **Certificates** | Cert-Manager, LetsEncrypt |
-| **Observability** | Loki, Grafana Alloy |
+| **Observability** | Prometheus, Loki, Grafana, Alloy |
 | **Database** | MySQL (RDS), PostgreSQL |
 | **Cloud** | AWS (S3, IAM, ECR, RDS, Route 53) |
 | **Ingress** | NGINX Ingress Controller |

@@ -17,9 +17,17 @@ This directory contains ArgoCD Application manifests and their corresponding Kub
 - **cert-manager** - TLS certificate automation via LetsEncrypt
 - **nginx-ingress** - HTTP/HTTPS ingress controller
 - **loki-aws-infrastructure** - Loki S3 bucket and IAM setup
-- **logging** - Loki log aggregation with S3 backend
+- **logging** - Loki/Prometheus/Grafana observability stack
 - **ecr-auth** - ECR credential synchronization CronJob
 - **whoami-test** - Ingress testing application
+
+### Service Mesh (Istio Ambient)
+- **istio-gateway-api** - Kubernetes Gateway API CRDs (sync-wave: -3)
+- **istio-base** - Istio CRDs and cluster resources (sync-wave: -2)
+- **istio-istiod** - Control plane with ambient profile (sync-wave: -1)
+- **istio-cni** - CNI plugin for K3s traffic interception (sync-wave: 0)
+- **istio-ztunnel** - L4 proxy DaemonSet for mTLS and TCP metrics (sync-wave: 1)
+- **istio-ambient-config** - Namespace enrollment and waypoint proxies (sync-wave: 2)
 
 ## Disabled Applications
 
@@ -166,6 +174,61 @@ nginx.ingress.kubernetes.io/priority: "50"
 path: /
 ```
 
+## Istio Ambient Mesh
+
+### Enrolling a Namespace in the Mesh
+
+To add a namespace to the Istio Ambient mesh (L4 mTLS):
+
+```yaml
+# Add to base-apps/istio-ambient-config/namespace-labels.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: my-namespace
+  labels:
+    istio.io/dataplane-mode: ambient
+```
+
+### Adding L7 (HTTP) Processing
+
+To enable L7 metrics and policies, add a waypoint proxy:
+
+```yaml
+# Add to base-apps/istio-ambient-config/waypoint-proxy.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: my-namespace-waypoint
+  namespace: my-namespace
+  labels:
+    istio.io/waypoint-for: all
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+      allowedRoutes:
+        namespaces:
+          from: Same
+```
+
+Then reference the waypoint in the namespace:
+
+```yaml
+metadata:
+  labels:
+    istio.io/dataplane-mode: ambient
+    istio.io/use-waypoint: my-namespace-waypoint
+```
+
+### Viewing Mesh Metrics
+
+- **Grafana Dashboard**: Access the "Istio Ambient Mesh" dashboard in the Istio folder
+- **L4 Metrics**: TCP connections, bytes sent/received (from ztunnel)
+- **L7 Metrics**: HTTP request rate, latency, success rate (from waypoint)
+
 ## Troubleshooting
 
 ### Application Not Deploying
@@ -185,4 +248,4 @@ path: /
 
 ---
 
-*Last Updated: 2025-11-22*
+*Last Updated: 2025-12-23*
