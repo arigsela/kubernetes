@@ -7,7 +7,7 @@ metadata:
   name: chores-tracker-waypoint
   namespace: chores-tracker
   labels:
-    istio.io/waypoint-for: service
+    istio.io/waypoint-for: all
 spec:
   gatewayClassName: istio-waypoint
   listeners:
