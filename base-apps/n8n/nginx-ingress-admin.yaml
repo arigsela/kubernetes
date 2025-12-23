@@ -15,7 +15,7 @@ metadata:
     # Rate Limiting (prevent brute force attacks on admin UI)
     # Increased from 10 to 100 to allow n8n's many JS assets to load on initial page load
     nginx.ingress.kubernetes.io/limit-rps: "100"
-    nginx.ingress.kubernetes.io/limit-connections: "20"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
 
     # 🔒 IP WHITELIST - Admin UI Only
     # Only this IP can access the n8n admin interface

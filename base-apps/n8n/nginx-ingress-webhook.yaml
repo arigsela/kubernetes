@@ -54,3 +54,11 @@ spec:
             name: n8n
             port:
               number: 5678
+      # MCP Server Path - Publicly Accessible (secured by Access Token auth)
+      - path: /mcp-server
+        pathType: Prefix
+        backend:
+          service:
+            name: n8n
+            port:
+              number: 5678

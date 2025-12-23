@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
+    targetRevision: feature/n8n-mcp-server-setup
     path: base-apps/n8n
   destination:
     server: https://kubernetes.default.svc
