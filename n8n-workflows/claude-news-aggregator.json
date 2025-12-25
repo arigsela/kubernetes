@@ -1,0 +1,208 @@
+{
+  "name": "Claude News Aggregator",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Daily Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 304]
+    },
+    {
+      "parameters": {
+        "url": "https://www.reddit.com/r/ClaudeAI/.rss",
+        "options": {}
+      },
+      "id": "rss-claudeai",
+      "name": "RSS r/ClaudeAI",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [256, 112]
+    },
+    {
+      "parameters": {
+        "url": "https://www.reddit.com/r/anthropic/.rss",
+        "options": {}
+      },
+      "id": "rss-anthropic",
+      "name": "RSS r/anthropic",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [256, 256]
+    },
+    {
+      "parameters": {
+        "url": "https://hnrss.org/newest?q=claude",
+        "options": {}
+      },
+      "id": "rss-hn-claude",
+      "name": "RSS HN Claude",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [256, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://hnrss.org/newest?q=anthropic",
+        "options": {}
+      },
+      "id": "rss-hn-anthropic",
+      "name": "RSS HN Anthropic",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [256, 560]
+    },
+    {
+      "parameters": {
+        "numberInputs": 4
+      },
+      "id": "merge-feeds",
+      "name": "Merge All Feeds",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [512, 304]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter posts from last 7 days and sort by date\nconst now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nconst items = $input.all();\nconst seen = new Set();\n\nif (!items || items.length === 0) {\n  return [{\n    json: {\n      title: 'No posts found',\n      link: '',\n      pubDate: now.toISOString(),\n      source: 'System',\n      content: 'No RSS feed data was retrieved. Check feed URLs.'\n    }\n  }];\n}\n\nconst filtered = items\n  .map(item => {\n    const json = item.json;\n    const pubDate = new Date(json.pubDate || json.isoDate || json.date || now);\n    \n    let source = 'Unknown';\n    if (json.link?.includes('reddit.com/r/ClaudeAI')) source = 'r/ClaudeAI';\n    else if (json.link?.includes('reddit.com/r/anthropic')) source = 'r/anthropic';\n    else if (json.link?.includes('news.ycombinator.com')) source = 'Hacker News';\n    else if (json.creator) source = json.creator;\n    \n    return {\n      title: json.title || 'No title',\n      link: json.link || json.guid || '',\n      pubDate: pubDate,\n      source: source,\n      content: json.contentSnippet || json.content || json.summary || '',\n      engagement: json.comments || 0\n    };\n  })\n  .filter(item => item.pubDate >= sevenDaysAgo)\n  .filter(item => {\n    if (!item.link || seen.has(item.link)) return false;\n    seen.add(item.link);\n    return true;\n  })\n  .sort((a, b) => b.pubDate - a.pubDate)\n  .slice(0, 25);\n\nif (filtered.length === 0) {\n  return items.slice(0, 10).map(item => ({\n    json: {\n      title: item.json.title || 'No title',\n      link: item.json.link || '',\n      pubDate: new Date().toISOString(),\n      source: 'RSS Feed',\n      content: (item.json.contentSnippet || item.json.content || '').substring(0, 500)\n    }\n  }));\n}\n\nreturn filtered.map(item => ({\n  json: {\n    title: item.title,\n    link: item.link,\n    pubDate: item.pubDate.toISOString(),\n    source: item.source,\n    content: item.content.substring(0, 500)\n  }\n}));"
+      },
+      "id": "filter-sort",
+      "name": "Filter & Sort",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [704, 304]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all items into a single text for the LLM\nconst items = $input.all();\n\nconst postsText = items.map((item, index) => {\n  const json = item.json;\n  return `### Post ${index + 1}\n**Title:** ${json.title}\n**Source:** ${json.source}\n**Date:** ${json.pubDate}\n**Link:** ${json.link}\n**Content Preview:** ${json.content || 'No content'}\n`;\n}).join('\\n---\\n');\n\nreturn [{\n  json: {\n    posts: postsText,\n    date: new Date().toISOString().split('T')[0],\n    itemCount: items.length\n  }\n}];"
+      },
+      "id": "prepare-for-llm",
+      "name": "Prepare for LLM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 304]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-haiku-4-5-20251001",
+          "mode": "list",
+          "cachedResultName": "Claude Haiku 4.5"
+        },
+        "options": {
+          "maxTokensToSample": 4096
+        }
+      },
+      "id": "anthropic-model",
+      "name": "Claude Haiku",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [1088, 480]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a helpful assistant that creates daily news digests about Claude AI and Anthropic.\n\nYou have memory of your previous daily digest summaries. Use this memory to:\n- Focus on NEW content not covered in previous summaries\n- Avoid repeating information from previous digests\n- Reference trends or ongoing discussions if relevant\n\n## Today's Posts:\n{{ $json.posts }}\n\n## Instructions:\nCreate a markdown-formatted daily digest with these sections:\n\n1. **Key Updates** - Major announcements, new features, or important news\n2. **Hot Discussions** - Interesting community discussions or debates\n3. **Tips & Tricks** - Useful tips shared by the community\n4. **Issues & Bugs** - Notable problems or bugs reported\n\nKeep summaries concise but informative. If a section has no relevant NEW content, write \"No notable items today.\"\n\nFormat the output as clean markdown suitable for Notion.",
+        "options": {}
+      },
+      "id": "ai-agent",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1088, 304]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "claude-daily-digest",
+        "contextWindowLength": 10
+      },
+      "id": "simple-memory",
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [1088, 560]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "mode": "runOnceForAllItems",
+        "jsCode": "const item = $input.first();\n// AI Agent outputs to 'output' field, chainLlm outputs to 'text'\nconst text = item.json.output || item.json.text || '';\nconst maxLength = 1900;\nconst maxBlocks = 98;\n\nfunction parseRichText(text) {\n  const segments = [];\n  let remaining = text;\n  \n  while (remaining.length > 0) {\n    const boldMatch = remaining.match(/^\\*\\*(.+?)\\*\\*/);\n    const italicMatch = remaining.match(/^\\*(.+?)\\*/);\n    const codeMatch = remaining.match(/^`(.+?)`/);\n    const linkMatch = remaining.match(/^\\[(.+?)\\]\\((.+?)\\)/);\n    \n    if (boldMatch) {\n      segments.push({ type: 'text', text: { content: boldMatch[1] }, annotations: { bold: true } });\n      remaining = remaining.substring(boldMatch[0].length);\n    } else if (codeMatch) {\n      segments.push({ type: 'text', text: { content: codeMatch[1] }, annotations: { code: true } });\n      remaining = remaining.substring(codeMatch[0].length);\n    } else if (linkMatch) {\n      segments.push({ type: 'text', text: { content: linkMatch[1], link: { url: linkMatch[2] } } });\n      remaining = remaining.substring(linkMatch[0].length);\n    } else if (italicMatch && !remaining.startsWith('**')) {\n      segments.push({ type: 'text', text: { content: italicMatch[1] }, annotations: { italic: true } });\n      remaining = remaining.substring(italicMatch[0].length);\n    } else {\n      const nextSpecial = remaining.search(/\\*|`|\\[/);\n      const plainEnd = nextSpecial === -1 ? remaining.length : nextSpecial;\n      if (plainEnd > 0) {\n        segments.push({ type: 'text', text: { content: remaining.substring(0, plainEnd) } });\n        remaining = remaining.substring(plainEnd);\n      } else {\n        segments.push({ type: 'text', text: { content: remaining[0] } });\n        remaining = remaining.substring(1);\n      }\n    }\n  }\n  \n  return segments.length > 0 ? segments : [{ type: 'text', text: { content: text } }];\n}\n\nfunction splitRichText(segments) {\n  const result = [];\n  let current = [];\n  let currentLen = 0;\n  \n  for (const seg of segments) {\n    const content = seg.text.content;\n    if (currentLen + content.length <= maxLength) {\n      current.push(seg);\n      currentLen += content.length;\n    } else {\n      if (current.length > 0) result.push(current);\n      current = [seg];\n      currentLen = content.length;\n    }\n  }\n  if (current.length > 0) result.push(current);\n  return result;\n}\n\nconst lines = text.split('\\n');\nconst children = [];\n\nfor (const line of lines) {\n  if (children.length >= maxBlocks) break;\n  \n  const trimmed = line.trim();\n  if (!trimmed) continue;\n  \n  if (trimmed.startsWith('# ')) {\n    children.push({ object: 'block', type: 'heading_1', heading_1: { rich_text: parseRichText(trimmed.substring(2)) } });\n  } else if (trimmed.startsWith('## ')) {\n    children.push({ object: 'block', type: 'heading_2', heading_2: { rich_text: parseRichText(trimmed.substring(3)) } });\n  } else if (trimmed.startsWith('### ')) {\n    children.push({ object: 'block', type: 'heading_3', heading_3: { rich_text: parseRichText(trimmed.substring(4)) } });\n  } else if (trimmed === '---' || trimmed === '***' || trimmed === '___') {\n    children.push({ object: 'block', type: 'divider', divider: {} });\n  } else if (trimmed.startsWith('- ')) {\n    const richText = parseRichText(trimmed.substring(2));\n    const chunks = splitRichText(richText);\n    for (const chunk of chunks) {\n      if (children.length >= maxBlocks) break;\n      children.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: chunk } });\n    }\n  } else if (/^\\d+\\.\\s/.test(trimmed)) {\n    const content = trimmed.replace(/^\\d+\\.\\s/, '');\n    children.push({ object: 'block', type: 'numbered_list_item', numbered_list_item: { rich_text: parseRichText(content) } });\n  } else {\n    const richText = parseRichText(trimmed);\n    const chunks = splitRichText(richText);\n    for (const chunk of chunks) {\n      if (children.length >= maxBlocks) break;\n      children.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });\n    }\n  }\n}\n\nreturn [{ json: { notionChildren: children, date: new Date().toISOString().split('T')[0] } }];"
+      },
+      "id": "format-for-notion",
+      "name": "Format for Notion",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.notion.com/v1/pages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Notion-Version", "value": "2022-06-28" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ parent: { page_id: '2d38e013c07f80c59d93c9aeb9e271b7' }, properties: { title: [{ text: { content: 'Claude - ' + $json.date } }] }, children: $json.notionChildren }) }}",
+        "options": {}
+      },
+      "id": "create-child-page",
+      "name": "Create Notion Child Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1392, 304],
+      "notesInFlow": true,
+      "notes": "Requires 'Header Auth' credential with: Name=Authorization, Value=Bearer YOUR_NOTION_TOKEN"
+    }
+  ],
+  "connections": {
+    "Daily Trigger": {
+      "main": [[
+        { "node": "RSS r/ClaudeAI", "type": "main", "index": 0 },
+        { "node": "RSS r/anthropic", "type": "main", "index": 0 },
+        { "node": "RSS HN Claude", "type": "main", "index": 0 },
+        { "node": "RSS HN Anthropic", "type": "main", "index": 0 }
+      ]]
+    },
+    "RSS r/ClaudeAI": { "main": [[{ "node": "Merge All Feeds", "type": "main", "index": 0 }]] },
+    "RSS r/anthropic": { "main": [[{ "node": "Merge All Feeds", "type": "main", "index": 1 }]] },
+    "RSS HN Claude": { "main": [[{ "node": "Merge All Feeds", "type": "main", "index": 2 }]] },
+    "RSS HN Anthropic": { "main": [[{ "node": "Merge All Feeds", "type": "main", "index": 3 }]] },
+    "Merge All Feeds": { "main": [[{ "node": "Filter & Sort", "type": "main", "index": 0 }]] },
+    "Filter & Sort": { "main": [[{ "node": "Prepare for LLM", "type": "main", "index": 0 }]] },
+    "Prepare for LLM": { "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]] },
+    "Claude Haiku": { "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]] },
+    "Simple Memory": { "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]] },
+    "AI Agent": { "main": [[{ "node": "Format for Notion", "type": "main", "index": 0 }]] },
+    "Format for Notion": { "main": [[{ "node": "Create Notion Child Page", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/New_York",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "meta": {
+    "exportedAt": "2025-12-25T12:21:12.945Z",
+    "n8nWorkflowId": "SkLoJcnBQtF8Gjv0",
+    "notes": "Uses AI Agent with Simple Memory for context across daily runs. Creates child pages under Daily News with 'Claude - YYYY-MM-DD' title format."
+  }
+}
