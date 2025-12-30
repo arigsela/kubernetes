@@ -38,15 +38,17 @@ This plan covers four enhancements to the feed aggregation and digest generation
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         Feed Data Ingestion                              │
 │  ┌──────────┐   ┌───────────┐   ┌──────────┐   ┌──────────┐            │
-│  │ Schedule │─► │ 14 RSS    │─► │Normalize │─► │ Postgres │            │
+│  │ Schedule │─► │ 29 RSS    │─► │Normalize │─► │ Postgres │            │
 │  │ Trigger  │   │ Feeds     │   │ & Tag    │   │ Insert   │            │
 │  └──────────┘   └───────────┘   └──────────┘   └────┬─────┘            │
 │                      ▲                              │                   │
 │                      │                              ▼                   │
 │              ┌───────┴───────┐              ┌──────────────┐           │
-│              │ Anthropic     │              │ Execute:     │           │
-│              │ Blog RSS      │              │ Scrape URL   │◄─── NEW   │
-│              └───────────────┘              └──────┬───────┘           │
+│              │ +16 New RSS:  │              │ Execute:     │           │
+│              │ - Anthropic   │              │ Scrape URL   │◄─── NEW   │
+│              │ - 7 Medium    │              └──────┬───────┘           │
+│              │ - 8 Substack  │                     │                   │
+│              └───────────────┘                     │                   │
 │                    NEW                             │                   │
 │                                                    ▼                   │
 │                                            ┌──────────────┐            │
@@ -325,18 +327,22 @@ This sub-workflow converts markdown to Notion block format.
 
 ---
 
-## Phase 2: Add Anthropic Blog RSS
+## Phase 2: Add New RSS Sources (16 feeds)
 
-### 2.1 New RSS Node
+This phase adds 16 new RSS sources:
+- 1 Official source (Anthropic Blog)
+- 7 Medium authors (DevOps/AI focused)
+- 8 Substack newsletters (DevOps/Cloud/Engineering)
 
-Add this node to `feed-data-ingestion.json`:
+### 2.1 New RSS Nodes
+
+Add these nodes to `feed-data-ingestion.json`:
+
+#### Official Source
 
 ```json
 {
-  "parameters": {
-    "url": "https://www.anthropic.com/feed",
-    "options": {}
-  },
+  "parameters": { "url": "https://www.anthropic.com/feed", "options": {} },
   "id": "rss-anthropic-blog",
   "name": "RSS Anthropic Blog",
   "type": "n8n-nodes-base.rssFeedRead",
@@ -349,39 +355,349 @@ Add this node to `feed-data-ingestion.json`:
 }
 ```
 
-### 2.2 Update Connections
-
-Add to trigger connections:
+#### Medium Authors (7 feeds)
 
 ```json
-{ "node": "RSS Anthropic Blog", "type": "main", "index": 0 }
+{
+  "parameters": { "url": "https://medium.com/feed/@michael-levan", "options": {} },
+  "id": "rss-medium-michael-levan",
+  "name": "RSS Medium - Michael Levan",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, -48],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
 ```
-
-Add RSS Anthropic Blog to Merge Group 1:
 
 ```json
-"RSS Anthropic Blog": { "main": [[{ "node": "Merge Group 1", "type": "main", "index": 10 }]] }
+{
+  "parameters": { "url": "https://medium.com/feed/@amanpathakdevops", "options": {} },
+  "id": "rss-medium-aman-pathak",
+  "name": "RSS Medium - Aman Pathak",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 16],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
 ```
 
-Update Merge Group 1 `numberInputs` from 10 to 11.
+```json
+{
+  "parameters": { "url": "https://medium.com/feed/@devopslearning", "options": {} },
+  "id": "rss-medium-prashant-lakhera",
+  "name": "RSS Medium - Prashant Lakhera",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 80],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+```json
+{
+  "parameters": { "url": "https://medium.com/feed/@bdfinst", "options": {} },
+  "id": "rss-medium-bryan-finster",
+  "name": "RSS Medium - Bryan Finster",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 144],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+```json
+{
+  "parameters": { "url": "https://medium.com/feed/@kdeepak99", "options": {} },
+  "id": "rss-medium-dipak-knvdl",
+  "name": "RSS Medium - DiPAK KNVDL",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 208],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+```json
+{
+  "parameters": { "url": "https://medium.com/feed/@joe.njenga", "options": {} },
+  "id": "rss-medium-joe-njenga",
+  "name": "RSS Medium - Joe Njenga",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 272],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+```json
+{
+  "parameters": { "url": "https://medium.com/feed/@codebun", "options": {} },
+  "id": "rss-medium-codebun",
+  "name": "RSS Medium - CodeBun",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 336],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+#### Substack Newsletters (8 feeds)
+
+```json
+{
+  "parameters": { "url": "https://devopsbulletin.substack.com/feed", "options": {} },
+  "id": "rss-substack-devops-bulletin",
+  "name": "RSS Substack - DevOps Bulletin",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 400],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+```json
+{
+  "parameters": { "url": "https://devopsdaily.substack.com/feed", "options": {} },
+  "id": "rss-substack-devops-daily",
+  "name": "RSS Substack - DevOps Daily",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 464],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+```json
+{
+  "parameters": { "url": "https://learnkubernetesweekly.substack.com/feed", "options": {} },
+  "id": "rss-substack-learn-k8s",
+  "name": "RSS Substack - Learn K8s Weekly",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 528],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+```json
+{
+  "parameters": { "url": "https://pragmaticengineer.substack.com/feed", "options": {} },
+  "id": "rss-substack-pragmatic-eng",
+  "name": "RSS Substack - Pragmatic Engineer",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 592],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+```json
+{
+  "parameters": { "url": "https://bytebytego.substack.com/feed", "options": {} },
+  "id": "rss-substack-bytebytego",
+  "name": "RSS Substack - ByteByteGo",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 656],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+```json
+{
+  "parameters": { "url": "https://newsletter.techworld-with-milan.com/feed", "options": {} },
+  "id": "rss-substack-techworld-milan",
+  "name": "RSS Substack - TechWorld Milan",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 720],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+```json
+{
+  "parameters": { "url": "https://cloudhandbook.substack.com/feed", "options": {} },
+  "id": "rss-substack-cloud-handbook",
+  "name": "RSS Substack - Cloud Handbook",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 784],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+```json
+{
+  "parameters": { "url": "https://refactoring.substack.com/feed", "options": {} },
+  "id": "rss-substack-refactoring",
+  "name": "RSS Substack - Refactoring",
+  "type": "n8n-nodes-base.rssFeedRead",
+  "typeVersion": 1.2,
+  "position": [280, 848],
+  "retryOnFail": true,
+  "maxTries": 3,
+  "waitBetweenTries": 5000,
+  "onError": "continueRegularOutput"
+}
+```
+
+### 2.2 Update Merge Groups
+
+You'll need to create a new Merge Group (Merge Group 3) for the new feeds, or expand existing groups.
+
+**Option A: Create Merge Group 3** (Recommended - keeps workflow organized)
+
+```json
+{
+  "parameters": {
+    "mode": "combine",
+    "combineBy": "combineAll",
+    "options": {}
+  },
+  "id": "merge-group-3",
+  "name": "Merge Group 3",
+  "type": "n8n-nodes-base.merge",
+  "typeVersion": 3.2,
+  "position": [560, 400],
+  "parameters": { "numberInputs": 16 }
+}
+```
+
+**Connections for Merge Group 3:**
+
+```json
+"RSS Anthropic Blog": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 0 }]] },
+"RSS Medium - Michael Levan": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 1 }]] },
+"RSS Medium - Aman Pathak": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 2 }]] },
+"RSS Medium - Prashant Lakhera": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 3 }]] },
+"RSS Medium - Bryan Finster": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 4 }]] },
+"RSS Medium - DiPAK KNVDL": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 5 }]] },
+"RSS Medium - Joe Njenga": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 6 }]] },
+"RSS Medium - CodeBun": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 7 }]] },
+"RSS Substack - DevOps Bulletin": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 8 }]] },
+"RSS Substack - DevOps Daily": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 9 }]] },
+"RSS Substack - Learn K8s Weekly": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 10 }]] },
+"RSS Substack - Pragmatic Engineer": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 11 }]] },
+"RSS Substack - ByteByteGo": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 12 }]] },
+"RSS Substack - TechWorld Milan": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 13 }]] },
+"RSS Substack - Cloud Handbook": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 14 }]] },
+"RSS Substack - Refactoring": { "main": [[{ "node": "Merge Group 3", "type": "main", "index": 15 }]] }
+```
+
+**Update "All Feed Items" merge to include Merge Group 3:**
+
+Add connection from Merge Group 3 to "All Feed Items" merge node.
 
 ### 2.3 Update Normalize Function
 
-Add to `getSourceName` function:
+Add to `getSourceName` function in the normalize Code node:
 
 ```javascript
+// Official
 'anthropic.com': 'Anthropic Blog',
+
+// Medium Authors
+'medium.com/@michael-levan': 'Michael Levan (Medium)',
+'medium.com/@amanpathakdevops': 'Aman Pathak (Medium)',
+'medium.com/@devopslearning': 'Prashant Lakhera (Medium)',
+'medium.com/@bdfinst': 'Bryan Finster (Medium)',
+'medium.com/@kdeepak99': 'DiPAK KNVDL (Medium)',
+'medium.com/@joe.njenga': 'Joe Njenga (Medium)',
+'medium.com/@codebun': 'CodeBun (Medium)',
+
+// Substack Newsletters
+'devopsbulletin.substack.com': 'DevOps Bulletin',
+'devopsdaily.substack.com': 'DevOps Daily',
+'learnkubernetesweekly.substack.com': 'Learn K8s Weekly',
+'pragmaticengineer.substack.com': 'Pragmatic Engineer',
+'bytebytego.substack.com': 'ByteByteGo',
+'newsletter.techworld-with-milan.com': 'TechWorld with Milan',
+'cloudhandbook.substack.com': 'Cloud Handbook',
+'refactoring.substack.com': 'Refactoring',
 ```
 
 Add to `getTopicTags` function:
 
 ```javascript
 // Official Anthropic content
-if (lowerLink.includes('anthropic.com/blog') ||
-    lowerLink.includes('anthropic.com/news') ||
-    lowerLink.includes('anthropic.com/research')) {
+if (lowerLink.includes('anthropic.com')) {
   tags.push('claude');
   tags.push('official');
+}
+
+// Medium - DevOps focused authors
+if (lowerLink.includes('medium.com/@michael-levan') ||
+    lowerLink.includes('medium.com/@amanpathakdevops') ||
+    lowerLink.includes('medium.com/@devopslearning') ||
+    lowerLink.includes('medium.com/@bdfinst') ||
+    lowerLink.includes('medium.com/@kdeepak99')) {
+  tags.push('devops');
+}
+
+// Medium - AI/Claude focused authors
+if (lowerLink.includes('medium.com/@joe.njenga') ||
+    lowerLink.includes('medium.com/@codebun')) {
+  tags.push('claude');
+  tags.push('devops');
+}
+
+// Substack - DevOps/Kubernetes focused
+if (lowerLink.includes('devopsbulletin.substack.com') ||
+    lowerLink.includes('devopsdaily.substack.com') ||
+    lowerLink.includes('learnkubernetesweekly.substack.com') ||
+    lowerLink.includes('cloudhandbook.substack.com')) {
+  tags.push('devops');
+}
+
+// Substack - Software Engineering
+if (lowerLink.includes('pragmaticengineer.substack.com') ||
+    lowerLink.includes('bytebytego.substack.com') ||
+    lowerLink.includes('newsletter.techworld-with-milan.com') ||
+    lowerLink.includes('refactoring.substack.com')) {
+  tags.push('devops');
 }
 ```
 
@@ -389,19 +705,61 @@ Add source priority logic:
 
 ```javascript
 function getSourcePriority(link) {
-  if (link.includes('anthropic.com') ||
-      link.includes('kubernetes.io') ||
-      link.includes('hashicorp.com')) {
-    return 1; // Official
+  const lowerLink = link.toLowerCase();
+
+  // Priority 1: Official sources
+  if (lowerLink.includes('anthropic.com') ||
+      lowerLink.includes('kubernetes.io') ||
+      lowerLink.includes('hashicorp.com')) {
+    return 1;
   }
-  if (link.includes('infoq.com') ||
-      link.includes('devops.com') ||
-      link.includes('cncf.io')) {
-    return 3; // Major blog
+
+  // Priority 2: Top-tier newsletters (large following, high quality)
+  if (lowerLink.includes('pragmaticengineer.substack.com') ||
+      lowerLink.includes('bytebytego.substack.com')) {
+    return 2;
   }
-  return 5; // Community
+
+  // Priority 3: Major blogs/newsletters
+  if (lowerLink.includes('infoq.com') ||
+      lowerLink.includes('devops.com') ||
+      lowerLink.includes('cncf.io') ||
+      lowerLink.includes('devopsbulletin.substack.com') ||
+      lowerLink.includes('learnkubernetesweekly.substack.com')) {
+    return 3;
+  }
+
+  // Priority 4: Medium authors and other Substacks
+  if (lowerLink.includes('medium.com') ||
+      lowerLink.includes('substack.com')) {
+    return 4;
+  }
+
+  // Priority 5: Community/other
+  return 5;
 }
 ```
+
+### 2.4 RSS Source Summary Table
+
+| Source | Type | Category | Topics | Priority |
+|--------|------|----------|--------|----------|
+| Anthropic Blog | Official | AI | claude, official | 1 |
+| Michael Levan | Medium | DevOps/K8s | devops | 4 |
+| Aman Pathak | Medium | DevOps/AWS | devops | 4 |
+| Prashant Lakhera | Medium | DevOps/AWS | devops | 4 |
+| Bryan Finster | Medium | DevOps/CI-CD | devops | 4 |
+| DiPAK KNVDL | Medium | DevOps/n8n | devops | 4 |
+| Joe Njenga | Medium | AI/Claude | claude, devops | 4 |
+| CodeBun | Medium | AI/Tech | claude, devops | 4 |
+| DevOps Bulletin | Substack | DevOps | devops | 3 |
+| DevOps Daily | Substack | DevOps | devops | 4 |
+| Learn K8s Weekly | Substack | Kubernetes | devops | 3 |
+| Pragmatic Engineer | Substack | Engineering | devops | 2 |
+| ByteByteGo | Substack | System Design | devops | 2 |
+| TechWorld Milan | Substack | .NET/Cloud | devops | 4 |
+| Cloud Handbook | Substack | Cloud/AWS | devops | 4 |
+| Refactoring | Substack | Engineering | devops | 4 |
 
 ---
 
@@ -663,12 +1021,17 @@ Update the "Create Notion Child Page" node to use the new output:
 - [ ] Import `shared-format-notion.json` to n8n
 - [ ] Test format workflow with sample markdown
 
-### Phase 2: Anthropic Blog
+### Phase 2: New RSS Sources (16 feeds)
 
-- [ ] Add RSS Anthropic Blog node to feed-data-ingestion
-- [ ] Update Merge Group 1 to 11 inputs
-- [ ] Update normalize function with Anthropic mappings
-- [ ] Test feed ingestion includes Anthropic posts
+- [ ] Add RSS Anthropic Blog node
+- [ ] Add 7 Medium author RSS nodes
+- [ ] Add 8 Substack newsletter RSS nodes
+- [ ] Create Merge Group 3 with 16 inputs
+- [ ] Connect Merge Group 3 to All Feed Items merge
+- [ ] Update normalize function with source name mappings
+- [ ] Update normalize function with topic tagging logic
+- [ ] Add source priority function
+- [ ] Test feed ingestion includes new sources
 
 ### Phase 3: Scraping Integration
 
@@ -717,10 +1080,13 @@ Each enhancement is independent. If issues arise:
 
 | Metric | Current | Target |
 |--------|---------|--------|
+| RSS sources | 13 feeds | 29 feeds (+16) |
 | Content per article | ~500 chars | Full article |
 | Digest quality | RSS snippets | Full context |
 | Irrelevant articles | ~30% | <10% |
 | Official source coverage | 0 | 100% of Anthropic posts |
+| Medium authors | 0 | 7 DevOps/AI authors |
+| Substack newsletters | 0 | 8 engineering newsletters |
 | Code duplication | 2x Notion formatter | 1 shared workflow |
 
 ---
