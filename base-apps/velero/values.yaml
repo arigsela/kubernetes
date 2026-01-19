@@ -1,9 +1,6 @@
 velero:
-  # Override kubectl image for CRD upgrade hook
-  kubectl:
-    image:
-      repository: bitnami/kubectl
-      tag: "latest"
+  # Disable CRD upgrade hook - let Helm install CRDs directly
+  upgradeCRDs: false
 
   # Use existing secret created by Terraform
   credentials:
