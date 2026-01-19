@@ -2,9 +2,48 @@
 
 This document describes how to backup and restore the k3s cluster after server restarts.
 
-## Quick Recovery Checklist
+---
 
-After server restart, run these steps in order:
+## Pre-Shutdown Checklist
+
+**Before shutting down the cluster**, create a Velero backup to preserve PVC data:
+
+```bash
+# Create backup of all stateful namespaces (vault, postgresql, n8n, logging)
+./recovery/pre-shutdown-backup.sh
+
+# Verify backup completed
+velero backup get
+```
+
+The backup includes all Kubernetes resources and PVC data for stateful applications.
+Backups are stored in S3 (`asela-velero-backups`) and retained for 7 days.
+
+---
+
+## Quick Recovery Checklist (with Velero)
+
+After server restart, run the automated recovery script:
+
+```bash
+# Full automated recovery (cleans CNI, restores from backup, verifies apps)
+./recovery/post-restart-restore.sh
+
+# Or specify a specific backup
+./recovery/post-restart-restore.sh pre-shutdown-20260119-143022
+```
+
+This script automatically:
+1. Cleans CNI IP allocations on all nodes
+2. Waits for cluster and Velero to be ready
+3. Restores from the specified (or latest) backup
+4. Verifies all applications are healthy
+
+---
+
+## Quick Recovery Checklist (Manual)
+
+If Velero is not available or you prefer manual recovery:
 
 ```bash
 # 1. Verify nodes are ready
@@ -15,36 +54,148 @@ ssh -i ~/.ssh/ari_sela_key asela@10.0.1.50
 sudo ls /var/lib/cni/networks/cbr0/ | wc -l  # Should be < 100
 # If IP exhaustion: sudo rm -rf /var/lib/cni/networks/cbr0 && sudo mkdir -p /var/lib/cni/networks/cbr0
 
-# 3. Unseal Vault
-./recovery/restore-vault-secrets.sh
+# 3. Verify Vault auto-unsealed (no manual action needed!)
+kubectl exec -n vault vault-0 -- vault status
 
 # 4. Verify applications
 kubectl get applications -n argo-cd
 kubectl get externalsecrets --all-namespaces
 ```
 
+> **Note**: Vault now uses AWS KMS auto-unseal. No manual unsealing is required after restarts!
+
+---
+
 ## Understanding the Problem
 
 The k3s cluster loses state in several areas after restart:
 
-1. **Vault Seal State**: Vault seals itself on restart and needs to be unsealed
+1. **Vault Seal State**: ~~Vault seals itself on restart and needs to be unsealed~~ **RESOLVED** - Vault now uses AWS KMS auto-unseal
 2. **Vault Secrets**: If Vault PVC is lost, all secrets need to be repopulated
 3. **CNI IP Allocations**: Flannel can leak IPs causing IP exhaustion
 4. **Pod States**: Pods may become orphaned and need cleanup
+5. **PVC Data**: Local-path storage data may be lost if not backed up - **RESOLVED** with Velero
+
+---
+
+## Velero Backup and Restore
+
+Velero is deployed to backup and restore Kubernetes resources and PVC data.
+
+### Architecture
+
+```
+Pre-Shutdown:  Velero backup (resources + PVC data via Kopia) → S3
+Post-Restart:  CNI cleanup → Velero restore → ArgoCD reconciles → Cluster healthy
+```
+
+### Backup Namespaces
+
+The following namespaces are backed up (contain PVCs with important data):
+- `vault` - Vault data and configuration
+- `postgresql` - PostgreSQL database (10Gi)
+- `n8n` - n8n workflow data (5Gi)
+- `logging` - Prometheus metrics (50Gi) and Grafana dashboards (10Gi)
+
+### Pre-Shutdown Backup
+
+```bash
+# Run the backup script
+./recovery/pre-shutdown-backup.sh
+
+# The script will:
+# 1. Verify Velero is healthy
+# 2. Check backup storage location (S3)
+# 3. Create backup with PVC data
+# 4. Wait for completion
+# 5. Display restore instructions
+```
+
+### Post-Restart Restore
+
+```bash
+# Run the restore script (prompts for backup selection)
+./recovery/post-restart-restore.sh
+
+# Or restore from a specific backup
+./recovery/post-restart-restore.sh pre-shutdown-20260119-143022
+
+# The script will:
+# 1. Clean CNI on all nodes
+# 2. Wait for cluster to be ready
+# 3. Wait for Velero to be ready
+# 4. Restore from backup
+# 5. Verify applications
+```
+
+### Manual Velero Commands
+
+```bash
+# List all backups
+velero backup get
+
+# View backup details
+velero backup describe <backup-name> --details
+
+# View backup logs
+velero backup logs <backup-name>
+
+# Create manual backup
+velero backup create my-backup \
+  --include-namespaces vault,postgresql,n8n,logging \
+  --default-volumes-to-fs-backup=true
+
+# Restore from backup
+velero restore create --from-backup <backup-name> \
+  --existing-resource-policy=update
+
+# List restores
+velero restore get
+
+# View restore details
+velero restore describe <restore-name>
+
+# Delete old backups
+velero backup delete <backup-name>
+```
+
+---
 
 ## Recovery Scripts
 
-### 1. Vault Unseal & Secrets Restoration
+### 1. Velero Pre-Shutdown Backup (Recommended)
+```bash
+./recovery/pre-shutdown-backup.sh
+```
+This script:
+- Verifies Velero is healthy
+- Creates backup of all stateful namespaces with PVC data
+- Waits for backup completion
+- Displays restore instructions
+
+### 2. Velero Post-Restart Restore (Recommended)
+```bash
+./recovery/post-restart-restore.sh [backup-name]
+```
+This script:
+- Cleans CNI IP allocations on all nodes
+- Waits for cluster and Velero to be ready
+- Restores from backup (prompts if no backup specified)
+- Verifies all applications
+
+### 3. Vault Secrets Restoration (if Velero unavailable)
 ```bash
 ./recovery/restore-vault-secrets.sh
 ```
 This script:
-- Checks if Vault is sealed and unseals it
+- Verifies Vault is running and auto-unsealed via AWS KMS
 - Configures Kubernetes auth if needed
 - Populates all required secrets
 - Restarts external-secrets to sync
 
-### 2. Full Cluster Recovery
+> **Note**: Manual unsealing is no longer required. Vault automatically unseals using AWS KMS.
+
+### 4. Full Cluster Recovery (Legacy)
 ```bash
 ./recovery/full-cluster-recovery.sh
 ```
@@ -54,6 +205,8 @@ This script:
 - Unseals Vault
 - Restores secrets
 - Verifies all applications
+
+---
 
 ## Manual Recovery Steps
 
@@ -84,14 +237,27 @@ sudo mkdir -p /var/lib/cni/networks/cbr0
 exit
 ```
 
-### Step 4: Unseal Vault
+### Step 4: Verify Vault Auto-Unsealed
 ```bash
-# Check status
+# Check status - should show Sealed: false automatically
 kubectl exec -n vault vault-0 -- vault status
 
-# If sealed, unseal with 2 keys
-kubectl exec -n vault vault-0 -- vault operator unseal 4jwSTxUfSkGFy9bJ9Bn+FRLX4mHxW6Gj6gLiYcKpPjzq
-kubectl exec -n vault vault-0 -- vault operator unseal d8jwx3Ie6zsNi2OSse6kDOXzmeWLOPnf5egOcf6qns9Z
+# Expected output:
+# Seal Type          awskms
+# Sealed             false
+```
+
+> **Note**: Vault now auto-unseals via AWS KMS. If Vault is still sealed after restart, check:
+> - AWS KMS key availability and permissions
+> - The `vault-kms-credentials` secret in the vault namespace
+> - Vault pod logs: `kubectl logs -n vault vault-0`
+
+### Step 4b: Emergency Manual Recovery (if auto-unseal fails)
+Only use this if AWS KMS auto-unseal is not working:
+```bash
+# Use recovery keys (need 2 of 3) - see recovery/vault-credentials.txt
+kubectl exec -n vault vault-0 -- vault operator unseal <RECOVERY_KEY_1>
+kubectl exec -n vault vault-0 -- vault operator unseal <RECOVERY_KEY_2>
 ```
 
 ### Step 5: Verify External Secrets
@@ -106,52 +272,70 @@ kubectl get applications -n argo-cd
 ```
 All should show `Synced` and `Healthy`.
 
+---
+
 ## Backup Strategy
 
 ### What Gets Backed Up Automatically
 
 1. **Git Repository**: All ArgoCD applications and configs are in git
 2. **Terraform State**: Stored in S3 bucket `asela-terraform-states`
-3. **AWS RDS**: MySQL database is managed by AWS
+3. **AWS RDS**: MySQL database is managed by AWS with automated backups
+4. **Velero Backups**: PVC data backed up to S3 bucket `asela-velero-backups`
 
 ### What Needs Manual Backup
 
-1. **Vault Secrets**: Backed up in `recovery/restore-vault-secrets.sh`
-2. **Vault Unseal Keys**: Stored in `recovery/vault-credentials.txt`
-3. **PVC Data**: PostgreSQL, Vault data volumes
+1. **Vault Recovery Keys**: Stored in `recovery/vault-credentials.txt` (not in git)
 
-### Recommended: PVC Backup with Velero
+### Velero Backup Details
 
-For production-grade backup, consider installing Velero:
+| Item | Backup Method | Storage | Retention |
+|------|---------------|---------|-----------|
+| K8s Resources | Velero | S3 | 7 days |
+| PVC Data | Velero + Kopia | S3 | 7 days |
+| Vault Secrets | Vault + KMS | In-cluster + KMS | Persistent |
+| ArgoCD Apps | Git | GitHub | Permanent |
+| Terraform State | Terraform | S3 | Versioned |
 
+---
+
+## AWS KMS Auto-Unseal Configuration
+
+Vault is configured to automatically unseal using AWS KMS. This eliminates manual intervention after restarts.
+
+### Current Configuration
+- **Seal Type**: awskms
+- **KMS Key ID**: `2d982e46-c7bd-4606-a1bf-a470d1c09e07`
+- **KMS Alias**: `alias/vault-auto-unseal`
+- **AWS Region**: us-east-2
+
+### How It Works
+1. Vault encrypts its master key with the AWS KMS key
+2. On startup, Vault calls AWS KMS to decrypt the master key
+3. Vault automatically unseals without human intervention
+
+### Recovery Keys
+With auto-unseal, the original unseal keys become "recovery keys". They are only needed for:
+- Regenerating a root token
+- Migrating to a different seal type
+- Emergency recovery scenarios
+
+Recovery keys are stored in `recovery/vault-credentials.txt`.
+
+### Troubleshooting Auto-Unseal
+If Vault fails to auto-unseal:
 ```bash
-# Install Velero with AWS provider
-velero install \
-  --provider aws \
-  --plugins velero/velero-plugin-for-aws:v1.7.0 \
-  --bucket asela-velero-backups \
-  --backup-location-config region=us-east-2 \
-  --snapshot-location-config region=us-east-2 \
-  --secret-file ./credentials-velero
+# Check Vault logs for KMS errors
+kubectl logs -n vault vault-0 | grep -i kms
 
-# Create scheduled backup
-velero schedule create daily-backup --schedule="0 2 * * *" --include-namespaces vault,postgresql
+# Verify KMS credentials secret exists
+kubectl get secret vault-kms-credentials -n vault
+
+# Verify AWS IAM permissions
+aws kms describe-key --key-id 2d982e46-c7bd-4606-a1bf-a470d1c09e07 --region us-east-2
 ```
 
-## Prevention: Auto-Unseal Vault
-
-To avoid manual unsealing, consider migrating to auto-unseal:
-
-### Option 1: AWS KMS Auto-Unseal
-```hcl
-seal "awskms" {
-  region     = "us-east-2"
-  kms_key_id = "your-kms-key-id"
-}
-```
-
-### Option 2: Transit Auto-Unseal
-Use another Vault instance for auto-unsealing.
+---
 
 ## Cluster Nodes
 
@@ -163,16 +347,59 @@ Use another Vault instance for auto-unsealing.
 
 SSH access: `ssh -i ~/.ssh/ari_sela_key asela@<IP>`
 
+---
+
 ## Important Files
 
 | File | Purpose |
 |------|---------|
-| `recovery/vault-credentials.txt` | Vault unseal keys and root token |
-| `recovery/restore-vault-secrets.sh` | Script to restore all Vault secrets |
-| `recovery/full-cluster-recovery.sh` | Complete cluster recovery script |
+| `recovery/pre-shutdown-backup.sh` | Create Velero backup before shutdown |
+| `recovery/post-restart-restore.sh` | Restore from Velero backup after restart |
+| `recovery/vault-credentials.txt` | Vault recovery keys, root token, and KMS config |
+| `recovery/restore-vault-secrets.sh` | Script to restore all Vault secrets (legacy) |
+| `recovery/full-cluster-recovery.sh` | Complete cluster recovery script (legacy) |
+| `terraform/roots/asela-cluster/vault-kms.tf` | Terraform for KMS key and IAM resources |
+| `terraform/roots/asela-cluster/velero-s3.tf` | Terraform for Velero S3 bucket and IAM |
+| `base-apps/velero/` | Velero Helm chart configuration |
 | `.gitignore` | Excludes recovery files from git |
 
+---
+
 ## Troubleshooting
+
+### Velero Backup Issues
+
+```bash
+# Check Velero pod status
+kubectl get pods -n velero
+
+# Check backup storage location
+kubectl get backupstoragelocations -n velero
+kubectl describe backupstoragelocation default -n velero
+
+# Check node-agent DaemonSet (required for PVC backups)
+kubectl get daemonset node-agent -n velero
+
+# View Velero logs
+kubectl logs -n velero -l app.kubernetes.io/name=velero
+
+# View node-agent logs
+kubectl logs -n velero -l name=node-agent
+```
+
+### Velero Restore Issues
+
+```bash
+# Check restore status
+velero restore get
+velero restore describe <restore-name>
+
+# View restore logs
+velero restore logs <restore-name>
+
+# Check for partially failed items
+velero restore describe <restore-name> --details
+```
 
 ### Pods Stuck in ContainerCreating
 - Check CNI IP allocation (see Step 3)
