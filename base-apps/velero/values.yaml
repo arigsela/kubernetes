@@ -3,7 +3,7 @@ velero:
   kubectl:
     image:
       repository: bitnami/kubectl
-      tag: "1.30"
+      tag: "latest"
 
   # Use existing secret created by Terraform
   credentials:
