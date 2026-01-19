@@ -21,5 +21,10 @@ data:
         "file": {
           "path": "/vault/data"
         }
+      },
+      "seal": {
+        "awskms": {
+          "region": "us-east-2"
+        }
       }
     } 
