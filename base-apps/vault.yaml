@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
+    targetRevision: fix/cni-recovery
     path: base-apps/vault
   destination:
     server: https://kubernetes.default.svc
