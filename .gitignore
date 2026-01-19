@@ -11,3 +11,20 @@ terraform/roots/asela-cluster/.terraform/providers/registry.terraform.io/hashico
 terraform/roots/asela-cluster/.terraform/providers/registry.terraform.io/hashicorp/kubernetes/2.34.0/linux_amd64/LICENSE.txt
 terraform/roots/asela-cluster/.terraform/providers/registry.terraform.io/hashicorp/kubernetes/2.34.0/linux_amd64/terraform-provider-kubernetes_v2.34.0_x5
 terraform/roots/asela-cluster/.terraform/
+
+# Recovery directory - contains sensitive credentials
+# DO NOT COMMIT - contains Vault unseal keys and secrets
+recovery/vault-credentials.txt
+recovery/restore-vault-secrets.sh
+recovery/full-cluster-recovery.sh
+
+# Keep the documentation but not the sensitive scripts
+!recovery/CLUSTER-RECOVERY.md
+
+# AWS credentials
+.aws/
+**/credentials
+
+# macOS
+.DS_Store
+**/.DS_Store
