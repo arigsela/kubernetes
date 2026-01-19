@@ -7,37 +7,6 @@ metadata:
   labels:
     app.kubernetes.io/instance: vault
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: vault-agent-injector
-  name: vault-agent-injector-svc
-  namespace: vault
-spec:
-  internalTrafficPolicy: Cluster
-  ipFamilies:
-    - IPv4
-  ipFamilyPolicy: SingleStack
-  ports:
-    - name: https
-      port: 443
-      protocol: TCP
-      targetPort: 8080
-  selector:
-    app.kubernetes.io/instance: vault
-    app.kubernetes.io/name: vault-agent-injector
-    component: webhook
-  sessionAffinity: None
-  type: ClusterIP
-status:
-  loadBalancer: {}
----
-apiVersion: v1
-kind: Service
-metadata:
-  annotations:
-    meta.helm.sh/release-name: vault
-    meta.helm.sh/release-namespace: vault
-  labels:
-    app.kubernetes.io/instance: vault
-    app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: vault
     helm.sh/chart: vault-0.29.1
     vault-internal: "true"

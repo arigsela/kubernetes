@@ -163,10 +163,6 @@ spec:
         - name: vault-config
           configMap:
             name: vault-config
-        - name: vault-unseal-script
-          configMap:
-            name: vault-unseal-script
-            defaultMode: 0755
   updateStrategy:
     type: OnDelete
   volumeClaimTemplates:
