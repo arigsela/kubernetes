@@ -1,4 +1,10 @@
 velero:
+  # Override kubectl image for CRD upgrade hook (1.33 doesn't exist yet)
+  kubectl:
+    image:
+      repository: docker.io/bitnami/kubectl
+      tag: "1.31"
+
   # Use existing secret created by Terraform
   credentials:
     useSecret: true
