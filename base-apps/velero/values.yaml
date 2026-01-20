@@ -16,6 +16,9 @@ velero:
         config:
           region: us-east-2
 
+    # Disable volume snapshot location (using Kopia file-level backup instead)
+    volumeSnapshotLocation: []
+
     # Enable Kopia for file-level PVC backup (works with local-path storage)
     uploaderType: kopia
 
