@@ -28,3 +28,7 @@ recovery/full-cluster-recovery.sh
 # macOS
 .DS_Store
 **/.DS_Store
+
+# Claude Code local settings (keep skills, ignore local settings)
+.claude/settings.local.json
+**/.claude/settings.local.json
