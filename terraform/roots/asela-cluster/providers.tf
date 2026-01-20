@@ -38,6 +38,6 @@ provider "kubernetes" {
 
 provider "helm" {
   kubernetes {
-    config_path = "~/.kube/k3s-config"
+    config_path = "~/.kube/config"
   }
 }
