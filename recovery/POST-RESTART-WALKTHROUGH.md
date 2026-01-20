@@ -15,9 +15,15 @@ Before shutting down, ensure you have:
 ## Phase 1: Physical Host and VM Startup
 
 ### Step 1.1: Start the Physical Host
-Power on the physical machine that hosts the K3s cluster VMs.
+Power on the physical Ubuntu server that hosts the K3s cluster VMs.
 
-### Step 1.2: Verify VMs are Running
+### Step 1.2: SSH into the Physical Host
+```bash
+# Connect to the Ubuntu physical host
+ssh -i ~/.ssh/ari_sela_key asela@10.0.1.101
+```
+
+### Step 1.3: Verify VMs are Running
 ```bash
 # Check VM status (run on physical host)
 virsh list --all
@@ -32,16 +38,27 @@ Expected output - all VMs should be running:
  3    k3s-worker-02    running
 ```
 
-If VMs are not running:
+### Step 1.4: Start VMs if Not Running
+If any VMs show `shut off` state, start them:
 ```bash
+# Start all K3s VMs
 virsh start k3s-control-01
 virsh start k3s-worker-01
 virsh start k3s-worker-02
+
+# Verify they are now running
+virsh list --all
 ```
 
-### Step 1.3: Wait for VMs to Boot (1-2 minutes)
+### Step 1.5: Exit Physical Host SSH Session
 ```bash
-# Test SSH connectivity to control plane
+# Return to your local machine
+exit
+```
+
+### Step 1.6: Wait for VMs to Boot (1-2 minutes)
+```bash
+# Test SSH connectivity to control plane (from your local machine)
 ssh -i ~/.ssh/ari_sela_key asela@10.0.1.50 "echo 'Control plane accessible'"
 ```
 
@@ -323,10 +340,22 @@ velero restore logs <restore-name>
 
 ---
 
+## Host Reference
+
+| Host | IP Address | Role | Access |
+|------|------------|------|--------|
+| Ubuntu Physical Host | 10.0.1.101 | VM Host (KVM/libvirt) | `ssh -i ~/.ssh/ari_sela_key asela@10.0.1.101` |
+| k3s-control-01 | 10.0.1.50 | K3s Control Plane | `ssh -i ~/.ssh/ari_sela_key asela@10.0.1.50` |
+| k3s-worker-01 | 10.0.1.51 | K3s Worker Node | `ssh -i ~/.ssh/ari_sela_key asela@10.0.1.51` |
+| k3s-worker-02 | 10.0.1.52 | K3s Worker Node | `ssh -i ~/.ssh/ari_sela_key asela@10.0.1.52` |
+
+---
+
 ## Checklist Summary
 
 - [ ] Physical host powered on
-- [ ] All 3 VMs running
+- [ ] SSH to physical host (10.0.1.101)
+- [ ] All 3 VMs started with `virsh start`
 - [ ] All 3 K3s nodes Ready
 - [ ] CNI cleaned on all nodes
 - [ ] ArgoCD ready
