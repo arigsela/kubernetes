@@ -218,9 +218,59 @@ velero restore describe <restore-name> --details
 
 ---
 
-## Phase 6: Verify Application Health
+## Phase 6: Reconfigure Vault Kubernetes Auth
 
-### Step 6.1: Check All ArgoCD Applications
+After a cluster restart, Vault's Kubernetes authentication configuration becomes stale because the cluster tokens change. This step reconfigures Vault to work with the new tokens.
+
+### Step 6.1: Verify Vault is Unsealed
+```bash
+kubectl exec -n vault vault-0 -- vault status
+```
+
+Confirm `Sealed: false` before proceeding.
+
+### Step 6.2: Reconfigure Kubernetes Auth
+```bash
+# Get the root token from vault-credentials.txt
+VAULT_ROOT_TOKEN=$(grep "^VAULT_ROOT_TOKEN=" recovery/vault-credentials.txt | cut -d'=' -f2)
+
+# Reconfigure Vault Kubernetes auth
+kubectl exec -n vault vault-0 -- sh -c "
+export VAULT_TOKEN='${VAULT_ROOT_TOKEN}'
+vault write auth/kubernetes/config \
+  kubernetes_host='https://kubernetes.default.svc:443' \
+  kubernetes_ca_cert=\"\$(cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt)\" \
+  disable_local_ca_jwt=false
+"
+```
+
+Expected output: `Success! Data written to: auth/kubernetes/config`
+
+### Step 6.3: Restart External Secrets Operator
+```bash
+kubectl rollout restart deployment/external-secrets -n external-secrets
+kubectl wait --for=condition=available deployment/external-secrets -n external-secrets --timeout=120s
+```
+
+### Step 6.4: Verify SecretStores are Ready
+```bash
+kubectl get secretstores --all-namespaces
+```
+
+All SecretStores should show `STATUS: Valid` and `READY: True`.
+
+### Step 6.5: Verify External Secrets are Syncing
+```bash
+kubectl get externalsecrets --all-namespaces
+```
+
+All should show `STATUS: SecretSynced` and `READY: True`.
+
+---
+
+## Phase 7: Verify Application Health
+
+### Step 7.1: Check All ArgoCD Applications
 ```bash
 kubectl get applications -n argo-cd
 ```
@@ -229,21 +279,21 @@ All applications should show:
 - `SYNC STATUS: Synced`
 - `HEALTH STATUS: Healthy` (or `Progressing` if still starting)
 
-### Step 6.2: Check External Secrets are Syncing
+### Step 7.2: Check External Secrets are Syncing
 ```bash
 kubectl get externalsecrets --all-namespaces
 ```
 
 All should show `SecretSynced = True`.
 
-### Step 6.3: Check All Pods
+### Step 7.3: Check All Pods
 ```bash
 kubectl get pods --all-namespaces | grep -v Running | grep -v Completed
 ```
 
 This shows any pods that are not healthy. Some may need a few minutes to start.
 
-### Step 6.4: Verify Critical Applications
+### Step 7.4: Verify Critical Applications
 
 **Vault:**
 ```bash
@@ -267,14 +317,14 @@ kubectl get pods -n logging
 
 ---
 
-## Phase 7: Final Verification
+## Phase 8: Final Verification
 
-### Step 7.1: Test Application Access
+### Step 8.1: Test Application Access
 - Grafana: https://grafana.ari-sela.com
 - n8n: https://n8n.ari-sela.com
 - Vault: https://vault.ari-sela.com (internal)
 
-### Step 7.2: Verify Data Integrity
+### Step 8.2: Verify Data Integrity
 Check that your data was restored:
 - n8n workflows are present
 - Grafana dashboards are present
@@ -290,7 +340,12 @@ Instead of running all steps manually, you can use the automated script:
 ./recovery/post-restart-restore.sh [backup-name]
 ```
 
-This script performs all of Phase 3-6 automatically.
+This script performs Phases 3-7 automatically:
+- CNI cleanup
+- Velero restore
+- Vault Kubernetes auth reconfiguration
+- External Secrets restart
+- Application verification
 
 ---
 
@@ -335,8 +390,10 @@ velero restore logs <restore-name>
 | Phase 3: CNI Cleanup | 1 minute |
 | Phase 4: Core Services Ready | 3-5 minutes |
 | Phase 5: Velero Restore | 2-5 minutes |
-| Phase 6: Application Verification | 2-3 minutes |
-| **Total** | **~15-20 minutes** |
+| Phase 6: Vault Auth Reconfig | 1-2 minutes |
+| Phase 7: Application Verification | 2-3 minutes |
+| Phase 8: Final Verification | 1-2 minutes |
+| **Total** | **~15-25 minutes** |
 
 ---
 
@@ -360,8 +417,11 @@ velero restore logs <restore-name>
 - [ ] CNI cleaned on all nodes
 - [ ] ArgoCD ready
 - [ ] Vault auto-unsealed
-- [ ] External Secrets operator ready
 - [ ] Velero ready
 - [ ] Backup restored
+- [ ] Vault Kubernetes auth reconfigured
+- [ ] External Secrets operator restarted
+- [ ] All SecretStores Valid
+- [ ] All ExternalSecrets Synced
 - [ ] All applications healthy
 - [ ] Data verified

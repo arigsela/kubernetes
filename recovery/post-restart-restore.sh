@@ -7,11 +7,20 @@ set -euo pipefail
 # Performs full cluster recovery after restart:
 # 1. Cleans CNI IP allocations on all nodes
 # 2. Waits for cluster to be ready
-# 3. Restores from Velero backup
-# 4. Verifies applications are healthy
+# 3. Waits for Velero to be ready
+# 4. Restores from Velero backup
+# 5. Reconfigures Vault Kubernetes authentication
+# 6. Restarts External Secrets operator
+# 7. Verifies applications are healthy
 #
 # Usage: ./post-restart-restore.sh [backup-name]
 #        If no backup name is provided, lists available backups.
+#
+# Requirements:
+#   - vault-credentials.txt in the same directory (for Vault root token)
+#   - kubectl configured to access the cluster
+#   - velero CLI installed
+#   - SSH access to cluster nodes for CNI cleanup
 # =============================================================================
 
 # Colors for output
@@ -34,7 +43,7 @@ echo ""
 # -----------------------------------------------------------------------------
 # Step 1: Clean CNI on all nodes
 # -----------------------------------------------------------------------------
-echo -e "${YELLOW}[1/5] Cleaning CNI IP allocations on all nodes...${NC}"
+echo -e "${YELLOW}[1/7] Cleaning CNI IP allocations on all nodes...${NC}"
 echo "This prevents IP exhaustion issues after restart."
 echo ""
 
@@ -61,7 +70,7 @@ echo ""
 # -----------------------------------------------------------------------------
 # Step 2: Wait for cluster to be ready
 # -----------------------------------------------------------------------------
-echo -e "${YELLOW}[2/5] Waiting for cluster nodes to be ready...${NC}"
+echo -e "${YELLOW}[2/7] Waiting for cluster nodes to be ready...${NC}"
 if ! kubectl wait --for=condition=Ready nodes --all --timeout=300s 2>/dev/null; then
     echo -e "${RED}ERROR: Nodes did not become ready within 5 minutes${NC}"
     kubectl get nodes
@@ -74,7 +83,7 @@ echo ""
 # -----------------------------------------------------------------------------
 # Step 3: Wait for Velero to be ready
 # -----------------------------------------------------------------------------
-echo -e "${YELLOW}[3/5] Waiting for Velero to be ready...${NC}"
+echo -e "${YELLOW}[3/7] Waiting for Velero to be ready...${NC}"
 
 # First check if Velero namespace exists
 if ! kubectl get namespace velero &>/dev/null; then
@@ -110,7 +119,7 @@ echo ""
 # -----------------------------------------------------------------------------
 # Step 4: Select and perform restore
 # -----------------------------------------------------------------------------
-echo -e "${YELLOW}[4/5] Selecting backup to restore...${NC}"
+echo -e "${YELLOW}[4/7] Selecting backup to restore...${NC}"
 
 # If no backup name provided, list available and prompt
 if [ -z "$BACKUP_NAME" ]; then
@@ -139,8 +148,8 @@ if [ -z "$BACKUP_NAME" ]; then
 fi
 
 # Verify backup exists and is completed
-BACKUP_STATUS=$(velero backup get "${BACKUP_NAME}" -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
-if [ "$BACKUP_STATUS" == "NotFound" ]; then
+BACKUP_STATUS=$(velero backup get "${BACKUP_NAME}" --output=jsonpath='{.status.phase}' 2>/dev/null)
+if [ -z "$BACKUP_STATUS" ]; then
     echo -e "${RED}ERROR: Backup '${BACKUP_NAME}' not found${NC}"
     echo ""
     echo "Available backups:"
@@ -194,9 +203,87 @@ velero restore describe "${RESTORE_NAME}"
 echo ""
 
 # -----------------------------------------------------------------------------
-# Step 5: Verify applications
+# Step 5: Reconfigure Vault Kubernetes Auth
 # -----------------------------------------------------------------------------
-echo -e "${YELLOW}[5/5] Verifying applications...${NC}"
+echo -e "${YELLOW}[5/7] Reconfiguring Vault Kubernetes authentication...${NC}"
+echo "After cluster restart, Vault's Kubernetes auth config needs to be updated."
+echo ""
+
+# Get script directory to find vault-credentials.txt
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VAULT_CREDS_FILE="${SCRIPT_DIR}/vault-credentials.txt"
+
+if [ ! -f "$VAULT_CREDS_FILE" ]; then
+    echo -e "${YELLOW}WARNING: vault-credentials.txt not found at ${VAULT_CREDS_FILE}${NC}"
+    echo "Skipping Vault Kubernetes auth reconfiguration."
+    echo "You may need to manually reconfigure Vault auth if External Secrets fail."
+else
+    # Extract root token from credentials file
+    VAULT_ROOT_TOKEN=$(grep "^VAULT_ROOT_TOKEN=" "$VAULT_CREDS_FILE" | cut -d'=' -f2)
+
+    if [ -z "$VAULT_ROOT_TOKEN" ]; then
+        echo -e "${YELLOW}WARNING: Could not extract VAULT_ROOT_TOKEN from credentials file${NC}"
+        echo "Skipping Vault Kubernetes auth reconfiguration."
+    else
+        # Wait for Vault to be ready
+        echo "Waiting for Vault pod to be ready..."
+        if kubectl wait --for=condition=ready pod/vault-0 -n vault --timeout=120s 2>/dev/null; then
+            # Check if Vault is unsealed
+            VAULT_SEALED=$(kubectl exec -n vault vault-0 -- vault status -format=json 2>/dev/null | jq -r '.sealed' || echo "true")
+
+            if [ "$VAULT_SEALED" == "false" ]; then
+                echo "Vault is unsealed. Reconfiguring Kubernetes auth..."
+
+                # Reconfigure Kubernetes auth with current cluster credentials
+                if kubectl exec -n vault vault-0 -- sh -c "
+                    export VAULT_TOKEN='${VAULT_ROOT_TOKEN}'
+                    KUBE_HOST='https://kubernetes.default.svc:443'
+                    KUBE_CA_CERT=\$(cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt)
+                    vault write auth/kubernetes/config \
+                        kubernetes_host=\"\$KUBE_HOST\" \
+                        kubernetes_ca_cert=\"\$KUBE_CA_CERT\" \
+                        disable_local_ca_jwt=false
+                " 2>/dev/null; then
+                    echo -e "${GREEN}✓ Vault Kubernetes auth reconfigured${NC}"
+                else
+                    echo -e "${YELLOW}WARNING: Failed to reconfigure Vault Kubernetes auth${NC}"
+                    echo "You may need to manually run:"
+                    echo "  kubectl exec -n vault vault-0 -- vault write auth/kubernetes/config ..."
+                fi
+            else
+                echo -e "${YELLOW}WARNING: Vault is still sealed. Cannot reconfigure auth.${NC}"
+                echo "Check Vault status: kubectl exec -n vault vault-0 -- vault status"
+            fi
+        else
+            echo -e "${YELLOW}WARNING: Vault pod not ready. Skipping auth reconfiguration.${NC}"
+        fi
+    fi
+fi
+echo ""
+
+# -----------------------------------------------------------------------------
+# Step 6: Restart External Secrets Operator
+# -----------------------------------------------------------------------------
+echo -e "${YELLOW}[6/7] Restarting External Secrets operator...${NC}"
+echo "This ensures External Secrets picks up the new Vault auth configuration."
+
+if kubectl rollout restart deployment/external-secrets -n external-secrets 2>/dev/null; then
+    echo "Waiting for External Secrets to be ready..."
+    kubectl wait --for=condition=available deployment/external-secrets -n external-secrets --timeout=120s 2>/dev/null || true
+    echo -e "${GREEN}✓ External Secrets operator restarted${NC}"
+else
+    echo -e "${YELLOW}WARNING: Could not restart External Secrets operator${NC}"
+fi
+
+# Wait for secrets to sync
+echo "Waiting 20 seconds for External Secrets to sync..."
+sleep 20
+echo ""
+
+# -----------------------------------------------------------------------------
+# Step 7: Verify applications
+# -----------------------------------------------------------------------------
+echo -e "${YELLOW}[7/7] Verifying applications...${NC}"
 echo "Waiting 15 seconds for pods to start..."
 sleep 15
 
