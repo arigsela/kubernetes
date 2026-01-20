@@ -58,7 +58,7 @@ resource "kubectl_manifest" "master_app" {
     source:
       path: base-apps
       repoURL: https://github.com/arigsela/kubernetes
-      targetRevision: incremental-service-rollout
+      targetRevision: fix/cni-recovery
 
     syncPolicy:
       automated:
