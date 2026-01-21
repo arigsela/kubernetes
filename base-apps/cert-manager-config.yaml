@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: fix/cni-recovery
+    targetRevision: main
     path: base-apps/cert-manager
   destination:
     server: https://kubernetes.default.svc
