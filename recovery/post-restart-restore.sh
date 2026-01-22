@@ -148,7 +148,7 @@ if [ -z "$BACKUP_NAME" ]; then
 fi
 
 # Verify backup exists and is completed
-BACKUP_STATUS=$(velero backup get "${BACKUP_NAME}" --output=jsonpath='{.status.phase}' 2>/dev/null)
+BACKUP_STATUS=$(velero backup get "${BACKUP_NAME}" --output=json 2>/dev/null | jq -r '.status.phase // empty')
 if [ -z "$BACKUP_STATUS" ]; then
     echo -e "${RED}ERROR: Backup '${BACKUP_NAME}' not found${NC}"
     echo ""
