@@ -57,6 +57,10 @@ spec:
     metadata:
       labels:
         app: grafana
+      annotations:
+        # Exclude Grafana storage from Velero backup - SQLite journal files cause backup failures
+        # Dashboards are provisioned from ConfigMaps, so no data loss
+        backup.velero.io/backup-volumes-excludes: storage
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
