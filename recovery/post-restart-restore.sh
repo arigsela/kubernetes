@@ -183,7 +183,7 @@ velero restore create "${RESTORE_NAME}" \
     --wait
 
 # Check restore status
-RESTORE_STATUS=$(velero restore get "${RESTORE_NAME}" -o jsonpath='{.status.phase}')
+RESTORE_STATUS=$(velero restore get "${RESTORE_NAME}" --output=json 2>/dev/null | jq -r '.status.phase // empty')
 
 if [ "$RESTORE_STATUS" == "Completed" ]; then
     echo -e "${GREEN}✓ Restore completed successfully${NC}"
