@@ -12,22 +12,28 @@
           ]
         }
       },
-      "id": "schedule-trigger",
+      "id": "0a500846-5d1f-4c48-b8cf-cf6c68b9e2b1",
       "name": "Every 4 Hours",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
-      "position": [0, 560]
+      "position": [
+        -176,
+        2592
+      ]
     },
     {
       "parameters": {
         "url": "https://www.reddit.com/r/ClaudeAI/.rss",
         "options": {}
       },
-      "id": "rss-claudeai",
+      "id": "19d8ee55-918d-4d2a-8d17-bcc6f39c56f3",
       "name": "RSS r/ClaudeAI",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 0],
+      "position": [
+        48,
+        1440
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -38,11 +44,14 @@
         "url": "https://www.reddit.com/r/anthropic/.rss",
         "options": {}
       },
-      "id": "rss-anthropic",
+      "id": "1d61b20b-1e10-43a4-89a1-ccfc3448c90e",
       "name": "RSS r/anthropic",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 112],
+      "position": [
+        48,
+        1632
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -53,11 +62,14 @@
         "url": "https://hnrss.org/newest?q=claude",
         "options": {}
       },
-      "id": "rss-hn-claude",
+      "id": "23e53494-af93-4c23-b674-c558aaa249cd",
       "name": "RSS HN Claude",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 224],
+      "position": [
+        48,
+        1824
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -68,11 +80,14 @@
         "url": "https://hnrss.org/newest?q=anthropic",
         "options": {}
       },
-      "id": "rss-hn-anthropic",
+      "id": "3410ea68-47a6-4cda-b710-c8a2e36d51cb",
       "name": "RSS HN Anthropic",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 336],
+      "position": [
+        48,
+        2016
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -83,11 +98,14 @@
         "url": "https://devops.com/feed/",
         "options": {}
       },
-      "id": "rss-devops-com",
+      "id": "c17bbb48-57ae-4fa8-a234-97ec48e34598",
       "name": "RSS DevOps.com",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 448],
+      "position": [
+        48,
+        2208
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -98,11 +116,14 @@
         "url": "https://theagileadmin.com/feed/",
         "options": {}
       },
-      "id": "rss-agile-admin",
+      "id": "aa913835-6b51-4fa6-8a7f-e0d6abe15f96",
       "name": "RSS Agile Admin",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 560],
+      "position": [
+        48,
+        2400
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -113,11 +134,14 @@
         "url": "https://feed.infoq.com/Devops/articles/",
         "options": {}
       },
-      "id": "rss-infoq",
+      "id": "2a1582a2-bfa9-4c2c-975f-9ddf72c44dcd",
       "name": "RSS InfoQ DevOps",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 672],
+      "position": [
+        48,
+        2592
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -128,11 +152,14 @@
         "url": "https://www.hashicorp.com/blog/feed.xml",
         "options": {}
       },
-      "id": "rss-hashicorp",
+      "id": "b2620994-25ce-4fb1-a64e-0e6c7f48fa29",
       "name": "RSS HashiCorp",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 784],
+      "position": [
+        48,
+        2784
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -143,11 +170,14 @@
         "url": "https://www.cncf.io/blog/feed/",
         "options": {}
       },
-      "id": "rss-cncf",
+      "id": "8d6d51aa-7b01-4f3a-b016-80986b2c695f",
       "name": "RSS CNCF",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 896],
+      "position": [
+        48,
+        2976
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -158,11 +188,14 @@
         "url": "https://kubernetes.io/feed.xml",
         "options": {}
       },
-      "id": "rss-kubernetes",
+      "id": "940adf8c-0b49-4444-9e07-bd22eadec022",
       "name": "RSS Kubernetes",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 1008],
+      "position": [
+        48,
+        3168
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -173,11 +206,14 @@
         "url": "https://hnrss.org/newest?q=kubernetes+OR+devops+OR+terraform",
         "options": {}
       },
-      "id": "rss-hn-devops",
+      "id": "50bba10b-ac34-447f-ac3f-03b8415b69e1",
       "name": "RSS HN DevOps",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 1120],
+      "position": [
+        48,
+        3360
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -188,11 +224,14 @@
         "url": "https://www.reddit.com/r/devops/.rss",
         "options": {}
       },
-      "id": "rss-reddit-devops",
+      "id": "575b3f42-d673-42b7-9632-f0d70f0cde81",
       "name": "RSS r/devops",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 1232],
+      "position": [
+        48,
+        3552
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -203,11 +242,14 @@
         "url": "https://www.reddit.com/r/kubernetes/.rss",
         "options": {}
       },
-      "id": "rss-reddit-k8s",
+      "id": "5fd200e7-613c-4b48-bcb7-c9be3e629ab1",
       "name": "RSS r/kubernetes",
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
-      "position": [280, 1344],
+      "position": [
+        48,
+        3744
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -217,93 +259,108 @@
       "parameters": {
         "numberInputs": 10
       },
-      "id": "merge-group-1",
+      "id": "e56fc76d-4bc4-48d6-a12c-82f212476d81",
       "name": "Merge Group 1",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
-      "position": [560, 336]
+      "position": [
+        272,
+        2176
+      ]
     },
     {
       "parameters": {
         "numberInputs": 3
       },
-      "id": "merge-group-2",
+      "id": "e70f9094-0294-4775-b018-8b6d0b2b9f04",
       "name": "Merge Group 2",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
-      "position": [560, 1176]
+      "position": [
+        272,
+        3536
+      ]
     },
     {
-      "parameters": {
-        "numberInputs": 2
-      },
-      "id": "merge-all",
+      "parameters": {},
+      "id": "b479aea1-8f40-41eb-9e97-a0b82f5ae152",
       "name": "Merge All Feeds",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
-      "position": [768, 560]
+      "position": [
+        496,
+        2880
+      ]
     },
     {
       "parameters": {
         "jsCode": "// Normalize all feeds to consistent schema with topic tagging\nconst items = $input.all();\nconst now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\n\nfunction getTopicTags(link, title) {\n  const tags = [];\n  const lowerTitle = (title || '').toLowerCase();\n  const lowerLink = (link || '').toLowerCase();\n\n  // Claude/Anthropic topics\n  if (lowerLink.includes('claudeai') || lowerLink.includes('r/anthropic') ||\n      lowerTitle.includes('claude') || lowerTitle.includes('anthropic') ||\n      lowerLink.includes('q=claude') || lowerLink.includes('q=anthropic')) {\n    tags.push('claude');\n  }\n\n  // DevOps topics\n  if (lowerLink.includes('devops') || lowerLink.includes('kubernetes') ||\n      lowerLink.includes('terraform') || lowerLink.includes('hashicorp') ||\n      lowerLink.includes('cncf') || lowerLink.includes('argoproj') ||\n      lowerTitle.includes('devops') || lowerTitle.includes('kubernetes') ||\n      lowerTitle.includes('gitops') || lowerTitle.includes('terraform') ||\n      lowerTitle.includes('argocd') || lowerTitle.includes('helm')) {\n    tags.push('devops');\n  }\n\n  // General AI topics\n  if (lowerTitle.includes('openai') || lowerTitle.includes('gpt') ||\n      lowerTitle.includes('llm') || lowerTitle.includes('machine learning') ||\n      lowerTitle.includes('ai agent')) {\n    tags.push('ai-general');\n  }\n\n  return tags.length > 0 ? tags : ['uncategorized'];\n}\n\nfunction getSourceCategory(link) {\n  if (link.includes('reddit.com') || link.includes('news.ycombinator.com')) {\n    return 'community';\n  }\n  if (link.includes('anthropic.com') || link.includes('hashicorp.com') ||\n      link.includes('kubernetes.io') || link.includes('cncf.io') ||\n      link.includes('argoproj.io')) {\n    return 'official';\n  }\n  return 'blog';\n}\n\nfunction getSourceName(link) {\n  const mapping = {\n    'reddit.com/r/ClaudeAI': 'r/ClaudeAI',\n    'reddit.com/r/anthropic': 'r/anthropic',\n    'reddit.com/r/devops': 'r/devops',\n    'reddit.com/r/kubernetes': 'r/kubernetes',\n    'news.ycombinator.com': 'Hacker News',\n    'anthropic.com': 'Anthropic Blog',\n    'devops.com': 'DevOps.com',\n    'theagileadmin.com': 'Agile Admin',\n    'infoq.com': 'InfoQ',\n    'hashicorp.com': 'HashiCorp',\n    'kubernetes.io': 'Kubernetes',\n    'cncf.io': 'CNCF',\n    'argoproj.io': 'ArgoCD Blog'\n  };\n\n  for (const [pattern, name] of Object.entries(mapping)) {\n    if (link.includes(pattern)) return name;\n  }\n  return 'Unknown';\n}\n\n// Deduplicate by URL within this batch\nconst seen = new Set();\n\nconst normalized = items\n  .map(item => {\n    const json = item.json;\n    const link = json.link || json.guid || '';\n    const title = json.title || 'No title';\n    const pubDate = new Date(json.pubDate || json.isoDate || json.date || now);\n\n    return {\n      url: link,\n      title: title,\n      content: json.content || json.description || '',\n      content_snippet: (json.contentSnippet || json.content || json.description || '').substring(0, 500),\n      source_name: getSourceName(link),\n      source_url: json.feedUrl || '',\n      topic: getTopicTags(link, title),\n      category: getSourceCategory(link),\n      pub_date: pubDate.toISOString(),\n      metadata: JSON.stringify({\n        author: json.creator || json.author || null,\n        comments_count: json.comments || null,\n        original_guid: json.guid || null\n      })\n    };\n  })\n  // Filter out items without URLs\n  .filter(item => item.url)\n  // Filter to last 7 days\n  .filter(item => new Date(item.pub_date) >= sevenDaysAgo)\n  // Deduplicate within batch\n  .filter(item => {\n    if (seen.has(item.url)) return false;\n    seen.add(item.url);\n    return true;\n  });\n\nreturn normalized.map(item => ({ json: item }));"
       },
-      "id": "normalize-feeds",
+      "id": "349143b0-be0c-427d-9e47-13c9a5c1af1c",
       "name": "Normalize & Tag Topics",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [976, 560]
+      "position": [
+        720,
+        2880
+      ]
     },
     {
       "parameters": {
-        "batchSize": 1,
         "options": {}
       },
-      "id": "split-batches",
+      "id": "55fc6c3b-6f68-4e9e-a803-592f5775b58d",
       "name": "Process One at a Time",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
-      "position": [1184, 560]
+      "position": [
+        944,
+        2880
+      ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT id FROM feed_articles WHERE url_hash = md5($1) LIMIT 1;",
+        "query": "SELECT CASE WHEN EXISTS (\n  SELECT 1 FROM feed_articles WHERE url_hash = md5($1)\n) THEN true ELSE false END as exists;",
         "options": {
-          "queryParameters": "={{ [$json.url] }}"
+          "queryReplacement": "={{ [$json.url] }}"
         }
       },
-      "id": "check-existing",
+      "id": "f4bdc01e-d042-4ff3-87a6-a5b6d7559019",
       "name": "Check If Exists",
       "notesInFlow": true,
-      "notes": "Uses $json.url from splitInBatches output",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [1392, 560],
+      "position": [
+        1168,
+        2624
+      ],
       "credentials": {
         "postgres": {
-          "id": "POSTGRES_CREDENTIAL_ID",
-          "name": "Postgres - n8n"
+          "id": "CnXWIqjqRo8CfL2F",
+          "name": "Postgres account"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notes": "Uses $json.url from splitInBatches output"
     },
     {
       "parameters": {
         "conditions": {
           "options": {
-            "caseSensitive": true,
+            "version": 2,
             "leftValue": "",
+            "caseSensitive": true,
             "typeValidation": "strict"
           },
           "conditions": [
             {
-              "id": "check-empty",
-              "leftValue": "={{ $json.id }}",
-              "rightValue": "",
+              "id": "check-exists",
+              "leftValue": "={{ $json.exists }}",
+              "rightValue": false,
               "operator": {
-                "type": "string",
-                "operation": "empty",
-                "singleValue": true
+                "type": "boolean",
+                "operation": "equals"
               }
             }
           ],
@@ -311,108 +368,407 @@
         },
         "options": {}
       },
-      "id": "if-new",
+      "id": "bdc4fd55-783c-4e07-95cb-f98bb90886d2",
       "name": "Is New Article?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [1600, 560]
+      "position": [
+        1392,
+        2624
+      ]
     },
     {
       "parameters": {
         "operation": "executeQuery",
         "query": "INSERT INTO feed_articles (url, title, content, content_snippet, source_name, source_url, topic, category, pub_date, metadata)\nVALUES ($1, $2, $3, $4, $5, $6, $7::text[], $8, $9::timestamptz, $10::jsonb)\nON CONFLICT (url) DO NOTHING\nRETURNING id;",
         "options": {
-          "queryParameters": "={{ [$('Process One at a Time').item.json.url, $('Process One at a Time').item.json.title, $('Process One at a Time').item.json.content, $('Process One at a Time').item.json.content_snippet, $('Process One at a Time').item.json.source_name, $('Process One at a Time').item.json.source_url, '{' + $('Process One at a Time').item.json.topic.join(',') + '}', $('Process One at a Time').item.json.category, $('Process One at a Time').item.json.pub_date, $('Process One at a Time').item.json.metadata] }}"
+          "queryReplacement": "={{ [$('Process One at a Time').item.json.url, $('Process One at a Time').item.json.title, $('Process One at a Time').item.json.content, $('Process One at a Time').item.json.content_snippet, $('Process One at a Time').item.json.source_name, $('Process One at a Time').item.json.source_url, $('Process One at a Time').item.json.topic, $('Process One at a Time').item.json.category, $('Process One at a Time').item.json.pub_date, $('Process One at a Time').item.json.metadata] }}"
         }
       },
-      "id": "insert-article",
+      "id": "c5a113fe-afd2-4b53-92c1-c43b4f55f478",
       "name": "Insert Article",
       "notesInFlow": true,
-      "notes": "References original data from splitInBatches node",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [1808, 480],
+      "position": [
+        1616,
+        2784
+      ],
       "credentials": {
         "postgres": {
-          "id": "POSTGRES_CREDENTIAL_ID",
-          "name": "Postgres - n8n"
+          "id": "CnXWIqjqRo8CfL2F",
+          "name": "Postgres account"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "notes": "References original data from splitInBatches node"
     },
     {
       "parameters": {},
-      "id": "no-op-skip",
+      "id": "ac1f89f8-e2e7-44b6-ac6a-b84ed7d2e62c",
       "name": "Skip Existing",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [1808, 640]
+      "position": [
+        1616,
+        3008
+      ]
     },
     {
       "parameters": {
         "jsCode": "// Count results from the batch processing\nconst items = $input.all();\nconst inserted = items.filter(i => i.json.id).length;\n\nreturn [{\n  json: {\n    status: 'complete',\n    processed_at: new Date().toISOString(),\n    articles_checked: items.length,\n    new_articles_inserted: inserted\n  }\n}];"
       },
-      "id": "summary",
+      "id": "b872f05a-aa16-48a7-bfb2-f5a78a311fe6",
       "name": "Summary",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2224, 560]
+      "position": [
+        1168,
+        2816
+      ]
     }
   ],
+  "pinData": {},
   "connections": {
     "Every 4 Hours": {
-      "main": [[
-        { "node": "RSS r/ClaudeAI", "type": "main", "index": 0 },
-        { "node": "RSS r/anthropic", "type": "main", "index": 0 },
-        { "node": "RSS HN Claude", "type": "main", "index": 0 },
-        { "node": "RSS HN Anthropic", "type": "main", "index": 0 },
-        { "node": "RSS DevOps.com", "type": "main", "index": 0 },
-        { "node": "RSS Agile Admin", "type": "main", "index": 0 },
-        { "node": "RSS InfoQ DevOps", "type": "main", "index": 0 },
-        { "node": "RSS HashiCorp", "type": "main", "index": 0 },
-        { "node": "RSS CNCF", "type": "main", "index": 0 },
-        { "node": "RSS Kubernetes", "type": "main", "index": 0 },
-        { "node": "RSS HN DevOps", "type": "main", "index": 0 },
-        { "node": "RSS r/devops", "type": "main", "index": 0 },
-        { "node": "RSS r/kubernetes", "type": "main", "index": 0 }
-      ]]
+      "main": [
+        [
+          {
+            "node": "RSS r/ClaudeAI",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS r/anthropic",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS HN Claude",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS HN Anthropic",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS DevOps.com",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS Agile Admin",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS InfoQ DevOps",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS HashiCorp",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS CNCF",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS Kubernetes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS HN DevOps",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS r/devops",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS r/kubernetes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "RSS r/ClaudeAI": { "main": [[{ "node": "Merge Group 1", "type": "main", "index": 0 }]] },
-    "RSS r/anthropic": { "main": [[{ "node": "Merge Group 1", "type": "main", "index": 1 }]] },
-    "RSS HN Claude": { "main": [[{ "node": "Merge Group 1", "type": "main", "index": 2 }]] },
-    "RSS HN Anthropic": { "main": [[{ "node": "Merge Group 1", "type": "main", "index": 3 }]] },
-    "RSS DevOps.com": { "main": [[{ "node": "Merge Group 1", "type": "main", "index": 4 }]] },
-    "RSS Agile Admin": { "main": [[{ "node": "Merge Group 1", "type": "main", "index": 5 }]] },
-    "RSS InfoQ DevOps": { "main": [[{ "node": "Merge Group 1", "type": "main", "index": 6 }]] },
-    "RSS HashiCorp": { "main": [[{ "node": "Merge Group 1", "type": "main", "index": 7 }]] },
-    "RSS CNCF": { "main": [[{ "node": "Merge Group 1", "type": "main", "index": 8 }]] },
-    "RSS Kubernetes": { "main": [[{ "node": "Merge Group 1", "type": "main", "index": 9 }]] },
-    "RSS HN DevOps": { "main": [[{ "node": "Merge Group 2", "type": "main", "index": 0 }]] },
-    "RSS r/devops": { "main": [[{ "node": "Merge Group 2", "type": "main", "index": 1 }]] },
-    "RSS r/kubernetes": { "main": [[{ "node": "Merge Group 2", "type": "main", "index": 2 }]] },
-    "Merge Group 1": { "main": [[{ "node": "Merge All Feeds", "type": "main", "index": 0 }]] },
-    "Merge Group 2": { "main": [[{ "node": "Merge All Feeds", "type": "main", "index": 1 }]] },
-    "Merge All Feeds": { "main": [[{ "node": "Normalize & Tag Topics", "type": "main", "index": 0 }]] },
-    "Normalize & Tag Topics": { "main": [[{ "node": "Process One at a Time", "type": "main", "index": 0 }]] },
-    "Process One at a Time": { "main": [
-      [{ "node": "Summary", "type": "main", "index": 0 }],
-      [{ "node": "Check If Exists", "type": "main", "index": 0 }]
-    ]},
-    "Check If Exists": { "main": [[{ "node": "Is New Article?", "type": "main", "index": 0 }]] },
-    "Is New Article?": { "main": [
-      [{ "node": "Insert Article", "type": "main", "index": 0 }],
-      [{ "node": "Skip Existing", "type": "main", "index": 0 }]
-    ]},
-    "Insert Article": { "main": [[{ "node": "Process One at a Time", "type": "main", "index": 0 }]] },
-    "Skip Existing": { "main": [[{ "node": "Process One at a Time", "type": "main", "index": 0 }]] }
+    "RSS r/ClaudeAI": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS r/anthropic": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "RSS HN Claude": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 1",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "RSS HN Anthropic": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 1",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "RSS DevOps.com": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 1",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "RSS Agile Admin": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 1",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "RSS InfoQ DevOps": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 1",
+            "type": "main",
+            "index": 6
+          }
+        ]
+      ]
+    },
+    "RSS HashiCorp": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 1",
+            "type": "main",
+            "index": 7
+          }
+        ]
+      ]
+    },
+    "RSS CNCF": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 1",
+            "type": "main",
+            "index": 8
+          }
+        ]
+      ]
+    },
+    "RSS Kubernetes": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 1",
+            "type": "main",
+            "index": 9
+          }
+        ]
+      ]
+    },
+    "RSS HN DevOps": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS r/devops": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "RSS r/kubernetes": {
+      "main": [
+        [
+          {
+            "node": "Merge Group 2",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Group 1": {
+      "main": [
+        [
+          {
+            "node": "Merge All Feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Group 2": {
+      "main": [
+        [
+          {
+            "node": "Merge All Feeds",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge All Feeds": {
+      "main": [
+        [
+          {
+            "node": "Normalize & Tag Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize & Tag Topics": {
+      "main": [
+        [
+          {
+            "node": "Process One at a Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process One at a Time": {
+      "main": [
+        [
+          {
+            "node": "Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check If Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Exists": {
+      "main": [
+        [
+          {
+            "node": "Is New Article?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Article?": {
+      "main": [
+        [
+          {
+            "node": "Insert Article",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Existing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Article": {
+      "main": [
+        [
+          {
+            "node": "Process One at a Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Existing": {
+      "main": [
+        [
+          {
+            "node": "Process One at a Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
+  "active": false,
   "settings": {
     "executionOrder": "v1",
-    "timezone": "America/New_York",
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all"
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
   },
+  "versionId": "82fde169-ed79-470c-a08d-de2da55d7ab7",
   "meta": {
-    "notes": "Shared data ingestion workflow for feed aggregation. Runs every 4 hours to fetch RSS feeds, normalize data with topic tags, and store in PostgreSQL for deduplication. Supports both Claude/AI and DevOps topics. Uses two-stage merge to handle 13 feeds (max 10 per merge node)."
-  }
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1ac1edd945dd6547c06503f16d68924976acb661550d12289650d4bae82f1e28"
+  },
+  "id": "nLOtRGn4soNqiX-lzbwI9",
+  "tags": []
 }

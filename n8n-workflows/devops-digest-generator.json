@@ -12,11 +12,14 @@
           ]
         }
       },
-      "id": "schedule-trigger",
+      "id": "580fa633-aca0-470d-aa01-e7926d6fa3f6",
       "name": "Daily 8 AM",
       "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [0, 304]
+      "typeVersion": 1.2,x
+      "position": [
+        -784,
+        64
+      ]
     },
     {
       "parameters": {
@@ -24,15 +27,18 @@
         "query": "SELECT\n    url, title, content_snippet, source_name, category, pub_date,\n    metadata->>'author' as author,\n    metadata->>'comments_count' as engagement\nFROM feed_articles\nWHERE 'devops' = ANY(topic)\n  AND pub_date >= NOW() - INTERVAL '24 hours'\n  AND (last_digest_date IS NULL OR last_digest_date < CURRENT_DATE)\nORDER BY pub_date DESC\nLIMIT 30;",
         "options": {}
       },
-      "id": "query-articles",
+      "id": "b1777bae-0139-4e74-b630-61776fc8f4d7",
       "name": "Query DevOps Articles",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [240, 304],
+      "position": [
+        -560,
+        64
+      ],
       "credentials": {
         "postgres": {
-          "id": "POSTGRES_CREDENTIAL_ID",
-          "name": "Postgres - n8n"
+          "id": "CnXWIqjqRo8CfL2F",
+          "name": "Postgres account"
         }
       }
     },
@@ -40,8 +46,9 @@
       "parameters": {
         "conditions": {
           "options": {
-            "caseSensitive": true,
+            "version": 2,
             "leftValue": "",
+            "caseSensitive": true,
             "typeValidation": "strict"
           },
           "conditions": [
@@ -51,8 +58,7 @@
               "rightValue": "",
               "operator": {
                 "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true
+                "operation": "notEmpty"
               }
             }
           ],
@@ -60,21 +66,27 @@
         },
         "options": {}
       },
-      "id": "if-has-articles",
+      "id": "6144f7b3-0f4b-4edc-abb0-7c9b9a273180",
       "name": "Has Articles?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [448, 304]
+      "position": [
+        -336,
+        64
+      ]
     },
     {
       "parameters": {
         "jsCode": "// Combine all items into a single text for the LLM, grouped by category\nconst items = $input.all();\n\nif (!items || items.length === 0) {\n  return [{\n    json: {\n      posts: 'No new articles found for today.',\n      date: new Date().toISOString().split('T')[0],\n      itemCount: 0,\n      urls: []\n    }\n  }];\n}\n\n// Group by category\nconst byCategory = { official: [], blog: [], community: [] };\nitems.forEach(item => {\n  const cat = (item.json.category || 'blog').toLowerCase();\n  if (byCategory[cat]) byCategory[cat].push(item.json);\n  else byCategory.blog.push(item.json);\n});\n\nlet postsText = '';\n\nconst categoryNames = {\n  official: 'Official Sources',\n  blog: 'Blog Posts',\n  community: 'Community Discussions'\n};\n\nfor (const [category, posts] of Object.entries(byCategory)) {\n  if (posts.length === 0) continue;\n  postsText += `\\n## ${categoryNames[category]}\\n`;\n  posts.forEach((post) => {\n    postsText += `### ${post.title}\\n`;\n    postsText += `**Source:** ${post.source_name} | **Date:** ${post.pub_date}\\n`;\n    postsText += `**Link:** ${post.url}\\n`;\n    postsText += `**Preview:** ${post.content_snippet || 'No content'}\\n\\n`;\n  });\n}\n\n// Collect URLs for marking as processed later\nconst urls = items.map(item => item.json.url);\n\nreturn [{\n  json: {\n    posts: postsText,\n    date: new Date().toISOString().split('T')[0],\n    itemCount: items.length,\n    urls: urls\n  }\n}];"
       },
-      "id": "prepare-for-llm",
+      "id": "16ec9579-b19a-46e3-bc62-d66661f369bc",
       "name": "Prepare for LLM",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [656, 224]
+      "position": [
+        -112,
+        -32
+      ]
     },
     {
       "parameters": {
@@ -88,23 +100,35 @@
           "maxTokensToSample": 4096
         }
       },
-      "id": "anthropic-model",
+      "id": "7d7bca1a-4c8d-4f61-9d34-971ffb04a474",
       "name": "Claude Haiku",
       "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
       "typeVersion": 1.3,
-      "position": [864, 400]
+      "position": [
+        96,
+        176
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "FXEdoYejC4N4k4zE",
+          "name": "Anthropic account"
+        }
+      }
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "=You are a DevOps and Infrastructure news analyst creating daily digests.\n\nYou have memory of your previous daily digest summaries. Use this memory to:\n- Focus on NEW content not covered in previous summaries\n- Avoid repeating information from previous digests\n- Reference trends or ongoing discussions if relevant\n\n## Today's Posts ({{ $json.itemCount }} articles from database):\n{{ $json.posts }}\n\n## Instructions:\nCreate a markdown-formatted daily digest with these sections:\n\n1. **Key Releases & Announcements** - New tool versions, major updates, product launches\n2. **Infrastructure Trends** - GitOps, IaC, platform engineering, cloud native patterns\n3. **Community Highlights** - Hot discussions, popular tips, interesting debates\n4. **Tools & Tutorials** - New tools, how-to guides, best practices\n5. **Security Updates** - CVEs, security best practices, compliance news\n\nFor each item, include the source name in parentheses.\nKeep summaries concise but informative. Focus on actionable insights.\nIf a section has no relevant NEW content, write \"No notable items today.\"\n\nFormat the output as clean markdown suitable for Notion.",
+        "text": "=You are a friendly tech podcast host delivering the morning DevOps and Infrastructure news briefing. Your audience is listening to this while commuting or having their morning coffee.\n\nSpeak naturally and conversationally, as if you're talking directly to the listener. Avoid bullet points, markdown formatting, or anything that sounds robotic when read aloud. Use transitions like \"Speaking of which...\", \"Now here's something interesting...\", \"Moving on to...\", \"And you'll want to hear this one...\".\n\n## Today's Articles ({{ $json.itemCount }} items):\n{{ $json.posts }}\n\n## Your Task:\nCreate a 5-8 minute podcast script covering today's DevOps and infrastructure news. Structure it like this:\n\n1. **Opening** (30 seconds): Greet the listener warmly, mention the date, and give a quick teaser of the most exciting story.\n\n2. **Main Stories** (3-4 minutes): Cover the most significant announcements, releases, or updates. Explain why each matters and how it might affect the listener's work. Add your perspective and connect related stories.\n\n3. **Community Buzz** (2-3 minutes): Share what people are talking about - interesting Reddit discussions, debates, tips that are getting traction. Make it feel like you're sharing insider knowledge from the community.\n\n4. **Quick Hits** (1 minute): Briefly mention 2-3 smaller items worth knowing about.\n\n5. **Closing** (30 seconds): Wrap up with a thought for the day or a call to action. Wish them a good day.\n\nIMPORTANT STYLE GUIDELINES:\n- Write exactly as you would speak - use contractions, casual phrasing\n- Explain technical terms briefly when first mentioned\n- Add personality - it's okay to express opinions, make light jokes, or show enthusiasm\n- Use phrases like \"you might want to check out\", \"I found this really interesting\", \"here's the thing though\"\n- Mention source names naturally: \"Over on the DevOps subreddit, someone shared...\" or \"The folks at HashiCorp just announced...\"\n- NO markdown formatting, NO bullet points, NO headers - just flowing conversational text\n- Include natural pauses with phrases like \"So...\" or \"Now...\"\n- Aim for around 1000-1200 words for good podcast length",
         "options": {}
       },
-      "id": "ai-agent",
+      "id": "67daba3d-5f6a-4fa0-8b45-0a72b0fe95dc",
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
-      "position": [864, 224]
+      "position": [
+        112,
+        -32
+      ]
     },
     {
       "parameters": {
@@ -112,118 +136,155 @@
         "sessionKey": "devops-daily-digest",
         "contextWindowLength": 10
       },
-      "id": "simple-memory",
+      "id": "c4ff229a-7fa5-4369-9c58-c6d9784c8c0f",
       "name": "Simple Memory",
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.3,
-      "position": [864, 480]
-    },
-    {
-      "parameters": {
-        "language": "javaScript",
-        "mode": "runOnceForAllItems",
-        "jsCode": "const item = $input.first();\n// AI Agent outputs to 'output' field, chainLlm outputs to 'text'\nconst text = item.json.output || item.json.text || '';\nconst urls = $('Prepare for LLM').first().json.urls || [];\nconst maxLength = 1900;\nconst maxBlocks = 98;\n\nfunction parseRichText(text) {\n  const segments = [];\n  let remaining = text;\n  \n  while (remaining.length > 0) {\n    const boldMatch = remaining.match(/^\\*\\*(.+?)\\*\\*/);\n    const italicMatch = remaining.match(/^\\*(.+?)\\*/);\n    const codeMatch = remaining.match(/^`(.+?)`/);\n    const linkMatch = remaining.match(/^\\[(.+?)\\]\\((.+?)\\)/);\n    \n    if (boldMatch) {\n      segments.push({ type: 'text', text: { content: boldMatch[1] }, annotations: { bold: true } });\n      remaining = remaining.substring(boldMatch[0].length);\n    } else if (codeMatch) {\n      segments.push({ type: 'text', text: { content: codeMatch[1] }, annotations: { code: true } });\n      remaining = remaining.substring(codeMatch[0].length);\n    } else if (linkMatch) {\n      segments.push({ type: 'text', text: { content: linkMatch[1], link: { url: linkMatch[2] } } });\n      remaining = remaining.substring(linkMatch[0].length);\n    } else if (italicMatch && !remaining.startsWith('**')) {\n      segments.push({ type: 'text', text: { content: italicMatch[1] }, annotations: { italic: true } });\n      remaining = remaining.substring(italicMatch[0].length);\n    } else {\n      const nextSpecial = remaining.search(/\\*|`|\\[/);\n      const plainEnd = nextSpecial === -1 ? remaining.length : nextSpecial;\n      if (plainEnd > 0) {\n        segments.push({ type: 'text', text: { content: remaining.substring(0, plainEnd) } });\n        remaining = remaining.substring(plainEnd);\n      } else {\n        segments.push({ type: 'text', text: { content: remaining[0] } });\n        remaining = remaining.substring(1);\n      }\n    }\n  }\n  \n  return segments.length > 0 ? segments : [{ type: 'text', text: { content: text } }];\n}\n\nfunction splitRichText(segments) {\n  const result = [];\n  let current = [];\n  let currentLen = 0;\n  \n  for (const seg of segments) {\n    const content = seg.text.content;\n    if (currentLen + content.length <= maxLength) {\n      current.push(seg);\n      currentLen += content.length;\n    } else {\n      if (current.length > 0) result.push(current);\n      current = [seg];\n      currentLen = content.length;\n    }\n  }\n  if (current.length > 0) result.push(current);\n  return result;\n}\n\nconst lines = text.split('\\n');\nconst children = [];\n\nfor (const line of lines) {\n  if (children.length >= maxBlocks) break;\n  \n  const trimmed = line.trim();\n  if (!trimmed) continue;\n  \n  if (trimmed.startsWith('# ')) {\n    children.push({ object: 'block', type: 'heading_1', heading_1: { rich_text: parseRichText(trimmed.substring(2)) } });\n  } else if (trimmed.startsWith('## ')) {\n    children.push({ object: 'block', type: 'heading_2', heading_2: { rich_text: parseRichText(trimmed.substring(3)) } });\n  } else if (trimmed.startsWith('### ')) {\n    children.push({ object: 'block', type: 'heading_3', heading_3: { rich_text: parseRichText(trimmed.substring(4)) } });\n  } else if (trimmed === '---' || trimmed === '***' || trimmed === '___') {\n    children.push({ object: 'block', type: 'divider', divider: {} });\n  } else if (trimmed.startsWith('- ')) {\n    const richText = parseRichText(trimmed.substring(2));\n    const chunks = splitRichText(richText);\n    for (const chunk of chunks) {\n      if (children.length >= maxBlocks) break;\n      children.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: chunk } });\n    }\n  } else if (/^\\d+\\.\\s/.test(trimmed)) {\n    const content = trimmed.replace(/^\\d+\\.\\s/, '');\n    children.push({ object: 'block', type: 'numbered_list_item', numbered_list_item: { rich_text: parseRichText(content) } });\n  } else {\n    const richText = parseRichText(trimmed);\n    const chunks = splitRichText(richText);\n    for (const chunk of chunks) {\n      if (children.length >= maxBlocks) break;\n      children.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });\n    }\n  }\n}\n\nreturn [{ json: { notionChildren: children, date: new Date().toISOString().split('T')[0], urls: urls } }];"
-      },
-      "id": "format-for-notion",
-      "name": "Format for Notion",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1072, 224]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.notion.com/v1/pages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "Notion-Version", "value": "2022-06-28" },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ parent: { page_id: '2d38e013c07f80c59d93c9aeb9e271b7' }, properties: { title: [{ text: { content: 'DevOps - ' + $json.date } }] }, children: $json.notionChildren }) }}",
-        "options": {}
-      },
-      "id": "create-child-page",
-      "name": "Create Notion Child Page",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1280, 224],
-      "notesInFlow": true,
-      "notes": "Requires 'Header Auth' credential with: Name=Authorization, Value=Bearer YOUR_NOTION_TOKEN"
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "UPDATE feed_articles\nSET last_digest_date = CURRENT_DATE, is_processed = true\nWHERE url = ANY(string_to_array($1, '|||'));",
-        "options": {
-          "queryParameters": "={{ $('Format for Notion').first().json.urls.join('|||') }}"
-        }
-      },
-      "id": "mark-processed",
-      "name": "Mark as Processed",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [1488, 224],
-      "credentials": {
-        "postgres": {
-          "id": "POSTGRES_CREDENTIAL_ID",
-          "name": "Postgres - n8n"
-        }
-      }
+      "position": [
+        208,
+        176
+      ]
     },
     {
       "parameters": {},
-      "id": "no-articles",
+      "id": "3e71c7d0-0f93-4a5d-8842-581edd03456f",
       "name": "No New Articles",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [656, 384]
+      "position": [
+        -112,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "digest@arigsela.com",
+        "toEmail": "user-7b646405-60f8-4029-9ebd-3731b48d9a80@email.audioread.com",
+        "subject": "=DevOps Daily Digest - {{ $('Prepare for LLM').item.json.date }}",
+        "emailFormat": "text",
+        "text": "={{ $json.output }}",
+        "options": {}
+      },
+      "id": "22f748d1-bddc-4977-b73d-75ad304914d8",
+      "name": "Send to Audioread",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        464,
+        -32
+      ],
+      "webhookId": "8bb85340-44e6-427f-b69c-4d6a7f51ac1b",
+      "credentials": {
+        "smtp": {
+          "id": "CWrA7iYBp2VUAnmo",
+          "name": "SMTP account"
+        }
+      }
     }
   ],
+  "pinData": {},
   "connections": {
     "Daily 8 AM": {
-      "main": [[{ "node": "Query DevOps Articles", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Query DevOps Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Query DevOps Articles": {
-      "main": [[{ "node": "Has Articles?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Has Articles?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Has Articles?": {
       "main": [
-        [{ "node": "Prepare for LLM", "type": "main", "index": 0 }],
-        [{ "node": "No New Articles", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Prepare for LLM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No New Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Prepare for LLM": {
-      "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Claude Haiku": {
-      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Simple Memory": {
-      "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]]
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
     },
     "AI Agent": {
-      "main": [[{ "node": "Format for Notion", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send to Audioread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Format for Notion": {
-      "main": [[{ "node": "Create Notion Child Page", "type": "main", "index": 0 }]]
-    },
-    "Create Notion Child Page": {
-      "main": [[{ "node": "Mark as Processed", "type": "main", "index": 0 }]]
+    "Send to Audioread": {
+      "main": [
+        []
+      ]
     }
   },
+  "active": false,
   "settings": {
     "executionOrder": "v1",
-    "timezone": "America/New_York",
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all"
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
   },
+  "versionId": "ac2998fd-7b77-4707-bff5-4663ca17e133",
   "meta": {
-    "notes": "DevOps digest generator. Queries PostgreSQL for devops-tagged articles from the last 24 hours, generates a digest using AI Agent with memory, creates a Notion page, and marks articles as processed."
-  }
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1ac1edd945dd6547c06503f16d68924976acb661550d12289650d4bae82f1e28"
+  },
+  "id": "jt3u2PCVOu2hQJVXImJ-v",
+  "tags": []
 }

@@ -12,11 +12,14 @@
           ]
         }
       },
-      "id": "schedule-trigger",
+      "id": "465b6a1e-d42e-449a-8e40-0d64f73f428a",
       "name": "Daily 8 AM",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 304]
+      "position": [
+        -1136,
+        -80
+      ]
     },
     {
       "parameters": {
@@ -24,15 +27,18 @@
         "query": "SELECT\n    url, title, content_snippet, source_name, category, pub_date,\n    metadata->>'author' as author,\n    metadata->>'comments_count' as engagement\nFROM feed_articles\nWHERE 'claude' = ANY(topic)\n  AND pub_date >= NOW() - INTERVAL '24 hours'\n  AND (last_digest_date IS NULL OR last_digest_date < CURRENT_DATE)\nORDER BY pub_date DESC\nLIMIT 30;",
         "options": {}
       },
-      "id": "query-articles",
+      "id": "db9aa3b2-6135-49ae-852a-8d6229c573d2",
       "name": "Query Claude Articles",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [240, 304],
+      "position": [
+        -896,
+        -80
+      ],
       "credentials": {
         "postgres": {
-          "id": "POSTGRES_CREDENTIAL_ID",
-          "name": "Postgres - n8n"
+          "id": "CnXWIqjqRo8CfL2F",
+          "name": "Postgres account"
         }
       }
     },
@@ -40,8 +46,9 @@
       "parameters": {
         "conditions": {
           "options": {
-            "caseSensitive": true,
+            "version": 2,
             "leftValue": "",
+            "caseSensitive": true,
             "typeValidation": "strict"
           },
           "conditions": [
@@ -51,8 +58,7 @@
               "rightValue": "",
               "operator": {
                 "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true
+                "operation": "notEmpty"
               }
             }
           ],
@@ -60,21 +66,27 @@
         },
         "options": {}
       },
-      "id": "if-has-articles",
+      "id": "f91b16cd-d803-491b-af7c-68bfd42c3000",
       "name": "Has Articles?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [448, 304]
+      "position": [
+        -688,
+        -80
+      ]
     },
     {
       "parameters": {
         "jsCode": "// Combine all items into a single text for the LLM\nconst items = $input.all();\n\nif (!items || items.length === 0) {\n  return [{\n    json: {\n      posts: 'No new articles found for today.',\n      date: new Date().toISOString().split('T')[0],\n      itemCount: 0,\n      urls: []\n    }\n  }];\n}\n\nconst postsText = items.map((item, index) => {\n  const json = item.json;\n  return `### Post ${index + 1}\n**Title:** ${json.title}\n**Source:** ${json.source_name} (${json.category})\n**Date:** ${json.pub_date}\n**Link:** ${json.url}\n**Content Preview:** ${json.content_snippet || 'No content'}\n`;\n}).join('\\n---\\n');\n\n// Collect URLs for marking as processed later\nconst urls = items.map(item => item.json.url);\n\nreturn [{\n  json: {\n    posts: postsText,\n    date: new Date().toISOString().split('T')[0],\n    itemCount: items.length,\n    urls: urls\n  }\n}];"
       },
-      "id": "prepare-for-llm",
+      "id": "8dc395e5-de88-4d89-817f-5e8cc6b69d56",
       "name": "Prepare for LLM",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [656, 224]
+      "position": [
+        -480,
+        -160
+      ]
     },
     {
       "parameters": {
@@ -88,23 +100,35 @@
           "maxTokensToSample": 4096
         }
       },
-      "id": "anthropic-model",
+      "id": "5b0e5d96-4561-4121-9b65-a3f7c6a762f7",
       "name": "Claude Haiku",
       "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
       "typeVersion": 1.3,
-      "position": [864, 400]
+      "position": [
+        -272,
+        64
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "FXEdoYejC4N4k4zE",
+          "name": "Anthropic account"
+        }
+      }
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "=You are a helpful assistant that creates daily news digests about Claude AI and Anthropic.\n\nYou have memory of your previous daily digest summaries. Use this memory to:\n- Focus on NEW content not covered in previous summaries\n- Avoid repeating information from previous digests\n- Reference trends or ongoing discussions if relevant\n\n## Today's Posts ({{ $json.itemCount }} articles from database):\n{{ $json.posts }}\n\n## Instructions:\nCreate a markdown-formatted daily digest with these sections:\n\n1. **Key Updates** - Major announcements, new features, or important news\n2. **Hot Discussions** - Interesting community discussions or debates\n3. **Tips & Tricks** - Useful tips shared by the community\n4. **Issues & Bugs** - Notable problems or bugs reported\n\nFor each item, include the source name in parentheses.\nKeep summaries concise but informative.\nIf a section has no relevant NEW content, write \"No notable items today.\"\n\nFormat the output as clean markdown suitable for Notion.",
+        "text": "=You are a friendly tech podcast host delivering the morning Claude and Anthropic news briefing. Your audience is listening to this while commuting or having their morning coffee.\n\nSpeak naturally and conversationally, as if you're talking directly to the listener. Avoid bullet points, markdown formatting, or anything that sounds robotic when read aloud. Use transitions like \"Speaking of which...\", \"Now here's something interesting...\", \"Moving on to...\", \"And you'll want to hear this one...\".\n\n## Today's Articles ({{ $json.itemCount }} items):\n{{ $json.posts }}\n\n## Your Task:\nCreate a 5-8 minute podcast script covering today's Claude AI and Anthropic news. Structure it like this:\n\n1. **Opening** (30 seconds): Greet the listener warmly, mention the date, and give a quick teaser of the most exciting Claude or Anthropic story.\n\n2. **Main Stories** (3-4 minutes): Cover the most significant announcements, new features, or updates about Claude, Claude Code, or Anthropic. Explain why each matters and how it might help the listener. Add your perspective and connect related stories.\n\n3. **Community Buzz** (2-3 minutes): Share what people are talking about - interesting Reddit discussions, tips that are getting traction, debates about Claude's capabilities. Make it feel like you're sharing insider knowledge from the Claude community.\n\n4. **Tips & Tricks** (1-2 minutes): Share practical advice people have discovered - prompting techniques, workflow improvements, or creative uses of Claude.\n\n5. **Closing** (30 seconds): Wrap up with a thought for the day or something to try with Claude. Wish them a good day.\n\nIMPORTANT STYLE GUIDELINES:\n- Write exactly as you would speak - use contractions, casual phrasing\n- Explain technical terms briefly when first mentioned\n- Add personality - it's okay to express opinions, make light jokes, or show enthusiasm about Claude features\n- Use phrases like \"you might want to try this\", \"I found this really clever\", \"here's the thing though\"\n- Mention source names naturally: \"Over on the ClaudeAI subreddit, someone discovered...\" or \"A developer on Hacker News shared...\"\n- NO markdown formatting, NO bullet points, NO headers - just flowing conversational text\n- Include natural pauses with phrases like \"So...\" or \"Now...\"\n- Aim for around 1000-1200 words for good podcast length",
         "options": {}
       },
-      "id": "ai-agent",
+      "id": "014accf5-b700-4f7b-8938-1c0e2d065910",
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
-      "position": [864, 224]
+      "position": [
+        -272,
+        -160
+      ]
     },
     {
       "parameters": {
@@ -112,118 +136,155 @@
         "sessionKey": "claude-daily-digest",
         "contextWindowLength": 10
       },
-      "id": "simple-memory",
+      "id": "407233d2-810c-412a-ba8b-b47df82b2087",
       "name": "Simple Memory",
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.3,
-      "position": [864, 480]
-    },
-    {
-      "parameters": {
-        "language": "javaScript",
-        "mode": "runOnceForAllItems",
-        "jsCode": "const item = $input.first();\n// AI Agent outputs to 'output' field, chainLlm outputs to 'text'\nconst text = item.json.output || item.json.text || '';\nconst urls = $('Prepare for LLM').first().json.urls || [];\nconst maxLength = 1900;\nconst maxBlocks = 98;\n\nfunction parseRichText(text) {\n  const segments = [];\n  let remaining = text;\n  \n  while (remaining.length > 0) {\n    const boldMatch = remaining.match(/^\\*\\*(.+?)\\*\\*/);\n    const italicMatch = remaining.match(/^\\*(.+?)\\*/);\n    const codeMatch = remaining.match(/^`(.+?)`/);\n    const linkMatch = remaining.match(/^\\[(.+?)\\]\\((.+?)\\)/);\n    \n    if (boldMatch) {\n      segments.push({ type: 'text', text: { content: boldMatch[1] }, annotations: { bold: true } });\n      remaining = remaining.substring(boldMatch[0].length);\n    } else if (codeMatch) {\n      segments.push({ type: 'text', text: { content: codeMatch[1] }, annotations: { code: true } });\n      remaining = remaining.substring(codeMatch[0].length);\n    } else if (linkMatch) {\n      segments.push({ type: 'text', text: { content: linkMatch[1], link: { url: linkMatch[2] } } });\n      remaining = remaining.substring(linkMatch[0].length);\n    } else if (italicMatch && !remaining.startsWith('**')) {\n      segments.push({ type: 'text', text: { content: italicMatch[1] }, annotations: { italic: true } });\n      remaining = remaining.substring(italicMatch[0].length);\n    } else {\n      const nextSpecial = remaining.search(/\\*|`|\\[/);\n      const plainEnd = nextSpecial === -1 ? remaining.length : nextSpecial;\n      if (plainEnd > 0) {\n        segments.push({ type: 'text', text: { content: remaining.substring(0, plainEnd) } });\n        remaining = remaining.substring(plainEnd);\n      } else {\n        segments.push({ type: 'text', text: { content: remaining[0] } });\n        remaining = remaining.substring(1);\n      }\n    }\n  }\n  \n  return segments.length > 0 ? segments : [{ type: 'text', text: { content: text } }];\n}\n\nfunction splitRichText(segments) {\n  const result = [];\n  let current = [];\n  let currentLen = 0;\n  \n  for (const seg of segments) {\n    const content = seg.text.content;\n    if (currentLen + content.length <= maxLength) {\n      current.push(seg);\n      currentLen += content.length;\n    } else {\n      if (current.length > 0) result.push(current);\n      current = [seg];\n      currentLen = content.length;\n    }\n  }\n  if (current.length > 0) result.push(current);\n  return result;\n}\n\nconst lines = text.split('\\n');\nconst children = [];\n\nfor (const line of lines) {\n  if (children.length >= maxBlocks) break;\n  \n  const trimmed = line.trim();\n  if (!trimmed) continue;\n  \n  if (trimmed.startsWith('# ')) {\n    children.push({ object: 'block', type: 'heading_1', heading_1: { rich_text: parseRichText(trimmed.substring(2)) } });\n  } else if (trimmed.startsWith('## ')) {\n    children.push({ object: 'block', type: 'heading_2', heading_2: { rich_text: parseRichText(trimmed.substring(3)) } });\n  } else if (trimmed.startsWith('### ')) {\n    children.push({ object: 'block', type: 'heading_3', heading_3: { rich_text: parseRichText(trimmed.substring(4)) } });\n  } else if (trimmed === '---' || trimmed === '***' || trimmed === '___') {\n    children.push({ object: 'block', type: 'divider', divider: {} });\n  } else if (trimmed.startsWith('- ')) {\n    const richText = parseRichText(trimmed.substring(2));\n    const chunks = splitRichText(richText);\n    for (const chunk of chunks) {\n      if (children.length >= maxBlocks) break;\n      children.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: chunk } });\n    }\n  } else if (/^\\d+\\.\\s/.test(trimmed)) {\n    const content = trimmed.replace(/^\\d+\\.\\s/, '');\n    children.push({ object: 'block', type: 'numbered_list_item', numbered_list_item: { rich_text: parseRichText(content) } });\n  } else {\n    const richText = parseRichText(trimmed);\n    const chunks = splitRichText(richText);\n    for (const chunk of chunks) {\n      if (children.length >= maxBlocks) break;\n      children.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });\n    }\n  }\n}\n\nreturn [{ json: { notionChildren: children, date: new Date().toISOString().split('T')[0], urls: urls } }];"
-      },
-      "id": "format-for-notion",
-      "name": "Format for Notion",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1072, 224]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://api.notion.com/v1/pages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "Notion-Version", "value": "2022-06-28" },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ parent: { page_id: '2d38e013c07f80c59d93c9aeb9e271b7' }, properties: { title: [{ text: { content: 'Claude - ' + $json.date } }] }, children: $json.notionChildren }) }}",
-        "options": {}
-      },
-      "id": "create-child-page",
-      "name": "Create Notion Child Page",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1280, 224],
-      "notesInFlow": true,
-      "notes": "Requires 'Header Auth' credential with: Name=Authorization, Value=Bearer YOUR_NOTION_TOKEN"
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "UPDATE feed_articles\nSET last_digest_date = CURRENT_DATE, is_processed = true\nWHERE url = ANY(string_to_array($1, '|||'));",
-        "options": {
-          "queryParameters": "={{ $('Format for Notion').first().json.urls.join('|||') }}"
-        }
-      },
-      "id": "mark-processed",
-      "name": "Mark as Processed",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [1488, 224],
-      "credentials": {
-        "postgres": {
-          "id": "POSTGRES_CREDENTIAL_ID",
-          "name": "Postgres - n8n"
-        }
-      }
+      "position": [
+        -144,
+        64
+      ]
     },
     {
       "parameters": {},
-      "id": "no-articles",
+      "id": "83cee93c-dd18-4124-8a5b-50e3b5fc986c",
       "name": "No New Articles",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [656, 384]
+      "position": [
+        -480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "digest@arigsela.com",
+        "toEmail": "user-7b646405-60f8-4029-9ebd-3731b48d9a80@email.audioread.com",
+        "subject": "=Claude Daily Digest - {{ $('Prepare for LLM').item.json.date }}",
+        "emailFormat": "text",
+        "text": "={{ $json.output }}",
+        "options": {}
+      },
+      "id": "5bf090b6-df33-4268-abb8-fc4711ab32b7",
+      "name": "Send to Audioread",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        176,
+        -160
+      ],
+      "webhookId": "69e6238e-999b-490d-97e2-a5d6a6f95dbe",
+      "credentials": {
+        "smtp": {
+          "id": "CWrA7iYBp2VUAnmo",
+          "name": "SMTP account"
+        }
+      }
     }
   ],
+  "pinData": {},
   "connections": {
     "Daily 8 AM": {
-      "main": [[{ "node": "Query Claude Articles", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Query Claude Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Query Claude Articles": {
-      "main": [[{ "node": "Has Articles?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Has Articles?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Has Articles?": {
       "main": [
-        [{ "node": "Prepare for LLM", "type": "main", "index": 0 }],
-        [{ "node": "No New Articles", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Prepare for LLM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No New Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Prepare for LLM": {
-      "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Claude Haiku": {
-      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Simple Memory": {
-      "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]]
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
     },
     "AI Agent": {
-      "main": [[{ "node": "Format for Notion", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send to Audioread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Format for Notion": {
-      "main": [[{ "node": "Create Notion Child Page", "type": "main", "index": 0 }]]
-    },
-    "Create Notion Child Page": {
-      "main": [[{ "node": "Mark as Processed", "type": "main", "index": 0 }]]
+    "Send to Audioread": {
+      "main": [
+        []
+      ]
     }
   },
+  "active": false,
   "settings": {
     "executionOrder": "v1",
-    "timezone": "America/New_York",
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all"
+    "availableInMCP": false,
+    "callerPolicy": "workflowsFromSameOwner"
   },
+  "versionId": "8eb68e1b-6b2a-45f1-8d44-8d2e06999829",
   "meta": {
-    "notes": "Claude AI digest generator. Queries PostgreSQL for claude-tagged articles from the last 24 hours, generates a digest using AI Agent with memory, creates a Notion page, and marks articles as processed."
-  }
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1ac1edd945dd6547c06503f16d68924976acb661550d12289650d4bae82f1e28"
+  },
+  "id": "1sT9dAzujII3DkCATo7Eb",
+  "tags": []
 }
