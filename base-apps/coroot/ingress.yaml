@@ -30,6 +30,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: coroot-coroot-ce
+                name: coroot
                 port:
                   number: 8080

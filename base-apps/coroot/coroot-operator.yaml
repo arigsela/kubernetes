@@ -8,17 +8,14 @@ spec:
   source:
     repoURL: https://coroot.github.io/helm-charts
     chart: coroot-operator
-    targetRevision: 0.2.7
+    targetRevision: 0.6.0
     helm:
       values: |
         # Operator configuration
         resources:
           requests:
             cpu: 100m
-            memory: 128Mi
-          limits:
-            cpu: 500m
-            memory: 256Mi
+            memory: 64Mi
   destination:
     server: https://kubernetes.default.svc
     namespace: coroot
