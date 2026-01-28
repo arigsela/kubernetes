@@ -1,0 +1,67 @@
+apiVersion: coroot.com/v1
+kind: Coroot
+metadata:
+  name: coroot
+  namespace: coroot
+spec:
+  # Core settings
+  metricsRefreshInterval: 15s
+  cacheTTL: 30d
+  replicas: 1
+
+  # Storage for Coroot data
+  storage:
+    size: 10Gi
+    className: local-path
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8080
+
+  # ClickHouse configuration for traces/logs/profiles storage
+  clickhouse:
+    shards: 1
+    replicas: 1
+    storage:
+      size: 20Gi
+      className: local-path
+    logLevel: warning
+
+  # Data retention
+  tracesTTL: 7d
+  logsTTL: 7d
+  profilesTTL: 7d
+
+  # Prometheus - use existing cluster Prometheus
+  externalPrometheus:
+    url: http://prometheus.logging.svc.cluster.local:9090
+
+  # Node Agent configuration (eBPF-based monitoring)
+  nodeAgent:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    tolerations:
+      - operator: Exists
+    ebpfTracer:
+      enabled: true
+    ebpfProfiler:
+      enabled: true
+    logCollector:
+      collectLogBasedMetrics: true
+      collectLogEntries: true
+
+  # Cluster Agent for Kubernetes metadata
+  clusterAgent:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
