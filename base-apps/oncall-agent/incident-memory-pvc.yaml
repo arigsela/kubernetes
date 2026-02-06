@@ -5,7 +5,7 @@
 #
 # IMPORTANT: LanceDB uses local file storage. With multiple replicas:
 # - Only ONE replica should write to the database at a time
-# - Consider using ReadWriteOnce access mode
+# - ReadWriteOnce access mode is used to enforce single-pod access
 # - For HA, implement leader election or use a single replica
 #
 # Storage Requirements:
