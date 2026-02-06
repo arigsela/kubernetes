@@ -1,0 +1,138 @@
+# Deployment for OnCall Agent API (k3s homelab)
+# Note: Namespace, ServiceAccount, RBAC, ConfigMap, and Secret are in separate files
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oncall-agent-api
+  namespace: oncall-agent
+  labels:
+    app: oncall-agent-api
+    version: v1
+spec:
+  replicas: 1  # Single replica for homelab resource conservation
+  selector:
+    matchLabels:
+      app: oncall-agent-api
+  template:
+    metadata:
+      labels:
+        app: oncall-agent-api
+        version: v1
+    spec:
+      serviceAccountName: oncall-agent
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      imagePullSecrets:
+      - name: ecr-registry
+
+      containers:
+      - name: api
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/oncall-agent:v2.0.0
+        imagePullPolicy: Always
+
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+
+        # Import shared configuration from ConfigMap
+        envFrom:
+        - configMapRef:
+            name: oncall-agent-config
+
+        env:
+        # Secrets from oncall-agent-secrets
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-secrets
+              key: anthropic-api-key
+
+        # Anthropic Model Selection (optional - defaults to claude-sonnet-4-5-20250929)
+        - name: ANTHROPIC_MODEL
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-secrets
+              key: anthropic-model
+              optional: true  # Falls back to default model in code
+
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-secrets
+              key: github-token
+
+        # API Keys (secret, not in configmap)
+        - name: API_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: oncall-agent-secrets
+              key: api-keys
+
+        # Note: API_HOST, API_PORT, SESSION_TTL_MINUTES, MAX_SESSIONS_PER_USER,
+        # RATE_LIMIT_*, CORS_ORIGINS are loaded from oncall-agent-config ConfigMap
+        # AGENT_LOG_LEVEL, GITHUB_ORG, AWS_REGION also from ConfigMap
+
+        # AWS credentials removed - not needed for k3s homelab
+        # Datadog credentials removed - not used in homelab
+        # Zeus credentials removed - not applicable to homelab
+
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        # Liveness probe - check if API is responding
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        # Readiness probe - check if API is ready to serve
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # Volume mount for incident memory (LanceDB)
+        volumeMounts:
+        - name: incident-memory
+          mountPath: /app/data/incidents
+
+      # Graceful shutdown
+      terminationGracePeriodSeconds: 30
+
+      volumes:
+      - name: incident-memory
+        persistentVolumeClaim:
+          claimName: incident-memory-pvc
+
+---
+# Service for OnCall Agent API
+apiVersion: v1
+kind: Service
+metadata:
+  name: oncall-agent-api
+  namespace: oncall-agent
+  labels:
+    app: oncall-agent-api
+spec:
+  type: ClusterIP
+  selector:
+    app: oncall-agent-api
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP

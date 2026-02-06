@@ -1,0 +1,28 @@
+# Ingress for OnCall Agent API (k3s homelab)
+# Uses nginx-ingress controller with cert-manager for TLS
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oncall-agent-api
+  namespace: oncall-agent
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  labels:
+    app: oncall-agent-api
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - oncall.arigsela.com
+    secretName: oncall-agent-tls
+  rules:
+  - host: oncall.arigsela.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: oncall-agent-api
+            port:
+              number: 80

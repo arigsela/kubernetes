@@ -1,4 +1,3 @@
-# ConfigMap for OnCall Agent configuration
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,26 +5,23 @@ metadata:
   namespace: oncall-agent
 data:
   # Agent configuration
-  AGENT_LOG_LEVEL: "INFO"
+  AGENT_LOG_LEVEL: "DEBUG"
   AGENT_MAX_THINKING_TOKENS: "12000"
 
-  # Kubernetes configuration
-  K8S_CONTEXT: "default"
+  # Kubernetes configuration (k3s homelab - no context needed for in-cluster)
+  # K8S_CONTEXT not set - uses in-cluster auth via ServiceAccount
 
   # GitHub configuration
   GITHUB_ORG: "arigsela"
 
-  # AWS configuration (for AWSIntegrator)
+  # AWS configuration (ECR image checks, Secrets Manager verification)
   AWS_REGION: "us-east-2"
 
   # Safety configuration
   ALLOWED_CLUSTERS: "default"
-  PROTECTED_CLUSTERS: "prod-eks"
+  PROTECTED_CLUSTERS: ""
 
-  # Teams notifications (daemon uses this, API ignores it)
-  TEAMS_NOTIFICATIONS_ENABLED: "false"
-
-  # API Configuration (API mode uses these, daemon ignores them)
+  # API Configuration
   API_HOST: "0.0.0.0"
   API_PORT: "8000"
   SESSION_TTL_MINUTES: "30"
@@ -34,5 +30,8 @@ data:
   RATE_LIMIT_UNAUTHENTICATED: "10"
   CORS_ORIGINS: "*"
 
-  # Datadog Configuration
-  DATADOG_SITE: "datadoghq.com"
+  # Zeus Integration - disabled for k3s homelab
+  # ZEUS_NAMESPACE: "preprod"
+  # ZEUS_SERVICE: "zeus-service"
+  # ZEUS_PORT: "9000"
+  ZEUS_INTEGRATION_ENABLED: "false"
