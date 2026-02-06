@@ -30,7 +30,6 @@ spec:
         image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/oncall-agent:v2.0.0
         imagePullPolicy: Always
         securityContext:
-          runAsNonRoot: true
           allowPrivilegeEscalation: false
 
         ports:
