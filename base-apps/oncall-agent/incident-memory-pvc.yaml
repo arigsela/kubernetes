@@ -1,0 +1,31 @@
+# PersistentVolumeClaim for Incident Memory (LanceDB)
+#
+# This PVC stores the LanceDB database files for incident memory.
+# The data persists across pod restarts and deployments.
+#
+# IMPORTANT: LanceDB uses local file storage. With multiple replicas:
+# - Only ONE replica should write to the database at a time
+# - Consider using ReadWriteOnce access mode
+# - For HA, implement leader election or use a single replica
+#
+# Storage Requirements:
+# - Initial: 100Mi (sufficient for thousands of incidents)
+# - Each incident: ~1-2KB average
+# - 10,000 incidents ≈ 20MB
+#
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: incident-memory-pvc
+  namespace: oncall-agent
+  labels:
+    app: oncall-agent-api
+    component: incident-memory
+spec:
+  accessModes:
+    - ReadWriteOnce  # Single pod access for write safety
+  resources:
+    requests:
+      storage: 1Gi  # Room for growth
+  # k3s uses local-path as default storage provisioner
+  storageClassName: local-path

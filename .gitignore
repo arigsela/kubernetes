@@ -12,6 +12,9 @@ terraform/roots/asela-cluster/.terraform/providers/registry.terraform.io/hashico
 terraform/roots/asela-cluster/.terraform/providers/registry.terraform.io/hashicorp/kubernetes/2.34.0/linux_amd64/terraform-provider-kubernetes_v2.34.0_x5
 terraform/roots/asela-cluster/.terraform/
 
+# Vault secrets backup - temporary file for reinitialization
+vault-secrets-backup.txt
+
 # Recovery directory - contains sensitive credentials
 # DO NOT COMMIT - contains Vault unseal keys and secrets
 recovery/vault-credentials.txt

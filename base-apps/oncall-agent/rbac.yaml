@@ -1,0 +1,58 @@
+# ServiceAccount for On-Call Agent
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: oncall-agent
+  namespace: oncall-agent
+
+---
+# ClusterRole - Read-only access to K8s resources for monitoring
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: oncall-agent-reader
+rules:
+  # Pod monitoring
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/status"]
+    verbs: ["get", "list", "watch"]
+
+  # Event monitoring
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+  # Deployment monitoring
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+
+  # Namespace information
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+
+  # Service information
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+
+  # ExternalSecrets CRD (for AWS Secrets Manager sync verification)
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    verbs: ["get", "list", "watch"]
+
+---
+# ClusterRoleBinding - Bind read-only role to service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oncall-agent-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: oncall-agent-reader
+subjects:
+  - kind: ServiceAccount
+    name: oncall-agent
+    namespace: oncall-agent
