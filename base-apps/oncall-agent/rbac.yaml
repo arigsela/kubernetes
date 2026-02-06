@@ -37,7 +37,7 @@ rules:
     resources: ["services"]
     verbs: ["get", "list"]
 
-  # ExternalSecrets CRD (for AWS Secrets Manager sync verification)
+  # ExternalSecrets CRD (for Vault secret sync verification)
   - apiGroups: ["external-secrets.io"]
     resources: ["externalsecrets"]
     verbs: ["get", "list", "watch"]

@@ -5,7 +5,7 @@ metadata:
   namespace: oncall-agent
 data:
   # Agent configuration
-  AGENT_LOG_LEVEL: "DEBUG"
+  AGENT_LOG_LEVEL: "INFO"
   AGENT_MAX_THINKING_TOKENS: "12000"
 
   # Kubernetes configuration (k3s homelab - no context needed for in-cluster)
