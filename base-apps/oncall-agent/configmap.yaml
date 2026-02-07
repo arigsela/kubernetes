@@ -30,6 +30,11 @@ data:
   RATE_LIMIT_UNAUTHENTICATED: "10"
   CORS_ORIGINS: "*"
 
+  # Slack integration
+  SLACK_ENABLED: "true"
+  SLACK_ALERT_CHANNEL: "#oncall-alerts"
+  SLACK_ALERT_MIN_SEVERITY: "high"
+
   # Zeus Integration - disabled for k3s homelab
   # ZEUS_NAMESPACE: "preprod"
   # ZEUS_SERVICE: "zeus-service"
