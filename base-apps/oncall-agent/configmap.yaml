@@ -5,7 +5,7 @@ metadata:
   namespace: oncall-agent
 data:
   # Agent configuration
-  AGENT_LOG_LEVEL: "INFO"
+  AGENT_LOG_LEVEL: "DEBUG"
   AGENT_MAX_THINKING_TOKENS: "12000"
   INCIDENT_MEMORY_PATH: "/app/data/incidents"
 
@@ -14,6 +14,11 @@ data:
 
   # GitHub configuration
   GITHUB_ORG: "arigsela"
+
+  # GitOps PR Creation
+  GITOPS_REPO: "arigsela/kubernetes"
+  GITOPS_BASE_PATH: "base-apps/"
+  GITOPS_BASE_BRANCH: "main"
 
   # AWS configuration (ECR image checks, Secrets Manager verification)
   AWS_REGION: "us-east-2"
@@ -31,7 +36,7 @@ data:
   RATE_LIMIT_UNAUTHENTICATED: "10"
   CORS_ORIGINS: "*"
 
-  # Slack integration
+  # Slack Integration
   SLACK_ENABLED: "true"
   SLACK_ALERT_CHANNEL: "#oncall-alerts"
   SLACK_ALERT_MIN_SEVERITY: "high"
