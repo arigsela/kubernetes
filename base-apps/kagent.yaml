@@ -38,11 +38,6 @@ spec:
           apiKeySecretRef:
             name: kagent-secrets
             key: anthropic-api-key
-        database:
-          type: postgres
-          connectionSecretRef:
-            name: kagent-secrets
-            key: db-connection-string
         demo:
           enabled: true
   destination:
