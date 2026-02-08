@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-ui-frontend
+  namespace: agent-ui-frontend
+  labels:
+    app: agent-ui-frontend
+    component: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-ui-frontend
+  template:
+    metadata:
+      labels:
+        app: agent-ui-frontend
+        component: frontend
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+      imagePullSecrets:
+      - name: ecr-registry
+      containers:
+        - name: frontend
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agent-ui-frontend:latest
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 30
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: agent-ui-frontend-nginx

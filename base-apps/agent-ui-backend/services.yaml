@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-ui-backend
+  namespace: agent-ui-backend
+  labels:
+    app: agent-ui-backend
+    component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: agent-ui-backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP

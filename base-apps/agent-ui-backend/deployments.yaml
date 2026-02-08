@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-ui-backend
+  namespace: agent-ui-backend
+  labels:
+    app: agent-ui-backend
+    component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-ui-backend
+  template:
+    metadata:
+      labels:
+        app: agent-ui-backend
+        component: backend
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+      imagePullSecrets:
+      - name: ecr-registry
+      containers:
+        - name: backend
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agent-ui-backend:latest
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: agent-ui-backend
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /api/agents
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/agents
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
