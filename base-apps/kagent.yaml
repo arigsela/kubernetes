@@ -32,12 +32,13 @@ spec:
           tolerations:
           - key: node-role.kubernetes.io/control-plane
             effect: NoSchedule
-        llm:
-          provider: anthropic
-          model: claude-sonnet-4-20250514
-          apiKeySecretRef:
-            name: kagent-secrets
-            key: anthropic-api-key
+        providers:
+          default: anthropic
+          anthropic:
+            provider: Anthropic
+            model: claude-sonnet-4-20250514
+            apiKeySecretRef: kagent-anthropic
+            apiKeySecretKey: ANTHROPIC_API_KEY
         demo:
           enabled: true
   destination:
