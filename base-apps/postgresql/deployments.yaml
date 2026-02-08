@@ -4,7 +4,7 @@ metadata:
   name: postgresql
   namespace: postgresql
 spec:
-  replicas: 1
+  replicas: 0  # Temporarily scaled down for PG 15→18 data migration
   selector:
     matchLabels:
       app: postgresql
