@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cluster-scanner
+  namespace: cluster-scanner
+  labels:
+    app: cluster-scanner
+spec:
+  schedule: "0 0 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: cluster-scanner
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: cluster-scanner
+              image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/cluster-scanner:v1.0.0
+              resources:
+                requests:
+                  cpu: 256m
+                  memory: 512Mi
+                limits:
+                  cpu: 1000m
+                  memory: 1Gi
+              envFrom:
+                - configMapRef:
+                    name: cluster-scanner-config
+              env:
+                - name: ANTHROPIC_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cluster-scanner-secrets
+                      key: anthropic-api-key
+                - name: ONCALL_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cluster-scanner-secrets
+                      key: oncall-api-key
+                - name: SLACK_BOT_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: cluster-scanner-secrets
+                      key: slack-bot-token
+              volumeMounts:
+                - name: ralph-data
+                  mountPath: /app/.ralph
+          volumes:
+            - name: ralph-data
+              persistentVolumeClaim:
+                claimName: cluster-scanner-ralph-data
