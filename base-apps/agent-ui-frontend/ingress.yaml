@@ -11,7 +11,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: agent-ui.example.com
+    - host: agents.arigsela.com
       http:
         paths:
           - path: /
