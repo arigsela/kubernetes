@@ -4,7 +4,7 @@ metadata:
   name: chores-tracker-backend
   namespace: chores-tracker
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: chores-tracker-backend
