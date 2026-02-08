@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-scanner-config
+  namespace: cluster-scanner
+  labels:
+    app: cluster-scanner
+data:
+  ONCALL_API_URL: "http://oncall-agent-api.oncall-agent.svc.cluster.local:80"
+  SLACK_CHANNEL: "#oncall-alerts"
+  ANTHROPIC_MODEL: "claude-haiku-4-5-20251001"
