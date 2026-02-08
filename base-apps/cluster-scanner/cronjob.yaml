@@ -19,9 +19,18 @@ spec:
           labels:
             app: cluster-scanner
         spec:
+          securityContext:
+            fsGroup: 1001
           restartPolicy: Never
           imagePullSecrets:
             - name: ecr-registry
+          initContainers:
+            - name: fix-permissions
+              image: busybox
+              command: ["sh", "-c", "chown -R 1001:1001 /app/.ralph"]
+              volumeMounts:
+                - name: ralph-data
+                  mountPath: /app/.ralph
           containers:
             - name: cluster-scanner
               image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/cluster-scanner:v1.0.0
