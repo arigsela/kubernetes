@@ -1,0 +1,56 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kagent
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    chart: kagent
+    repoURL: ghcr.io/kagent-dev/kagent/helm
+    targetRevision: 0.7.7
+    helm:
+      releaseName: kagent
+      values: |
+        controller:
+          replicaCount: 1
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 512Mi
+          nodeSelector:
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+        app:
+          nodeSelector:
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+        llm:
+          provider: anthropic
+          model: claude-sonnet-4-20250514
+          apiKeySecretRef:
+            name: kagent-secrets
+            key: anthropic-api-key
+        database:
+          type: postgresql
+          connectionSecretRef:
+            name: kagent-secrets
+            key: db-connection-string
+        demo:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kagent
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
