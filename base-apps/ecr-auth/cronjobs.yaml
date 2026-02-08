@@ -44,7 +44,7 @@ spec:
             - |
               # Namespaces to synchronize secrets to
 
-              for NAMESPACE in chores-tracker chores-tracker-frontend oncall-agent cluster-scanner; do
+              for NAMESPACE in chores-tracker chores-tracker-frontend oncall-agent cluster-scanner agent-ui-backend agent-ui-frontend; do
                 # Check if namespace exists
                 if ! kubectl get namespace $NAMESPACE > /dev/null 2>&1; then
                   echo "Namespace $NAMESPACE doesn't exist. Please create it first."

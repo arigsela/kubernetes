@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-ui-backend
+  namespace: agent-ui-backend
+  labels:
+    app: agent-ui-backend
+    component: backend
+data:
+  KAGENT_CONTROLLER_URL: "http://kagent-controller.kagent.svc.cluster.local:8083"
+  KAGENT_AGENT_URL_TEMPLATE: "http://{name}.kagent.svc.cluster.local:8080"
+  CORS_ORIGINS: '["http://agent-ui-frontend.agent-ui-frontend.svc.cluster.local"]'
+  AGENT_CACHE_TTL_SECONDS: "60"
