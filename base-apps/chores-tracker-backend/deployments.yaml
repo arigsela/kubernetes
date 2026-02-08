@@ -4,7 +4,7 @@ metadata:
   name: chores-tracker-backend
   namespace: chores-tracker
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: chores-tracker-backend
@@ -12,52 +12,65 @@ spec:
     metadata:
       labels:
         app: chores-tracker-backend
-      annotations:
-        # Prometheus metrics scraping configuration
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8000"
-        prometheus.io/path: "/metrics"
     spec:
-      nodeSelector:
-        node.kubernetes.io/workload: application
+      serviceAccountName: chores-tracker-backend
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z mysql.mysql.svc.cluster.local 3306; do
+                echo "Waiting for MySQL..."
+                sleep 2
+              done
       containers:
-      - name: chores-tracker-backend
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:7.0.2
-        imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 8000
-        envFrom:
-        - configMapRef:
-            name: chores-tracker-backend-config
-        - secretRef:
-            name: chores-tracker-backend-secrets
-        # Health checks
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-            scheme: HTTP
-          initialDelaySeconds: 90  # Increased to allow for application startup and import time
-          periodSeconds: 30
-          timeoutSeconds: 10
-          failureThreshold: 3
-          successThreshold: 1
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8000
-            scheme: HTTP
-          initialDelaySeconds: 60  # Increased to allow for application startup
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-          successThreshold: 1
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "200m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-      imagePullSecrets:
-      - name: ecr-registry
+        - name: chores-tracker-backend
+          image: 381492054287.dkr.ecr.us-east-1.amazonaws.com/chores-tracker-backend:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: MYSQL_HOST
+              value: "mysql.mysql.svc.cluster.local"
+            - name: MYSQL_PORT
+              value: "3306"
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: chores-tracker-backend-secrets
+                  key: MYSQL_DATABASE
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: chores-tracker-backend-secrets
+                  key: MYSQL_USER
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: chores-tracker-backend-secrets
+                  key: MYSQL_PASSWORD
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 360
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 360
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
