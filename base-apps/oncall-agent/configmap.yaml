@@ -7,6 +7,7 @@ data:
   # Agent configuration
   AGENT_LOG_LEVEL: "INFO"
   AGENT_MAX_THINKING_TOKENS: "12000"
+  INCIDENT_MEMORY_PATH: "/app/data/incidents"
 
   # Kubernetes configuration (k3s homelab - no context needed for in-cluster)
   # K8S_CONTEXT not set - uses in-cluster auth via ServiceAccount
