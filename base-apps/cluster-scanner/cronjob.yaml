@@ -20,6 +20,8 @@ spec:
             app: cluster-scanner
         spec:
           restartPolicy: Never
+          imagePullSecrets:
+            - name: ecr-registry
           containers:
             - name: cluster-scanner
               image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/cluster-scanner:v1.0.0
