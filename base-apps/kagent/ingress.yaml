@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kagent
+  namespace: kagent
+  annotations:
+    # TLS/SSL Configuration
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+    # IP Whitelist - Only allow home IP
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32"
+
+    # Timeouts (longer for dashboard loading)
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - kagent.arigsela.com
+      secretName: kagent-tls
+  rules:
+    - host: kagent.arigsela.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kagent-app
+                port:
+                  number: 8080
