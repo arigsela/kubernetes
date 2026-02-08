@@ -7,7 +7,7 @@ metadata:
   namespace: oncall-agent
   labels:
     app: oncall-agent-api
-    version: v2.0.0
+    version: v2.0.1
 spec:
   replicas: 1  # Single replica for homelab resource conservation
   selector:
@@ -17,7 +17,7 @@ spec:
     metadata:
       labels:
         app: oncall-agent-api
-        version: v2.0.0
+        version: v2.0.1
     spec:
       serviceAccountName: oncall-agent
       nodeSelector:
@@ -27,7 +27,7 @@ spec:
 
       containers:
       - name: api
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/oncall-agent:v2.0.0
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/oncall-agent:v2.0.1
         imagePullPolicy: Always
         securityContext:
           allowPrivilegeEscalation: false
