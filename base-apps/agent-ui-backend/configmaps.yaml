@@ -9,5 +9,5 @@ metadata:
 data:
   KAGENT_CONTROLLER_URL: "http://kagent-controller.kagent.svc.cluster.local:8083"
   KAGENT_AGENT_URL_TEMPLATE: "http://{name}.kagent.svc.cluster.local:8080"
-  CORS_ORIGINS: '["http://agent-ui-frontend.agent-ui-frontend.svc.cluster.local"]'
+  CORS_ORIGINS: '["https://agents.arigsela.com"]'
   AGENT_CACHE_TTL_SECONDS: "60"
