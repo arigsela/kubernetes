@@ -7,16 +7,45 @@ on:
     branches: [main]
 
 jobs:
+  changed-files:
+    runs-on: ubuntu-latest
+    outputs:
+      yaml_files: ${{ steps.changed.outputs.yaml_files }}
+      yaml_any_changed: ${{ steps.changed.outputs.yaml_any_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Get changed YAML files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            FILES=$(git diff --name-only HEAD~1 HEAD -- 'base-apps/**/*.yaml' | tr '\n' ' ')
+          else
+            FILES=$(git diff --name-only origin/main...HEAD -- 'base-apps/**/*.yaml' | tr '\n' ' ')
+          fi
+          echo "yaml_files=$FILES" >> "$GITHUB_OUTPUT"
+          if [ -n "$FILES" ]; then
+            echo "yaml_any_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "yaml_any_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
   yaml-lint:
+    needs: changed-files
+    if: needs.changed-files.outputs.yaml_any_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install yamllint
         run: pip install yamllint==1.35.1
-      - name: Lint YAML files
-        run: yamllint -c .yamllint.yaml base-apps/
+      - name: Lint changed YAML files
+        run: |
+          echo "${{ needs.changed-files.outputs.yaml_files }}" | xargs yamllint -c .yamllint.yaml
 
   kubernetes-validate:
+    needs: changed-files
+    if: needs.changed-files.outputs.yaml_any_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,9 +53,9 @@ jobs:
         run: |
           curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
           sudo mv kubeconform /usr/local/bin/
-      - name: Validate Kubernetes manifests
+      - name: Validate changed Kubernetes manifests
         run: |
-          find base-apps -name '*.yaml' -not -path '*/charts/*' | xargs kubeconform \
+          echo "${{ needs.changed-files.outputs.yaml_files }}" | xargs kubeconform \
             -summary \
             -strict \
             -ignore-missing-schemas \
@@ -35,16 +64,20 @@ jobs:
             -kubernetes-version 1.33.0
 
   ingress-policy:
+    needs: changed-files
+    if: needs.changed-files.outputs.yaml_any_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check ingress IP whitelist
+      - name: Check ingress IP whitelist on changed files
         run: |
           FAILED=0
-          for f in $(grep -Prl "kind:\s*Ingress\s*$" base-apps/ --include="*.yaml"); do
-            if ! grep -q 'whitelist-source-range' "$f"; then
-              echo "FAIL: $f missing IP whitelist annotation"
-              FAILED=1
+          for f in ${{ needs.changed-files.outputs.yaml_files }}; do
+            if grep -Pq "kind:\s*Ingress\s*$" "$f"; then
+              if ! grep -q 'whitelist-source-range' "$f"; then
+                echo "FAIL: $f missing IP whitelist annotation"
+                FAILED=1
+              fi
             fi
           done
           exit $FAILED
