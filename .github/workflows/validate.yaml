@@ -1,0 +1,46 @@
+name: Validate Manifests
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  yaml-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install yamllint
+        run: pip install yamllint
+      - name: Lint YAML files
+        run: yamllint -c .yamllint.yaml base-apps/
+
+  kubernetes-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+      - name: Validate Kubernetes manifests
+        run: |
+          find base-apps -name '*.yaml' -not -path '*/charts/*' | xargs kubeconform \
+            -summary \
+            -strict \
+            -ignore-missing-schemas \
+            -kubernetes-version 1.29.0
+
+  ingress-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check ingress IP whitelist
+        run: |
+          FAILED=0
+          for f in $(grep -rl "kind: Ingress" base-apps/ --include="*.yaml"); do
+            if ! grep -q 'whitelist-source-range' "$f"; then
+              echo "FAIL: $f missing IP whitelist annotation"
+              FAILED=1
+            fi
+          done
+          exit $FAILED
