@@ -1,5 +1,5 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: chores-tracker-backend
   namespace: chores-tracker
@@ -37,7 +37,7 @@ spec:
             path: /health
             port: 8000
             scheme: HTTP
-          initialDelaySeconds: 90  # Increased to allow for application startup and import time
+          initialDelaySeconds: 90
           periodSeconds: 30
           timeoutSeconds: 10
           failureThreshold: 3
@@ -47,7 +47,7 @@ spec:
             path: /health
             port: 8000
             scheme: HTTP
-          initialDelaySeconds: 60  # Increased to allow for application startup
+          initialDelaySeconds: 60
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
@@ -61,3 +61,20 @@ spec:
             cpu: "500m"
       imagePullSecrets:
       - name: ecr-registry
+  strategy:
+    canary:
+      stableService: chores-tracker-backend-stable
+      canaryService: chores-tracker-backend-canary
+      trafficRouting:
+        istio:
+          virtualServices:
+            - name: chores-tracker-backend-vsvc
+              routes:
+                - primary
+      steps:
+        - setWeight: 20
+        - pause: {duration: 5m}
+        - setWeight: 50
+        - pause: {duration: 5m}
+        - setWeight: 80
+        - pause: {duration: 5m}

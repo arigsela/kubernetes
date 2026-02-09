@@ -9,3 +9,11 @@ metadata:
   labels:
     istio.io/dataplane-mode: ambient
     istio.io/use-waypoint: chores-tracker-waypoint
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chores-tracker-frontend
+  labels:
+    istio.io/dataplane-mode: ambient
+    istio.io/use-waypoint: chores-tracker-frontend-waypoint
