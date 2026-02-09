@@ -20,6 +20,12 @@ spec:
               effect: NoSchedule
         dashboard:
           enabled: true
+          nodeSelector:
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+              effect: NoSchedule
   destination:
     server: https://kubernetes.default.svc
     namespace: argo-rollouts

@@ -280,8 +280,8 @@ metadata:
   namespace: chores-tracker
 spec:
   scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
     name: chores-tracker-backend
   minReplicas: 2
   maxReplicas: 5
@@ -680,7 +680,7 @@ spec:
       trafficRouting:
         istio:
           virtualServices:
-            - name: chores-tracker-backend
+            - name: chores-tracker-backend-vsvc
               routes:
                 - primary
 ```
