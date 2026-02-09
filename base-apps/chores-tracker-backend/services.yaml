@@ -1,7 +1,37 @@
+# Primary service - routes to the active (stable or canary) pods
+# This is the service that the ingress and other consumers should target
 apiVersion: v1
 kind: Service
 metadata:
   name: chores-tracker-backend
+  namespace: chores-tracker
+spec:
+  selector:
+    app: chores-tracker-backend
+  ports:
+  - port: 80
+    targetPort: 8000
+  type: ClusterIP
+---
+# Stable service - Argo Rollouts manages the selector to point to stable ReplicaSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: chores-tracker-backend-stable
+  namespace: chores-tracker
+spec:
+  selector:
+    app: chores-tracker-backend
+  ports:
+  - port: 80
+    targetPort: 8000
+  type: ClusterIP
+---
+# Canary service - Argo Rollouts manages the selector to point to canary ReplicaSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: chores-tracker-backend-canary
   namespace: chores-tracker
 spec:
   selector:
