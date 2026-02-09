@@ -28,7 +28,7 @@ jobs:
             -summary \
             -strict \
             -ignore-missing-schemas \
-            -kubernetes-version 1.29.0
+            -kubernetes-version 1.33.0
 
   ingress-policy:
     runs-on: ubuntu-latest
