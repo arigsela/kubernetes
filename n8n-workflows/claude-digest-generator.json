@@ -31,8 +31,8 @@
       "position": [240, 304],
       "credentials": {
         "postgres": {
-          "id": "POSTGRES_CREDENTIAL_ID",
-          "name": "Postgres - n8n"
+          "id": "GCohHH3qGUDCi7xo",
+          "name": "Postgres account"
         }
       }
     },
@@ -159,10 +159,8 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE feed_articles\nSET last_digest_date = CURRENT_DATE, is_processed = true\nWHERE url = ANY(string_to_array($1, '|||'));",
-        "options": {
-          "queryParameters": "={{ $('Format for Notion').first().json.urls.join('|||') }}"
-        }
+        "query": "={{ 'UPDATE feed_articles SET last_digest_date = CURRENT_DATE, is_processed = true WHERE url = ANY(ARRAY[' + $('Prepare for LLM').first().json.urls.map(u => \"'\" + u.replace(/'/g, \"''\") + \"'\").join(',') + ']);' }}",
+        "options": {}
       },
       "id": "mark-processed",
       "name": "Mark as Processed",
@@ -171,8 +169,8 @@
       "position": [1488, 224],
       "credentials": {
         "postgres": {
-          "id": "POSTGRES_CREDENTIAL_ID",
-          "name": "Postgres - n8n"
+          "id": "GCohHH3qGUDCi7xo",
+          "name": "Postgres account"
         }
       }
     },

@@ -1,5 +1,5 @@
 {
-  "name": "DevOps Digest Generator",
+  "name": "DevOps Daily Dispatch",
   "nodes": [
     {
       "parameters": {
@@ -12,11 +12,14 @@
           ]
         }
       },
-      "id": "schedule-trigger",
+      "id": "b6853ead-2ffe-4237-a891-01361bc883e3",
       "name": "Daily 8 AM",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 304]
+      "position": [
+        -1040,
+        -16
+      ]
     },
     {
       "parameters": {
@@ -24,15 +27,18 @@
         "query": "SELECT\n    url, title, content_snippet, source_name, category, pub_date,\n    metadata->>'author' as author,\n    metadata->>'comments_count' as engagement\nFROM feed_articles\nWHERE 'devops' = ANY(topic)\n  AND pub_date >= NOW() - INTERVAL '24 hours'\n  AND (last_digest_date IS NULL OR last_digest_date < CURRENT_DATE)\nORDER BY pub_date DESC\nLIMIT 30;",
         "options": {}
       },
-      "id": "query-articles",
+      "id": "a466dce8-ea8d-4876-b3a4-dc1f290e8ba2",
       "name": "Query DevOps Articles",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [240, 304],
+      "position": [
+        -816,
+        -16
+      ],
       "credentials": {
         "postgres": {
-          "id": "POSTGRES_CREDENTIAL_ID",
-          "name": "Postgres - n8n"
+          "id": "GCohHH3qGUDCi7xo",
+          "name": "Postgres account"
         }
       }
     },
@@ -60,21 +66,27 @@
         },
         "options": {}
       },
-      "id": "if-has-articles",
+      "id": "3d2b595f-b345-4619-af49-56c390472670",
       "name": "Has Articles?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
-      "position": [448, 304]
+      "position": [
+        -592,
+        -16
+      ]
     },
     {
       "parameters": {
         "jsCode": "// Combine all items into a single text for the LLM, grouped by category\nconst items = $input.all();\n\nif (!items || items.length === 0) {\n  return [{\n    json: {\n      posts: 'No new articles found for today.',\n      date: new Date().toISOString().split('T')[0],\n      itemCount: 0,\n      urls: []\n    }\n  }];\n}\n\n// Group by category\nconst byCategory = { official: [], blog: [], community: [] };\nitems.forEach(item => {\n  const cat = (item.json.category || 'blog').toLowerCase();\n  if (byCategory[cat]) byCategory[cat].push(item.json);\n  else byCategory.blog.push(item.json);\n});\n\nlet postsText = '';\n\nconst categoryNames = {\n  official: 'Official Sources',\n  blog: 'Blog Posts',\n  community: 'Community Discussions'\n};\n\nfor (const [category, posts] of Object.entries(byCategory)) {\n  if (posts.length === 0) continue;\n  postsText += `\\n## ${categoryNames[category]}\\n`;\n  posts.forEach((post) => {\n    postsText += `### ${post.title}\\n`;\n    postsText += `**Source:** ${post.source_name} | **Date:** ${post.pub_date}\\n`;\n    postsText += `**Link:** ${post.url}\\n`;\n    postsText += `**Preview:** ${post.content_snippet || 'No content'}\\n\\n`;\n  });\n}\n\n// Collect URLs for marking as processed later\nconst urls = items.map(item => item.json.url);\n\nreturn [{\n  json: {\n    posts: postsText,\n    date: new Date().toISOString().split('T')[0],\n    itemCount: items.length,\n    urls: urls\n  }\n}];"
       },
-      "id": "prepare-for-llm",
+      "id": "f7cc9ed3-77d7-4ad4-878e-a3bb2324764b",
       "name": "Prepare for LLM",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [656, 224]
+      "position": [
+        -368,
+        -112
+      ]
     },
     {
       "parameters": {
@@ -85,145 +97,245 @@
           "cachedResultName": "Claude Haiku 4.5"
         },
         "options": {
-          "maxTokensToSample": 4096
+          "maxTokensToSample": 8192
         }
       },
-      "id": "anthropic-model",
+      "id": "bc84573d-147e-4d12-b553-d4c905624fce",
       "name": "Claude Haiku",
       "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
       "typeVersion": 1.3,
-      "position": [864, 400]
+      "position": [
+        -136,
+        112
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "xQWTf0PXZe20RDYY",
+          "name": "asela_anthropic"
+        }
+      }
     },
     {
       "parameters": {
         "promptType": "define",
-        "text": "=You are a DevOps and Infrastructure news analyst creating daily digests.\n\nYou have memory of your previous daily digest summaries. Use this memory to:\n- Focus on NEW content not covered in previous summaries\n- Avoid repeating information from previous digests\n- Reference trends or ongoing discussions if relevant\n\n## Today's Posts ({{ $json.itemCount }} articles from database):\n{{ $json.posts }}\n\n## Instructions:\nCreate a markdown-formatted daily digest with these sections:\n\n1. **Key Releases & Announcements** - New tool versions, major updates, product launches\n2. **Infrastructure Trends** - GitOps, IaC, platform engineering, cloud native patterns\n3. **Community Highlights** - Hot discussions, popular tips, interesting debates\n4. **Tools & Tutorials** - New tools, how-to guides, best practices\n5. **Security Updates** - CVEs, security best practices, compliance news\n\nFor each item, include the source name in parentheses.\nKeep summaries concise but informative. Focus on actionable insights.\nIf a section has no relevant NEW content, write \"No notable items today.\"\n\nFormat the output as clean markdown suitable for Notion.",
+        "text": "=You are \"DevOps Dave\" — a witty, slightly over-caffeinated DevOps engineer who hosts a daily morning news show called \"The Daily Dispatch\" for fellow engineers.\n\n## Your Personality\n- Talk like you're actually speaking to someone over coffee — conversational, natural, with real personality\n- Use humor freely: dad jokes, pop culture references, sarcastic asides, and funny analogies\n- Be genuinely informative — your audience is technical, so don't dumb things down\n- Show excitement about cool releases, healthy skepticism about hype, and empathy about pain points\n- Reference common DevOps struggles for relatability (\"We've all been there at 2 AM staring at CrashLoopBackOff...\")\n- Use smooth transitions between topics like a real broadcaster\n- Keep paragraphs short — this should read like spoken word, not documentation\n\n## Show Structure\n1. **Opening** — A funny greeting, the date, and a quick one-liner to set the mood\n2. **Top Stories** (2-3 items) — The biggest news with your commentary, opinions, and why it matters\n3. **The Deep Dive** — Pick ONE story and go deeper: practical takeaways, what it means for the industry, your hot take\n4. **Lightning Round** — Rapid-fire 1-2 sentence mentions of the remaining items\n5. **Dave's Sign-Off** — A memorable closing line, a \"DevOps tip of the day\", and a teaser for tomorrow\n\n## Rules\n- Target 800-1100 words (5-8 minutes reading time)\n- For each story, naturally mention the source name and include the URL as a markdown link\n- Use markdown formatting: headers, bold, italic, links\n- Write in a way that makes someone actually look forward to reading this every morning\n- If you have memory of previous broadcasts, make callbacks (\"Remember that Kubernetes CVE from Tuesday? Plot twist...\")\n\nYou have memory of your previous broadcasts. Use it to avoid repetition and reference ongoing storylines.\n\n## Today's Feed ({{ $json.itemCount }} articles):\n{{ $json.posts }}\n\nNow go live, Dave!",
         "options": {}
       },
-      "id": "ai-agent",
+      "id": "c60333fd-a214-4f86-a05d-2976ac820c9f",
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
-      "position": [864, 224]
+      "position": [
+        -144,
+        -112
+      ]
     },
     {
       "parameters": {
         "sessionIdType": "customKey",
-        "sessionKey": "devops-daily-digest",
+        "sessionKey": "devops-daily-dispatch",
         "contextWindowLength": 10
       },
-      "id": "simple-memory",
+      "id": "d91c42c1-9ac2-45bd-8457-0e6689ff4597",
       "name": "Simple Memory",
       "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
       "typeVersion": 1.3,
-      "position": [864, 480]
+      "position": [
+        -8,
+        112
+      ]
     },
     {
       "parameters": {
-        "language": "javaScript",
-        "mode": "runOnceForAllItems",
-        "jsCode": "const item = $input.first();\n// AI Agent outputs to 'output' field, chainLlm outputs to 'text'\nconst text = item.json.output || item.json.text || '';\nconst urls = $('Prepare for LLM').first().json.urls || [];\nconst maxLength = 1900;\nconst maxBlocks = 98;\n\nfunction parseRichText(text) {\n  const segments = [];\n  let remaining = text;\n  \n  while (remaining.length > 0) {\n    const boldMatch = remaining.match(/^\\*\\*(.+?)\\*\\*/);\n    const italicMatch = remaining.match(/^\\*(.+?)\\*/);\n    const codeMatch = remaining.match(/^`(.+?)`/);\n    const linkMatch = remaining.match(/^\\[(.+?)\\]\\((.+?)\\)/);\n    \n    if (boldMatch) {\n      segments.push({ type: 'text', text: { content: boldMatch[1] }, annotations: { bold: true } });\n      remaining = remaining.substring(boldMatch[0].length);\n    } else if (codeMatch) {\n      segments.push({ type: 'text', text: { content: codeMatch[1] }, annotations: { code: true } });\n      remaining = remaining.substring(codeMatch[0].length);\n    } else if (linkMatch) {\n      segments.push({ type: 'text', text: { content: linkMatch[1], link: { url: linkMatch[2] } } });\n      remaining = remaining.substring(linkMatch[0].length);\n    } else if (italicMatch && !remaining.startsWith('**')) {\n      segments.push({ type: 'text', text: { content: italicMatch[1] }, annotations: { italic: true } });\n      remaining = remaining.substring(italicMatch[0].length);\n    } else {\n      const nextSpecial = remaining.search(/\\*|`|\\[/);\n      const plainEnd = nextSpecial === -1 ? remaining.length : nextSpecial;\n      if (plainEnd > 0) {\n        segments.push({ type: 'text', text: { content: remaining.substring(0, plainEnd) } });\n        remaining = remaining.substring(plainEnd);\n      } else {\n        segments.push({ type: 'text', text: { content: remaining[0] } });\n        remaining = remaining.substring(1);\n      }\n    }\n  }\n  \n  return segments.length > 0 ? segments : [{ type: 'text', text: { content: text } }];\n}\n\nfunction splitRichText(segments) {\n  const result = [];\n  let current = [];\n  let currentLen = 0;\n  \n  for (const seg of segments) {\n    const content = seg.text.content;\n    if (currentLen + content.length <= maxLength) {\n      current.push(seg);\n      currentLen += content.length;\n    } else {\n      if (current.length > 0) result.push(current);\n      current = [seg];\n      currentLen = content.length;\n    }\n  }\n  if (current.length > 0) result.push(current);\n  return result;\n}\n\nconst lines = text.split('\\n');\nconst children = [];\n\nfor (const line of lines) {\n  if (children.length >= maxBlocks) break;\n  \n  const trimmed = line.trim();\n  if (!trimmed) continue;\n  \n  if (trimmed.startsWith('# ')) {\n    children.push({ object: 'block', type: 'heading_1', heading_1: { rich_text: parseRichText(trimmed.substring(2)) } });\n  } else if (trimmed.startsWith('## ')) {\n    children.push({ object: 'block', type: 'heading_2', heading_2: { rich_text: parseRichText(trimmed.substring(3)) } });\n  } else if (trimmed.startsWith('### ')) {\n    children.push({ object: 'block', type: 'heading_3', heading_3: { rich_text: parseRichText(trimmed.substring(4)) } });\n  } else if (trimmed === '---' || trimmed === '***' || trimmed === '___') {\n    children.push({ object: 'block', type: 'divider', divider: {} });\n  } else if (trimmed.startsWith('- ')) {\n    const richText = parseRichText(trimmed.substring(2));\n    const chunks = splitRichText(richText);\n    for (const chunk of chunks) {\n      if (children.length >= maxBlocks) break;\n      children.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: chunk } });\n    }\n  } else if (/^\\d+\\.\\s/.test(trimmed)) {\n    const content = trimmed.replace(/^\\d+\\.\\s/, '');\n    children.push({ object: 'block', type: 'numbered_list_item', numbered_list_item: { rich_text: parseRichText(content) } });\n  } else {\n    const richText = parseRichText(trimmed);\n    const chunks = splitRichText(richText);\n    for (const chunk of chunks) {\n      if (children.length >= maxBlocks) break;\n      children.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: chunk } });\n    }\n  }\n}\n\nreturn [{ json: { notionChildren: children, date: new Date().toISOString().split('T')[0], urls: urls } }];"
+        "jsCode": "const item = $input.first();\nconst text = item.json.output || item.json.text || '';\nconst date = $('Prepare for LLM').first().json.date;\nconst urls = $('Prepare for LLM').first().json.urls || [];\n\n// Strip markdown formatting for clean plain text that audioread can parse\nlet plainText = text\n  // Remove markdown headers but keep the text\n  .replace(/^#{1,3}\\s*/gm, '')\n  // Remove bold/italic markers\n  .replace(/\\*\\*(.+?)\\*\\*/g, '$1')\n  .replace(/\\*(.+?)\\*/g, '$1')\n  // Convert markdown links to just the text\n  .replace(/\\[(.+?)\\]\\((.+?)\\)/g, '$1')\n  // Clean up extra whitespace\n  .replace(/\\n{3,}/g, '\\n\\n')\n  .trim();\n\nreturn [{ json: { plainText, date, urls, subject: 'The Daily Dispatch - ' + date } }];"
       },
-      "id": "format-for-notion",
-      "name": "Format for Notion",
+      "id": "62d0d20a-567e-45f3-9c71-f1571eac0675",
+      "name": "Format Email HTML",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1072, 224]
+      "position": [
+        208,
+        -112
+      ]
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.notion.com/v1/pages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "Notion-Version", "value": "2022-06-28" },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ parent: { page_id: '2d38e013c07f80c59d93c9aeb9e271b7' }, properties: { title: [{ text: { content: 'DevOps - ' + $json.date } }] }, children: $json.notionChildren }) }}",
-        "options": {}
+        "fromEmail": "arigsela@gmail.com",
+        "toEmail": "user-7b646405-60f8-4029-9ebd-3731b48d9a80@email.audioread.com",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.plainText }}",
+        "options": {"appendAttribution": false}
       },
-      "id": "create-child-page",
-      "name": "Create Notion Child Page",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1280, 224],
-      "notesInFlow": true,
-      "notes": "Requires 'Header Auth' credential with: Name=Authorization, Value=Bearer YOUR_NOTION_TOKEN"
+      "id": "4feb0f36-3120-4821-a647-af1e2a5899d2",
+      "name": "Send Digest Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        432,
+        -112
+      ],
+      "webhookId": "5f287adf-ac64-4334-b565-f64e0a905713",
+      "credentials": {
+        "smtp": {
+          "id": "DtjHnOSdz1h7Xpuw",
+          "name": "SMTP account"
+        }
+      }
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE feed_articles\nSET last_digest_date = CURRENT_DATE, is_processed = true\nWHERE url = ANY(string_to_array($1, '|||'));",
-        "options": {
-          "queryParameters": "={{ $('Format for Notion').first().json.urls.join('|||') }}"
-        }
+        "query": "={{ 'UPDATE feed_articles SET last_digest_date = CURRENT_DATE, is_processed = true WHERE url = ANY(ARRAY[' + $('Prepare for LLM').first().json.urls.map(u => \"'\" + u.replace(/'/g, \"''\") + \"'\").join(',') + ']);' }}",
+        "options": {}
       },
-      "id": "mark-processed",
+      "id": "879fe629-c932-4307-a490-35e9a67ab0d2",
       "name": "Mark as Processed",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
-      "position": [1488, 224],
+      "position": [
+        736,
+        -112
+      ],
       "credentials": {
         "postgres": {
-          "id": "POSTGRES_CREDENTIAL_ID",
-          "name": "Postgres - n8n"
+          "id": "GCohHH3qGUDCi7xo",
+          "name": "Postgres account"
         }
       }
     },
     {
       "parameters": {},
-      "id": "no-articles",
+      "id": "cdc539bb-bbc9-4cfa-82a5-5b339a2565e6",
       "name": "No New Articles",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [656, 384]
+      "position": [
+        -368,
+        80
+      ]
     }
   ],
+  "pinData": {},
   "connections": {
     "Daily 8 AM": {
-      "main": [[{ "node": "Query DevOps Articles", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Query DevOps Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Query DevOps Articles": {
-      "main": [[{ "node": "Has Articles?", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Has Articles?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Has Articles?": {
       "main": [
-        [{ "node": "Prepare for LLM", "type": "main", "index": 0 }],
-        [{ "node": "No New Articles", "type": "main", "index": 0 }]
+        [
+          {
+            "node": "Prepare for LLM",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No New Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Prepare for LLM": {
-      "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Claude Haiku": {
-      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Simple Memory": {
-      "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]]
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
     },
     "AI Agent": {
-      "main": [[{ "node": "Format for Notion", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Format Email HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Format for Notion": {
-      "main": [[{ "node": "Create Notion Child Page", "type": "main", "index": 0 }]]
+    "Format Email HTML": {
+      "main": [
+        [
+          {
+            "node": "Send Digest Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-    "Create Notion Child Page": {
-      "main": [[{ "node": "Mark as Processed", "type": "main", "index": 0 }]]
+    "Send Digest Email": {
+      "main": [
+        [
+          {
+            "node": "Mark as Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
+  "active": false,
   "settings": {
     "executionOrder": "v1",
-    "timezone": "America/New_York",
-    "saveDataErrorExecution": "all",
-    "saveDataSuccessExecution": "all"
+    "binaryMode": "separate",
+    "availableInMCP": false
   },
+  "versionId": "0d546723-9c53-4613-bcdc-cb31fa28c542",
   "meta": {
-    "notes": "DevOps digest generator. Queries PostgreSQL for devops-tagged articles from the last 24 hours, generates a digest using AI Agent with memory, creates a Notion page, and marks articles as processed."
-  }
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1ac1edd945dd6547c06503f16d68924976acb661550d12289650d4bae82f1e28"
+  },
+  "id": "Ye8YOBg_y9ajCody55Kii",
+  "tags": []
 }

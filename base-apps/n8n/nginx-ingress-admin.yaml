@@ -19,7 +19,7 @@ metadata:
 
     # 🔒 IP WHITELIST - Admin UI Only
     # Only this IP can access the n8n admin interface
-    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32"
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32"
 
     # Timeouts
     nginx.ingress.kubernetes.io/proxy-read-timeout: "60"

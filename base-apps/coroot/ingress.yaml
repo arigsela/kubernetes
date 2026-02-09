@@ -11,7 +11,7 @@ metadata:
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 
     # IP Whitelist - Only allow home IP
-    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32"
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32"
 
     # Timeouts (longer for dashboard loading)
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
