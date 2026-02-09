@@ -23,7 +23,7 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
 
     # IP Whitelist
-    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32"
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32"
 spec:
   ingressClassName: nginx
   tls:
