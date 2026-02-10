@@ -1,7 +1,47 @@
+# Primary service - routes to the active (stable or canary) pods
+# This is the service that other consumers should target
 apiVersion: v1
 kind: Service
 metadata:
   name: agent-ui-backend
+  namespace: agent-ui-backend
+  labels:
+    app: agent-ui-backend
+    component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: agent-ui-backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+---
+# Stable service - Argo Rollouts manages the selector to point to stable ReplicaSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-ui-backend-stable
+  namespace: agent-ui-backend
+  labels:
+    app: agent-ui-backend
+    component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: agent-ui-backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+---
+# Canary service - Argo Rollouts manages the selector to point to canary ReplicaSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-ui-backend-canary
   namespace: agent-ui-backend
   labels:
     app: agent-ui-backend
