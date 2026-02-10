@@ -26,7 +26,7 @@ spec:
       - name: ecr-registry
       containers:
         - name: backend
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agent-ui-backend:v1.0.2
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agent-ui-backend:v1.0.3
           ports:
             - name: http
               containerPort: 8000
