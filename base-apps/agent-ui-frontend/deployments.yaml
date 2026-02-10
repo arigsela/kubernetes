@@ -1,5 +1,5 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: agent-ui-frontend
   namespace: agent-ui-frontend
@@ -58,3 +58,17 @@ spec:
         - name: nginx-config
           configMap:
             name: agent-ui-frontend-nginx
+  strategy:
+    canary:
+      stableService: agent-ui-frontend-stable
+      canaryService: agent-ui-frontend-canary
+      trafficRouting:
+        nginx:
+          stableIngress: agent-ui
+      steps:
+        - setWeight: 20
+        - pause: {duration: 5m}
+        - setWeight: 50
+        - pause: {duration: 5m}
+        - setWeight: 80
+        - pause: {duration: 5m}

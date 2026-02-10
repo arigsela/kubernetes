@@ -38,6 +38,6 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: agent-ui-frontend
+            name: agent-ui-frontend-stable
             port:
               number: 80

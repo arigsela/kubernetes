@@ -1,5 +1,5 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: agent-ui-backend
   namespace: agent-ui-backend
@@ -53,3 +53,12 @@ spec:
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 30
+  strategy:
+    canary:
+      steps:
+        - setWeight: 20
+        - pause: {duration: 5m}
+        - setWeight: 50
+        - pause: {duration: 5m}
+        - setWeight: 80
+        - pause: {duration: 5m}
