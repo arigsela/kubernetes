@@ -1,0 +1,23 @@
+# Istio VirtualService for Argo Rollouts canary traffic splitting
+# Argo Rollouts controller manages the weight values during canary deployments
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: agent-ui-backend-vsvc
+  namespace: agent-ui-backend
+spec:
+  hosts:
+    - agent-ui-backend
+  http:
+    - name: primary
+      route:
+        - destination:
+            host: agent-ui-backend-stable
+            port:
+              number: 8000
+          weight: 100
+        - destination:
+            host: agent-ui-backend-canary
+            port:
+              number: 8000
+          weight: 0
