@@ -1,7 +1,25 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: agent-ui-frontend
+  name: agent-ui-frontend-stable
+  namespace: agent-ui-frontend
+  labels:
+    app: agent-ui-frontend
+    component: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: agent-ui-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-ui-frontend-canary
   namespace: agent-ui-frontend
   labels:
     app: agent-ui-frontend
