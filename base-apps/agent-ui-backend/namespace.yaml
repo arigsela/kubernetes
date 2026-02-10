@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agent-ui-backend
+  labels:
+    app: agent-ui-backend
+    istio.io/dataplane-mode: ambient
+    istio.io/use-waypoint: agent-ui-backend-waypoint

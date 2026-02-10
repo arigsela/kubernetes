@@ -17,19 +17,3 @@ metadata:
   labels:
     istio.io/dataplane-mode: ambient
     istio.io/use-waypoint: chores-tracker-frontend-waypoint
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: agent-ui-backend
-  labels:
-    istio.io/dataplane-mode: ambient
-    istio.io/use-waypoint: agent-ui-backend-waypoint
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: agent-ui-frontend
-  labels:
-    istio.io/dataplane-mode: ambient
-    istio.io/use-waypoint: agent-ui-frontend-waypoint
