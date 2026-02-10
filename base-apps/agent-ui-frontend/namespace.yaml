@@ -4,5 +4,3 @@ metadata:
   name: agent-ui-frontend
   labels:
     app: agent-ui-frontend
-    istio.io/dataplane-mode: ambient
-    istio.io/use-waypoint: agent-ui-frontend-waypoint
