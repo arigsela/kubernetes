@@ -1,0 +1,38 @@
+# Waypoint Proxy for agent-ui-backend namespace
+# Provides L7 (HTTP) processing required for Argo Rollouts traffic splitting
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agent-ui-backend-waypoint
+  namespace: agent-ui-backend
+  labels:
+    istio.io/waypoint-for: all
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# Waypoint Proxy for agent-ui-frontend namespace
+# Provides L7 (HTTP) processing for ambient mesh enrollment
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agent-ui-frontend-waypoint
+  namespace: agent-ui-frontend
+  labels:
+    istio.io/waypoint-for: all
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE
+      allowedRoutes:
+        namespaces:
+          from: Same

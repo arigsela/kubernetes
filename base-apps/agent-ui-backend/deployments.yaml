@@ -57,6 +57,12 @@ spec:
     canary:
       stableService: agent-ui-backend-stable
       canaryService: agent-ui-backend-canary
+      trafficRouting:
+        istio:
+          virtualServices:
+            - name: agent-ui-backend-vsvc
+              routes:
+                - primary
       steps:
         - setWeight: 20
         - pause: {}
