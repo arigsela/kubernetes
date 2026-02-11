@@ -27,6 +27,7 @@ spec:
       containers:
         - name: frontend
           image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agent-ui-frontend:v1.0.3
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 80
