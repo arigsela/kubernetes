@@ -22,7 +22,7 @@ spec:
         node.kubernetes.io/workload: application
       containers:
       - name: chores-tracker-backend
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:7.0.2
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/chores-tracker:3.0.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
