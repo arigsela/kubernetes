@@ -3,126 +3,90 @@ kind: Deployment
 metadata:
   name: n8n
   namespace: n8n
+  labels:
+    app: n8n
+    app.kubernetes.io/name: n8n
+    app.kubernetes.io/version: "1.80.1"
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: n8n
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: n8n
+        app.kubernetes.io/name: n8n
+        app.kubernetes.io/version: "1.80.1"
     spec:
-      nodeSelector:
-        node.kubernetes.io/workload: application
-      # Set ownership for the mounted volume
-      securityContext:
-        fsGroup: 1000
-        runAsUser: 1000
-        runAsGroup: 1000
       containers:
       - name: n8n
-        image: n8nio/n8n:latest
+        image: n8nio/n8n:1.80.1
         env:
-        # Database Configuration
+        - name: N8N_PORT
+          value: "5678"
+        - name: N8N_PROTOCOL
+          value: "https"
+        - name: N8N_HOST
+          value: "n8n.ari.gg"
+        - name: WEBHOOK_URL
+          value: "https://n8n.ari.gg/"
+        - name: N8N_EDITOR_BASE_URL
+          value: "https://n8n.ari.gg/"
+        - name: GENERIC_TIMEZONE
+          value: "America/New_York"
         - name: DB_TYPE
           value: "postgresdb"
         - name: DB_POSTGRESDB_HOST
-          valueFrom:
-            secretKeyRef:
-              name: n8n-secrets
-              key: db-host
+          value: "postgresql.postgresql.svc.cluster.local"
         - name: DB_POSTGRESDB_PORT
-          valueFrom:
-            secretKeyRef:
-              name: n8n-secrets
-              key: db-port
+          value: "5432"
         - name: DB_POSTGRESDB_DATABASE
           valueFrom:
             secretKeyRef:
               name: n8n-secrets
-              key: db-name
+              key: postgres-database
         - name: DB_POSTGRESDB_USER
           valueFrom:
             secretKeyRef:
               name: n8n-secrets
-              key: db-user
+              key: postgres-user
         - name: DB_POSTGRESDB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: n8n-secrets
-              key: db-password
-        # n8n Core Configuration
+              key: postgres-password
         - name: N8N_ENCRYPTION_KEY
           valueFrom:
             secretKeyRef:
               name: n8n-secrets
               key: encryption-key
-
-        # UPDATED: Webhook URL (changed to HTTPS)
-        - name: WEBHOOK_URL
-          value: "https://n8n.arigsela.com/"
-
-        # UPDATED: Protocol changed from http to https
-        - name: N8N_PROTOCOL
-          value: "https"
-
-        # NEW: Hostname configuration
-        - name: N8N_HOST
-          value: "n8n.arigsela.com"
-
-        - name: N8N_PORT
-          value: "5678"
-        - name: N8N_LOG_LEVEL
-          value: "info"
-
-        # Trust proxy for X-Forwarded-For headers (required behind nginx ingress)
-        - name: N8N_PROXY_HOPS
-          value: "1"
-
-        # Enforce correct file permissions for settings
-        - name: N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS
-          value: "true"
-
-        # Execution Settings
-        - name: EXECUTIONS_DATA_SAVE_ON_ERROR
-          value: "all"
-        - name: EXECUTIONS_DATA_SAVE_ON_SUCCESS
-          value: "all"
-        - name: EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS
-          value: "true"
-
-        # 🔒 NEW: BASIC AUTHENTICATION CONFIGURATION
-        - name: N8N_BASIC_AUTH_ACTIVE
-          value: "true"
-        - name: N8N_BASIC_AUTH_USER
-          valueFrom:
-            secretKeyRef:
-              name: n8n-secrets
-              key: basic-auth-user
-        - name: N8N_BASIC_AUTH_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: n8n-secrets
-              key: basic-auth-password
         ports:
         - containerPort: 5678
           name: http
+        volumeMounts:
+        - name: n8n-data
+          mountPath: /home/node/.n8n
         resources:
           requests:
             memory: "500Mi"
             cpu: "500m"
           limits:
-            memory: "1Gi"
-            cpu: "1000m"
+            memory: "2Gi"
+            cpu: "2000m"
         livenessProbe:
           httpGet:
             path: /healthz
             port: 5678
           initialDelaySeconds: 240
-          periodSeconds: 10
+          periodSeconds: 30
           timeoutSeconds: 5
-          failureThreshold: 6
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /healthz
@@ -130,11 +94,8 @@ spec:
           initialDelaySeconds: 240
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 6
-        volumeMounts:
-        - name: n8n-storage
-          mountPath: /home/node/.n8n
+          failureThreshold: 3
       volumes:
-      - name: n8n-storage
+      - name: n8n-data
         persistentVolumeClaim:
           claimName: n8n-pvc
