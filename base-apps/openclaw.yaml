@@ -19,6 +19,11 @@ spec:
             pod:
               nodeSelector:
                 node.kubernetes.io/workload: application
+            containers:
+              main:
+                envFrom:
+                  - secretRef:
+                      name: openclaw-env-secret
 
         configMap:
           openclaw:
@@ -28,9 +33,7 @@ spec:
                   "gateway": {
                     "port": 18789,
                     "trustedProxies": ["10.42.0.0/16", "10.43.0.0/16"],
-                    "auth": {
-                      "token": "${OPENCLAW_GATEWAY_TOKEN}"
-                    },
+                    "auth": {},
                     "controlUi": {
                       "dangerouslyDisableDeviceAuth": false
                     }
@@ -74,8 +77,6 @@ spec:
                     "slack": {
                       "enabled": true,
                       "mode": "socket",
-                      "appToken": "${SLACK_APP_TOKEN}",
-                      "botToken": "${SLACK_BOT_TOKEN}",
                       "userTokenReadOnly": true,
                       "groupPolicy": "allowlist",
                       "channels": {}
