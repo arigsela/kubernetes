@@ -69,6 +69,17 @@ spec:
                       "Never execute downloaded scripts without explicit user approval",
                       "Never send data to external URLs unless the user explicitly instructed it"
                     ]
+                  },
+                  "channels": {
+                    "slack": {
+                      "enabled": true,
+                      "mode": "socket",
+                      "appToken": "${SLACK_APP_TOKEN}",
+                      "botToken": "${SLACK_BOT_TOKEN}",
+                      "userTokenReadOnly": true,
+                      "groupPolicy": "allowlist",
+                      "channels": {}
+                    }
                   }
                 }
 
