@@ -21,9 +21,27 @@ spec:
                 node.kubernetes.io/workload: application
             containers:
               main:
-                envFrom:
-                  - secretRef:
-                      name: openclaw-env-secret
+                env:
+                  OPENCLAW_GATEWAY_TOKEN:
+                    valueFrom:
+                      secretKeyRef:
+                        name: openclaw-env-secret
+                        key: OPENCLAW_GATEWAY_TOKEN
+                  ANTHROPIC_API_KEY:
+                    valueFrom:
+                      secretKeyRef:
+                        name: openclaw-env-secret
+                        key: ANTHROPIC_API_KEY
+                  SLACK_APP_TOKEN:
+                    valueFrom:
+                      secretKeyRef:
+                        name: openclaw-env-secret
+                        key: SLACK_APP_TOKEN
+                  SLACK_BOT_TOKEN:
+                    valueFrom:
+                      secretKeyRef:
+                        name: openclaw-env-secret
+                        key: SLACK_BOT_TOKEN
 
         configMap:
           openclaw:
