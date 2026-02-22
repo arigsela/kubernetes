@@ -30,6 +30,7 @@ data:
   # API Configuration
   API_HOST: "0.0.0.0"
   API_PORT: "8000"
+  SESSION_PERSIST_PATH: "/app/data/incidents"
   SESSION_TTL_MINUTES: "30"
   MAX_SESSIONS_PER_USER: "5"
   RATE_LIMIT_AUTHENTICATED: "60"
