@@ -9,6 +9,8 @@ data:
   AGENT_LOG_LEVEL: "INFO"
   GITHUB_AGENT_HOST: "0.0.0.0"
   GITHUB_AGENT_PORT: "8080"
+  # URL advertised in the A2A agent card — must be reachable by the orchestrator
+  GITHUB_AGENT_URL: "http://github-agent-a2a.oncall-crewai.svc:8080"
   GITHUB_ORG: "arigsela"
   GITOPS_REPO: "arigsela/kubernetes"
   GITOPS_BASE_PATH: "base-apps/"

@@ -9,3 +9,5 @@ data:
   AGENT_LOG_LEVEL: "INFO"
   K8S_AGENT_HOST: "0.0.0.0"
   K8S_AGENT_PORT: "8080"
+  # URL advertised in the A2A agent card — must be reachable by the orchestrator
+  K8S_AGENT_URL: "http://k8s-agent-a2a.oncall-crewai.svc:8080"
