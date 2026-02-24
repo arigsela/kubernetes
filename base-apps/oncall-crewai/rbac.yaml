@@ -1,0 +1,60 @@
+# ServiceAccount for K8s Diagnostics Agent
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-diagnostics-agent
+  namespace: oncall-crewai
+  labels:
+    app: k8s-agent-a2a
+    component: rbac
+
+---
+# ClusterRole - Read-only access to K8s resources for diagnostics
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crewai-k8s-agent-reader
+  labels:
+    app: k8s-agent-a2a
+rules:
+  # Pod monitoring
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/status"]
+    verbs: ["get", "list", "watch"]
+
+  # Event monitoring
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+  # Deployment monitoring
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+
+  # Namespace information
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+
+  # Service information
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+
+---
+# ClusterRoleBinding - Bind read-only role to K8s agent service account
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crewai-k8s-agent-reader-binding
+  labels:
+    app: k8s-agent-a2a
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: crewai-k8s-agent-reader
+subjects:
+  - kind: ServiceAccount
+    name: k8s-diagnostics-agent
+    namespace: oncall-crewai

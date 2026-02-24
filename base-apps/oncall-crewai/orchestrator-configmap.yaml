@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orchestrator-config
+  namespace: oncall-crewai
+  labels:
+    app: crewai-orchestrator
+data:
+  AGENT_LOG_LEVEL: "INFO"
+  ORCHESTRATOR_HOST: "0.0.0.0"
+  ORCHESTRATOR_PORT: "8000"
+  CORS_ORIGINS: "*"
+  # Internal service DNS names for A2A agent discovery
+  K8S_AGENT_URL: "http://k8s-agent-a2a.oncall-crewai.svc:8080"
+  GITHUB_AGENT_URL: "http://github-agent-a2a.oncall-crewai.svc:8080"

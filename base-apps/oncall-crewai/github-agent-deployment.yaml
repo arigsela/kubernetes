@@ -1,0 +1,112 @@
+# Deployment for GitHub/GitOps A2A Agent
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-agent-a2a
+  namespace: oncall-crewai
+  labels:
+    app: github-agent-a2a
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-agent-a2a
+  template:
+    metadata:
+      labels:
+        app: github-agent-a2a
+        version: v1
+    spec:
+      serviceAccountName: github-gitops-agent
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsGroup: 1000
+
+      containers:
+      - name: agent
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/crewai-github-agent:latest
+        imagePullPolicy: Always
+
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+
+        envFrom:
+        - configMapRef:
+            name: github-agent-config
+
+        env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: github-agent-secrets
+              key: anthropic-api-key
+
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-agent-secrets
+              key: github-token
+
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+      terminationGracePeriodSeconds: 30
+
+---
+# ServiceAccount for GitHub agent (no ClusterRole -- no K8s access)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github-gitops-agent
+  namespace: oncall-crewai
+  labels:
+    app: github-agent-a2a
+    component: rbac
+
+---
+# Service for GitHub/GitOps Agent
+apiVersion: v1
+kind: Service
+metadata:
+  name: github-agent-a2a
+  namespace: oncall-crewai
+  labels:
+    app: github-agent-a2a
+spec:
+  type: ClusterIP
+  selector:
+    app: github-agent-a2a
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
