@@ -19,6 +19,8 @@ spec:
         version: v1
     spec:
       serviceAccountName: k8s-diagnostics-agent
+      imagePullSecrets:
+      - name: ecr-registry
       nodeSelector:
         node.kubernetes.io/workload: application
       securityContext:
