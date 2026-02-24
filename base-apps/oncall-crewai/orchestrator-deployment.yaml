@@ -43,6 +43,8 @@ spec:
             name: orchestrator-config
 
         env:
+        - name: HOME
+          value: /tmp
         - name: ANTHROPIC_API_KEY
           valueFrom:
             secretKeyRef:
