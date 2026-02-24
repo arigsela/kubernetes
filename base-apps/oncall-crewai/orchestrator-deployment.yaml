@@ -19,6 +19,8 @@ spec:
         version: v1
     spec:
       serviceAccountName: crewai-orchestrator
+      imagePullSecrets:
+      - name: ecr-registry
       nodeSelector:
         node.kubernetes.io/workload: application
       securityContext:
