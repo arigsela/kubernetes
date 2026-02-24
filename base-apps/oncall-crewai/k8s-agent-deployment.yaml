@@ -1,0 +1,95 @@
+# Deployment for K8s Diagnostics A2A Agent
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-agent-a2a
+  namespace: oncall-crewai
+  labels:
+    app: k8s-agent-a2a
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k8s-agent-a2a
+  template:
+    metadata:
+      labels:
+        app: k8s-agent-a2a
+        version: v1
+    spec:
+      serviceAccountName: k8s-diagnostics-agent
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsGroup: 1000
+
+      containers:
+      - name: agent
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/crewai-k8s-agent:latest
+        imagePullPolicy: Always
+
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+
+        envFrom:
+        - configMapRef:
+            name: k8s-agent-config
+
+        env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: k8s-agent-secrets
+              key: anthropic-api-key
+
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+      terminationGracePeriodSeconds: 30
+
+---
+# Service for K8s Diagnostics Agent
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-agent-a2a
+  namespace: oncall-crewai
+  labels:
+    app: k8s-agent-a2a
+spec:
+  type: ClusterIP
+  selector:
+    app: k8s-agent-a2a
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP

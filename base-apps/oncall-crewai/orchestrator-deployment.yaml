@@ -1,0 +1,112 @@
+# Deployment for OnCall CrewAI Orchestrator
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crewai-orchestrator
+  namespace: oncall-crewai
+  labels:
+    app: crewai-orchestrator
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crewai-orchestrator
+  template:
+    metadata:
+      labels:
+        app: crewai-orchestrator
+        version: v1
+    spec:
+      serviceAccountName: crewai-orchestrator
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsGroup: 1000
+
+      containers:
+      - name: orchestrator
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/crewai-orchestrator:latest
+        imagePullPolicy: Always
+
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+
+        envFrom:
+        - configMapRef:
+            name: orchestrator-config
+
+        env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: orchestrator-secrets
+              key: anthropic-api-key
+
+        - name: API_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: orchestrator-secrets
+              key: api-keys
+
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+      terminationGracePeriodSeconds: 30
+
+---
+# ServiceAccount for orchestrator (no ClusterRole -- no direct K8s access)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crewai-orchestrator
+  namespace: oncall-crewai
+  labels:
+    app: crewai-orchestrator
+    component: rbac
+
+---
+# Service for OnCall Orchestrator
+apiVersion: v1
+kind: Service
+metadata:
+  name: crewai-orchestrator
+  namespace: oncall-crewai
+  labels:
+    app: crewai-orchestrator
+spec:
+  type: ClusterIP
+  selector:
+    app: crewai-orchestrator
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP
