@@ -43,6 +43,8 @@ spec:
             name: k8s-agent-config
 
         env:
+        - name: HOME
+          value: /tmp
         - name: ANTHROPIC_API_KEY
           valueFrom:
             secretKeyRef:
