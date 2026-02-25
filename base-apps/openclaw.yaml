@@ -116,7 +116,7 @@ spec:
                 nginx.ingress.kubernetes.io/ssl-redirect: "true"
                 nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
                 nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-                nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32"
+                nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32,170.85.130.202/32"
                 nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
                 nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
                 nginx.ingress.kubernetes.io/proxy-send-timeout: "600"

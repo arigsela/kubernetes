@@ -17,7 +17,7 @@ metadata:
     nginx.ingress.kubernetes.io/limit-connections: "50"
 
     # IP Whitelist
-    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32"
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32,170.85.130.202/32"
 
     # Timeouts
     nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
