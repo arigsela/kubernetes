@@ -57,6 +57,12 @@ spec:
               name: github-agent-secrets
               key: github-token
 
+        - name: API_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: github-agent-secrets
+              key: api-keys
+
         resources:
           requests:
             memory: "256Mi"
