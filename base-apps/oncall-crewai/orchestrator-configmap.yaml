@@ -13,3 +13,5 @@ data:
   # Internal service DNS names for A2A agent discovery
   K8S_AGENT_URL: "http://k8s-agent-a2a.oncall-crewai.svc:8080"
   GITHUB_AGENT_URL: "http://github-agent-a2a.oncall-crewai.svc:8080"
+  SESSION_DB_PATH: "/data/sessions.db"
+  SESSION_TTL_HOURS: "24"
