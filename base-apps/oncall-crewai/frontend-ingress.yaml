@@ -28,10 +28,10 @@ spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - oncall.arigsela.com
-    secretName: oncall-frontend-tls
+    - oncall-crewai.arigsela.com
+    secretName: oncall-crewai-frontend-tls
   rules:
-  - host: oncall.arigsela.com
+  - host: oncall-crewai.arigsela.com
     http:
       paths:
       - path: /
