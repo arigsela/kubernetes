@@ -1,0 +1,96 @@
+# Deployment for OnCall CrewAI Frontend (CopilotKit Chat UI)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crewai-frontend
+  namespace: oncall-crewai
+  labels:
+    app: crewai-frontend
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crewai-frontend
+  template:
+    metadata:
+      labels:
+        app: crewai-frontend
+        version: v1
+    spec:
+      imagePullSecrets:
+      - name: ecr-registry
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        fsGroup: 1001
+        runAsUser: 1001
+        runAsGroup: 1001
+
+      containers:
+      - name: frontend
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/crewai-frontend:latest
+        imagePullPolicy: Always
+
+        ports:
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+
+        envFrom:
+        - configMapRef:
+            name: frontend-config
+
+        env:
+        - name: ORCHESTRATOR_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: orchestrator-secrets
+              key: api-keys
+
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "250m"
+
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+      terminationGracePeriodSeconds: 15
+
+---
+# Service for OnCall Frontend
+apiVersion: v1
+kind: Service
+metadata:
+  name: crewai-frontend
+  namespace: oncall-crewai
+  labels:
+    app: crewai-frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: crewai-frontend
+  ports:
+  - name: http
+    port: 80
+    targetPort: 3000
+    protocol: TCP

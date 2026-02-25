@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: oncall-crewai
+  labels:
+    app: crewai-frontend
+data:
+  # Internal service DNS for the orchestrator
+  ORCHESTRATOR_URL: "http://crewai-orchestrator.oncall-crewai.svc:80"
