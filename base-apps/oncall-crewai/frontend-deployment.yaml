@@ -31,6 +31,8 @@ spec:
       - name: frontend
         image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/crewai-frontend:latest
         imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
 
         ports:
         - name: http
