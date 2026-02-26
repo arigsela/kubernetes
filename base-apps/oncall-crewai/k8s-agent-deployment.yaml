@@ -51,6 +51,12 @@ spec:
               name: k8s-agent-secrets
               key: anthropic-api-key
 
+        - name: API_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: k8s-agent-secrets
+              key: api-keys
+
         resources:
           requests:
             memory: "256Mi"
@@ -64,18 +70,18 @@ spec:
             path: /health
             port: 8080
           initialDelaySeconds: 30
-          periodSeconds: 30
+          periodSeconds: 60
           timeoutSeconds: 10
-          failureThreshold: 3
+          failureThreshold: 5
 
         readinessProbe:
           httpGet:
             path: /health
             port: 8080
           initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 5
 
       terminationGracePeriodSeconds: 30
 
