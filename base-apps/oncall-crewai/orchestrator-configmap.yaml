@@ -14,4 +14,6 @@ data:
   K8S_AGENT_URL: "http://k8s-agent-a2a.oncall-crewai.svc:8080"
   GITHUB_AGENT_URL: "http://github-agent-a2a.oncall-crewai.svc:8080"
   SESSION_DB_PATH: "/data/sessions.db"
-  SESSION_TTL_HOURS: "24"
+  SESSION_TTL_HOURS: "0"  # 0 = never expire (persistent memory)
+  SESSION_MAX_TOTAL: "500"
+  SESSION_CONTEXT_MAX_TURNS: "5"
