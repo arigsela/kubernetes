@@ -1,0 +1,28 @@
+# ==============================================================================
+# Backstage ClusterIP Service
+# ==============================================================================
+#
+# Exposes the Backstage backend within the cluster on port 80.
+#
+# WHY PORT 80 → 7007:
+# Following the cluster convention, services listen on port 80 externally
+# (so Ingress can target port 80) and forward to the container's actual port
+# (7007 for Backstage). This is consistent with chores-tracker-backend and
+# other services in this cluster.
+#
+# ClusterIP (default type) means this service is only reachable from within
+# the cluster — external access goes through the Ingress controller.
+# ==============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage
+  namespace: backstage
+spec:
+  selector:
+    app: backstage
+  ports:
+  - port: 80
+    targetPort: 7007
+  type: ClusterIP

@@ -1,0 +1,114 @@
+# ==============================================================================
+# Backstage Deployment
+# ==============================================================================
+#
+# Runs the Backstage backend as a standard Kubernetes Deployment (not a Rollout,
+# since Backstage is an internal tool where canary deployments aren't needed).
+#
+# KEY DESIGN DECISIONS:
+# - Single replica: Backstage is stateless (state lives in PostgreSQL), but a
+#   single replica is sufficient for an internal developer portal.
+# - envFrom: Pulls ALL keys from the ConfigMap and Secret as env vars.
+#   This keeps the manifest clean — adding a new env var only requires
+#   updating the ConfigMap/Secret, not this Deployment.
+# - imagePullSecrets: The ecr-registry secret is synced by the ECR CronJob
+#   every hour. Without it, K8s can't pull images from our private ECR.
+# - Security: Runs as non-root user (UID 1000), no privilege escalation.
+#   The Backstage Dockerfile already creates a node user with UID 1000.
+# ==============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage
+  namespace: backstage
+  labels:
+    app: backstage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backstage
+  template:
+    metadata:
+      labels:
+        app: backstage
+    spec:
+      # Schedule on application nodes (not infrastructure/control-plane nodes).
+      nodeSelector:
+        node.kubernetes.io/workload: application
+
+      # Security context at the pod level:
+      # - runAsUser/runAsGroup 1000: matches the 'node' user in the Dockerfile
+      # - fsGroup 1000: ensures mounted volumes are writable by the node user
+      # - runAsNonRoot: prevents the container from running as root even if
+      #   the image's USER directive is somehow bypassed
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+
+      containers:
+      - name: backstage
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/backstage-portal:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 7007
+
+        # Load all environment variables from:
+        # 1. backstage-config ConfigMap (non-sensitive: POSTGRES_HOST, POSTGRES_PORT)
+        # 2. backstage-secrets Secret (sensitive: passwords, tokens, OAuth creds)
+        #    Created by External Secrets Operator from Vault
+        envFrom:
+        - configMapRef:
+            name: backstage-config
+        - secretRef:
+            name: backstage-secrets
+
+        # Container-level security: prevent privilege escalation attacks.
+        securityContext:
+          allowPrivilegeEscalation: false
+
+        # LIVENESS PROBE: "Is the process alive?"
+        # If this fails 3 times, Kubernetes kills and restarts the pod.
+        # initialDelaySeconds is 60s because Backstage loads many plugins
+        # at startup (catalog, auth, kubernetes, techdocs, etc.).
+        livenessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 7007
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        # READINESS PROBE: "Is it ready to serve traffic?"
+        # Until this passes, the Service won't route traffic to this pod.
+        # Lower initialDelay than liveness — we want to start routing
+        # as soon as the server is listening, even if some plugins are
+        # still initializing in the background.
+        readinessProbe:
+          httpGet:
+            path: /healthcheck
+            port: 7007
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # RESOURCE LIMITS:
+        # requests: guaranteed minimum (used for scheduling decisions)
+        # limits: hard ceiling (pod gets OOM-killed or CPU-throttled beyond this)
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"
+
+      # ECR pull secret — synced hourly by the ecr-credentials-sync CronJob.
+      # Without this, the kubelet can't authenticate to pull from our private ECR.
+      imagePullSecrets:
+      - name: ecr-registry
