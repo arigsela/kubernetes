@@ -51,8 +51,8 @@ spec:
 
       containers:
       - name: backstage
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/backstage-portal:latest
-        imagePullPolicy: IfNotPresent
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/backstage-portal:v1.0.0
+        imagePullPolicy: Always
         ports:
         - containerPort: 7007
 
