@@ -1,0 +1,54 @@
+# ==============================================================================
+# Backstage NGINX Ingress with TLS
+# ==============================================================================
+#
+# Routes external HTTPS traffic from backstage.arigsela.com to the Backstage
+# ClusterIP Service. TLS is handled by cert-manager (Let's Encrypt).
+#
+# HOW TLS WORKS:
+# 1. cert-manager sees the cluster-issuer annotation and the tls section
+# 2. It requests a certificate from Let's Encrypt for backstage.arigsela.com
+# 3. The certificate is stored in the backstage-tls Secret
+# 4. NGINX Ingress Controller terminates TLS using that certificate
+# 5. Traffic from NGINX → Backstage pod is plain HTTP (within the cluster)
+#
+# TIMEOUT CONFIGURATION:
+# Backstage can be slow on first request (cold catalog load, plugin init).
+# The 60s timeouts prevent 504 errors during these initial loads.
+# ==============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backstage-nginx
+  namespace: backstage
+  annotations:
+    # Tell cert-manager to issue a certificate using the letsencrypt-prod ClusterIssuer
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Force all HTTP traffic to HTTPS (301 redirect)
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # Backend speaks plain HTTP (TLS terminates at the ingress controller)
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # Generous timeouts for Backstage — initial catalog load and TechDocs
+    # generation can take time on first request
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - backstage.arigsela.com
+    secretName: backstage-tls
+  rules:
+  - host: backstage.arigsela.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: backstage
+            port:
+              number: 80
