@@ -1,33 +1,3 @@
-# ==============================================================================
-# Backstage RBAC — ServiceAccount + ClusterRole + ClusterRoleBinding
-# ==============================================================================
-#
-# Creates the Kubernetes RBAC resources needed for Backstage's Kubernetes plugin.
-# The plugin queries the K8s API to show pod status, logs, and deployments
-# directly on entity pages in the Backstage UI.
-#
-# WHY A ClusterRole (NOT Role):
-# Backstage needs to read resources across ALL namespaces — it shows the
-# Kubernetes tab for any entity with a kubernetes-id annotation, regardless
-# of which namespace the workload runs in. A Role is namespace-scoped,
-# so we need a ClusterRole for cross-namespace read access.
-#
-# SECURITY:
-# - Read-only access only (get, list, watch) — Backstage cannot modify resources
-# - No access to Secrets (prevents credential leakage through the UI)
-# - The ServiceAccount token is stored in Vault and injected as K8S_SERVICE_ACCOUNT_TOKEN
-#
-# GENERATING THE TOKEN:
-# After ArgoCD deploys these resources, generate a long-lived token:
-#   kubectl create token backstage -n backstage --duration=8760h
-# Then store it in Vault:
-#   vault kv patch k8s-secrets/backstage k8s-service-account-token=<token>
-# ==============================================================================
-
-# ServiceAccount for the Backstage Kubernetes plugin.
-# This SA is used to generate the token that Backstage uses to query the K8s API.
-# NOTE: This is NOT the SA the pod runs as — the pod uses 'default'.
-# This SA exists solely for the Kubernetes plugin's API access.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -36,8 +6,6 @@ metadata:
 
 ---
 
-# ClusterRole with read-only access to common workload resources.
-# These are the resources the Kubernetes plugin displays on entity pages.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -74,8 +42,6 @@ rules:
 
 ---
 
-# Bind the ClusterRole to the backstage ServiceAccount.
-# This grants the SA read-only access cluster-wide.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:

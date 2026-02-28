@@ -1,18 +1,3 @@
-# ==============================================================================
-# ArgoCD Application: Backstage Developer Portal
-# ==============================================================================
-#
-# This manifest tells ArgoCD to watch the base-apps/backstage/ directory
-# in the kubernetes repo and automatically sync its contents to the cluster.
-#
-# HOW IT WORKS:
-# 1. ArgoCD's Master App auto-discovers this file in base-apps/
-# 2. ArgoCD creates an Application that watches base-apps/backstage/
-# 3. Any YAML changes in that directory are auto-applied to the cluster
-# 4. Prune: removes resources deleted from Git. SelfHeal: reverts manual changes.
-# 5. CreateNamespace: creates the backstage namespace if it doesn't exist yet
-# ==============================================================================
-
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
