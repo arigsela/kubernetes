@@ -1,22 +1,3 @@
-# ==============================================================================
-# Backstage ConfigMap — Non-Sensitive Configuration
-# ==============================================================================
-#
-# Stores environment variables that are NOT secrets. These are injected into
-# the Backstage pod via envFrom.configMapRef in the Deployment.
-#
-# WHY A CONFIGMAP (NOT A SECRET):
-# These values are not sensitive — they're just infrastructure addresses.
-# Putting them in a ConfigMap makes them easy to view and debug without
-# needing Vault access. Sensitive values (passwords, tokens) go in the
-# ExternalSecret → backstage-secrets Secret instead.
-#
-# POSTGRES_HOST uses cross-namespace DNS:
-# <service-name>.<namespace>.svc.cluster.local
-# This lets the Backstage pod in the 'backstage' namespace reach the
-# PostgreSQL service running in the 'postgresql' namespace.
-# ==============================================================================
-
 apiVersion: v1
 kind: ConfigMap
 metadata:
