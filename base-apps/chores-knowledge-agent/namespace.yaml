@@ -1,0 +1,16 @@
+# ==============================================================================
+# Namespace for chores-knowledge-agent
+# ==============================================================================
+# Creates a dedicated Kubernetes namespace for this agent project.
+# ArgoCD's CreateNamespace=true sync option also creates the namespace,
+# but having an explicit manifest lets us attach labels for identification.
+# ==============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chores-knowledge-agent
+  labels:
+    # The 'app' label ties all resources in this namespace to the project
+    app: chores-knowledge-agent
+    # The 'team' label identifies which team owns this namespace
+    team: devops
