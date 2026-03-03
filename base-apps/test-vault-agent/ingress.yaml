@@ -1,0 +1,76 @@
+# ==============================================================================
+# Ingress for test-vault-agent
+# ==============================================================================
+# Exposes the orchestrator to the internet via Nginx Ingress Controller.
+# Only the orchestrator is exposed — sub-agents are internal-only.
+#
+# Features:
+#   - TLS via cert-manager (Let's Encrypt production certificates)
+#   - IP whitelist for security (only your IPs can reach it)
+#   - Extended timeouts for AI agent queries (300s — LLM calls take time)
+#   - Rate limiting to prevent abuse
+#
+# This file is only generated when a domain is provided.
+# If no domain is configured, the orchestrator is only reachable within
+# the cluster (via port-forward or internal service DNS).
+#
+# DNS: Create an A record or CNAME pointing test-vault-agent.arigsela.com
+#      to your cluster's ingress controller external IP.
+# ==============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: test-vault-agent-orchestrator
+  namespace: oncall-crewai
+  annotations:
+    # ---- TLS/SSL Configuration ----
+    # Use the Let's Encrypt production issuer for real TLS certificates
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Force all HTTP traffic to redirect to HTTPS
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # ---- Backend Protocol ----
+    # The orchestrator serves plain HTTP (TLS terminates at the ingress)
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+    # ---- Rate Limiting ----
+    # 50 requests per second per IP — generous for API usage
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    # Max 20 concurrent connections per IP
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+
+    # ---- IP Whitelist ----
+    # SECURITY: Only allow traffic from known IPs
+    # Update these to your own IP addresses
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32,170.85.130.202/32"
+
+    # ---- Timeouts ----
+    # AI agent queries can take 30-120+ seconds (LLM inference + tool calls)
+    # Set generous timeouts to avoid premature 504 Gateway Timeout errors
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+
+  labels:
+    app: test-vault-agent-orchestrator
+spec:
+  # Use the nginx ingress class (installed cluster-wide)
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - test-vault-agent.arigsela.com
+      # cert-manager creates this Secret automatically with the TLS cert
+      secretName: test-vault-agent-tls
+  rules:
+    - host: test-vault-agent.arigsela.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                # Route to the orchestrator's ClusterIP Service
+                name: test-vault-agent-orchestrator
+                port:
+                  number: 80

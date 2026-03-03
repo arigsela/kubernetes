@@ -1,0 +1,160 @@
+# ==============================================================================
+# Sub-Agent Deployment, ServiceAccount, and Service
+# ==============================================================================
+# The sub-agent (Test Agent) is an independent AI agent
+# that handles domain-specific queries. It receives tasks from the orchestrator
+# via the A2A (Agent-to-Agent) protocol and returns structured results.
+#
+# Architecture:
+#   Orchestrator --A2A--> Service (port 8080) -> Deployment
+#
+# The sub-agent is NOT exposed to the internet — only reachable within
+# the cluster via its ClusterIP Service.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Deployment
+# ------------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-vault-agent-test-agent
+  namespace: oncall-crewai
+  labels:
+    app: test-vault-agent-test-agent
+    version: v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-vault-agent-test-agent
+  template:
+    metadata:
+      labels:
+        app: test-vault-agent-test-agent
+        version: v1
+    spec:
+      # Dedicated ServiceAccount for this sub-agent
+      serviceAccountName: test-vault-agent-test-agent
+      # Disable automatic SA token mount — this pod doesn't need K8s API access
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ecr-registry
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsGroup: 1000
+
+      containers:
+        - name: agent
+          # ECR image — built by deploy-to-ecr.sh, pinned to scaffolded version
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/test-vault-agent-test-agent:1.0.0
+          imagePullPolicy: Always
+
+          # Container-level security hardening
+          securityContext:
+            allowPrivilegeEscalation: false
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # Non-sensitive config from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: test-agent-config
+
+          # Sensitive values from Vault via ExternalSecrets
+          env:
+            - name: HOME
+              value: /tmp
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: test-agent-secrets
+                  key: anthropic-api-key
+            - name: API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: test-agent-secrets
+                  key: api-keys
+            # OpenAI API key for embeddings (CrewAI RAG requires an embeddings provider)
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: test-agent-secrets
+                  key: openai-api-key
+
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+      terminationGracePeriodSeconds: 30
+
+---
+# ------------------------------------------------------------------------------
+# ServiceAccount
+# ------------------------------------------------------------------------------
+# The sub-agent doesn't need K8s API access. The SA exists for:
+# 1. Vault authentication (SecretStore references it)
+# 2. Security isolation (pods shouldn't share the default SA)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test-vault-agent-test-agent
+  namespace: oncall-crewai
+  labels:
+    app: test-vault-agent-test-agent
+    component: rbac
+automountServiceAccountToken: false
+
+---
+# ------------------------------------------------------------------------------
+# Service
+# ------------------------------------------------------------------------------
+# ClusterIP Service for internal A2A communication.
+# The orchestrator connects to this service using the DNS name:
+#   http://test-vault-agent-test-agent.oncall-crewai.svc:8080
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-vault-agent-test-agent
+  namespace: oncall-crewai
+  labels:
+    app: test-vault-agent-test-agent
+spec:
+  type: ClusterIP
+  selector:
+    app: test-vault-agent-test-agent
+  ports:
+    - name: http
+      # Sub-agent service listens on the configured port directly
+      # (unlike the orchestrator which maps 80 -> containerPort)
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
