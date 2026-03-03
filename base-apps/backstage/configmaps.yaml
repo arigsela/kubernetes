@@ -6,3 +6,7 @@ metadata:
 data:
   POSTGRES_HOST: "postgresql.postgresql.svc.cluster.local"
   POSTGRES_PORT: "5432"
+  # AWS region for ECR scaffolder actions (aws:ecr:create, aws:ecr:build-push)
+  AWS_DEFAULT_REGION: "us-east-2"
+  # Vault address for the vault:setup scaffolder action (in-cluster Vault)
+  VAULT_ADDR: "http://vault.vault.svc.cluster.local:8200"
