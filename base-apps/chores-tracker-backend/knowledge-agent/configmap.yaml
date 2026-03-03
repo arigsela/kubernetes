@@ -1,0 +1,29 @@
+# ==============================================================================
+# Sub-Agent ConfigMap (Chores Tracker Backend Knowledge specialist)
+# ==============================================================================
+# Non-sensitive configuration for the sub-agent container.
+# These values are injected as environment variables via 'envFrom'.
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: knowledge-agent-config
+  namespace: oncall-crewai
+  labels:
+    app: chores-tracker-backend-knowledge-agent
+data:
+  # Logging level: DEBUG, INFO, WARNING, ERROR
+  AGENT_LOG_LEVEL: "INFO"
+  # Bind to all interfaces (required inside a container)
+  AGENT_HOST: "0.0.0.0"
+  # Must match the containerPort in deployment.yaml
+  AGENT_PORT: "8080"
+  # URL advertised in the A2A agent card (/.well-known/agent.json)
+  # This must be reachable by the orchestrator — using K8s internal DNS
+  AGENT_URL: "http://chores-tracker-backend-knowledge-agent.oncall-crewai.svc:8080"
+  # --- Knowledge/RAG Configuration ---
+  # Directory containing knowledge files (.txt, .json, .csv, .pdf) for RAG
+  KNOWLEDGE_DIR: "config/knowledge"
+  # Embedder provider and model for vector embeddings (CrewAI RAG)
+  EMBEDDER_PROVIDER: "openai"
+  EMBEDDER_MODEL: "text-embedding-3-small"
