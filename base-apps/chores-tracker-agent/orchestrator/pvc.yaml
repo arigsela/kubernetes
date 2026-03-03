@@ -1,0 +1,29 @@
+# ==============================================================================
+# Orchestrator PersistentVolumeClaim
+# ==============================================================================
+# Provides persistent storage for the orchestrator across pod restarts.
+# Used for:
+#   - CrewAI memory/knowledge embeddings cache
+#   - Session data (if session persistence is enabled)
+#   - Any file-based state the orchestrator needs to persist
+#
+# The k3s default StorageClass (local-path) provisions storage on the
+# node where the pod runs. For multi-node clusters, consider a network-
+# attached storage class (e.g., Longhorn, EFS).
+# ==============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: orchestrator-data
+  namespace: oncall-crewai
+  labels:
+    app: chores-tracker-agent-orchestrator
+spec:
+  # ReadWriteOnce: only one pod can mount this volume at a time
+  # Safe for single-replica deployments
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # 1Gi is generous for session DBs and embedding caches
+      storage: 1Gi
