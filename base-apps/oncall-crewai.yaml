@@ -9,6 +9,11 @@ spec:
     repoURL: https://github.com/arigsela/kubernetes
     targetRevision: main
     path: base-apps/oncall-crewai
+    # Enable recursive directory scanning so ArgoCD picks up manifests
+    # in subdirectories (e.g. dnd-agent/, future scaffolded agents).
+    # Without this, only top-level YAML files are processed.
+    directory:
+      recurse: true
   destination:
     server: https://kubernetes.default.svc
     namespace: oncall-crewai
