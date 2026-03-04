@@ -14,7 +14,7 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: orchestrator-data
+  name: dnd-agent-orchestrator-data
   namespace: oncall-crewai
   labels:
     app: dnd-agent-orchestrator
