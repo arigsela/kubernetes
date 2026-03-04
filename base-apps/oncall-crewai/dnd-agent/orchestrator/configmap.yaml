@@ -15,7 +15,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: orchestrator-config
+  name: dnd-agent-orchestrator-config
   namespace: oncall-crewai
   labels:
     app: dnd-agent-orchestrator

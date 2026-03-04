@@ -70,7 +70,7 @@ spec:
           # Load non-sensitive config from ConfigMap (log level, URLs, ports)
           envFrom:
             - configMapRef:
-                name: orchestrator-config
+                name: dnd-agent-orchestrator-config
 
           # Sensitive values injected from Vault via ExternalSecrets
           env:
@@ -127,7 +127,7 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: orchestrator-data
+            claimName: dnd-agent-orchestrator-data
 
       # Allow 30 seconds for graceful shutdown (finish in-flight requests)
       terminationGracePeriodSeconds: 30
