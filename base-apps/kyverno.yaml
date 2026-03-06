@@ -14,6 +14,9 @@ spec:
       values: |
         admissionController:
           replicas: 1
+          container:
+            extraArgs:
+              forceFailurePolicyIgnore: "true"
           nodeSelector:
             node.kubernetes.io/workload: infrastructure
           tolerations:
@@ -45,7 +48,6 @@ spec:
             effect: NoSchedule
         config:
           webhooks:
-          - failurePolicy: Ignore
             namespaceSelector:
               matchExpressions:
               - key: kubernetes.io/metadata.name
