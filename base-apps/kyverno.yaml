@@ -1,0 +1,66 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://kyverno.github.io/kyverno/
+    chart: kyverno
+    targetRevision: 3.7.1
+    helm:
+      releaseName: kyverno
+      values: |
+        admissionController:
+          replicas: 1
+          nodeSelector:
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+        backgroundController:
+          nodeSelector:
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+        cleanupController:
+          nodeSelector:
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+        reportsController:
+          nodeSelector:
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+        webhooksCleanup:
+          nodeSelector:
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+        config:
+          webhooks:
+          - failurePolicy: Ignore
+            namespaceSelector:
+              matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: NotIn
+                values:
+                - kube-system
+                - argo-cd
+                - kyverno
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
