@@ -21,6 +21,15 @@ This directory contains ArgoCD Application manifests and their corresponding Kub
 - **ecr-auth** - ECR credential synchronization CronJob
 - **whoami-test** - Ingress testing application
 
+### Policy Engine (Kyverno)
+- **kyverno** - Kubernetes policy engine (Helm chart v3.7.1) for validating, mutating, and generating resources
+- **kyverno-policies** - Custom ClusterPolicies in Audit mode:
+  - `require-labels` - Requires `app.kubernetes.io/name` on Deployments/StatefulSets
+  - `disallow-privileged-containers` - Audits privileged containers
+  - `require-resource-limits` - Requires CPU/memory limits on all containers
+  - `disallow-default-namespace` - Audits workloads in the default namespace
+  - `disallow-latest-tag` - Audits containers using `:latest` or untagged images
+
 ### Service Mesh (Istio Ambient)
 - **istio-gateway-api** - Kubernetes Gateway API CRDs (sync-wave: -3)
 - **istio-base** - Istio CRDs and cluster resources (sync-wave: -2)
@@ -229,6 +238,34 @@ metadata:
 - **L4 Metrics**: TCP connections, bytes sent/received (from ztunnel)
 - **L7 Metrics**: HTTP request rate, latency, success rate (from waypoint)
 
+## Kyverno Policy Management
+
+### Viewing Policy Reports
+```bash
+# View policy reports across all namespaces
+kubectl get policyreports -A
+
+# View cluster-wide policy reports
+kubectl get clusterpolicyreports
+
+# Detailed report for a specific namespace
+kubectl describe policyreport -n <namespace>
+```
+
+### Adding a New Policy
+1. Create a `ClusterPolicy` YAML file in `base-apps/kyverno-policies/`
+2. Set `validationFailureAction: Audit` initially
+3. Exclude system namespaces (`kube-system`, `argo-cd`, `kyverno`)
+4. Commit and push — ArgoCD will auto-deploy the policy
+
+### Moving a Policy from Audit to Enforce
+1. Edit the policy file in `base-apps/kyverno-policies/`
+2. Change `validationFailureAction: Audit` to `validationFailureAction: Enforce`
+3. Commit and push — the policy will now block non-compliant resources
+
+### Namespace Exclusions
+All policies exclude `kube-system`, `argo-cd`, and `kyverno` namespaces to avoid interfering with critical system components. The Kyverno webhook is also configured with `failurePolicy: Ignore` to prevent cluster disruption.
+
 ## Troubleshooting
 
 ### Application Not Deploying
@@ -248,4 +285,4 @@ metadata:
 
 ---
 
-*Last Updated: 2025-12-23*
+*Last Updated: 2026-03-06*
