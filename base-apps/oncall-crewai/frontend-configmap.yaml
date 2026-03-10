@@ -6,5 +6,8 @@ metadata:
   labels:
     app: crewai-frontend
 data:
-  # Internal service DNS for the orchestrator
+  # Internal service DNS for the orchestrator (fallback for single-orchestrator mode)
   ORCHESTRATOR_URL: "http://crewai-orchestrator.oncall-crewai.svc:80"
+  # Multi-orchestrator registry: JSON array of {name, url, displayName?, description?}
+  # Frontend auto-discovers all orchestrators and lets users switch between them
+  ORCHESTRATOR_REGISTRY: '[{"name":"oncall-crewai","url":"http://crewai-orchestrator.oncall-crewai.svc:80","displayName":"OnCall AI Assistant","description":"Kubernetes on-call diagnostics agent"},{"name":"dnd-agent","url":"http://dnd-agent-orchestrator.oncall-crewai.svc:80","displayName":"DnD Agent","description":"D&D character creation agent"}]'
