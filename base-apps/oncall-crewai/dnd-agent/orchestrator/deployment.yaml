@@ -161,6 +161,10 @@ metadata:
   namespace: oncall-crewai
   labels:
     app: dnd-agent-orchestrator
+    # Discovery labels — the shared frontend queries for these to find all orchestrators:
+    #   kubectl get svc -l platform.ai/component=orchestrator
+    platform.ai/component: orchestrator
+    platform.ai/display-name: dnd-agent
 spec:
   type: ClusterIP
   selector:

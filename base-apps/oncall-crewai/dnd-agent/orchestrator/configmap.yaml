@@ -30,6 +30,10 @@ data:
   # specific domain (e.g. "https://") to prevent
   # unauthorized cross-origin requests.
   CORS_ORIGINS: "*"
+  # Display name for the shared frontend UI (auto-discovery)
+  ORCHESTRATOR_DISPLAY_NAME: "dnd-agent"
+  # Description shown in frontend tooltips (auto-discovery)
+  ORCHESTRATOR_DESCRIPTION: "AI agent with deep knowledge of dungeons and dragons edition 5e"
   # Internal service DNS name for the sub-agent
   # Format: http://<service-name>.<namespace>.svc:<port>
   SUB_AGENT_URL: "http://dnd-agent-dnd-character-agent.oncall-crewai.svc:8080"
