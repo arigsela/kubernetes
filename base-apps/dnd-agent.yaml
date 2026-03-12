@@ -1,17 +1,19 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: oncall-crewai
+  name: dnd-agent
   namespace: argo-cd
 spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
     targetRevision: main
-    path: base-apps/oncall-crewai
+    path: base-apps/dnd-agent
+    directory:
+      recurse: true
   destination:
     server: https://kubernetes.default.svc
-    namespace: oncall-crewai
+    namespace: dnd-agent
   syncPolicy:
     automated:
       prune: true

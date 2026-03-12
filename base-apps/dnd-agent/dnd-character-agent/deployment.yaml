@@ -19,7 +19,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dnd-agent-dnd-character-agent
-  namespace: oncall-crewai
+  namespace: dnd-agent
   labels:
     app: dnd-agent-dnd-character-agent
     version: v1
@@ -121,7 +121,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: dnd-agent-dnd-character-agent
-  namespace: oncall-crewai
+  namespace: dnd-agent
   labels:
     app: dnd-agent-dnd-character-agent
     component: rbac
@@ -133,12 +133,12 @@ automountServiceAccountToken: false
 # ------------------------------------------------------------------------------
 # ClusterIP Service for internal A2A communication.
 # The orchestrator connects to this service using the DNS name:
-#   http://dnd-agent-dnd-character-agent.oncall-crewai.svc:8080
+#   http://dnd-agent-dnd-character-agent.dnd-agent.svc:8080
 apiVersion: v1
 kind: Service
 metadata:
   name: dnd-agent-dnd-character-agent
-  namespace: oncall-crewai
+  namespace: dnd-agent
   labels:
     app: dnd-agent-dnd-character-agent
 spec:
