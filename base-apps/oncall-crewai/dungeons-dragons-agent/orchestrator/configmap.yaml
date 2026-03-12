@@ -1,0 +1,39 @@
+# ==============================================================================
+# Orchestrator ConfigMap
+# ==============================================================================
+# Non-sensitive configuration for the orchestrator container.
+# These values are injected as environment variables via 'envFrom'.
+#
+# ConfigMaps are the right place for:
+#   - Service URLs (internal DNS names)
+#   - Ports and host bindings
+#   - Log levels and feature flags
+#   - CORS configuration
+#
+# Secrets (API keys, tokens) go in ExternalSecrets, NOT here.
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dungeons-dragons-agent-orchestrator-config
+  namespace: oncall-crewai
+  labels:
+    app: dungeons-dragons-agent-orchestrator
+data:
+  # Logging level: DEBUG, INFO, WARNING, ERROR
+  AGENT_LOG_LEVEL: "INFO"
+  # Bind to all interfaces (required inside a container)
+  ORCHESTRATOR_HOST: "0.0.0.0"
+  # Must match the containerPort in deployment.yaml
+  ORCHESTRATOR_PORT: "8000"
+  # CORS: allow all origins by default. For production, restrict to your
+  # specific domain (e.g. "https://") to prevent
+  # unauthorized cross-origin requests.
+  CORS_ORIGINS: "*"
+  # Display name for the shared frontend UI (auto-discovery)
+  ORCHESTRATOR_DISPLAY_NAME: "dungeons-dragons-agent"
+  # Description shown in frontend tooltips (auto-discovery)
+  ORCHESTRATOR_DESCRIPTION: "Dungeons And Dragons agent that will handle knowledge related to dungeons and dragons 5e"
+  # Internal service DNS name for the sub-agent
+  # Format: http://<service-name>.<namespace>.svc:<port>
+  SUB_AGENT_URL: "http://dungeons-dragons-agent-character-creation-agent.oncall-crewai.svc:8080"
