@@ -87,11 +87,6 @@ spec:
                 secretKeyRef:
                   name: dungeons-dragons-agent-orchestrator-secrets
                   key: api-keys
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: dungeons-dragons-agent-orchestrator-secrets
-                  key: jwt-secret
 
           # Mount persistent storage for session data / CrewAI memory
           volumeMounts:
