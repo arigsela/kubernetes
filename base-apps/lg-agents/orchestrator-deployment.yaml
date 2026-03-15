@@ -1,0 +1,118 @@
+# ServiceAccount (defined in rbac.yaml, referenced here)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lg-agents-orchestrator
+  namespace: lg-agents
+  labels:
+    app: lg-agents-orchestrator
+spec:
+  type: ClusterIP
+  selector:
+    app: lg-agents-orchestrator
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+      protocol: TCP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lg-agents-orchestrator
+  namespace: lg-agents
+  labels:
+    app: lg-agents-orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lg-agents-orchestrator
+  template:
+    metadata:
+      labels:
+        app: lg-agents-orchestrator
+        version: v1
+    spec:
+      serviceAccountName: lg-agents-orchestrator
+      imagePullSecrets:
+        - name: ecr-registry
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsGroup: 1000
+
+      containers:
+        - name: orchestrator
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/lg-agents-orchestrator:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+          envFrom:
+            - configMapRef:
+                name: orchestrator-config
+
+          env:
+            - name: HOME
+              value: /tmp
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: orchestrator-secrets
+                  key: anthropic-api-key
+            - name: API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: orchestrator-secrets
+                  key: api-keys
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: orchestrator-secrets
+                  key: jwt-secret
+
+          volumeMounts:
+            - name: data
+              mountPath: /data
+
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          securityContext:
+            allowPrivilegeEscalation: false
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: orchestrator-data
+      terminationGracePeriodSeconds: 30

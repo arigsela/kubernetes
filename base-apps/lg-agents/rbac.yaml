@@ -1,0 +1,47 @@
+# ServiceAccount for the orchestrator pod
+# Used for Vault K8s auth and K8s API access
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lg-agents-orchestrator
+  namespace: lg-agents
+  labels:
+    app: lg-agents-orchestrator
+    component: rbac
+
+---
+# ClusterRole: read-only K8s access for the K8s agent tools
+# The LangGraph orchestrator contains a K8s specialist agent that needs
+# to list pods, read logs, describe deployments, etc.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: lg-agents-k8s-reader
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/status", "events", "services", "namespaces", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Bind the ClusterRole to the orchestrator ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: lg-agents-k8s-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: lg-agents-k8s-reader
+subjects:
+  - kind: ServiceAccount
+    name: lg-agents-orchestrator
+    namespace: lg-agents
