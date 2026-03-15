@@ -48,7 +48,7 @@ spec:
 
       containers:
         - name: orchestrator
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/lg-agents-orchestrator:latest
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/lg-agents-orchestrator:1.0.0
           imagePullPolicy: Always
           ports:
             - name: http
