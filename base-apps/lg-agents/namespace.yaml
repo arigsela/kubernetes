@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lg-agents
+  labels:
+    app: lg-agents
+    team: devops
+    framework: langgraph

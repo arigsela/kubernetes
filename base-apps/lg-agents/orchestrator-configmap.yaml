@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orchestrator-config
+  namespace: lg-agents
+  labels:
+    app: lg-agents-orchestrator
+data:
+  PROJECT_NAME: "lg-agents-orchestrator"
+  ANTHROPIC_MODEL: "claude-sonnet-4-6"
+  LOG_LEVEL: "INFO"
+  CHECKPOINT_DB_PATH: "/data/checkpoints.db"
+  USERS_DB_PATH: "/data/users.db"
+  SESSION_META_DB_PATH: "/data/session_meta.db"
+  CORS_ORIGINS: "*"
