@@ -26,6 +26,6 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: langflow-ide-langflow-service-frontend
+            name: langflow-service
             port:
               number: 8080
