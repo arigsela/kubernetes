@@ -28,10 +28,38 @@ spec:
           requests:
             cpu: "1000m"
             memory: "2Gi"
+          limits:
+            cpu: "4000m"
+            memory: "8Gi"
         securityContext:
           runAsUser: 1000
           runAsNonRoot: true
           readOnlyRootFilesystem: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 7860
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 7860
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 3
+        volumeMounts:
+          - name: tmp
+            mountPath: /tmp
+          - name: langflow-cache
+            mountPath: /home/user/.langflow
+        volumes:
+          - name: tmp
+            emptyDir: {}
+          - name: langflow-cache
+            emptyDir:
+              sizeLimit: 1Gi
         nodeSelector:
           node.kubernetes.io/workload: application
   destination:
