@@ -161,7 +161,7 @@ Inline in `langflow-ide.yaml` under `helm.values`:
   - `password.valueFrom.secretKeyRef` -> `langflow-db-secrets` / `db-password`
 - ✅ Disable SQLite (`langflow.backend.sqlite.enabled: false`)
 - ✅ Set backend resources (requests: 0.5 CPU, 1Gi memory)
-- ⬜ Configure security context (runAsUser: 1000, readOnlyRootFilesystem: true) — deferred to post-deployment tuning
+- ✅ Configure security context (runAsUser: 1000, readOnlyRootFilesystem: true)
 
 ### Subphase 2.2: Frontend Configuration
 - ✅ Enable frontend (`langflow.frontend.enabled: true`)
