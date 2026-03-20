@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: langflow-runtime
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    chart: langflow-runtime
+    repoURL: https://langflow-ai.github.io/langflow-helm-charts
+    targetRevision: 0.1.1
+    helm:
+      releaseName: langflow-runtime
+      values: |
+        replicaCount: 1
+        env:
+          - name: LANGFLOW_DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: langflow-db-secrets
+                key: database-url
+          - name: ANTHROPIC_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: langflow-api-secrets
+                key: anthropic-api-key
+        resources:
+          requests:
+            cpu: "1000m"
+            memory: "2Gi"
+        securityContext:
+          runAsUser: 1000
+          runAsNonRoot: true
+          readOnlyRootFilesystem: true
+        nodeSelector:
+          node.kubernetes.io/workload: application
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: langflow-runtime
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

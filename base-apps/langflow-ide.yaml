@@ -1,0 +1,73 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: langflow-ide
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    chart: langflow-ide
+    repoURL: https://langflow-ai.github.io/langflow-helm-charts
+    targetRevision: 0.1.1
+    helm:
+      releaseName: langflow-ide
+      values: |
+        postgresql:
+          enabled: false
+        langflow:
+          backend:
+            sqlite:
+              enabled: false
+            externalDatabase:
+              enabled: true
+              driver:
+                value: "postgresql"
+              host:
+                valueFrom:
+                  secretKeyRef:
+                    name: langflow-db-secrets
+                    key: db-host
+              port:
+                value: "5432"
+              database:
+                valueFrom:
+                  secretKeyRef:
+                    name: langflow-db-secrets
+                    key: db-name
+              user:
+                valueFrom:
+                  secretKeyRef:
+                    name: langflow-db-secrets
+                    key: db-user
+              password:
+                valueFrom:
+                  secretKeyRef:
+                    name: langflow-db-secrets
+                    key: db-password
+            resources:
+              requests:
+                cpu: "500m"
+                memory: "1Gi"
+            extraEnv:
+              - name: ANTHROPIC_API_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: langflow-api-secrets
+                    key: anthropic-api-key
+          frontend:
+            enabled: true
+            resources:
+              requests:
+                cpu: "300m"
+                memory: "512Mi"
+        nodeSelector:
+          node.kubernetes.io/workload: application
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: langflow-ide
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
