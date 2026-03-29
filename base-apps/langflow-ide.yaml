@@ -82,6 +82,11 @@ spec:
                   secretKeyRef:
                     name: langflow-api-secrets
                     key: anthropic-api-key
+              - name: LANGFLOW_SECRET_KEY
+                valueFrom:
+                  secretKeyRef:
+                    name: langflow-api-secrets
+                    key: langflow-secret-key
           frontend:
             enabled: true
             resources:
