@@ -54,12 +54,16 @@ spec:
             mountPath: /tmp
           - name: langflow-cache
             mountPath: /home/user/.langflow
+          - name: langflow-flows
+            mountPath: /app/flows
         volumes:
           - name: tmp
             emptyDir: {}
           - name: langflow-cache
             emptyDir:
               sizeLimit: 1Gi
+          - name: langflow-flows
+            emptyDir: {}
         nodeSelector:
           node.kubernetes.io/workload: application
   destination:
