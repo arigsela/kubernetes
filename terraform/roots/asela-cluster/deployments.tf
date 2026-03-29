@@ -30,13 +30,13 @@
 #         automount_service_account_token = false
 #         enable_service_links = false
 #         scheduler_name = "default-scheduler"
-        
+
 #         container {
 #           image = "nginx"
 #           name  = "mysite"
 #           image_pull_policy = "Always"
 #           termination_message_policy = "File"
-          
+
 #           port {
 #             container_port = "80"
 #             protocol = "TCP"

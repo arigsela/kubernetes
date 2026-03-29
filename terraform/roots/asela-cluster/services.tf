@@ -4,7 +4,7 @@
 #   metadata {
 #     name = "mysite"
 #     namespace = "nginx"
-    
+
 #     labels = {
 #         name = "mysite"
 #     }
@@ -14,7 +14,7 @@
 #       app = kubernetes_deployment.mysite.metadata.0.labels.app
 #     }
 #     session_affinity = "None"
-    
+
 #     port {
 #       protocol = "TCP"
 #       name = "http"
