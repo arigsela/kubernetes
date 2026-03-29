@@ -1,8 +1,8 @@
 module "argocd" {
-  source = "../../modules/argocd"
-  enabled = true
+  source    = "../../modules/argocd"
+  enabled   = true
   namespace = "argo-cd"
-  
+
   # Configure ArgoCD with node placement and Crossplane resource exclusions
   settings = {
     # Global node placement - applies to all ArgoCD components
@@ -103,8 +103,5 @@ module "argocd" {
   }
 }
 
-module "argocd_applicationsets" {
-  source = "../../modules/application-sets"
-
-  depends_on = [module.argocd]
-}
+# Note: argocd_applicationsets (master-app) is no longer managed by Terraform.
+# The master-app ArgoCD Application is managed directly via base-apps/ GitOps.
