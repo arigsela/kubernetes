@@ -1,8 +1,9 @@
 # Atlantis + Infracost Implementation Plan
 
-**Status:** Phase 1 Complete (1/7 phases)
+**Status:** Phase 2 Complete (2/7 phases)
 **Last Updated:** 2026-03-29
 **Phase 1 Completed:** 2026-03-29
+**Phase 2 Completed:** 2026-03-29
 
 ## Overview
 
@@ -159,55 +160,35 @@ kubernetes/
 
 ### Phase 2: Vault Configuration (Manual Steps)
 
-#### Task 2.1: Create Vault Kubernetes Auth Role for Atlantis
-**Steps:**
-1. Exec into Vault pod:
-   ```bash
-   kubectl exec -it vault-0 -n vault -- sh
-   ```
-2. Create Kubernetes auth role:
-   ```bash
-   vault write auth/kubernetes/role/atlantis \
-     bound_service_account_names=default \
-     bound_service_account_namespaces=atlantis \
-     policies=atlantis-policy \
-     ttl=1h
-   ```
-3. Create Vault policy:
-   ```bash
-   vault policy write atlantis-policy - <<EOF
-   path "k8s-secrets/data/atlantis/*" {
-     capabilities = ["read"]
-   }
-   EOF
-   ```
+#### Task 2.1: Create Vault Kubernetes Auth Role for Atlantis ✅
+**Completed:** 2026-03-29
+- Vault policy `atlantis` created: `path "k8s-secrets/data/atlantis/*" { capabilities = ["read"] }`
+- Kubernetes auth role `atlantis` created: bound to `default` SA in `atlantis` namespace, TTL 1h
 
-#### Task 2.2: Store Secrets in Vault
-**Steps:**
-1. Store GitHub PAT (generate at github.com/settings/tokens with `repo` scope):
-   ```bash
-   vault kv put k8s-secrets/atlantis/github token=ghp_XXXXXXXXXXXXX
-   ```
-2. Generate and store webhook secret:
-   ```bash
-   vault kv put k8s-secrets/atlantis/webhook secret=$(openssl rand -hex 20)
-   ```
-3. Store AWS credentials (from Phase 1 terraform output):
-   ```bash
-   vault kv put k8s-secrets/atlantis/aws \
-     access-key=AKIAXXXXXXXXX \
-     secret-key=XXXXXXXXXXXXXXXXXXXXXXXX
-   ```
-4. Store Infracost API key (register at infracost.io/docs, run `infracost auth login`):
-   ```bash
-   vault kv put k8s-secrets/atlantis/infracost api-key=ico-XXXXXXXXXXXXX
-   ```
+#### Task 2.2: Store Secrets in Vault ✅ (placeholders pending user replacement)
+**Completed:** 2026-03-29
+
+All 4 secret paths created at `k8s-secrets/atlantis/`:
+
+| Path | Key(s) | Status |
+|------|--------|--------|
+| `k8s-secrets/atlantis/github` | `token` | ⚠️ Replace with real GitHub PAT (`repo` + `read:org` scopes) |
+| `k8s-secrets/atlantis/webhook` | `secret` | ✅ Set: `66a42f5f31794b56b973c1f28470afbb` (used for GitHub webhook config in Phase 5) |
+| `k8s-secrets/atlantis/aws` | `access-key`, `secret-key` | ⚠️ access-key set (`AKIA4NFDJMBLPRFQZ4HK`); replace `secret-key` via `vault kv patch` |
+| `k8s-secrets/atlantis/infracost` | `api-key` | ⚠️ Replace with real key from infracost.io |
+
+To replace placeholders:
+```bash
+vault kv patch k8s-secrets/atlantis/github token="<your-PAT>"
+vault kv patch k8s-secrets/atlantis/aws secret-key="<from: terraform state pull | jq ...>"
+vault kv patch k8s-secrets/atlantis/infracost api-key="<your-key>"
+```
 
 **Testing:**
-- [ ] `vault kv get k8s-secrets/atlantis/github` returns stored token
-- [ ] `vault kv get k8s-secrets/atlantis/webhook` returns stored secret
-- [ ] `vault kv get k8s-secrets/atlantis/aws` returns both keys
-- [ ] `vault kv get k8s-secrets/atlantis/infracost` returns API key
+- [x] `vault kv list k8s-secrets/atlantis/` — all 4 keys present
+- [x] `vault read auth/kubernetes/role/atlantis` — role exists with correct bindings
+- [x] `vault policy read atlantis` — policy grants read on atlantis/* path
+- [ ] Replace 3 placeholder values before Phase 3 deployment
 
 ---
 
