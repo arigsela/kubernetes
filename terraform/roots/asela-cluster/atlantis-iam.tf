@@ -34,6 +34,7 @@ resource "aws_iam_user" "atlantis" {
     Team        = "Platform"
     Description = "IAM user for Atlantis to run terraform plan/apply via PR workflow"
     CostCenter  = "Platform"
+    Owner       = "Platform-Engineering"
   }
 }
 
