@@ -4,7 +4,6 @@ terraform {
     bucket  = "asela-terraform-states"
     key     = "asela-cluster"
     region  = "us-east-2"
-    profile = "default"
     encrypt = true
   }
 
@@ -24,8 +23,7 @@ terraform {
 }
 
 provider "aws" {
-  region  = "us-east-2"
-  profile = "default"
+  region = "us-east-2"
 }
 
 provider "kubernetes" {
