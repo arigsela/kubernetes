@@ -38,6 +38,22 @@ spec:
             secretKeyRef:
               name: atlantis-env
               key: INFRACOST_API_KEY
+          - name: TF_VAR_host
+            secretKeyRef:
+              name: atlantis-env
+              key: TF_VAR_host
+          - name: TF_VAR_client_certificate
+            secretKeyRef:
+              name: atlantis-env
+              key: TF_VAR_client_certificate
+          - name: TF_VAR_client_key
+            secretKeyRef:
+              name: atlantis-env
+              key: TF_VAR_client_key
+          - name: TF_VAR_cluster_ca_certificate
+            secretKeyRef:
+              name: atlantis-env
+              key: TF_VAR_cluster_ca_certificate
 
         atlantisUrl: https://atlantis.arigsela.com
 
