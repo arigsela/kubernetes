@@ -31,6 +31,7 @@ resource "aws_iam_user" "atlantis" {
     ManagedBy   = "Terraform"
     Service     = "Platform-Engineering"
     Environment = "Prod"
+    Team        = "Platform"
     Description = "IAM user for Atlantis to run terraform plan/apply via PR workflow"
   }
 }
@@ -50,6 +51,7 @@ resource "aws_iam_policy" "atlantis" {
     ManagedBy   = "Terraform"
     Service     = "Platform-Engineering"
     Environment = "Prod"
+    Team        = "Platform"
   }
 
   policy = jsonencode({
