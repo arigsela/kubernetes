@@ -1,0 +1,82 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: atlantis
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://runatlantis.github.io/helm-charts
+    chart: atlantis
+    targetRevision: 6.1.0
+    helm:
+      releaseName: atlantis
+      values: |
+        image:
+          repository: infracost/infracost-atlantis
+          tag: atlantis0.40-infracost0.10
+
+        orgAllowlist: github.com/arigsela/*
+
+        github:
+          user: arigsela
+
+        # GitHub token + webhook secret injected from atlantis-vcs K8s secret
+        vcsSecretName: atlantis-vcs
+
+        # AWS creds + Infracost API key injected as env vars from atlantis-env K8s secret
+        environmentSecrets:
+          - name: atlantis-env
+
+        atlantisUrl: https://atlantis.arigsela.com
+
+        # Server-side repo config — allows custom workflows and sets apply requirements
+        repoConfig: |
+          repos:
+          - id: github.com/arigsela/kubernetes
+            allow_custom_workflows: true
+            allowed_overrides:
+              - workflow
+              - apply_requirements
+            apply_requirements:
+              - approved
+              - mergeable
+
+        service:
+          type: ClusterIP
+          port: 4141
+
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+
+        nodeSelector:
+          node.kubernetes.io/workload: infrastructure
+
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            effect: NoSchedule
+
+        # Persist Atlantis working directory across restarts
+        persistence:
+          enabled: true
+          storageClass: local-path
+          size: 5Gi
+
+        readinessProbe:
+          periodSeconds: 10
+          initialDelaySeconds: 10
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: atlantis
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

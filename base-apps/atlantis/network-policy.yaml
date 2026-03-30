@@ -1,0 +1,58 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: atlantis
+  namespace: atlantis
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: atlantis
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow nginx ingress controller to reach Atlantis
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nginx-ingress
+      ports:
+        - protocol: TCP
+          port: 4141
+
+  egress:
+    # DNS resolution
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Vault (in-cluster)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: vault
+      ports:
+        - protocol: TCP
+          port: 8200
+
+    # Kubernetes API server
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+
+    # GitHub API + AWS APIs (HTTPS)
+    - ports:
+        - protocol: TCP
+          port: 443
