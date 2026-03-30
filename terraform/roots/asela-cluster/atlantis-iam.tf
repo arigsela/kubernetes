@@ -30,6 +30,7 @@ resource "aws_iam_user" "atlantis" {
     Purpose     = "Atlantis-Terraform-Automation"
     ManagedBy   = "Terraform"
     Service     = "Platform-Engineering"
+    Environment = "Prod"
     Description = "IAM user for Atlantis to run terraform plan/apply via PR workflow"
   }
 }
@@ -44,6 +45,12 @@ resource "aws_iam_policy" "atlantis" {
   name        = "atlantis-terraform-policy"
   path        = "/system/"
   description = "Scoped policy for Atlantis to run terraform plan/apply"
+
+  tags = {
+    ManagedBy   = "Terraform"
+    Service     = "Platform-Engineering"
+    Environment = "Prod"
+  }
 
   policy = jsonencode({
     Version = "2012-10-17"
