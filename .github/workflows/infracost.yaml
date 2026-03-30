@@ -1,0 +1,53 @@
+name: Infracost
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "terraform/**"
+
+jobs:
+  infracost:
+    name: Cost Estimation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Infracost
+        uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Generate baseline (base branch)
+        run: |
+          git checkout ${{ github.event.pull_request.base.sha }}
+          infracost breakdown \
+            --path=terraform/roots/asela-cluster \
+            --terraform-init-flags="-backend=false" \
+            --format=json \
+            --out-file=/tmp/infracost-base.json
+
+      - name: Generate diff (PR branch)
+        run: |
+          git checkout ${{ github.event.pull_request.head.sha }}
+          infracost diff \
+            --path=terraform/roots/asela-cluster \
+            --terraform-init-flags="-backend=false" \
+            --compare-to=/tmp/infracost-base.json \
+            --format=json \
+            --out-file=/tmp/infracost.json
+
+      - name: Post PR comment
+        run: |
+          infracost comment github \
+            --path=/tmp/infracost.json \
+            --repo=$GITHUB_REPOSITORY \
+            --pull-request=${{ github.event.pull_request.number }} \
+            --behavior=update \
+            --github-token=${{ secrets.GITHUB_TOKEN }}
