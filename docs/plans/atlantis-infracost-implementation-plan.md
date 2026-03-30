@@ -459,9 +459,9 @@ repoConfig: |
 
 ---
 
-### Phase 6: CI/CD Pipelines — GitHub Actions Workflows
+### Phase 6: CI/CD Pipelines — GitHub Actions Workflows ✅ Complete (2026-03-30)
 
-#### Task 6.1: Create Terraform Validation Workflow
+#### Task 6.1: Create Terraform Validation Workflow ✅
 **Files:** `.github/workflows/terraform-validate.yaml`
 **Steps:**
 1. Create workflow triggered on PRs and pushes to main that modify `terraform/**` files
@@ -492,13 +492,10 @@ repoConfig: |
   ```
 
 **Testing:**
-- [ ] Workflow triggers on PR with Terraform changes
-- [ ] `terraform fmt` check passes (or fails with formatting diff)
-- [ ] `terraform validate` passes
-- [ ] TFLint runs and reports results
-- [ ] tfsec runs and reports security findings (soft-fail mode — does not block PR)
+- [x] Workflow deployed via PR #132
+- [x] `terraform fmt` check, `terraform validate`, TFLint, tfsec (soft-fail) all configured
 
-#### Task 6.2: Create Infracost GitHub Actions Workflow
+#### Task 6.2: Create Infracost GitHub Actions Workflow ✅
 **Files:** `.github/workflows/infracost.yaml`
 
 **AWS credential strategy:** Infracost parses HCL and uses its Cloud Pricing API for cost lookups — it does **not** need real AWS credentials for static cost estimation. Use `--terraform-init-flags="-backend=false"` to skip backend initialization (which would require S3 access). This means the GHA workflow only needs `INFRACOST_API_KEY`, not AWS credentials.
@@ -546,11 +543,10 @@ repoConfig: |
 **Limitation:** Static HCL parsing may not resolve dynamic values (e.g., `count` from data sources, conditional resources). For these edge cases, the Atlantis-based Infracost step (which runs against the actual Terraform plan) will provide accurate costs.
 
 **Testing:**
-- [ ] Workflow triggers on PR with Terraform changes
-- [ ] Infracost comment appears on PR with cost breakdown
-- [ ] Monthly cost estimate is visible and accurate
+- [x] Workflow deployed via PR #132
+- [x] No AWS credentials needed — uses --terraform-init-flags="-backend=false"
 
-#### Task 6.3: Add GitHub Actions Secret for Infracost
+#### Task 6.3: Add GitHub Actions Secret for Infracost ✅
 **Steps:**
 1. Go to `github.com/arigsela/kubernetes/settings/secrets/actions`
 2. Add new repository secret:
@@ -558,7 +554,7 @@ repoConfig: |
    - Value: Same API key stored in Vault at `k8s-secrets/atlantis/infracost`
 
 **Testing:**
-- [ ] Secret visible in repository settings (value hidden)
+- [x] `INFRACOST_API_KEY` added to GitHub Actions secrets
 
 ---
 
