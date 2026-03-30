@@ -192,8 +192,6 @@ resource "aws_iam_policy" "atlantis" {
           "kms:DisableKey",
           "kms:GetKeyPolicy",
           "kms:GetKeyRotationStatus",
-          "kms:ListKeys",
-          "kms:ListAliases",
           "kms:ListResourceTags",
           "kms:PutKeyPolicy",
           "kms:UpdateKeyDescription",
@@ -205,6 +203,16 @@ resource "aws_iam_policy" "atlantis" {
         Resource = [
           "arn:aws:kms:us-east-2:${data.aws_caller_identity.current.account_id}:key/*"
         ]
+      },
+      # kms:ListAliases and kms:ListKeys require * resource (AWS limitation)
+      {
+        Sid    = "KMSListActions"
+        Effect = "Allow"
+        Action = [
+          "kms:ListAliases",
+          "kms:ListKeys"
+        ]
+        Resource = ["*"]
       },
       {
         Sid    = "KMSAliasManagement"
