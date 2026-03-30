@@ -26,7 +26,18 @@ spec:
 
         # AWS creds + Infracost API key injected as env vars from atlantis-env K8s secret
         environmentSecrets:
-          - name: atlantis-env
+          - name: AWS_ACCESS_KEY_ID
+            secretKeyRef:
+              name: atlantis-env
+              key: AWS_ACCESS_KEY_ID
+          - name: AWS_SECRET_ACCESS_KEY
+            secretKeyRef:
+              name: atlantis-env
+              key: AWS_SECRET_ACCESS_KEY
+          - name: INFRACOST_API_KEY
+            secretKeyRef:
+              name: atlantis-env
+              key: INFRACOST_API_KEY
 
         atlantisUrl: https://atlantis.arigsela.com
 
@@ -62,10 +73,12 @@ spec:
             effect: NoSchedule
 
         # Persist Atlantis working directory across restarts
-        persistence:
+        volumeClaim:
           enabled: true
-          storageClass: local-path
-          size: 5Gi
+          dataStorage: 5Gi
+          storageClassName: local-path
+          accessModes:
+            - ReadWriteOnce
 
         readinessProbe:
           periodSeconds: 10
