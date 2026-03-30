@@ -172,23 +172,23 @@ All 4 secret paths created at `k8s-secrets/atlantis/`:
 
 | Path | Key(s) | Status |
 |------|--------|--------|
-| `k8s-secrets/atlantis/github` | `token` | ⚠️ Replace with real GitHub PAT (`repo` + `read:org` scopes) |
+| `k8s-secrets/atlantis/github` | `token` | ✅ Set |
 | `k8s-secrets/atlantis/webhook` | `secret` | ✅ Set: `66a42f5f31794b56b973c1f28470afbb` (used for GitHub webhook config in Phase 5) |
-| `k8s-secrets/atlantis/aws` | `access-key`, `secret-key` | ⚠️ access-key set (`AKIA4NFDJMBLPRFQZ4HK`); replace `secret-key` via `vault kv patch` |
-| `k8s-secrets/atlantis/infracost` | `api-key` | ⚠️ Replace with real key from infracost.io |
+| `k8s-secrets/atlantis/aws` | `access-key`, `secret-key` | ✅ Set |
+| `k8s-secrets/atlantis/infracost` | `api-key` | ✅ Set |
 
 To replace placeholders:
 ```bash
 vault kv patch k8s-secrets/atlantis/github token="<your-PAT>"
 vault kv patch k8s-secrets/atlantis/aws secret-key="<from: terraform state pull | jq ...>"
-vault kv patch k8s-secrets/atlantis/infracost api-key="<your-key>"
+vault kv patch k8s-secrets/atlantis/infracost api-key="<your-key>"  # ✅ Done
 ```
 
 **Testing:**
 - [x] `vault kv list k8s-secrets/atlantis/` — all 4 keys present
 - [x] `vault read auth/kubernetes/role/atlantis` — role exists with correct bindings
 - [x] `vault policy read atlantis` — policy grants read on atlantis/* path
-- [ ] Replace 3 placeholder values before Phase 3 deployment
+- [x] All placeholder values replaced — Phase 2 fully complete
 
 ---
 
