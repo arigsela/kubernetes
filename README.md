@@ -82,6 +82,35 @@ Production-grade GitOps infrastructure managing containerized applications with 
 - **L4/L7 metrics** - TCP and HTTP telemetry via Prometheus/Grafana
 - **Waypoint proxies** - Optional L7 processing for HTTP features
 
+### Terraform CI/CD (Atlantis + Infracost)
+
+```
+┌─────────────┐     ┌─────────────────────┐     ┌─────────────────┐
+│  Developer   │     │    GitHub PR        │     │    Atlantis     │
+│  Opens PR    │ ──▶ │  (terraform/** )    │ ──▶ │  Plan + Comment │
+└─────────────┘     └─────────────────────┘     └─────────────────┘
+                              │                          │
+                     ┌────────▼────────┐        ┌────────▼────────┐
+                     │   Infracost     │        │  Apply on       │
+                     │  Cost Estimate  │        │  PR Approval    │
+                     └─────────────────┘        └─────────────────┘
+```
+
+- **Atlantis** - PR-based `terraform plan/apply` automation
+  - Auto-plans when `terraform/**` files change
+  - Apply gated behind PR approval + mergeable status
+  - Project locking prevents concurrent state modifications
+  - Runs on infrastructure nodes with 5Gi persistent storage
+- **Infracost** - Cost estimation on every PR
+  - GitHub Actions workflow scans all terraform roots
+  - Posts cost diff as PR comment (free Cloud Pricing API)
+  - Infracost CLI baked into Atlantis image (`infracost-atlantis`)
+- **Terraform Validate** - CI checks on every PR
+  - `terraform fmt` formatting check
+  - `terraform validate` syntax validation
+  - TFLint linting rules (provider version constraints)
+  - tfsec security scanning
+
 ### Observability Stack
 
 - **Loki** - Log aggregation with S3 backend (30-day retention)
@@ -114,13 +143,22 @@ Production-grade GitOps infrastructure managing containerized applications with 
 │   ├── modules/
 │   │   ├── argocd/                 # ArgoCD Helm deployment
 │   │   ├── application-sets/       # Master app pattern
-│   │   └── kube-secrets/           # Bootstrap secrets
+│   │   ├── kube-secrets/           # Bootstrap secrets
+│   │   ├── networking/             # VPC, subnets, IGW (reusable)
+│   │   └── alb/                    # ALB, target group (reusable)
 │   └── roots/
-│       └── asela-cluster/          # Cluster configuration
-│           ├── providers.tf        # AWS, Kubernetes, Helm
-│           ├── argocd.tf           # ArgoCD installation
-│           ├── rds.tf              # Database infrastructure
-│           └── iam.tf              # Service account roles
+│       ├── asela-cluster/          # Main cluster configuration
+│       │   ├── providers.tf        # AWS, Kubernetes, Helm
+│       │   ├── argocd.tf           # ArgoCD installation
+│       │   ├── atlantis-iam.tf     # Atlantis IAM user + policy
+│       │   └── iam.tf              # Service account roles
+│       └── swarm-cluster/          # Docker Swarm test cluster (us-east-1)
+│
+├── atlantis.yaml                   # Atlantis project configuration
+│
+├── .github/workflows/
+│   ├── terraform-validate.yaml     # fmt, validate, tflint, tfsec
+│   └── infracost.yaml              # Cost estimation on PRs
 │
 └── docs/                           # Architecture documentation
 ```
@@ -145,6 +183,7 @@ Production-grade GitOps infrastructure managing containerized applications with 
 | **nginx-ingress** | HTTP/HTTPS ingress controller |
 | **logging (Loki)** | Centralized log aggregation |
 | **mysql-rds-backup** | Automated daily S3 backups |
+| **atlantis** | PR-based Terraform plan/apply with Infracost |
 
 ### Service Mesh Components
 | Component | Purpose |
@@ -208,7 +247,8 @@ path: /api/(.*)
 | Category | Technologies |
 |----------|--------------|
 | **GitOps** | ArgoCD, GitHub |
-| **IaC** | Terraform, Crossplane |
+| **IaC** | Terraform, Crossplane, Atlantis |
+| **Cost Management** | Infracost (free Cloud Pricing API) |
 | **Containers** | Kubernetes (K3s), Docker, AWS ECR |
 | **Service Mesh** | Istio Ambient (ztunnel, waypoint, istiod) |
 | **Secrets** | HashiCorp Vault, External Secrets Operator |
