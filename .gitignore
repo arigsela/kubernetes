@@ -1,5 +1,10 @@
 terraform/roots/asela-cluster/.terraform.lock.hcl
 terraform/roots/asela-cluster/terraform.tfvars
+terraform/roots/swarm-cluster/.terraform.lock.hcl
+terraform/roots/swarm-cluster/terraform.tfvars
+terraform/roots/swarm-cluster/terraform.tfstate
+terraform/roots/swarm-cluster/terraform.tfstate.backup
+terraform/roots/swarm-cluster/.terraform/
 terraform/roots/asela-cluster/.terraform/terraform.tfstate
 terraform/roots/asela-cluster/.terraform/providers/registry.terraform.io/gavinbunney/kubectl/1.16.0/linux_amd64/LICENSE
 terraform/roots/asela-cluster/.terraform/providers/registry.terraform.io/gavinbunney/kubectl/1.16.0/linux_amd64/README.md
