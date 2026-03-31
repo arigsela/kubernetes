@@ -7,4 +7,3 @@ data:
   ENVIRONMENT: "production"
   DEBUG: "False"
   BACKEND_CORS_ORIGINS: "https://weather-kitchen.arigsela.com"
-  BETA_ACCESS_CODE: "WK-BETA-2026-2479"
