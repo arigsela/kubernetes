@@ -4,7 +4,7 @@
 #   namespace = "argo-cd"
 #   name             = "applications"
 #   description      = "Applications managed by Developers"
-  
+
 #   destinations = [
 #     {
 #       server    ="*"

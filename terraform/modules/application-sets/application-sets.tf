@@ -5,7 +5,7 @@ resource "time_sleep" "wait_for_argocd_crds" {
 
 resource "kubectl_manifest" "master_app" {
   depends_on = [time_sleep.wait_for_argocd_crds]
-  yaml_body = <<YAML
+  yaml_body  = <<YAML
   apiVersion: argoproj.io/v1alpha1
   kind: Application
   metadata:
