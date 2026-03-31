@@ -24,7 +24,7 @@ projects:
         - "**/*.tf"
         - "**/*.tfvars"
         - "../../modules/**/*.tf"
-      enabled: true
+      enabled: false
     apply_requirements:
       - approved
       - mergeable

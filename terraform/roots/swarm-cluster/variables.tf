@@ -25,17 +25,20 @@ variable "instance_type" {
 variable "manager_ami" {
   description = "Ubuntu 24.04 AMI ID"
   type        = string
+  default     = "ami-0ec10929233384c7f"
 }
 
 variable "worker_ami" {
   description = "Amazon Linux 2023 AMI ID"
   type        = string
+  default     = "ami-08b09ec6240624138"
 }
 
 variable "swarm_join_token" {
   description = "Docker Swarm worker join token (obtained from 'docker swarm join-token worker -q' on the manager)"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "domain_name" {
@@ -53,6 +56,7 @@ variable "hostname" {
 variable "my_ip" {
   description = "Your IP for SSH access (CIDR format, e.g. 1.2.3.4/32)"
   type        = string
+  default     = "0.0.0.0/32"
 
   validation {
     condition     = can(cidrnetmask(var.my_ip))
