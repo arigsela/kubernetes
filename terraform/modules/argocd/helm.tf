@@ -13,8 +13,8 @@ resource "helm_release" "argocd" {
   }
 
   set {
-      name = "server.service.type"
-      value = "ClusterIP"
+    name  = "server.service.type"
+    value = "ClusterIP"
   }
 
   set {
@@ -30,7 +30,7 @@ resource "helm_release" "argocd" {
     value = "true"
     type  = "string"
   }
-  
+
   values = [
     yamlencode(var.helm_services[count.index].settings),
     yamlencode(var.settings)

@@ -40,6 +40,6 @@ variable "mod_dependency" {
 }
 
 variable "settings" {
-  type = any
+  type    = any
   default = {}
 }

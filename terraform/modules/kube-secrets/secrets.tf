@@ -1,9 +1,9 @@
-resource "kubernetes_secret" aws_credentials {
-    metadata {
-        name = var.name
-        namespace = var.namespace
-    }
+resource "kubernetes_secret" "aws_credentials" {
+  metadata {
+    name      = var.name
+    namespace = var.namespace
+  }
 
-    data = var.data
-    type = var.type
+  data = var.data
+  type = var.type
 }
