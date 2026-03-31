@@ -45,33 +45,28 @@ jobs:
             name=$(basename "$root")
             if [ -f "$root/providers.tf" ]; then
               base_file="/tmp/infracost-base-${name}.json"
-              if [ -f "$base_file" ]; then
-                infracost diff \
-                  --path="$root" \
-                  --terraform-init-flags="-backend=false" \
-                  --compare-to="$base_file" \
-                  --format=json \
-                  --out-file="/tmp/infracost-${name}.json" || true
-              else
-                # New root that doesn't exist on base branch
-                infracost breakdown \
-                  --path="$root" \
-                  --terraform-init-flags="-backend=false" \
-                  --format=json \
-                  --out-file="/tmp/infracost-${name}.json" || true
+              if [ ! -f "$base_file" ]; then
+                # Create empty baseline for new roots
+                echo '{"version":"0.2","projects":[]}' > "$base_file"
               fi
+              infracost diff \
+                --path="$root" \
+                --terraform-init-flags="-backend=false" \
+                --compare-to="$base_file" \
+                --format=json \
+                --out-file="/tmp/infracost-diff-${name}.json" || true
             fi
           done
 
-      - name: Merge and post PR comment
+      - name: Post PR comment
         run: |
-          # Build args list for infracost output (one --path per file)
+          # Collect only diff output files (not base files)
           args=""
-          for f in /tmp/infracost-*.json; do
+          for f in /tmp/infracost-diff-*.json; do
             [ -f "$f" ] && args="$args --path=$f"
           done
           if [ -z "$args" ]; then
-            echo "No infracost output files found, skipping comment."
+            echo "No infracost diff files found, skipping comment."
             exit 0
           fi
           infracost output $args \
