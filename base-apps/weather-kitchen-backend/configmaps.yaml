@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: weather-kitchen-backend-config
+  namespace: weather-kitchen
+data:
+  ENVIRONMENT: "production"
+  DEBUG: "False"
+  BACKEND_CORS_ORIGINS: "https://weather-kitchen.arigsela.com"

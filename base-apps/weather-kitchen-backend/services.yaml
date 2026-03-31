@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: weather-kitchen-backend
+  namespace: weather-kitchen
+spec:
+  selector:
+    app: weather-kitchen-backend
+  ports:
+  - port: 80
+    targetPort: 8000
+  type: ClusterIP

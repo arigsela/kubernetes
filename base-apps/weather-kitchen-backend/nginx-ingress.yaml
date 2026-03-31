@@ -1,0 +1,34 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: weather-kitchen-backend-nginx
+  namespace: weather-kitchen
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    nginx.ingress.kubernetes.io/rewrite-target: /api/$1
+    nginx.ingress.kubernetes.io/priority: "100"
+    # IP Whitelist - restrict access to known IPs
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32,170.85.130.202/32"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - weather-kitchen.arigsela.com
+    secretName: weather-kitchen-tls
+  rules:
+  - host: weather-kitchen.arigsela.com
+    http:
+      paths:
+      - path: /api/(?!docs|openapi\.json)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: weather-kitchen-backend
+            port:
+              number: 80
