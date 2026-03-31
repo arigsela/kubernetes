@@ -6,7 +6,8 @@ module "networking" {
   public_subnet_cidrs = var.public_subnet_cidrs
 
   tags = {
-    Environment = "production"
+    Environment = "Prod"
+    Service     = "Docker-Swarm"
     Purpose     = "Docker-Swarm-Cluster"
   }
 }
@@ -22,7 +23,8 @@ module "alb" {
   health_check_path = "/"
 
   tags = {
-    Environment = "production"
+    Environment = "Prod"
+    Service     = "Docker-Swarm"
   }
 }
 

@@ -60,8 +60,10 @@ resource "aws_security_group" "swarm" {
   }
 
   tags = {
-    Name      = "swarm-sg"
-    ManagedBy = "Terraform"
+    Name        = "swarm-sg"
+    ManagedBy   = "Terraform"
+    Environment = "Prod"
+    Service     = "Docker-Swarm"
   }
 }
 
@@ -86,7 +88,9 @@ resource "aws_security_group" "alb" {
   }
 
   tags = {
-    Name      = "swarm-alb-sg"
-    ManagedBy = "Terraform"
+    Name        = "swarm-alb-sg"
+    ManagedBy   = "Terraform"
+    Environment = "Prod"
+    Service     = "Docker-Swarm"
   }
 }

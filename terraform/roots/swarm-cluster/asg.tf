@@ -25,13 +25,16 @@ resource "aws_launch_template" "worker" {
       Name        = "swarm-worker"
       ManagedBy   = "Terraform"
       Role        = "worker"
-      Environment = "production"
+      Environment = "Prod"
+      Service     = "Docker-Swarm"
     }
   }
 
   tags = {
-    Name      = "swarm-worker-lt"
-    ManagedBy = "Terraform"
+    Name        = "swarm-worker-lt"
+    ManagedBy   = "Terraform"
+    Environment = "Prod"
+    Service     = "Docker-Swarm"
   }
 }
 
@@ -60,6 +63,18 @@ resource "aws_autoscaling_group" "workers" {
   tag {
     key                 = "Name"
     value               = "swarm-worker"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Environment"
+    value               = "Prod"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Service"
+    value               = "Docker-Swarm"
     propagate_at_launch = true
   }
 }

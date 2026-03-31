@@ -9,8 +9,10 @@ resource "aws_key_pair" "swarm" {
   public_key = tls_private_key.swarm.public_key_openssh
 
   tags = {
-    Name      = "swarm-key"
-    ManagedBy = "Terraform"
+    Name        = "swarm-key"
+    ManagedBy   = "Terraform"
+    Environment = "Prod"
+    Service     = "Docker-Swarm"
   }
 }
 
@@ -36,6 +38,7 @@ resource "aws_instance" "manager" {
     Name        = "swarm-manager"
     ManagedBy   = "Terraform"
     Role        = "manager"
-    Environment = "production"
+    Environment = "Prod"
+    Service     = "Docker-Swarm"
   }
 }
