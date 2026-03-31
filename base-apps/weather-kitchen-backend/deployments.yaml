@@ -22,7 +22,7 @@ spec:
       containers:
       - name: weather-kitchen-backend
         image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/weather-kitchen-backend:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 8000
         envFrom:

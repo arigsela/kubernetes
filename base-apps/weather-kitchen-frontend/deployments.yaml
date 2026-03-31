@@ -22,6 +22,7 @@ spec:
       containers:
       - name: frontend
         image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/weather-kitchen-frontend:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 3000
           name: http
