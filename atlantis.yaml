@@ -16,6 +16,19 @@ projects:
       - approved
       - mergeable
 
+  - name: swarm-cluster
+    dir: terraform/roots/swarm-cluster
+    workspace: default
+    autoplan:
+      when_modified:
+        - "**/*.tf"
+        - "**/*.tfvars"
+        - "../../modules/**/*.tf"
+      enabled: true
+    apply_requirements:
+      - approved
+      - mergeable
+
 workflows:
   default:
     plan:

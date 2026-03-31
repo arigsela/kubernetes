@@ -27,19 +27,44 @@ jobs:
       - name: Generate baseline (base branch)
         run: |
           git checkout ${{ github.event.pull_request.base.sha }}
-          infracost breakdown \
-            --path=terraform/roots/asela-cluster \
-            --terraform-init-flags="-backend=false" \
-            --format=json \
-            --out-file=/tmp/infracost-base.json
+          for root in terraform/roots/*/; do
+            name=$(basename "$root")
+            if [ -f "$root/providers.tf" ]; then
+              infracost breakdown \
+                --path="$root" \
+                --terraform-init-flags="-backend=false" \
+                --format=json \
+                --out-file="/tmp/infracost-base-${name}.json"
+            fi
+          done
 
       - name: Generate diff (PR branch)
         run: |
           git checkout ${{ github.event.pull_request.head.sha }}
-          infracost diff \
-            --path=terraform/roots/asela-cluster \
-            --terraform-init-flags="-backend=false" \
-            --compare-to=/tmp/infracost-base.json \
+          for root in terraform/roots/*/; do
+            name=$(basename "$root")
+            if [ -f "$root/providers.tf" ]; then
+              base_file="/tmp/infracost-base-${name}.json"
+              if [ ! -f "$base_file" ]; then
+                # New root that doesn't exist on base branch
+                infracost breakdown \
+                  --path="$root" \
+                  --terraform-init-flags="-backend=false" \
+                  --format=json \
+                  --out-file="/tmp/infracost-${name}.json"
+              else
+                infracost diff \
+                  --path="$root" \
+                  --terraform-init-flags="-backend=false" \
+                  --compare-to="$base_file" \
+                  --format=json \
+                  --out-file="/tmp/infracost-${name}.json"
+              fi
+            fi
+          done
+          # Merge all outputs into a single report
+          infracost output \
+            --path="/tmp/infracost-*.json" \
             --format=json \
             --out-file=/tmp/infracost.json
 
