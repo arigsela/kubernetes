@@ -21,6 +21,13 @@ This directory contains ArgoCD Application manifests and their corresponding Kub
 - **ecr-auth** - ECR credential synchronization CronJob
 - **whoami-test** - Ingress testing application
 
+### Terraform CI/CD
+- **atlantis** - PR-based Terraform plan/apply with Infracost cost estimation
+  - Helm chart v6.1.0 (app version v0.40.0)
+  - Image: `infracost/infracost-atlantis:atlantis0.40-infracost0.10`
+  - Accessible at `atlantis.arigsela.com`
+  - Secrets managed via Vault + External Secrets Operator
+
 ### Policy Engine (Kyverno)
 - **kyverno** - Kubernetes policy engine (Helm chart v3.7.1) for validating, mutating, and generating resources
 - **kyverno-policies** - Custom ClusterPolicies in Audit mode:
@@ -266,6 +273,76 @@ kubectl describe policyreport -n <namespace>
 ### Namespace Exclusions
 All policies exclude `kube-system`, `argo-cd`, and `kyverno` namespaces to avoid interfering with critical system components. The Kyverno webhook is also configured with `failurePolicy: Ignore` to prevent cluster disruption.
 
+## Atlantis (Terraform PR Automation)
+
+Atlantis automates Terraform `plan` and `apply` via PR comments. It is deployed as an ArgoCD Helm application.
+
+### How It Works
+
+1. Developer opens a PR that modifies `terraform/**` files
+2. Atlantis auto-runs `terraform plan` and posts the output as a PR comment
+3. Infracost (baked into the Atlantis image) can estimate cost impact
+4. After PR approval, run `atlantis apply` via PR comment to apply changes
+5. Apply is blocked until the PR is approved and mergeable
+
+### PR Commands
+
+| Command | Description |
+|---------|-------------|
+| `atlantis plan` | Re-run plan for all projects |
+| `atlantis plan -p asela-cluster` | Plan a specific project |
+| `atlantis apply` | Apply all planned projects |
+| `atlantis apply -p asela-cluster` | Apply a specific project |
+| `atlantis unlock` | Release all project locks |
+
+### Configuration
+
+- **Repo config**: `atlantis.yaml` (root of repo) defines projects, autoplan triggers, and apply requirements
+- **Server config**: `base-apps/atlantis.yaml` (ArgoCD Application) manages the Helm deployment
+- **Secrets**: `base-apps/atlantis/external-secrets.yaml` syncs from Vault:
+  - `atlantis-vcs` — GitHub token + webhook secret
+  - `atlantis-env` — AWS credentials, Infracost API key, Kubernetes provider vars
+
+### Adding a New Terraform Root
+
+1. Add the project to `atlantis.yaml`:
+   ```yaml
+   - name: my-project
+     dir: terraform/roots/my-project
+     workspace: default
+     autoplan:
+       when_modified:
+         - "**/*.tf"
+         - "**/*.tfvars"
+         - "../../modules/**/*.tf"
+       enabled: true
+     apply_requirements:
+       - approved
+       - mergeable
+   ```
+2. Ensure the Atlantis IAM user has permissions for the new root's AWS region/resources
+3. Store any required credentials in Vault and update `external-secrets.yaml`
+
+### Architecture
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   GitHub     │     │   Atlantis   │     │   Terraform  │     │     AWS      │
+│   Webhook    │ ──▶ │   Pod (K8s)  │ ──▶ │  Plan/Apply  │ ──▶ │  Resources   │
+└──────────────┘     └──────────────┘     └──────────────┘     └──────────────┘
+                            │
+                     ┌──────▼──────┐
+                     │    Vault    │
+                     │  (secrets)  │
+                     └─────────────┘
+```
+
+### Infracost (Cost Estimation)
+
+Infracost runs as a GitHub Actions workflow (`.github/workflows/infracost.yaml`) on every PR that modifies `terraform/**` files. It posts a cost diff comment showing the monthly cost impact of changes.
+
+The Infracost CLI is also available inside the Atlantis pod via the `infracost-atlantis` Docker image, using the free Cloud Pricing API (1,000 runs/month).
+
 ## Troubleshooting
 
 ### Application Not Deploying
@@ -277,6 +354,13 @@ All policies exclude `kube-system`, `argo-cd`, and `kyverno` namespaces to avoid
 1. Verify ExternalSecret status: `kubectl get externalsecret -n namespace`
 2. Check SecretStore connection: `kubectl describe secretstore -n namespace`
 3. Validate Vault path and permissions
+
+### Atlantis Plan Failures
+1. Check Atlantis pod logs: `kubectl logs -n atlantis deploy/atlantis`
+2. Verify secrets are synced: `kubectl get externalsecret -n atlantis`
+3. Check project lock status: visit `https://atlantis.arigsela.com`
+4. Ensure `atlantis.yaml` project dir matches the terraform root path
+5. For "No value for required variable" errors: check that all variables have defaults or are injected via `TF_VAR_*` env vars
 
 ### ECR Pull Failures
 1. Check if ecr-registry secret exists: `kubectl get secret ecr-registry -n namespace`
