@@ -34,7 +34,7 @@ jobs:
                 --path="$root" \
                 --terraform-init-flags="-backend=false" \
                 --format=json \
-                --out-file="/tmp/infracost-base-${name}.json"
+                --out-file="/tmp/infracost-base-${name}.json" || true
             fi
           done
 
@@ -45,33 +45,40 @@ jobs:
             name=$(basename "$root")
             if [ -f "$root/providers.tf" ]; then
               base_file="/tmp/infracost-base-${name}.json"
-              if [ ! -f "$base_file" ]; then
-                # New root that doesn't exist on base branch
-                infracost breakdown \
-                  --path="$root" \
-                  --terraform-init-flags="-backend=false" \
-                  --format=json \
-                  --out-file="/tmp/infracost-${name}.json"
-              else
+              if [ -f "$base_file" ]; then
                 infracost diff \
                   --path="$root" \
                   --terraform-init-flags="-backend=false" \
                   --compare-to="$base_file" \
                   --format=json \
-                  --out-file="/tmp/infracost-${name}.json"
+                  --out-file="/tmp/infracost-${name}.json" || true
+              else
+                # New root that doesn't exist on base branch
+                infracost breakdown \
+                  --path="$root" \
+                  --terraform-init-flags="-backend=false" \
+                  --format=json \
+                  --out-file="/tmp/infracost-${name}.json" || true
               fi
             fi
           done
-          # Merge all outputs into a single report
-          infracost output \
-            --path="/tmp/infracost-*.json" \
-            --format=json \
-            --out-file=/tmp/infracost.json
 
-      - name: Post PR comment
+      - name: Merge and post PR comment
         run: |
+          # Build args list for infracost output (one --path per file)
+          args=""
+          for f in /tmp/infracost-*.json; do
+            [ -f "$f" ] && args="$args --path=$f"
+          done
+          if [ -z "$args" ]; then
+            echo "No infracost output files found, skipping comment."
+            exit 0
+          fi
+          infracost output $args \
+            --format=json \
+            --out-file=/tmp/infracost-combined.json
           infracost comment github \
-            --path=/tmp/infracost.json \
+            --path=/tmp/infracost-combined.json \
             --repo=$GITHUB_REPOSITORY \
             --pull-request=${{ github.event.pull_request.number }} \
             --behavior=update \
