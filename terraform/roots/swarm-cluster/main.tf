@@ -68,13 +68,15 @@ resource "aws_lb_target_group_attachment" "manager" {
   port             = 80
 }
 
-module "worker_1" {
-  source = "../../modules/ec2-instance"
+# --- Swarm Workers (one per subnet/AZ) ---
+module "worker" {
+  source   = "../../modules/ec2-instance"
+  for_each = { for i, id in module.networking.public_subnet_ids : "worker-${i + 1}" => id }
 
-  name          = "swarm-worker-1"
+  name          = "swarm-${each.key}"
   ami           = var.worker_ami
   instance_type = var.instance_type
-  subnet_id     = module.networking.public_subnet_ids[1]
+  subnet_id     = each.value
   key_name      = aws_key_pair.swarm.key_name
 
   vpc_security_group_ids = [aws_security_group.swarm.id]
@@ -97,43 +99,10 @@ module "worker_1" {
   }
 }
 
-module "worker_2" {
-  source = "../../modules/ec2-instance"
-
-  name          = "swarm-worker-2"
-  ami           = var.worker_ami
-  instance_type = var.instance_type
-  subnet_id     = module.networking.public_subnet_ids[2]
-  key_name      = aws_key_pair.swarm.key_name
-
-  vpc_security_group_ids = [aws_security_group.swarm.id]
-
-  user_data = <<-EOF
-    #!/bin/bash
-    yum update -y
-    yum install -y docker
-    systemctl enable docker
-    systemctl start docker
-    usermod -aG docker ec2-user
-    iptables -C DOCKER-USER -j RETURN 2>/dev/null || iptables -A DOCKER-USER -j RETURN
-    docker swarm join --token ${var.swarm_join_token} ${module.manager.private_ip}:2377
-  EOF
-
-  tags = {
-    Role        = "worker"
-    Environment = "Prod"
-    Service     = "Docker-Swarm"
-  }
-}
-
-resource "aws_lb_target_group_attachment" "worker_1" {
+# --- Attach workers to ALB target group ---
+resource "aws_lb_target_group_attachment" "worker" {
+  for_each         = module.worker
   target_group_arn = module.alb.target_group_arn
-  target_id        = module.worker_1.instance_id
-  port             = 80
-}
-
-resource "aws_lb_target_group_attachment" "worker_2" {
-  target_group_arn = module.alb.target_group_arn
-  target_id        = module.worker_2.instance_id
+  target_id        = each.value.instance_id
   port             = 80
 }
