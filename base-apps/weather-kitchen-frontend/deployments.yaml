@@ -30,7 +30,7 @@ spec:
         - name: NODE_ENV
           value: "production"
         - name: API_URL
-          value: "https://weather-kitchen.arigsela.com/api/v1"
+          value: "https://weather-kitchen.arigsela.com"
         resources:
           requests:
             memory: "128Mi"
