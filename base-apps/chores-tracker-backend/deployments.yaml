@@ -59,8 +59,6 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
-      imagePullSecrets:
-      - name: ecr-registry
   strategy:
     canary:
       stableService: chores-tracker-backend-stable

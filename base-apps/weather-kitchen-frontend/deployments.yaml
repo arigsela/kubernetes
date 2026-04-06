@@ -78,8 +78,6 @@ spec:
         emptyDir: {}
       - name: nginx-run
         emptyDir: {}
-      imagePullSecrets:
-      - name: ecr-registry
       securityContext:
         fsGroup: 1001
       restartPolicy: Always

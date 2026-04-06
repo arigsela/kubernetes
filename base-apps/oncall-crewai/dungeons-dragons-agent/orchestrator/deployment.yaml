@@ -38,10 +38,6 @@ spec:
       serviceAccountName: dungeons-dragons-agent-orchestrator
       # Disable automatic SA token mount — this pod doesn't need K8s API access
       automountServiceAccountToken: false
-      # Pull ECR images using the ecr-registry imagePullSecret
-      # (created by the ECR CronJob that refreshes Docker credentials)
-      imagePullSecrets:
-        - name: ecr-registry
       # Schedule on application-designated nodes (avoids system workloads)
       nodeSelector:
         node.kubernetes.io/workload: application

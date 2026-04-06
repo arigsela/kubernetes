@@ -22,8 +22,6 @@ spec:
           securityContext:
             fsGroup: 1001
           restartPolicy: Never
-          imagePullSecrets:
-            - name: ecr-registry
           initContainers:
             - name: fix-permissions
               image: busybox
