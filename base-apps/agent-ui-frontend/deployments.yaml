@@ -22,8 +22,6 @@ spec:
       tolerations:
       - key: node-role.kubernetes.io/control-plane
         effect: NoSchedule
-      imagePullSecrets:
-      - name: ecr-registry
       containers:
         - name: frontend
           image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agent-ui-frontend:v1.0.3

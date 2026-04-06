@@ -82,8 +82,6 @@ spec:
         emptyDir: {}
       - emptyDir: {}
         name: nginx-conf-d  # Add this line
-      imagePullSecrets:
-      - name: ecr-registry
       securityContext:
         fsGroup: 1001
       restartPolicy: Always
