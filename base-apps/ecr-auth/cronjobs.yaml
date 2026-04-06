@@ -45,14 +45,22 @@ spec:
               # Get a fresh ECR token
               TOKEN=$(aws ecr get-login-password --region $AWS_REGION)
               DOCKER_SERVER="852893458518.dkr.ecr.$AWS_REGION.amazonaws.com"
+              EXCLUDE="kube-public kube-node-lease default kyverno"
 
-              # Discover all namespaces, excluding system namespaces
+              # Update kube-system first (Kyverno clone source for new namespaces)
+              echo "Syncing ECR credentials in kube-system (Kyverno clone source)"
+              kubectl create secret docker-registry ecr-registry \
+                --docker-server=$DOCKER_SERVER \
+                --docker-username=AWS \
+                --docker-password=$TOKEN \
+                -n kube-system \
+                --dry-run=client -o yaml | kubectl apply -f -
+
+              # Refresh all other namespaces
               NAMESPACES=$(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}')
-              EXCLUDE="kube-system kube-public kube-node-lease default kyverno"
-
               for NS in $NAMESPACES; do
-                # Skip excluded namespaces
                 echo "$EXCLUDE" | grep -qw "$NS" && continue
+                [ "$NS" = "kube-system" ] && continue
 
                 echo "Syncing ECR credentials in namespace $NS"
                 kubectl create secret docker-registry ecr-registry \
