@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: feature/kyverno-ecr-testing
+    targetRevision: main
     path: base-apps/kyverno-policies
   destination:
     server: https://kubernetes.default.svc
