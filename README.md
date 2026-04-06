@@ -58,7 +58,7 @@ Production-grade GitOps infrastructure managing containerized applications with 
 
 | Service | Purpose | Configuration |
 |---------|---------|---------------|
-| **ECR** | Container registry | Automated credential sync via CronJob |
+| **ECR** | Container registry | Automated credential sync via CronJob + Kyverno |
 | **RDS MySQL** | Production database | Crossplane-managed users/grants |
 | **S3** | Terraform state, Loki logs, backups | Lifecycle policies, encryption |
 | **IAM** | Service accounts | Least-privilege policies per service |
@@ -118,6 +118,27 @@ Production-grade GitOps infrastructure managing containerized applications with 
 - **Prometheus** - Metrics collection for Istio and applications
 - **Grafana Dashboards** - Istio Ambient Mesh L4/L7 visualization
 - **Structured logging** - JSON format for queryability
+
+### ECR Image Pull Automation (Kyverno)
+
+```
+┌─────────────────┐     ┌─────────────────────┐     ┌─────────────────┐
+│   New Namespace  │     │      Kyverno        │     │   ECR CronJob   │
+│   Created       │ ──▶ │  generate-ecr-secret │     │  (hourly token  │
+└─────────────────┘     │  (instant clone)     │     │   refresh)      │
+                        └─────────────────────┘     └─────────────────┘
+                                                            │
+┌─────────────────┐     ┌─────────────────────┐             │
+│   Pod with ECR  │     │      Kyverno        │     ┌───────▼─────────┐
+│   Image Created │ ──▶ │ inject-ecr-pull-secret│     │  All Namespaces │
+└─────────────────┘     │ (auto imagePullSecrets)│    │  Secrets Fresh  │
+                        └─────────────────────┘     └─────────────────┘
+```
+
+- **Zero-touch ECR access** - No manual `imagePullSecrets` or namespace configuration
+- **Instant secret provisioning** - Kyverno clones ECR credentials on namespace creation
+- **Automatic injection** - Pods referencing ECR images get `imagePullSecrets` at admission
+- **Dynamic namespace discovery** - CronJob refreshes tokens across all namespaces hourly
 
 ### Security Implementation
 

@@ -30,10 +30,12 @@ This directory contains ArgoCD Application manifests and their corresponding Kub
 
 ### Policy Engine (Kyverno)
 - **kyverno** - Kubernetes policy engine (Helm chart v3.7.1) for validating, mutating, and generating resources
-- **kyverno-policies** - Custom ClusterPolicies in Audit mode:
-  - `require-labels` - Requires `app.kubernetes.io/name` on Deployments/StatefulSets
+- **kyverno-policies** - Custom ClusterPolicies:
+  - `inject-ecr-pull-secret` - Automatically injects `imagePullSecrets` into pods referencing ECR images
+  - `generate-ecr-secret` - Clones `ecr-registry` secret into new namespaces on creation
+  - `require-labels` - Requires `app.kubernetes.io/name` on Deployments/StatefulSets (Audit)
   - `disallow-privileged-containers` - Audits privileged containers
-  - `require-resource-limits` - Requires CPU/memory limits on all containers
+  - `require-resource-limits` - Requires CPU/memory limits on all containers (Audit)
   - `disallow-default-namespace` - Audits workloads in the default namespace
   - `disallow-latest-tag` - Audits containers using `:latest` or untagged images
 
@@ -77,6 +79,7 @@ base-apps/
    ```
 
 2. Add Kubernetes manifests to the directory
+   - **No `imagePullSecrets` needed** for ECR images — Kyverno injects them automatically
 
 3. Create ArgoCD Application:
    ```bash
@@ -166,12 +169,23 @@ spec:
 
 ## ECR Authentication
 
-Applications pulling from AWS ECR need the `ecr-registry` imagePullSecret. This is automatically created by the ECR auth CronJob in the following namespaces:
-- `chores-tracker`
-- `chores-tracker-frontend`
-- `mysql`
+ECR image pull authentication is fully automated via Kyverno and a CronJob:
 
-To add ECR auth to a new namespace, update `/base-apps/ecr-auth/cronjobs.yaml` line 47.
+```
+New Namespace Created ──▶ Kyverno clones ecr-registry secret instantly
+Pod with ECR Image    ──▶ Kyverno injects imagePullSecrets automatically
+Every Hour            ──▶ CronJob refreshes ECR tokens in all namespaces
+```
+
+**No manual steps required.** When deploying a new application that pulls from ECR:
+1. Create your deployment manifests (no `imagePullSecrets` needed)
+2. Create the ArgoCD Application with `CreateNamespace=true`
+3. Commit and push — Kyverno handles the rest
+
+### How It Works
+- **`generate-ecr-secret`** (Kyverno ClusterPolicy) — Clones the `ecr-registry` secret from `kube-system` into any new namespace on creation
+- **`inject-ecr-pull-secret`** (Kyverno ClusterPolicy) — Mutates pods that reference `.dkr.ecr.` images to add `imagePullSecrets: [{name: ecr-registry}]`
+- **`ecr-credentials-sync`** (CronJob) — Runs hourly, refreshes ECR tokens in all non-system namespaces via dynamic discovery
 
 ## Ingress Configuration
 
@@ -364,9 +378,11 @@ The Infracost CLI is also available inside the Atlantis pod via the `infracost-a
 
 ### ECR Pull Failures
 1. Check if ecr-registry secret exists: `kubectl get secret ecr-registry -n namespace`
-2. Verify ECR auth CronJob runs: `kubectl get cronjob -n kube-system ecr-credentials-sync`
-3. Check namespace is in the sync list: `/base-apps/ecr-auth/cronjobs.yaml`
+2. Verify Kyverno injected imagePullSecrets: `kubectl get pod <pod> -n <ns> -o jsonpath='{.spec.imagePullSecrets}'`
+3. Check ECR CronJob status: `kubectl get cronjob -n kube-system ecr-credentials-sync`
+4. Manually trigger token refresh: `kubectl create job --from=cronjob/ecr-credentials-sync ecr-manual -n kube-system`
+5. Check Kyverno logs: `kubectl logs -n kyverno -l app.kubernetes.io/component=admission-controller --tail=50 | grep ecr`
 
 ---
 
-*Last Updated: 2026-03-06*
+*Last Updated: 2026-04-06*
