@@ -22,7 +22,7 @@ spec:
         runAsGroup: 999
       containers:
       - name: postgresql
-        image: pgvector/pgvector:pg18
+        image: pgvector/pgvector:0.8.2-pg18
         env:
         - name: POSTGRES_DB
           valueFrom:
