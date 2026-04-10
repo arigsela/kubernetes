@@ -1,0 +1,50 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kagent
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    chart: kagent
+    repoURL: ghcr.io/kagent-dev/kagent/helm
+    targetRevision: 0.8.6
+    helm:
+      valuesObject:
+        # Database: use existing PostgreSQL with pgvector
+        database:
+          postgres:
+            bundled:
+              enabled: false
+            urlFile: /etc/kagent/secrets/db-url
+            vectorEnabled: true
+
+        # Mount the database URL secret as a file
+        controller:
+          volumes:
+            - name: db-secret
+              secret:
+                secretName: kagent-db-credentials
+                items:
+                  - key: db-url
+                    path: db-url
+          volumeMounts:
+            - name: db-secret
+              mountPath: /etc/kagent/secrets
+              readOnly: true
+
+        # OpenTelemetry tracing (disabled for now, enabled in Phase 3)
+        otel:
+          tracing:
+            enabled: false
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kagent
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
