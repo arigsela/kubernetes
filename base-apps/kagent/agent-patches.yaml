@@ -1,0 +1,307 @@
+# Human-in-the-loop patches for write-capable agents (Task 3.2)
+# These are applied as strategic merge patches to Agent CRDs after Helm deploys them.
+# The kagent controller reconciles Agent CRDs, so patching them is safe.
+#
+# Apply with: kubectl apply -f agent-patches.yaml --server-side --force-conflicts
+#
+# Write tools that require approval per agent:
+#   k8s-agent: create, delete, patch, apply, execute
+#   helm-agent: upgrade, uninstall, apply
+#   cilium-manager-agent: install, upgrade, toggle, update, connect
+#   istio-agent: create, delete, patch, install, apply/delete waypoint
+#   kgateway-agent: create, delete, patch, apply, helm upgrade/uninstall
+#   argo-rollouts-conversion-agent: create, delete, apply
+#   cilium-debug-agent: manage_endpoint_config, update/delete pcap, flush ipsec
+
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: k8s-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: Declarative
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+        toolNames:
+        # Read operations
+        - k8s_check_service_connectivity
+        - k8s_get_events
+        - k8s_get_available_api_resources
+        - k8s_get_cluster_configuration
+        - k8s_describe_resource
+        - k8s_get_resource_yaml
+        - k8s_get_resources
+        - k8s_get_pod_logs
+        # Write operations (require approval)
+        - k8s_patch_resource
+        - k8s_create_resource
+        - k8s_create_resource_from_url
+        - k8s_delete_resource
+        - k8s_apply_manifest
+        - k8s_execute_command
+        - k8s_annotate_resource
+        - k8s_label_resource
+        - k8s_remove_annotation
+        - k8s_remove_label
+        requireApproval:
+        - k8s_patch_resource
+        - k8s_create_resource
+        - k8s_create_resource_from_url
+        - k8s_delete_resource
+        - k8s_apply_manifest
+        - k8s_execute_command
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: helm-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: Declarative
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+        toolNames:
+        # Read operations
+        - helm_list_releases
+        - helm_get_release
+        - k8s_get_resources
+        - k8s_get_available_api_resources
+        # Write operations (require approval)
+        - helm_upgrade
+        - helm_uninstall
+        - helm_repo_add
+        - helm_repo_update
+        - k8s_apply_manifest
+        requireApproval:
+        - helm_upgrade
+        - helm_uninstall
+        - k8s_apply_manifest
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: cilium-manager-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: Declarative
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+        toolNames:
+        # Read operations
+        - cilium_status_and_version
+        - cilium_get_daemon_status
+        - cilium_show_cluster_mesh_status
+        - cilium_show_features_status
+        - cilium_list_bgp_peers
+        - cilium_list_bgp_routes
+        - cilium_get_endpoints_list
+        - cilium_get_endpoint_details
+        - cilium_show_configuration_options
+        - cilium_list_services
+        - cilium_get_service_information
+        - k8s_get_resources
+        - k8s_describe_resource
+        # Write operations (require approval)
+        - cilium_install_cilium
+        - cilium_upgrade_cilium
+        - cilium_connect_to_remote_cluster
+        - cilium_toggle_cluster_mesh
+        - cilium_toggle_hubble
+        - cilium_toggle_configuration_option
+        - cilium_update_service
+        requireApproval:
+        - cilium_install_cilium
+        - cilium_upgrade_cilium
+        - cilium_connect_to_remote_cluster
+        - cilium_toggle_cluster_mesh
+        - cilium_toggle_configuration_option
+        - cilium_update_service
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: istio-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: Declarative
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+        toolNames:
+        # Read operations
+        - k8s_describe_resource
+        - k8s_get_resources
+        - istio_ztunnel_config
+        - istio_waypoint_status
+        - istio_list_waypoints
+        - istio_remote_clusters
+        - istio_proxy_status
+        - istio_analyze_cluster_configuration
+        - istio_proxy_config
+        - istio_version
+        # Write operations (require approval)
+        - k8s_create_resource
+        - k8s_create_resource_from_url
+        - k8s_delete_resource
+        - k8s_patch_resource
+        - k8s_generate_resource
+        - istio_generate_waypoint
+        - istio_delete_waypoint
+        - istio_apply_waypoint
+        - istio_generate_manifest
+        - istio_install_istio
+        requireApproval:
+        - k8s_create_resource
+        - k8s_create_resource_from_url
+        - k8s_delete_resource
+        - k8s_patch_resource
+        - istio_delete_waypoint
+        - istio_apply_waypoint
+        - istio_install_istio
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: kgateway-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: Declarative
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+        toolNames:
+        # Read operations
+        - k8s_check_service_connectivity
+        - k8s_get_resource_yaml
+        - k8s_get_resources
+        - k8s_get_pod_logs
+        - helm_list_releases
+        - helm_get_release
+        # Write operations (require approval)
+        - k8s_patch_resource
+        - k8s_create_resource
+        - k8s_create_resource_from_url
+        - k8s_delete_resource
+        - k8s_apply_manifest
+        - helm_upgrade
+        - helm_uninstall
+        - helm_repo_add
+        - helm_repo_update
+        requireApproval:
+        - k8s_patch_resource
+        - k8s_create_resource
+        - k8s_create_resource_from_url
+        - k8s_delete_resource
+        - k8s_apply_manifest
+        - helm_upgrade
+        - helm_uninstall
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: argo-rollouts-conversion-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: Declarative
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+        toolNames:
+        # Read operations
+        - argo_verify_argo_rollouts_controller_install
+        - k8s_get_resources
+        - k8s_get_resource_yaml
+        - k8s_describe_resource
+        # Write operations (require approval)
+        - k8s_create_resource
+        - k8s_delete_resource
+        - k8s_apply_manifest
+        requireApproval:
+        - k8s_create_resource
+        - k8s_delete_resource
+        - k8s_apply_manifest
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: cilium-debug-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: Declarative
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+        toolNames:
+        # Read operations
+        - cilium_get_endpoint_health
+        - cilium_get_endpoint_logs
+        - cilium_list_identities
+        - cilium_get_identity_details
+        - cilium_request_debugging_information
+        - cilium_display_encryption_state
+        - cilium_list_envoy_config
+        - cilium_fqdn_cache
+        - cilium_list_ip_addresses
+        - cilium_show_ip_cache_information
+        - cilium_list_bpf_map_events
+        - cilium_list_metrics
+        - cilium_list_cluster_nodes
+        - cilium_list_node_ids
+        - cilium_list_pcap_recorders
+        - cilium_get_pcap_recorder
+        # Write operations (require approval)
+        - cilium_manage_endpoint_config
+        - cilium_flush_ipsec_state
+        - cilium_update_pcap_recorder
+        - cilium_delete_pcap_recorder
+        requireApproval:
+        - cilium_manage_endpoint_config
+        - cilium_flush_ipsec_state
+        - cilium_update_pcap_recorder
+        - cilium_delete_pcap_recorder

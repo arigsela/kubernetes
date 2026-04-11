@@ -7,6 +7,12 @@ metadata:
     argocd.argoproj.io/sync-wave: "0"
 spec:
   project: default
+  # Ignore diffs on Agent CRD tools field - managed separately via agent-patches
+  ignoreDifferences:
+    - group: kagent.dev
+      kind: Agent
+      jsonPointers:
+        - /spec/declarative/tools
   source:
     chart: kagent
     repoURL: ghcr.io/kagent-dev/kagent/helm
@@ -44,10 +50,116 @@ spec:
             apiKeySecretRef: kagent-anthropic
             apiKeySecretKey: ANTHROPIC_API_KEY
 
-        # OpenTelemetry tracing (disabled for now, enabled in Phase 3)
+        # Right-sized agent resources (Task 3.3)
+        # Read-heavy agents: 512Mi limit; Write-heavy agents: keep 1Gi
+        agents:
+          k8s-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 1000m
+                memory: 1Gi
+          helm-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 1000m
+                memory: 1Gi
+          cilium-manager-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: 1000m
+                memory: 1Gi
+          # Read-heavy / read-only agents → reduced to 512Mi
+          promql-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+          observability-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+          cilium-debug-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+          cilium-policy-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+          argo-rollouts-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+          istio-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+          kgateway-agent:
+            enabled: true
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+
+        # OpenTelemetry tracing → Coroot OTLP receiver
         otel:
           tracing:
-            enabled: false
+            enabled: true
+            exporter:
+              otlp:
+                endpoint: "coroot-coroot.coroot.svc.cluster.local:4317"
+                protocol: "grpc"
+                insecure: true
+          logging:
+            enabled: true
+            exporter:
+              otlp:
+                endpoint: "coroot-coroot.coroot.svc.cluster.local:4317"
+                insecure: true
 
   destination:
     server: https://kubernetes.default.svc
