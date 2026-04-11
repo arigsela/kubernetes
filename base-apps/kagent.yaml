@@ -7,12 +7,13 @@ metadata:
     argocd.argoproj.io/sync-wave: "0"
 spec:
   project: default
-  # Ignore diffs on Agent CRD tools field - managed separately via agent-patches
+  # Ignore diffs on Agent CRD tools and memory fields - managed separately via agent-patches
   ignoreDifferences:
     - group: kagent.dev
       kind: Agent
       jsonPointers:
         - /spec/declarative/tools
+        - /spec/declarative/memory
   source:
     chart: kagent
     repoURL: ghcr.io/kagent-dev/kagent/helm
