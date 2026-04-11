@@ -35,12 +35,14 @@ spec:
               mountPath: /etc/kagent/secrets
               readOnly: true
 
-        # Model config: use existing Anthropic API key secret
-        modelConfig:
-          provider: Anthropic
-          model: claude-haiku-4-5-20251001
-          apiKeySecret: kagent-anthropic
-          apiKeySecretKey: ANTHROPIC_API_KEY
+        # LLM provider: use Anthropic with existing secret
+        providers:
+          default: anthropic
+          anthropic:
+            provider: Anthropic
+            model: claude-haiku-4-5-20251001
+            apiKeySecretRef: kagent-anthropic
+            apiKeySecretKey: ANTHROPIC_API_KEY
 
         # OpenTelemetry tracing (disabled for now, enabled in Phase 3)
         otel:
