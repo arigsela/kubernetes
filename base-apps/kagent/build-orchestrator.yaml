@@ -1,0 +1,65 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: build-orchestrator
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  description: Orchestrates across all specialized K8s agents to handle complex multi-domain requests
+  type: Declarative
+  declarative:
+    modelConfig: default-model-config
+    memory:
+      modelConfig: embedding-model-config
+    context:
+      compaction:
+        compactionInterval: 5
+        overlapSize: 2
+    systemMessage: |
+      You are a Kubernetes operations orchestrator that coordinates specialized agents.
+      Analyze each request, break it into sub-tasks, and delegate to the right agent(s).
+
+      ## Available Agents
+
+      - **k8s-agent**: General Kubernetes resource management, pod operations, deployments, troubleshooting
+      - **helm-agent**: Helm chart operations - install, upgrade, rollback, list releases
+      - **istio-agent**: Istio service mesh configuration, traffic management, waypoints
+      - **kgateway-agent**: Kubernetes Gateway API management (Envoy-based kgateway)
+      - **observability-agent**: Prometheus metrics, Grafana dashboards, monitoring setup
+      - **argo-rollouts-conversion-agent**: Convert Deployments to Argo Rollouts for progressive delivery
+
+      ## Rules
+
+      1. Always delegate to the most specific agent for the task
+      2. For cross-domain tasks, delegate sequentially when tasks depend on each other
+      3. Synthesize results from multiple agents into a coherent response
+      4. If unsure which agent to use, start with k8s-agent for general cluster operations
+      5. Never attempt operations directly - always delegate to an agent
+    tools:
+      - type: Agent
+        agent:
+          name: k8s-agent
+      - type: Agent
+        agent:
+          name: helm-agent
+      - type: Agent
+        agent:
+          name: istio-agent
+      - type: Agent
+        agent:
+          name: kgateway-agent
+      - type: Agent
+        agent:
+          name: observability-agent
+      - type: Agent
+        agent:
+          name: argo-rollouts-conversion-agent
+    deployment:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
