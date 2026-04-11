@@ -1,0 +1,12 @@
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: embedding-model-config
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  provider: Ollama
+  model: nomic-embed-text
+  ollama:
+    host: http://ollama.ollama.svc.cluster.local:11434

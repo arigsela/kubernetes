@@ -13,6 +13,8 @@
 #
 # Removed agents (disabled in Helm values):
 #   cilium-manager-agent, cilium-debug-agent, cilium-policy-agent, promql-agent
+#
+# Memory: All agents use Ollama nomic-embed-text for pgvector memory embeddings
 
 ---
 apiVersion: kagent.dev/v1alpha2
@@ -25,6 +27,8 @@ metadata:
 spec:
   type: Declarative
   declarative:
+    memory:
+      modelConfig: embedding-model-config
     tools:
     - type: McpServer
       mcpServer:
@@ -70,6 +74,8 @@ metadata:
 spec:
   type: Declarative
   declarative:
+    memory:
+      modelConfig: embedding-model-config
     tools:
     - type: McpServer
       mcpServer:
@@ -103,6 +109,8 @@ metadata:
 spec:
   type: Declarative
   declarative:
+    memory:
+      modelConfig: embedding-model-config
     tools:
     - type: McpServer
       mcpServer:
@@ -151,6 +159,8 @@ metadata:
 spec:
   type: Declarative
   declarative:
+    memory:
+      modelConfig: embedding-model-config
     tools:
     - type: McpServer
       mcpServer:
@@ -194,6 +204,8 @@ metadata:
 spec:
   type: Declarative
   declarative:
+    memory:
+      modelConfig: embedding-model-config
     tools:
     - type: McpServer
       mcpServer:
@@ -214,3 +226,27 @@ spec:
         - k8s_create_resource
         - k8s_delete_resource
         - k8s_apply_manifest
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: observability-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: Declarative
+  declarative:
+    memory:
+      modelConfig: embedding-model-config
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: dnd-agent
+  namespace: kagent
+spec:
+  type: Declarative
+  declarative:
+    memory:
+      modelConfig: embedding-model-config
