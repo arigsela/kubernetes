@@ -72,24 +72,10 @@ spec:
                 cpu: 1000m
                 memory: 1Gi
           cilium-manager-agent:
-            enabled: true
-            resources:
-              requests:
-                cpu: 100m
-                memory: 256Mi
-              limits:
-                cpu: 1000m
-                memory: 1Gi
+            enabled: false
           # Read-heavy / read-only agents → reduced to 512Mi
           promql-agent:
-            enabled: true
-            resources:
-              requests:
-                cpu: 50m
-                memory: 128Mi
-              limits:
-                cpu: 500m
-                memory: 512Mi
+            enabled: false
           observability-agent:
             enabled: true
             resources:
@@ -100,23 +86,9 @@ spec:
                 cpu: 500m
                 memory: 512Mi
           cilium-debug-agent:
-            enabled: true
-            resources:
-              requests:
-                cpu: 50m
-                memory: 128Mi
-              limits:
-                cpu: 500m
-                memory: 512Mi
+            enabled: false
           cilium-policy-agent:
-            enabled: true
-            resources:
-              requests:
-                cpu: 50m
-                memory: 128Mi
-              limits:
-                cpu: 500m
-                memory: 512Mi
+            enabled: false
           argo-rollouts-agent:
             enabled: true
             resources:
