@@ -21,7 +21,7 @@ spec:
         node.kubernetes.io/workload: application
       initContainers:
         - name: pull-model
-          image: ollama/ollama:0.7.0
+          image: ollama/ollama:0.20.5
           command:
             - sh
             - -c
@@ -47,7 +47,7 @@ spec:
               memory: 1Gi
       containers:
         - name: ollama
-          image: ollama/ollama:0.7.0
+          image: ollama/ollama:0.20.5
           ports:
             - containerPort: 11434
               name: http
