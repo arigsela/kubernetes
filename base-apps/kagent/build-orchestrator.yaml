@@ -26,7 +26,6 @@ spec:
       - **helm-agent**: Helm chart operations - install, upgrade, rollback, list releases
       - **istio-agent**: Istio service mesh configuration, traffic management, waypoints
       - **kgateway-agent**: Kubernetes Gateway API management (Envoy-based kgateway)
-      - **observability-agent**: Prometheus metrics, Grafana dashboards, monitoring setup
       - **argo-rollouts-conversion-agent**: Convert Deployments to Argo Rollouts for progressive delivery
 
       ## Rules
@@ -49,9 +48,6 @@ spec:
       - type: Agent
         agent:
           name: kgateway-agent
-      - type: Agent
-        agent:
-          name: observability-agent
       - type: Agent
         agent:
           name: argo-rollouts-conversion-agent
