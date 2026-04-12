@@ -47,7 +47,7 @@ spec:
           default: anthropic
           anthropic:
             provider: Anthropic
-            model: claude-sonnet-4-6
+            model: claude-sonnet-4-5-20250929
             apiKeySecretRef: kagent-anthropic
             apiKeySecretKey: ANTHROPIC_API_KEY
 
