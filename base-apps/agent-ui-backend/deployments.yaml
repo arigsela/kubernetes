@@ -24,7 +24,7 @@ spec:
         effect: NoSchedule
       containers:
         - name: backend
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agent-ui-backend:v1.0.3
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agent-ui-backend:latest
           imagePullPolicy: Always
           ports:
             - name: http
