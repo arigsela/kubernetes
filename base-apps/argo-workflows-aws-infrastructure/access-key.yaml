@@ -1,0 +1,23 @@
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: AccessKey
+metadata:
+  name: argo-workflows-s3-key
+  labels:
+    app: argo-workflows
+    component: access-key
+    managed-by: crossplane
+spec:
+  forProvider:
+    userSelector:
+      matchLabels:
+        app: argo-workflows
+        component: iam-user
+  # Connection secret keys written by Upbound provider-aws-iam:
+  #   attribute.id     -> the AWS access key ID
+  #   attribute.secret -> the AWS secret access key
+  #   username         -> the IAM username
+  writeConnectionSecretToRef:
+    name: argo-workflows-s3-creds
+    namespace: argo-workflows
+  providerConfigRef:
+    name: default

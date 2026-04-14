@@ -1,0 +1,19 @@
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: User
+metadata:
+  name: argo-workflows-s3-user
+  labels:
+    app: argo-workflows
+    component: iam-user
+    managed-by: crossplane
+spec:
+  forProvider:
+    path: /serviceaccounts/
+    tags:
+      Name: "Argo Workflows S3 Service Account"
+      Purpose: "Argo-Workflows-S3-Access"
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+      Project: "argo-workflows"
+  providerConfigRef:
+    name: default

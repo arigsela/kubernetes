@@ -1,0 +1,18 @@
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: UserPolicyAttachment
+metadata:
+  name: argo-workflows-s3-user-policy
+  labels:
+    app: argo-workflows
+    component: iam-policy-attachment
+    managed-by: crossplane
+spec:
+  forProvider:
+    policyArnSelector:
+      matchLabels:
+        app: argo-workflows
+        component: iam-policy
+    userRef:
+      name: argo-workflows-s3-user
+  providerConfigRef:
+    name: default

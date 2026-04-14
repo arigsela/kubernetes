@@ -1,0 +1,39 @@
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: argo-workflows-s3-access
+  labels:
+    app: argo-workflows
+    component: iam-policy
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "Allows Argo Workflows to read/write artifacts and logs to the artifacts S3 bucket"
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "ArgoWorkflowsS3Access",
+            "Effect": "Allow",
+            "Action": [
+              "s3:ListBucket",
+              "s3:PutObject",
+              "s3:GetObject",
+              "s3:DeleteObject"
+            ],
+            "Resource": [
+              "arn:aws:s3:::asela-argo-workflows-artifacts",
+              "arn:aws:s3:::asela-argo-workflows-artifacts/*"
+            ]
+          }
+        ]
+      }
+    tags:
+      Name: "Argo Workflows S3 Access Policy"
+      Purpose: "Argo-Workflows-S3-Access"
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+      Project: "argo-workflows"
+  providerConfigRef:
+    name: default
