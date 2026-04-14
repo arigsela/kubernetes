@@ -28,6 +28,19 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+        artifactRepository:
+          archiveLogs: true
+          s3:
+            endpoint: s3.amazonaws.com
+            bucket: asela-argo-workflows-artifacts
+            region: us-east-1
+            keyFormat: "{{workflow.namespace}}/{{workflow.name}}/{{pod.name}}"
+            accessKeySecret:
+              name: argo-workflows-s3-creds
+              key: accessKey
+            secretKeySecret:
+              name: argo-workflows-s3-creds
+              key: secretKey
         server:
           enabled: true
           authModes:
