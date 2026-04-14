@@ -8,8 +8,8 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 
-    # Argo Workflows server serves HTTPS by default on 2746
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    # Helm chart sets --secure=false, so server listens on plain HTTP on 2746
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 
     # Rate Limiting
     nginx.ingress.kubernetes.io/limit-rps: "100"
