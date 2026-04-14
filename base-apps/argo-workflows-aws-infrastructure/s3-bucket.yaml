@@ -1,0 +1,19 @@
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: asela-argo-workflows-artifacts
+  labels:
+    app: argo-workflows
+    component: storage
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-1
+    tags:
+      Name: "Argo Workflows Artifacts"
+      Environment: "homelab"
+      ManagedBy: "Crossplane"
+      Purpose: "Argo Workflows artifact + log storage"
+      Project: "argo-workflows"
+  providerConfigRef:
+    name: default
