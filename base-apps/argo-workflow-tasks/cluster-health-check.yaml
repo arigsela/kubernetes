@@ -5,6 +5,7 @@ metadata:
   namespace: argo-workflows
 spec:
   entrypoint: main
+  serviceAccountName: argo-workflow
   # NOTE: requires Phase 4 RBAC (ClusterRole with get/list on nodes & pods)
   # to read cluster-wide. Uses the default ServiceAccount until then.
   templates:
