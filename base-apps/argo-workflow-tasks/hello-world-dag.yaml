@@ -5,6 +5,7 @@ metadata:
   namespace: argo-workflows
 spec:
   entrypoint: main
+  serviceAccountName: argo-workflow
   arguments:
     parameters:
       - name: message
