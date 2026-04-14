@@ -37,7 +37,7 @@ spec:
             keyFormat: "{{workflow.namespace}}/{{workflow.name}}/{{pod.name}}"
             accessKeySecret:
               name: argo-workflows-s3-creds
-              key: attribute.id
+              key: username
             secretKeySecret:
               name: argo-workflows-s3-creds
               key: attribute.secret
