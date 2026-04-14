@@ -1,0 +1,89 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: hello-world-dag
+  namespace: argo-workflows
+spec:
+  entrypoint: main
+  arguments:
+    parameters:
+      - name: message
+        value: "hello from argo workflows"
+  templates:
+    - name: main
+      inputs:
+        parameters:
+          - name: message
+      dag:
+        tasks:
+          - name: generate
+            template: generate-message
+            arguments:
+              parameters:
+                - name: input
+                  value: "{{inputs.parameters.message}}"
+          - name: upper
+            template: print-uppercase
+            dependencies: [generate]
+            arguments:
+              parameters:
+                - name: text
+                  value: "{{tasks.generate.outputs.result}}"
+          - name: lower
+            template: print-lowercase
+            dependencies: [generate]
+            arguments:
+              parameters:
+                - name: text
+                  value: "{{tasks.generate.outputs.result}}"
+          - name: collect
+            template: collect-results
+            dependencies: [upper, lower]
+            arguments:
+              parameters:
+                - name: upper
+                  value: "{{tasks.upper.outputs.result}}"
+                - name: lower
+                  value: "{{tasks.lower.outputs.result}}"
+
+    - name: generate-message
+      inputs:
+        parameters:
+          - name: input
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          echo "{{inputs.parameters.input}} @ $(date -u +%FT%TZ)"
+
+    - name: print-uppercase
+      inputs:
+        parameters:
+          - name: text
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          echo "{{inputs.parameters.text}}" | tr '[:lower:]' '[:upper:]'
+
+    - name: print-lowercase
+      inputs:
+        parameters:
+          - name: text
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          echo "{{inputs.parameters.text}}" | tr '[:upper:]' '[:lower:]'
+
+    - name: collect-results
+      inputs:
+        parameters:
+          - name: upper
+          - name: lower
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          echo "UPPER: {{inputs.parameters.upper}}"
+          echo "LOWER: {{inputs.parameters.lower}}"

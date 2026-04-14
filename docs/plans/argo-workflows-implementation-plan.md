@@ -123,25 +123,25 @@ Deploy Argo Workflows as a POC on the asela-cluster to learn workflow orchestrat
 **Goal**: Reusable templates demonstrating key Argo Workflows concepts
 
 ### Subphase 3.1: ArgoCD App for Workflow Tasks
-- ⬜ Create `base-apps/argo-workflow-tasks.yaml` — ArgoCD Application pointing to `base-apps/argo-workflow-tasks/` path
-- ⬜ Create `base-apps/argo-workflow-tasks/` directory
+- ✅ Create `base-apps/argo-workflow-tasks.yaml` — ArgoCD Application pointing to `base-apps/argo-workflow-tasks/` path
+- ✅ Create `base-apps/argo-workflow-tasks/` directory
 
 ### Subphase 3.2: Hello World DAG Template
-- ⬜ Create `base-apps/argo-workflow-tasks/hello-world-dag.yaml`
+- ✅ Create `base-apps/argo-workflow-tasks/hello-world-dag.yaml`
   - Demonstrates: DAG template, parameters, multiple steps with dependencies
   - Steps: generate-message → fan-out to print-uppercase + print-lowercase → collect-results
   - Shows parameter passing between steps
 
 ### Subphase 3.3: Artifact Passing Template
-- ⬜ Create `base-apps/argo-workflow-tasks/artifact-example.yaml`
-  - Demonstrates: Artifact passing between steps (without external S3 — using volume-based artifacts or emptyDir)
+- ✅ Create `base-apps/argo-workflow-tasks/artifact-example.yaml`
+  - Demonstrates: Artifact passing between steps (using emptyDir)
   - Steps: generate-file → process-file → report-results
 
 ### Subphase 3.4: Practical Utility Templates
-- ⬜ Create `base-apps/argo-workflow-tasks/cluster-health-check.yaml`
-  - WorkflowTemplate that checks cluster health (node status, pod counts, resource usage)
-  - Uses `resource` template type to query Kubernetes API
-  - Demonstrates: RBAC needs for workflows, script templates, conditional logic
+- ✅ Create `base-apps/argo-workflow-tasks/cluster-health-check.yaml`
+  - WorkflowTemplate that checks cluster health (node ready counts, pod running counts)
+  - Uses `script` templates with `bitnami/kubectl` to query Kubernetes API
+  - Full function requires Phase 4 RBAC (ClusterRole for nodes/pods)
 
 ### Phase 3 Validation
 - [ ] All WorkflowTemplates appear in Argo Workflows UI
@@ -231,12 +231,12 @@ Deploy Argo Workflows as a POC on the asela-cluster to learn workflow orchestrat
 
 | Phase | Status | Tasks |
 |-------|--------|-------|
-| Phase 1: Core Deployment | 🟡 In Progress | (2/3 tasks — pending commit/sync) |
-| Phase 2: Secret Management | ⬜ Not Started | (0/2 tasks) |
-| Phase 3: Starter Templates | ⬜ Not Started | (0/4 tasks) |
+| Phase 1: Core Deployment | ✅ Complete | (3/3 tasks) |
+| Phase 2: Secret Management | ⬜ Deferred to Phase 5 | (0/2 tasks) |
+| Phase 3: Starter Templates | ✅ Complete | (4/4 tasks) |
 | Phase 4: CronWorkflow | ⬜ Not Started | (0/2 tasks) |
 | Phase 5: CI Pipeline | ⬜ Not Started | (0/1 tasks) |
-| **Overall** | **~17%** | **(2/12 tasks)** |
+| **Overall** | **~58%** | **(7/12 tasks)** |
 
-**Last Updated**: 2026-04-13
-**Current Status**: Phase 1 files authored; awaiting commit/push and cluster sync verification
+**Last Updated**: 2026-04-14
+**Current Status**: Phases 1 & 3 complete. Phase 2 deferred — will be bundled with Phase 5 (CI pipeline) when a real secret is needed. Phase 4 (CronWorkflow + RBAC) next.
