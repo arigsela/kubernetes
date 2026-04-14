@@ -1,0 +1,59 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: cluster-health-check
+  namespace: argo-workflows
+spec:
+  entrypoint: main
+  # NOTE: requires Phase 4 RBAC (ClusterRole with get/list on nodes & pods)
+  # to read cluster-wide. Uses the default ServiceAccount until then.
+  templates:
+    - name: main
+      dag:
+        tasks:
+          - name: nodes
+            template: check-nodes
+          - name: pods
+            template: check-pods
+          - name: summary
+            template: summarize
+            dependencies: [nodes, pods]
+            arguments:
+              parameters:
+                - name: nodes-ready
+                  value: "{{tasks.nodes.outputs.result}}"
+                - name: pod-total
+                  value: "{{tasks.pods.outputs.result}}"
+
+    - name: check-nodes
+      script:
+        image: bitnami/kubectl:1.30
+        command: [bash]
+        source: |
+          set -eo pipefail
+          ready=$(kubectl get nodes --no-headers 2>/dev/null | awk '$2=="Ready"' | wc -l)
+          total=$(kubectl get nodes --no-headers 2>/dev/null | wc -l)
+          echo "${ready}/${total}"
+
+    - name: check-pods
+      script:
+        image: bitnami/kubectl:1.30
+        command: [bash]
+        source: |
+          set -eo pipefail
+          running=$(kubectl get pods -A --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l)
+          total=$(kubectl get pods -A --no-headers 2>/dev/null | wc -l)
+          echo "${running}/${total}"
+
+    - name: summarize
+      inputs:
+        parameters:
+          - name: nodes-ready
+          - name: pod-total
+      script:
+        image: alpine:3.19
+        command: [sh]
+        source: |
+          echo "=== Cluster Health ==="
+          echo "Nodes Ready: {{inputs.parameters.nodes-ready}}"
+          echo "Pods Running: {{inputs.parameters.pod-total}}"
