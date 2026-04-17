@@ -7,3 +7,19 @@ data:
   ENVIRONMENT: "production"
   DEBUG: "False"
   BACKEND_CORS_ORIGINS: "https://chores.arigsela.com"
+
+  # OpenTelemetry tracing → Coroot (Phase 3 of OTel rollout)
+  # Endpoint confirmed via Phase 1 discovery: Coroot exposes only gRPC on 4317.
+  # The SDK is a no-op until OTEL_TRACES_EXPORTER=otlp + endpoint are set,
+  # which is why older pod versions (pre-7.1.0) are unaffected by this ConfigMap.
+  OTEL_SERVICE_NAME: "chores-tracker-backend"
+  OTEL_RESOURCE_ATTRIBUTES: "service.namespace=chores-tracker,deployment.environment=production"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://coroot-coroot.coroot.svc.cluster.local:4317"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  OTEL_EXPORTER_OTLP_INSECURE: "true"
+  OTEL_TRACES_EXPORTER: "otlp"
+  OTEL_METRICS_EXPORTER: "none"
+  OTEL_LOGS_EXPORTER: "none"
+  OTEL_TRACES_SAMPLER: "parentbased_traceidratio"
+  OTEL_TRACES_SAMPLER_ARG: "0.1"
+  OTEL_PYTHON_LOG_CORRELATION: "true"
