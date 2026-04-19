@@ -41,7 +41,23 @@ spec:
             enabled: false
         falcosidekick:
           enabled: false
-        customRules: {}
+        customRules:
+          # Enable high-signal rules that ship disabled-by-default in Falco 0.40+.
+          # Scoped for smoke-testing the detection pipeline end-to-end; expect to
+          # prune this list before wiring falcosidekick/Slack to avoid alert noise
+          # (Terminal shell in container is especially chatty — kubectl exec,
+          # liveness probes that shell out, etc.).
+          override-smoke-test.yaml: |-
+            - rule: Terminal shell in container
+              enabled: true
+            - rule: Read sensitive file untrusted
+              enabled: true
+            - rule: Write below etc
+              enabled: true
+            - rule: Launch Package Management Process in Container
+              enabled: true
+            - rule: Contact K8s API Server From Container
+              enabled: true
   destination:
     server: https://kubernetes.default.svc
     namespace: falco
