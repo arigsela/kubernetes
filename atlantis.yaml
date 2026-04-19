@@ -11,6 +11,7 @@ projects:
         - "**/*.tf"
         - "**/*.tfvars"
         - "../../modules/**/*.tf"
+        - "../../policies/**/*.rego"
       enabled: true
     apply_requirements:
       - approved
@@ -23,6 +24,8 @@ workflows:
         - init
         - plan:
             extra_args: ["-out=plan.tfplan"]
+        - show
+        - run: conftest test $SHOWFILE -p $BASE_REPO_DIR/policies/ --no-fail
     apply:
       steps:
         - apply:
