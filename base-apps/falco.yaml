@@ -47,16 +47,25 @@ spec:
           # prune this list before wiring falcosidekick/Slack to avoid alert noise
           # (Terminal shell in container is especially chatty — kubectl exec,
           # liveness probes that shell out, etc.).
+          # Falco 0.40+ requires the explicit override schema — bare `enabled: true`
+          # is deprecated and fails to load. "Write below etc" was removed from the
+          # current stable rules pack, so it's dropped here.
           override-smoke-test.yaml: |-
             - rule: Terminal shell in container
+              override:
+                enabled: replace
               enabled: true
             - rule: Read sensitive file untrusted
-              enabled: true
-            - rule: Write below etc
+              override:
+                enabled: replace
               enabled: true
             - rule: Launch Package Management Process in Container
+              override:
+                enabled: replace
               enabled: true
             - rule: Contact K8s API Server From Container
+              override:
+                enabled: replace
               enabled: true
   destination:
     server: https://kubernetes.default.svc
