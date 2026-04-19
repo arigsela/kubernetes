@@ -59,7 +59,7 @@ spec:
               override:
                 enabled: replace
               enabled: true
-            - rule: Contact K8s API Server From Container
+            - rule: Contact K8S API Server From Container
               override:
                 enabled: replace
               enabled: true
