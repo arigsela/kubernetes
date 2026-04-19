@@ -1,0 +1,53 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: falco
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://falcosecurity.github.io/charts
+    chart: falco
+    targetRevision: 8.0.2
+    helm:
+      releaseName: falco
+      values: |
+        # Runtime security DaemonSet - must run on every node for full coverage.
+        # No nodeSelector: pinning to infrastructure would create blind spots on
+        # application/worker nodes where most workloads actually run.
+        driver:
+          kind: auto
+        tolerations:
+          - effect: NoSchedule
+            key: node-role.kubernetes.io/control-plane
+          - effect: NoSchedule
+            key: node-role.kubernetes.io/master
+        falco:
+          priority: warning
+          json_output: true
+          json_include_output_property: true
+          log_level: info
+          log_stderr: true
+          log_syslog: false
+        resources:
+          requests:
+            cpu: 100m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1024Mi
+        collectors:
+          kubernetes:
+            enabled: false
+        falcosidekick:
+          enabled: false
+        customRules: {}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: falco
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
