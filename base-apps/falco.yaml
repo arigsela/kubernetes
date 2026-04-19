@@ -59,10 +59,6 @@ spec:
               override:
                 enabled: replace
               enabled: true
-            - rule: Launch Package Management Process in Container
-              override:
-                enabled: replace
-              enabled: true
             - rule: Contact K8s API Server From Container
               override:
                 enabled: replace
