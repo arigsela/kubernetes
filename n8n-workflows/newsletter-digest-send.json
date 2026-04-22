@@ -1,0 +1,194 @@
+{
+  "name": "Newsletter Digest — Send",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "newsletter-digest",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "079b06ce-7729-4624-a07d-2576bbcdc04f",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1088,
+        16
+      ],
+      "webhookId": "newsletter-digest",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SaXQfVQf0KtjbuR6",
+          "name": "Newsletter Digest Webhook Token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "subject-not-empty",
+              "leftValue": "={{ $json.body.subject }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "html-body-not-empty",
+              "leftValue": "={{ $json.body.html_body }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "to-not-empty",
+              "leftValue": "={{ $json.body.to }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "97542994-7664-4645-8366-614859e1cb1e",
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -864,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "arigsela@gmail.com",
+        "toEmail": "={{ $json.body.to }}",
+        "subject": "={{ $json.body.subject }}",
+        "html": "={{ $json.body.html_body }}",
+        "options": {}
+      },
+      "id": "bf51dcbc-87c5-412f-84f9-21632e47fa36",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -640,
+        -64
+      ],
+      "webhookId": "9004b83c-31a5-4f86-a918-7434666285d7",
+      "credentials": {
+        "smtp": {
+          "id": "DtjHnOSdz1h7Xpuw",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"sent\", \"message_id\": $('Send Email').item.json.messageId, \"sent_at\": $now.toISO() } }}",
+        "options": {}
+      },
+      "id": "dc516e30-a99c-41ac-ae77-047073df4086",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -416,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"error\": \"missing required fields\" } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "3c135b38-ec73-4cfc-9be3-4fddc9cac3b5",
+      "name": "Respond Missing Fields",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -640,
+        112
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Payload": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Missing Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1e1100d4-0c6f-48d3-8d26-3d4633aeb180",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1ac1edd945dd6547c06503f16d68924976acb661550d12289650d4bae82f1e28"
+  },
+  "id": "qX9W779auOovEQe9",
+  "tags": []
+}
