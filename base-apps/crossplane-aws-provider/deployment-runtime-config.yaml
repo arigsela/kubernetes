@@ -1,0 +1,36 @@
+# DeploymentRuntimeConfig for Upbound AWS providers
+# Sets resource requests/limits on the provider Pod controllers, replacing
+# the v2-removed ControllerConfig type. Referenced by the Provider entries
+# in provider.yaml via spec.runtimeConfigRef.name.
+#
+# Why limits matter here: v2.5.x sub-providers (especially provider-aws-s3)
+# do an extensive CRD cache sync at startup. Without CPU guarantees, the
+# sync can time out on a constrained node, leaving the provider in a
+# crash loop. Conservative requests ensure the scheduler reserves enough
+# CPU; generous limits give the controller burst capacity for the cache
+# sync window.
+#
+# Sync-wave "0" so this lands before the Providers themselves at wave "1".
+
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: aws-provider-runtime
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  deploymentTemplate:
+    spec:
+      replicas: 1
+      selector: {}
+      template:
+        spec:
+          containers:
+            - name: package-runtime
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 1000m
+                  memory: 1Gi
