@@ -35,3 +35,6 @@ recovery/full-cluster-recovery.sh
 # Claude Code local settings (keep skills, ignore local settings)
 .claude/settings.local.json
 **/.claude/settings.local.json
+
+# Superpowers brainstorming visual companion artifacts (local only)
+.superpowers/
