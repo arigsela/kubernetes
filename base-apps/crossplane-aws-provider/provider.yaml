@@ -20,6 +20,8 @@ spec:
   packagePullPolicy: IfNotPresent
   revisionActivationPolicy: Automatic
   revisionHistoryLimit: 1
+  runtimeConfigRef:
+    name: aws-provider-runtime
 
 ---
 # AWS S3 Provider
@@ -36,6 +38,8 @@ spec:
   packagePullPolicy: IfNotPresent
   revisionActivationPolicy: Automatic
   revisionHistoryLimit: 1
+  runtimeConfigRef:
+    name: aws-provider-runtime
 
 ---
 # AWS IAM Provider
@@ -52,3 +56,5 @@ spec:
   packagePullPolicy: IfNotPresent
   revisionActivationPolicy: Automatic
   revisionHistoryLimit: 1
+  runtimeConfigRef:
+    name: aws-provider-runtime
