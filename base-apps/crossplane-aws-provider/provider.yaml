@@ -1,5 +1,5 @@
 # Crossplane AWS Providers for managing AWS resources via GitOps
-# Version: v1.12.0 (from provider-family-aws v2.1.1)
+# Version: v2.5.3
 # Purpose: Enable declarative infrastructure management for Loki observability stack
 
 ---
@@ -13,7 +13,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "1"  # Install providers first
 spec:
-  package: xpkg.upbound.io/upbound/provider-aws-s3:v1.12.0
+  package: xpkg.upbound.io/upbound/provider-aws-s3:v2.5.3
   packagePullPolicy: IfNotPresent
   revisionActivationPolicy: Automatic
   revisionHistoryLimit: 1
@@ -29,7 +29,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "1"  # Install providers first
 spec:
-  package: xpkg.upbound.io/upbound/provider-aws-iam:v1.12.0
+  package: xpkg.upbound.io/upbound/provider-aws-iam:v2.5.3
   packagePullPolicy: IfNotPresent
   revisionActivationPolicy: Automatic
   revisionHistoryLimit: 1
