@@ -18,5 +18,10 @@ EXPECTED="${ROOT}/expected-${CASE}.yaml"
 
 ACTUAL="$(crossplane render "${XR}" "${COMPO}" "${FUNCS}" --extra-resources "${XRD}")"
 
-# Normalize before diff (yq round-trip strips comments + sorts keys)
-diff <(yq -P 'sort_keys(..)' <<<"${ACTUAL}") <(yq -P 'sort_keys(..)' "${EXPECTED}")
+# Normalize both sides before diff:
+# - sort_keys(..) makes key order deterministic (yq round-trip also strips comments).
+# - del(.status) removes runtime-controller status (e.g., the synthetic Ready=True
+#   condition `crossplane render` stamps on the XR). The test verifies Composition
+#   *output* (composed children), not render-time XR status.
+NORMALIZE='del(.status) | sort_keys(..)'
+diff <(yq -P "${NORMALIZE}" <<<"${ACTUAL}") <(yq -P "${NORMALIZE}" "${EXPECTED}")

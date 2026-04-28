@@ -12,8 +12,6 @@ spec:
   image: nginxinc/nginx-unprivileged:1.25-alpine
   port: 8080
   replicas: 1
-status:
-  conditions: []
 ---
 apiVersion: apps/v1
 kind: Deployment
