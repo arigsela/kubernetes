@@ -121,16 +121,23 @@ spec:
               name = xr["metadata"]["name"]
               namespace = xr["metadata"]["namespace"]
 
+              # Integers from a protobuf Struct round-trip as Python floats
+              # (Struct's number_value is a double). Cast at the boundary so
+              # rendered YAML has true ints — Kubernetes rejects containerPort: 8080.0
+              # at apply time even though `crossplane render` accepts it.
+              port = int(spec["port"])
+              replicas = int(spec.get("replicas", 2))
+
               env_from = None  # no DB in this version of the script
 
               resource.update(
                   rsp.desired.resources["deployment"],
-                  make_deployment(name, namespace, spec["image"], spec["port"],
-                                  spec.get("replicas", 2), spec.get("env", []), env_from),
+                  make_deployment(name, namespace, spec["image"], port,
+                                  replicas, spec.get("env", []), env_from),
               )
               resource.update(
                   rsp.desired.resources["service"],
-                  make_service(name, namespace, spec["port"]),
+                  make_service(name, namespace, port),
               )
               resource.update(
                   rsp.desired.resources["ingress"],
