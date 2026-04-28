@@ -1,0 +1,28 @@
+# base-apps/crossplane-compositions/composition-application.yaml
+# Application — single Composition for XApplication.
+# Pipeline: one step, function-python, with the script that maps XR spec to
+# Deployment + Service + Ingress + optional CNPG Cluster.
+# In Phase 1 the script is intentionally empty; Phase 2 fills it in under TDD.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: application
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  compositeTypeRef:
+    apiVersion: platform.arigsela.com/v1alpha1
+    kind: XApplication
+  mode: Pipeline
+  pipeline:
+    - step: render-resources
+      functionRef:
+        name: function-python
+      input:
+        apiVersion: python.fn.crossplane.io/v1beta1
+        kind: Script
+        script: |
+          # PHASE 1 STUB — replaced by Phase 2 Task 2.2.
+          def compose(req, rsp):
+              # Deliberately produce nothing so render.sh fails until Phase 2.
+              pass
