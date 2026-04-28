@@ -1,0 +1,23 @@
+# base-apps/crossplane-functions.yaml
+# ArgoCD Application for Crossplane composition functions.
+# Synced before crossplane-compositions (lower wave on the Function CR inside).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: crossplane-functions
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/crossplane-functions
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: crossplane-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
