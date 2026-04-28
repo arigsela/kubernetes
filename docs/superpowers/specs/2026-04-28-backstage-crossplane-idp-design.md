@@ -79,7 +79,7 @@ Give a developer a self-service path from "I have a container image" to "my app 
 ## 5. The `XApplication` XRD (developer-facing API)
 
 ```yaml
-apiVersion: apiextensions.crossplane.io/v2alpha1
+apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
   name: xapplications.platform.arigsela.com
