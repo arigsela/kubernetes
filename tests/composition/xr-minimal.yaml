@@ -1,0 +1,13 @@
+# tests/composition/xr-minimal.yaml
+# TDD input: smallest meaningful XApplication, no DB.
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XApplication
+metadata:
+  name: smoke-app
+  namespace: platform-smoke
+spec:
+  image: nginxinc/nginx-unprivileged:1.25-alpine
+  host: smoke-app.arigsela.com
+  port: 8080
+  replicas: 1
+  dbNeeded: false
