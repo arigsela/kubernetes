@@ -1,0 +1,15 @@
+# base-apps/crossplane-functions/function-python.yaml
+# function-python — runs an inline Python script during Composition rendering.
+# Version MUST match tests/composition/functions.yaml so local render and
+# in-cluster reconcile produce the same outputs.
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-python
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-python:v0.4.0
+  packagePullPolicy: IfNotPresent
+  revisionActivationPolicy: Automatic
+  revisionHistoryLimit: 1
