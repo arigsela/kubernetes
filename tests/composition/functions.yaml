@@ -1,0 +1,11 @@
+# tests/composition/functions.yaml
+# Function references passed to `crossplane render`. Must list every function
+# the Composition uses. Image must match base-apps/crossplane-functions/function-python.yaml.
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-python
+  annotations:
+    render.crossplane.io/runtime: Docker
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-python:v0.4.0
