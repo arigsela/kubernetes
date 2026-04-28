@@ -21,7 +21,7 @@ crossplane render \
   tests/composition/functions.yaml \
   --extra-resources base-apps/crossplane-compositions/xrd-application.yaml \
   | yq -P 'sort_keys(..)' \
-  > tests/composition/expected-minimal.yaml
+  > tests/composition/expected-xr-minimal.yaml
 ```
 
 ## Requires

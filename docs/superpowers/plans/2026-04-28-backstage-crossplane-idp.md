@@ -31,8 +31,8 @@
 | `tests/composition/functions.yaml` | Create | Functions list passed to `crossplane render` (just `function-python`) |
 | `tests/composition/xr-minimal.yaml` | Create | Test input: `XApplication` with no DB |
 | `tests/composition/xr-with-db.yaml` | Create | Test input: `XApplication` with `dbNeeded: true` |
-| `tests/composition/expected-minimal.yaml` | Create | Golden output for `xr-minimal.yaml` |
-| `tests/composition/expected-with-db.yaml` | Create | Golden output for `xr-with-db.yaml` |
+| `tests/composition/expected-xr-minimal.yaml` | Create | Golden output for `xr-minimal.yaml` (filename matches `expected-${CASE}.yaml` from `render.sh`) |
+| `tests/composition/expected-xr-with-db.yaml` | Create | Golden output for `xr-with-db.yaml` |
 | `tests/composition/README.md` | Create | How to run the regression + how to update golden when the Composition intentionally changes |
 | `base-apps/backstage/deployments.yaml` | Modify (Phase 3) | Bump `backstage-portal` image tag once the user produces the new image |
 
@@ -205,7 +205,7 @@ crossplane render \
   tests/composition/functions.yaml \
   --extra-resources base-apps/crossplane-compositions/xrd-application.yaml \
   | yq -P 'sort_keys(..)' \
-  > tests/composition/expected-minimal.yaml
+  > tests/composition/expected-xr-minimal.yaml
 ```
 
 ## Requires
@@ -533,7 +533,7 @@ If any check fails — halt, inspect ArgoCD sync logs and Crossplane events, fix
 
 **Files:**
 - Create: `tests/composition/xr-minimal.yaml`
-- Create: `tests/composition/expected-minimal.yaml`
+- Create: `tests/composition/expected-xr-minimal.yaml`
 
 - [ ] **Step 1: Create `tests/composition/xr-minimal.yaml`**
 
@@ -553,12 +553,12 @@ spec:
   dbNeeded: false
 ```
 
-- [ ] **Step 2: Create `tests/composition/expected-minimal.yaml`**
+- [ ] **Step 2: Create `tests/composition/expected-xr-minimal.yaml`**
 
 The expected output of `crossplane render` for that input. Resources: Deployment + Service + Ingress, all in `platform-smoke` namespace. The Composition must produce this exactly.
 
 ```yaml
-# tests/composition/expected-minimal.yaml
+# tests/composition/expected-xr-minimal.yaml
 # Sorted by yq -P 'sort_keys(..)'. Keep alphabetic key order.
 ---
 apiVersion: platform.arigsela.com/v1alpha1
@@ -689,7 +689,7 @@ spec:
 - [ ] **Step 4: Commit the test**
 
 ```bash
-git add tests/composition/xr-minimal.yaml tests/composition/expected-minimal.yaml
+git add tests/composition/xr-minimal.yaml tests/composition/expected-xr-minimal.yaml
 git commit -m "test(composition): add failing render test for minimal XApplication"
 ```
 
@@ -846,7 +846,7 @@ spec:
 # Expected: exit 0, no diff output
 ```
 
-If diff output appears, inspect, edit script, re-run. The golden YAML in `expected-minimal.yaml` is the source of truth — fix the Python until output matches.
+If diff output appears, inspect, edit script, re-run. The golden YAML in `expected-xr-minimal.yaml` is the source of truth — fix the Python until output matches.
 
 - [ ] **Step 3: Commit**
 
@@ -859,7 +859,7 @@ git commit -m "feat(crossplane): implement Composition (Deployment+Service+Ingre
 
 **Files:**
 - Create: `tests/composition/xr-with-db.yaml`
-- Create: `tests/composition/expected-with-db.yaml`
+- Create: `tests/composition/expected-xr-with-db.yaml`
 - Modify: `base-apps/crossplane-compositions/composition-application.yaml` (extend `compose()` + add `make_cnpg_cluster()`)
 
 - [ ] **Step 1: Create `tests/composition/xr-with-db.yaml`**
@@ -879,9 +879,9 @@ spec:
   dbStorage: 1Gi
 ```
 
-- [ ] **Step 2: Create `tests/composition/expected-with-db.yaml`**
+- [ ] **Step 2: Create `tests/composition/expected-xr-with-db.yaml`**
 
-Same structure as `expected-minimal.yaml` but for `smoke-db-app`, with **two changes**:
+Same structure as `expected-xr-minimal.yaml` but for `smoke-db-app`, with **two changes**:
 1. Deployment container has `envFrom` for `smoke-db-app-db-app` Secret + `env: DATABASE_URL` from the same Secret.
 2. Add a fourth child: a CNPG `Cluster` named `smoke-db-app-db`.
 
@@ -1108,7 +1108,7 @@ def compose(req, rsp):
 ```bash
 git add base-apps/crossplane-compositions/composition-application.yaml \
         tests/composition/xr-with-db.yaml \
-        tests/composition/expected-with-db.yaml
+        tests/composition/expected-xr-with-db.yaml
 git commit -m "feat(crossplane): Composition supports CNPG database (dbNeeded path)"
 ```
 
