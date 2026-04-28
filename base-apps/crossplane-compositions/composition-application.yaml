@@ -115,6 +115,23 @@ spec:
                   },
               }
 
+          def make_cnpg_cluster(parent_name, namespace, instances, storage):
+              return {
+                  "apiVersion": "postgresql.cnpg.io/v1",
+                  "kind": "Cluster",
+                  "metadata": {
+                      "name": f"{parent_name}-db",
+                      "namespace": namespace,
+                      "labels": std_labels(parent_name),
+                  },
+                  "spec": {
+                      "instances": instances,
+                      "imageName": "ghcr.io/cloudnative-pg/postgresql:16",
+                      "bootstrap": {"initdb": {"database": "app", "owner": "app"}},
+                      "storage": {"size": storage},
+                  },
+              }
+
           def compose(req, rsp):
               xr = resource.struct_to_dict(req.observed.composite.resource)
               spec = xr["spec"]
@@ -128,7 +145,8 @@ spec:
               port = int(spec["port"])
               replicas = int(spec.get("replicas", 2))
 
-              env_from = None  # no DB in this version of the script
+              db_secret = f"{name}-db-app" if spec.get("dbNeeded") else None
+              env_from  = db_secret
 
               resource.update(
                   rsp.desired.resources["deployment"],
@@ -143,3 +161,10 @@ spec:
                   rsp.desired.resources["ingress"],
                   make_ingress(name, namespace, spec["host"]),
               )
+
+              if spec.get("dbNeeded"):
+                  resource.update(
+                      rsp.desired.resources["dbcluster"],
+                      make_cnpg_cluster(name, namespace,
+                                        instances=1, storage=spec.get("dbStorage", "1Gi")),
+                  )
