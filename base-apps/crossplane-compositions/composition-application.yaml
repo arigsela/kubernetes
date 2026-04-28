@@ -1,8 +1,7 @@
 # base-apps/crossplane-compositions/composition-application.yaml
 # Application — single Composition for XApplication.
 # Pipeline: one step, function-python, with the script that maps XR spec to
-# Deployment + Service + Ingress + optional CNPG Cluster.
-# In Phase 1 the script is intentionally empty; Phase 2 fills it in under TDD.
+# Deployment + Service + Ingress + (Phase 2.3) optional CNPG Cluster.
 apiVersion: apiextensions.crossplane.io/v1
 kind: Composition
 metadata:
@@ -22,7 +21,118 @@ spec:
         apiVersion: python.fn.crossplane.io/v1beta1
         kind: Script
         script: |
-          # PHASE 1 STUB — replaced by Phase 2 Task 2.2.
+          from crossplane.function import resource
+
+          STD_LABELS_TEMPLATE = {
+              "app.kubernetes.io/name": None,
+              "app.kubernetes.io/managed-by": "crossplane",
+              "backstage.io/kubernetes-id": None,
+          }
+
+          def std_labels(name):
+              labels = dict(STD_LABELS_TEMPLATE)
+              labels["app.kubernetes.io/name"] = name
+              labels["backstage.io/kubernetes-id"] = name
+              return labels
+
+          def make_deployment(name, namespace, image, port, replicas, env_list, env_from_secret):
+              container = {
+                  "name": "app",
+                  "image": image,
+                  "ports": [{"name": "http", "containerPort": port}],
+                  "resources": {
+                      "requests": {"cpu": "100m", "memory": "128Mi"},
+                      "limits":   {"cpu": "500m", "memory": "512Mi"},
+                  },
+                  "livenessProbe": {
+                      "httpGet": {"path": "/healthz", "port": port},
+                      "initialDelaySeconds": 30, "periodSeconds": 30,
+                  },
+                  "readinessProbe": {
+                      "httpGet": {"path": "/healthz", "port": port},
+                      "initialDelaySeconds": 5, "periodSeconds": 10,
+                  },
+              }
+              if env_list:
+                  container["env"] = [{"name": e["name"], "value": e["value"]} for e in env_list]
+              if env_from_secret:
+                  container.setdefault("env", []).append({
+                      "name": "DATABASE_URL",
+                      "valueFrom": {"secretKeyRef": {"name": env_from_secret, "key": "uri"}},
+                  })
+                  container["envFrom"] = [{"secretRef": {"name": env_from_secret}}]
+              return {
+                  "apiVersion": "apps/v1",
+                  "kind": "Deployment",
+                  "metadata": {"name": name, "namespace": namespace, "labels": std_labels(name)},
+                  "spec": {
+                      "replicas": replicas,
+                      "selector": {"matchLabels": {"app.kubernetes.io/name": name}},
+                      "template": {
+                          "metadata": {"labels": std_labels(name)},
+                          "spec": {
+                              "imagePullSecrets": [{"name": "ecr-auth"}],
+                              "containers": [container],
+                          },
+                      },
+                  },
+              }
+
+          def make_service(name, namespace, port):
+              return {
+                  "apiVersion": "v1",
+                  "kind": "Service",
+                  "metadata": {"name": name, "namespace": namespace, "labels": std_labels(name)},
+                  "spec": {
+                      "type": "ClusterIP",
+                      "selector": {"app.kubernetes.io/name": name},
+                      "ports": [{"name": "http", "port": 80, "targetPort": port}],
+                  },
+              }
+
+          def make_ingress(name, namespace, host):
+              return {
+                  "apiVersion": "networking.k8s.io/v1",
+                  "kind": "Ingress",
+                  "metadata": {
+                      "name": name, "namespace": namespace, "labels": std_labels(name),
+                      "annotations": {
+                          "cert-manager.io/cluster-issuer": "letsencrypt-prod",
+                          "nginx.ingress.kubernetes.io/ssl-redirect": "true",
+                          "nginx.ingress.kubernetes.io/force-ssl-redirect": "true",
+                      },
+                  },
+                  "spec": {
+                      "ingressClassName": "nginx",
+                      "tls": [{"hosts": [host], "secretName": f"{name}-tls"}],
+                      "rules": [{
+                          "host": host,
+                          "http": {"paths": [{
+                              "path": "/", "pathType": "Prefix",
+                              "backend": {"service": {"name": name, "port": {"number": 80}}},
+                          }]},
+                      }],
+                  },
+              }
+
           def compose(req, rsp):
-              # Deliberately produce nothing so render.sh fails until Phase 2.
-              pass
+              xr = resource.struct_to_dict(req.observed.composite.resource)
+              spec = xr["spec"]
+              name = xr["metadata"]["name"]
+              namespace = xr["metadata"]["namespace"]
+
+              env_from = None  # no DB in this version of the script
+
+              resource.update(
+                  rsp.desired.resources["deployment"],
+                  make_deployment(name, namespace, spec["image"], spec["port"],
+                                  spec.get("replicas", 2), spec.get("env", []), env_from),
+              )
+              resource.update(
+                  rsp.desired.resources["service"],
+                  make_service(name, namespace, spec["port"]),
+              )
+              resource.update(
+                  rsp.desired.resources["ingress"],
+                  make_ingress(name, namespace, spec["host"]),
+              )
