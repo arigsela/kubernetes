@@ -3,7 +3,7 @@
 # Namespaced (Crossplane v2 default). Schema is v1alpha1 — we will iterate.
 # Image pull secret, health probes, resource limits, kubernetes-id label etc.
 # are platform defaults set by the Composition, not XR fields.
-apiVersion: apiextensions.crossplane.io/v2alpha1
+apiVersion: apiextensions.crossplane.io/v2
 kind: CompositeResourceDefinition
 metadata:
   name: xapplications.platform.arigsela.com
