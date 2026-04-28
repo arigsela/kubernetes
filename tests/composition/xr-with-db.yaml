@@ -1,0 +1,14 @@
+# tests/composition/xr-with-db.yaml
+# TDD input: XApplication with CNPG database enabled.
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XApplication
+metadata:
+  name: smoke-db-app
+  namespace: platform-smoke
+spec:
+  image: nginxinc/nginx-unprivileged:1.25-alpine
+  host: smoke-db-app.arigsela.com
+  port: 8080
+  replicas: 1
+  dbNeeded: true
+  dbStorage: 1Gi
