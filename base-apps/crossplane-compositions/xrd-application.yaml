@@ -1,0 +1,66 @@
+# base-apps/crossplane-compositions/xrd-application.yaml
+# XApplication — the developer-facing API for "I have an image, run it."
+# Namespaced (Crossplane v2 default). Schema is v1alpha1 — we will iterate.
+# Image pull secret, health probes, resource limits, kubernetes-id label etc.
+# are platform defaults set by the Composition, not XR fields.
+apiVersion: apiextensions.crossplane.io/v2alpha1
+kind: CompositeResourceDefinition
+metadata:
+  name: xapplications.platform.arigsela.com
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  scope: Namespaced
+  group: platform.arigsela.com
+  names:
+    kind: XApplication
+    plural: xapplications
+  defaultCompositionRef:
+    name: application
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [image, host, port]
+              properties:
+                image:
+                  type: string
+                  description: "Full container image ref including tag, e.g. nginx:1.25"
+                host:
+                  type: string
+                  description: "FQDN for the public Ingress, e.g. my-app.arigsela.com"
+                port:
+                  type: integer
+                  default: 8080
+                  minimum: 1
+                  maximum: 65535
+                replicas:
+                  type: integer
+                  default: 2
+                  minimum: 1
+                  maximum: 10
+                env:
+                  type: array
+                  description: "Plain-text env vars; never use for secrets"
+                  items:
+                    type: object
+                    required: [name, value]
+                    properties:
+                      name:  { type: string }
+                      value: { type: string }
+                dbNeeded:
+                  type: boolean
+                  default: false
+                dbStorage:
+                  type: string
+                  default: "1Gi"
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
