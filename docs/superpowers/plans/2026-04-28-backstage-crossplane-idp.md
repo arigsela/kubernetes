@@ -169,10 +169,19 @@ FUNCS="${ROOT}/functions.yaml"
 XR="${ROOT}/${CASE}.yaml"
 EXPECTED="${ROOT}/expected-${CASE}.yaml"
 
-ACTUAL="$(crossplane render "${XR}" "${COMPO}" "${FUNCS}" --extra-resources "${XRD}")"
+ACTUAL="$(crossplane render -x "${XR}" "${COMPO}" "${FUNCS}" --extra-resources "${XRD}")"
 
-# Normalize before diff (yq round-trip strips comments + sorts keys)
-diff <(yq -P 'sort_keys(..)' <<<"${ACTUAL}") <(yq -P 'sort_keys(..)' "${EXPECTED}")
+# Normalize both sides before diff:
+# - sort_by(.kind) makes document order deterministic (crossplane render emits
+#   composed resources alphabetically by kind, which differs from how a human
+#   typically orders the golden).
+# - del(.status) removes runtime-controller status (synthetic Ready=True the
+#   render emits on the XR) — we test composed children, not render-time status.
+# - del(.metadata.ownerReferences) and del(.metadata.labels."crossplane.io/composite")
+#   strip render-tooling plumbing crossplane render adds to composed resources.
+# - (... comments="") strips the file-header comments yq otherwise leaks through.
+NORMALIZE='[.] | sort_by(.kind) | .[] | (... comments="") | del(.status) | del(.metadata.ownerReferences) | del(.metadata.labels."crossplane.io/composite") | sort_keys(..)'
+diff <(yq ea -P "${NORMALIZE}" <<<"${ACTUAL}") <(yq ea -P "${NORMALIZE}" "${EXPECTED}")
 ```
 
 - [ ] **Step 3: Make it executable and add `tests/composition/README.md`**
@@ -817,21 +826,29 @@ spec:
               }
 
           def compose(req, rsp):
-              xr = req.observed.composite.resource
+              # struct_to_dict converts the protobuf Struct to a Python dict —
+              # raw req.observed.composite.resource doesn't support .get(), and
+              # int fields come back as floats (Struct stores numbers as doubles).
+              xr = resource.struct_to_dict(req.observed.composite.resource)
               spec = xr["spec"]
               name = xr["metadata"]["name"]
               namespace = xr["metadata"]["namespace"]
+
+              # Cast numeric fields back to int — K8s API server rejects
+              # containerPort: 8080.0 at apply time even though render accepts it.
+              port = int(spec["port"])
+              replicas = int(spec.get("replicas", 2))
 
               env_from = None  # no DB in this version of the script
 
               resource.update(
                   rsp.desired.resources["deployment"],
-                  make_deployment(name, namespace, spec["image"], spec["port"],
-                                  spec.get("replicas", 2), spec.get("env", []), env_from),
+                  make_deployment(name, namespace, spec["image"], port,
+                                  replicas, spec.get("env", []), env_from),
               )
               resource.update(
                   rsp.desired.resources["service"],
-                  make_service(name, namespace, spec["port"]),
+                  make_service(name, namespace, port),
               )
               resource.update(
                   rsp.desired.resources["ingress"],
@@ -1072,19 +1089,22 @@ b) Update `compose()` to use the DB. Note `make_cnpg_cluster(name, ...)` passes 
 
 ```python
 def compose(req, rsp):
-    xr = req.observed.composite.resource
+    xr = resource.struct_to_dict(req.observed.composite.resource)
     spec = xr["spec"]
     name = xr["metadata"]["name"]
     namespace = xr["metadata"]["namespace"]
+
+    port = int(spec["port"])
+    replicas = int(spec.get("replicas", 2))
 
     db_secret = f"{name}-db-app" if spec.get("dbNeeded") else None
     env_from  = db_secret
 
     resource.update(rsp.desired.resources["deployment"],
-        make_deployment(name, namespace, spec["image"], spec["port"],
-                        spec.get("replicas", 2), spec.get("env", []), env_from))
+        make_deployment(name, namespace, spec["image"], port,
+                        replicas, spec.get("env", []), env_from))
     resource.update(rsp.desired.resources["service"],
-        make_service(name, namespace, spec["port"]))
+        make_service(name, namespace, port))
     resource.update(rsp.desired.resources["ingress"],
         make_ingress(name, namespace, spec["host"]))
 
