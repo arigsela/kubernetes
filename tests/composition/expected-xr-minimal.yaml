@@ -1,0 +1,119 @@
+# tests/composition/expected-xr-minimal.yaml
+# Sorted by yq -P 'sort_keys(..)'. Keep alphabetic key order.
+---
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XApplication
+metadata:
+  name: smoke-app
+  namespace: platform-smoke
+spec:
+  dbNeeded: false
+  host: smoke-app.arigsela.com
+  image: nginxinc/nginx-unprivileged:1.25-alpine
+  port: 8080
+  replicas: 1
+status:
+  conditions: []
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: deployment
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-app
+    backstage.io/kubernetes-id: smoke-app
+  name: smoke-app
+  namespace: platform-smoke
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: smoke-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: crossplane
+        app.kubernetes.io/name: smoke-app
+        backstage.io/kubernetes-id: smoke-app
+    spec:
+      containers:
+        - image: nginxinc/nginx-unprivileged:1.25-alpine
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          name: app
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+      imagePullSecrets:
+        - name: ecr-auth
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: service
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-app
+    backstage.io/kubernetes-id: smoke-app
+  name: smoke-app
+  namespace: platform-smoke
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: smoke-app
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    crossplane.io/composition-resource-name: ingress
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-app
+    backstage.io/kubernetes-id: smoke-app
+  name: smoke-app
+  namespace: platform-smoke
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: smoke-app.arigsela.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: smoke-app
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix
+  tls:
+    - hosts:
+        - smoke-app.arigsela.com
+      secretName: smoke-app-tls
