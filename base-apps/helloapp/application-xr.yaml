@@ -1,0 +1,13 @@
+# XApplication (Crossplane) for helloapp
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XApplication
+metadata:
+  name: helloapp
+  namespace: helloapp
+spec:
+  image: nginxinc/nginx-unprivileged:1.25-alpine
+  host: helloapp.arigsela.com
+  port: 8080
+  replicas: 1
+  dbNeeded: false
+  dbStorage: 1Gi
