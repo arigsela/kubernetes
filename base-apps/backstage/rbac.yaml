@@ -64,6 +64,14 @@ kind: ClusterRole
 metadata:
   name: backstage-crossplane-read
 rules:
+  # Kubernetes built-in CRD API — kubernetes-ingestor walks all CRDs at startup
+  # to discover what kinds to ingest (and to render entity types from XRDs).
+  # Without this, the ingestor logs Forbidden 403s in a loop and never ingests
+  # any annotated XRs.
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+
   # Crossplane core APIs — XRDs, Compositions, Functions, Operations
   - apiGroups: ["apiextensions.crossplane.io"]
     resources: ["compositeresourcedefinitions", "compositions", "compositionrevisions", "functions"]
