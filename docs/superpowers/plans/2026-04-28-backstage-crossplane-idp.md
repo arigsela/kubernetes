@@ -1517,21 +1517,28 @@ git add examples/templates/application/content-k8s/
 git commit -m "feat(template): add Nunjucks content for application-template"
 ```
 
-### Task 3.3 — Register the template in `app-config.yaml`
+### Task 3.3 — Register the template in `app-config.yaml` AND `app-config.production.yaml`
 
 **Files (in `arigsela/backstage`):**
 - Modify: `app-config.yaml` — add one entry under `catalog.locations`.
+- Modify: `app-config.production.yaml` — add the same entry under `catalog.locations` (using production's path convention).
 
-- [ ] **Step 1: Locate the existing CrewAI registration as the pattern reference**
+> **Why both files matter:** Backstage merges `app-config.production.yaml` ON TOP of `app-config.yaml` at startup. Arrays at the same key are **replaced**, not concatenated. The production file defines its own `catalog.locations` array — if you only add to the base config, the production overlay silently drops your entry and the new template never appears in the deployed UI. The first run of this plan missed this, requiring a follow-up fix PR.
+
+- [ ] **Step 1: Locate the existing CrewAI registrations in both files**
 
 ```bash
 grep -n "crewai-agent" /Users/arisela/git/kubernetes/docs/reference/backstage/app-config.yaml
-# Expected: line 228 — "target: ../../examples/templates/crewai-agent/template.yaml"
+# Expected: a line "target: ../../examples/templates/crewai-agent/template.yaml" around line 228
+grep -n "crewai-agent" /Users/arisela/git/kubernetes/docs/reference/backstage/app-config.production.yaml
+# Expected: a line "target: ./examples/templates/crewai-agent/template.yaml" around line 100
 ```
 
-- [ ] **Step 2: Add the new template entry directly below the crewai-agent block**
+Note the path-convention difference: base config uses `../../...` (relative to `packages/backend/`), production uses `./...` (relative to `/app`).
 
-Edit `app-config.yaml`. Insert (preserving 4-space YAML indent — match the surrounding entries):
+- [ ] **Step 2: Add the entry to `app-config.yaml`**
+
+Edit `app-config.yaml`. Insert (4-space YAML indent — match surrounding entries):
 
 ```yaml
     # Application (Crossplane) — onboard a container image as a managed app.
@@ -1542,12 +1549,33 @@ Edit `app-config.yaml`. Insert (preserving 4-space YAML indent — match the sur
         - allow: [Template]
 ```
 
-The block goes between the existing `crewai-agent` `Template` location (around line 228) and the `org.yaml` location.
+The block goes between the existing `crewai-agent` `Template` location and the `org.yaml` location.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Add the equivalent entry to `app-config.production.yaml`**
+
+```yaml
+    # Application (Crossplane) — onboard a container image as a managed app.
+    # See: examples/templates/application/template.yaml
+    - type: file
+      target: ./examples/templates/application/template.yaml
+      rules:
+        - allow: [Template]
+```
+
+Note the **`./`** path prefix instead of `../../` — production cwd is `/app`, not `packages/backend/`.
+
+- [ ] **Step 4: Verify both files parse + the production overlay now contains 6 locations**
 
 ```bash
-git add app-config.yaml
+yq eval '.catalog.locations[] | .target' app-config.yaml
+yq eval '.catalog.locations[] | .target' app-config.production.yaml
+# Both should list the new entry; production output should now have 6 entries (was 5).
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app-config.yaml app-config.production.yaml
 git commit -m "feat(config): register application-template under catalog.locations"
 ```
 
