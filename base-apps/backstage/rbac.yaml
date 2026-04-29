@@ -56,3 +56,52 @@ roleRef:
   kind: ClusterRole
   name: backstage-read-only
   apiGroup: rbac.authorization.k8s.io
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backstage-crossplane-read
+rules:
+  # Crossplane core APIs — XRDs, Compositions, Functions, Operations
+  - apiGroups: ["apiextensions.crossplane.io"]
+    resources: ["compositeresourcedefinitions", "compositions", "compositionrevisions", "functions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["pkg.crossplane.io"]
+    resources: ["providers", "providerrevisions", "configurations", "configurationrevisions", "functions", "functionrevisions"]
+    verbs: ["get", "list", "watch"]
+
+  # Our own platform XR API + any future namespaced/cluster XRs we add
+  - apiGroups: ["platform.arigsela.com"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+  # Managed resource APIs — what XRs compose into. The kubernetes-ingestor
+  # walks the compositionRevision's resources to find these.
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters", "poolers", "backups", "scheduledbackups"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["s3.aws.upbound.io", "iam.aws.upbound.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+  # Crossplane internal status resources used by the resources plugin's graph
+  - apiGroups: ["protection.crossplane.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backstage-crossplane-read
+subjects:
+  - kind: ServiceAccount
+    name: backstage
+    namespace: backstage
+roleRef:
+  kind: ClusterRole
+  name: backstage-crossplane-read
+  apiGroup: rbac.authorization.k8s.io
