@@ -1366,20 +1366,23 @@ spec:
           Database: ${{ parameters.dbNeeded }}
         targetPath: ""
 
-    - id: register
-      name: Register in catalog
-      action: catalog:register
-      input:
-        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
-        catalogInfoPath: /base-apps/${{ parameters.name }}/catalog-info.yaml
+  # NOTE: do NOT add a catalog:register step here. `publish:github:pull-request`
+  # does NOT emit a `repoContentsUrl` output (only the direct-push `publish:github`
+  # action does), so the obvious register input fails JSON-schema validation.
+  # Even with a working URL, registering pre-merge points the catalog at a feature
+  # branch that disappears after squash-merge → orphaned entity.
+  # The CrewAI sibling template uses the same publish:github:pull-request action
+  # and also omits catalog:register for this reason.
+  # Workflow: after the PR merges, the operator manually imports via
+  # /catalog-import using the URL:
+  #   https://github.com/arigsela/kubernetes/blob/main/base-apps/<name>/catalog-info.yaml
+  # Future improvement: extend the GitHub catalog provider to scan
+  # `base-apps/*/catalog-info.yaml` so registration becomes automatic.
 
   output:
     links:
       - title: Pull request
         url: ${{ steps.publish.output.remoteUrl }}
-      - title: Catalog entry
-        icon: catalog
-        entityRef: ${{ steps.register.output.entityRef }}
 ```
 
 - [ ] **Step 3: Write `examples/templates/application/README.md`**
