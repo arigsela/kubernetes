@@ -71,10 +71,11 @@ Give a developer a self-service path from "I have a container image" to "my app 
 | 4 | Two new Argo CD parent apps | `arigsela/kubernetes` | `base-apps/crossplane-functions.yaml`, `base-apps/crossplane-compositions.yaml` | Picked up by master-app. Sync waves: function = `1`, composition = `2`. |
 | 5 | Backstage `Template` | `arigsela/backstage` | `examples/templates/application/template.yaml` | Form definition + scaffolder steps. |
 | 6 | Template content | `arigsela/backstage` | `examples/templates/application/content-k8s/` | Three Nunjucks-templated files: `catalog-info.yaml`, `application-xr.yaml`, `argocd-application.yaml`. |
-| 7 | `app-config.yaml` change | `arigsela/backstage` | `app-config.yaml` | One new `catalog.locations` entry for the new template. |
+| 7 | `app-config.yaml` AND `app-config.production.yaml` changes | `arigsela/backstage` | `app-config.yaml` + `app-config.production.yaml` | One new `catalog.locations` entry in **both** files. Production overlay replaces (not merges) the array; missing it in production silently drops the entry. |
 | 8 | Image rebuild + tag bump | `arigsela/backstage` (build) → `arigsela/kubernetes` (deploy) | `base-apps/backstage/deployments.yaml` | Bump `backstage-portal` tag (e.g. `v1.0.1` → `v1.1.0`). |
+| 9 | RBAC ClusterRole for the Crossplane SA | `arigsela/kubernetes` | `base-apps/crossplane-compositions/composition-rbac.yaml` | Aggregates `networking.k8s.io/Ingress` + `postgresql.cnpg.io/Cluster` permissions into the `crossplane` ClusterRole via the `rbac.crossplane.io/aggregate-to-crossplane: "true"` label. Without this, Crossplane fails to compose Ingress (and the with-DB CNPG Cluster) into target namespaces. |
 
-**Sync ordering:** the per-app Argo CD Application (`base-apps/<name>.yaml`) carries `argocd.argoproj.io/sync-wave: "10"` so on a cold cluster the XRD/Composition/Function land before any XR.
+**Sync ordering:** the per-app Argo CD Application (`base-apps/<name>.yaml`) carries `argocd.argoproj.io/sync-wave: "10"` so on a cold cluster the XRD/Composition/Function land before any XR. The RBAC ClusterRole carries sync-wave `"1"` to land alongside the Function.
 
 ## 5. The `XApplication` XRD (developer-facing API)
 
@@ -205,6 +206,8 @@ App authors get individual fields (`username`, `password`, `host`, `port`, `dbna
 - `app.kubernetes.io/managed-by: crossplane`
 - `backstage.io/kubernetes-id: <name>` (so the Backstage Kubernetes plugin auto-discovers the workload on the entity page)
 
+**(E) Health probe path is hardcoded to `/healthz` — known v1 limitation.** Both `livenessProbe` and `readinessProbe` use `httpGet { path: /healthz, port: <spec.port> }`. Onboarded apps must serve HTTP 200 on `/healthz` or their Pods will CrashLoopBackOff (the platform pieces — XApplication, Composition, ArgoCD, cert-manager — still reconcile correctly; only the Pod readiness fails). v2 follow-up: expose `healthCheckPath` as an optional XR field with `/healthz` default.
+
 ## 7. The Backstage Template
 
 **File:** `arigsela/backstage:examples/templates/application/template.yaml`
@@ -263,35 +266,33 @@ spec:
         branchName: scaffold/${{ parameters.name }}
         title: "feat(${{ parameters.name }}): onboard via Crossplane Application"
         targetPath: ""
-    - id: register
-      name: Register in catalog
-      action: catalog:register
-      input:
-        repoContentsUrl: ${{ steps.publish.output.repoContentsUrl }}
-        catalogInfoPath: /base-apps/${{ parameters.name }}/catalog-info.yaml
+  # NOTE: no catalog:register step. publish:github:pull-request does NOT emit a
+  # repoContentsUrl output (only the direct-push publish:github does), and there
+  # is no clean URL to register pre-merge anyway. After PR merge the operator
+  # imports manually via /catalog-import. v2 follow-up: extend the Backstage
+  # GitHub provider to scan base-apps/*/catalog-info.yaml directly.
   output:
     links:
       - title: Pull request
         url: ${{ steps.publish.output.remoteUrl }}
-      - title: Catalog entry
-        icon: catalog
-        entityRef: ${{ steps.register.output.entityRef }}
 ```
 
-**Content directory:** `examples/templates/application/content-k8s/`
+**Content directory:** `examples/templates/application/content-k8s/`. Source paths embed `${{ values.name }}` so `fetch:template` writes the rendered files to the correct destinations without an explicit move step:
 
 ```
 content-k8s/
-├── catalog-info.yaml          → base-apps/<name>/catalog-info.yaml
-├── application-xr.yaml        → base-apps/<name>/application-xr.yaml
-└── argocd-application.yaml    → base-apps/<name>.yaml          (top-level, picked up by master-app)
+└── base-apps/
+    ├── ${{ values.name }}.yaml                            → base-apps/<name>.yaml
+    └── ${{ values.name }}/
+        ├── catalog-info.yaml                              → base-apps/<name>/catalog-info.yaml
+        └── application-xr.yaml                            → base-apps/<name>/application-xr.yaml
 ```
 
-**`catalog-info.yaml`** — `kind: Component` with `metadata.name: <name>`, `spec.owner: <owner>`, `spec.type: service`, and annotations `github.com/project-slug: arigsela/kubernetes` + `backstage.io/kubernetes-id: <name>` (matches the Composition-stamped label).
+**`catalog-info.yaml`** — `kind: Component` with `metadata.name: <name>`, `spec.owner: <owner>`, `spec.type: service`, and annotations `github.com/project-slug: arigsela/kubernetes` + `backstage.io/kubernetes-id: <name>` (matches the Composition-stamped label). The `description` field is rendered via `${{ (values.description | default("...", true)) | dump }}` so user-supplied strings containing `:`, `"`, or `#` can't break YAML parsing.
 
 **`application-xr.yaml`** — the `XApplication` CR with the form values substituted.
 
-**`argocd-application.yaml`** — vanilla Argo CD `Application` with `spec.source.path: base-apps/<name>` and `argocd.argoproj.io/sync-wave: "10"`.
+**`argocd-application.yaml`** — vanilla Argo CD `Application` with `spec.source.path: base-apps/<name>`, `argocd.argoproj.io/sync-wave: "10"`, and **`spec.source.directory.exclude: 'catalog-info.yaml'`** (Backstage Component entity is not a Kubernetes resource — without the exclude, ArgoCD's directory source tries to apply it and fails with "no matches for kind Component in version backstage.io/v1alpha1").
 
 **`namespace == name`** (computed, not asked) for v1.
 
@@ -313,7 +314,17 @@ content-k8s/
 1. **No retries inside the Composition.** Crossplane reconciles again on the next loop; the Python script is deterministic given the XR.
 2. **Failures upstream of Crossplane are someone else's concern.** Image, cert-manager, cluster-storage failures are not platform-team triage paths.
 
-**Decommissioning in v1 is manual via PR:** developer opens a PR removing `base-apps/<name>/` and `base-apps/<name>.yaml`; Argo CD `prune` reaps the XR; Crossplane owner-references reap the rendered children; CNPG `Cluster` deletion does not auto-delete its PVC (CNPG default), so the PV remains until manually cleaned.
+**Decommissioning in v1 — manual three-step:**
+
+1. **Delete the XApplication first** (`kubectl -n <ns> delete xapplication <name>`). Crossplane's owner-references then reap the composed Deployment/Service/Ingress/Cluster cleanly. cert-manager's `Certificate` and ACME solver objects (children of the Ingress) GC along with it.
+2. **Open a PR removing `base-apps/<name>.yaml` + `base-apps/<name>/`.** Master-app prunes the per-app Argo CD Application; the now-empty source directory simply disappears.
+3. **`kubectl delete ns <name>`** — the namespace was created by `CreateNamespace=true` on the per-app Application; ArgoCD does NOT auto-delete it on Application removal.
+
+**Why delete the XApplication first** rather than just rely on ArgoCD's prune cascade: when master-app prunes the per-app Application, the XApplication and its composed children become orphaned (the Application that managed them is gone before the prune cascade reaps them). Deleting the XApplication explicitly first triggers Crossplane's owner-ref cascade synchronously.
+
+**CNPG PVC retention:** `Cluster` deletion does NOT auto-delete its PVC (CNPG default). When decommissioning a `dbNeeded: true` app, also clean up the PVC manually if you don't want to retain the data.
+
+**Backstage catalog Location cleanup:** if you registered the app via `/catalog-import`, that Location entity needs to be unregistered manually after PR merge — otherwise Backstage's refresh perpetually fails to fetch the deleted catalog-info.yaml URL.
 
 ## 9. Testing strategy
 
