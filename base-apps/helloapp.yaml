@@ -13,6 +13,12 @@ spec:
     repoURL: https://github.com/arigsela/kubernetes
     targetRevision: main
     path: base-apps/helloapp
+    # catalog-info.yaml is a Backstage Component entity, not a Kubernetes
+    # resource. Backstage reads it directly from GitHub (via /catalog-import
+    # or auto-discovery). ArgoCD must skip it or sync fails with
+    # "no matches for kind Component in version backstage.io/v1alpha1".
+    directory:
+      exclude: 'catalog-info.yaml'
   destination:
     server: https://kubernetes.default.svc
     namespace: helloapp
