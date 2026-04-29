@@ -1,0 +1,13 @@
+# XApplication (Crossplane) for smoketest-v11
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XApplication
+metadata:
+  name: smoketest-v11
+  namespace: smoketest-v11
+spec:
+  image: nginxinc/nginx-unprivileged:1.25-alpine 
+  host: smoketest-v11.arigsela.com
+  port: 8080
+  replicas: 1
+  dbNeeded: false
+  dbStorage: 1Gi
