@@ -484,6 +484,54 @@ spec:
 ```bash
 git add base-apps/crossplane-functions.yaml base-apps/crossplane-compositions.yaml
 git commit -m "feat(crossplane): wire ArgoCD apps for functions + compositions"
+```
+
+(Don't push yet — Task 1.5b adds one more file before the Phase 1 PR opens.)
+
+### Task 1.5b — RBAC ClusterRole for the Crossplane SA
+
+**Files:**
+- Create: `base-apps/crossplane-compositions/composition-rbac.yaml`
+
+> **Why this exists:** Crossplane v2 namespaced XRs use the controller's own ServiceAccount (`system:serviceaccount:crossplane-system:crossplane`) to apply composed resources into target namespaces. The default `crossplane` ClusterRole grants permissions for Deployments, Services, Secrets, ServiceAccounts, ConfigMaps — but **not** `networking.k8s.io/Ingress` or `postgresql.cnpg.io/Cluster`. Without this extension, our Composition produces Ingress-less workloads and the with-DB path fails on `forbidden: cannot patch resource "ingresses"`. **The first run of this plan missed this entirely** — the gap was caught during Phase 4 e2e on the first real workload.
+
+- [ ] **Step 1: Create `base-apps/crossplane-compositions/composition-rbac.yaml`**
+
+```yaml
+# base-apps/crossplane-compositions/composition-rbac.yaml
+# RBAC extension for the Crossplane controller's ServiceAccount.
+# The aggregate label causes the chart's rbac-manager to roll these rules
+# into the active `crossplane` ClusterRole automatically — no
+# ClusterRoleBinding needed.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crossplane:compositions:application
+  labels:
+    rbac.crossplane.io/aggregate-to-crossplane: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+```
+
+- [ ] **Step 2: Validate**
+
+```bash
+kubectl apply --dry-run=server -f base-apps/crossplane-compositions/composition-rbac.yaml
+# Expected: clusterrole.rbac.authorization.k8s.io/crossplane:compositions:application created (server dry run)
+```
+
+- [ ] **Step 3: Commit + push + open Phase 1 PR**
+
+```bash
+git add base-apps/crossplane-compositions/composition-rbac.yaml
+git commit -m "feat(crossplane): grant Crossplane SA RBAC for Ingress + CNPG Cluster"
 git push -u origin feat/crossplane-idp-application-template
 ```
 
@@ -523,6 +571,16 @@ kubectl get composition application
 kubectl explain xapplication.spec
 # Expected: lists fields image, host, port, replicas, env, dbNeeded, dbStorage
 ```
+
+- [ ] **Step 5: Confirm RBAC aggregation worked**
+
+```bash
+kubectl get clusterrole crossplane -o yaml | grep -B1 -A2 'ingresses\|cnpg.io'
+# Expected: shows the ingresses + postgresql.cnpg.io/clusters rules with verbs
+#           get/list/watch/create/update/patch/delete
+```
+
+If this is empty, the aggregate label on `crossplane:compositions:application` didn't take. Check that ClusterRole's labels.
 
 If any check fails — halt, inspect ArgoCD sync logs and Crossplane events, fix forward, do not start Phase 2.
 
@@ -1901,3 +1959,56 @@ Plan complete and saved to `docs/superpowers/plans/2026-04-28-backstage-crosspla
 **2. Inline Execution** — Execute tasks in this session using executing-plans, batch execution with checkpoints.
 
 Which approach?
+
+---
+
+## Run Notes (2026-04-28 / 2026-04-29 execution)
+
+**Outcome:** v1 of the IDP shipped. Backstage `Application (Crossplane)` template lives at `examples/templates/application/` in `arigsela/backstage`; the `XApplication` XRD + `Application` Composition + `function-python` install + RBAC ClusterRole all live in `arigsela/kubernetes` under `base-apps/crossplane-{functions,compositions}/`.
+
+**End-to-end smoke** (`helloapp`, no DB):
+- ✅ Backstage form → PR `scaffold/helloapp` opened against `arigsela/kubernetes`
+- ✅ Master-app picked up `base-apps/helloapp.yaml` post-merge
+- ✅ Crossplane reconciled `XApplication/helloapp` via `Composition/application`
+- ✅ Composed Deployment + Service + Ingress all rendered with correct labels/ports/host
+- ✅ cert-manager autonomously started ACME flow on the Ingress
+- ⚠️ Pod `0/1 Ready` — `nginxinc/nginx-unprivileged` returns 404 on `/healthz` (the Composition's hardcoded probe path). Platform-side wire fully validated; the runtime probe issue is the known v1 contract limitation flagged in spec §6 (E).
+
+**Bugs caught during execution and fixed before v1 shipped:**
+
+| # | Bug | Where caught | Fix shipped in |
+|---|---|---|---|
+| 1 | Test golden filenames inconsistent with `render.sh` `${CASE}` derivation | Task 1.1 code review | initial commit on Phase 1 branch |
+| 2 | `apiextensions.crossplane.io/v2alpha1` doesn't exist; cluster serves stable `v2` | Task 1.2 cluster dry-run | `arigsela/kubernetes` on Phase 1 branch + spec/plan backport |
+| 3 | `req.observed.composite.resource` is a protobuf Struct, not a dict; `.get()` raises | Task 2.2 implementer | Composition Python on Phase 2 branch + spec/plan backport |
+| 4 | XR `port` and `replicas` come back as Python floats from struct → K8s rejects `containerPort: 8080.0` at apply time | Task 2.2 code review | Composition Python on Phase 2 branch + spec/plan backport |
+| 5 | `crossplane render` needs `-x`; ownerRefs + `crossplane.io/composite` label leak into output | Task 2.2 implementer | `tests/composition/render.sh` on Phase 2 branch + plan backport |
+| 6 | Backstage `app-config.production.yaml` overlay replaces the base `catalog.locations` array; the new template entry was silently dropped | Phase 4 e2e (template missing from UI) | [arigsela/backstage#5](https://github.com/arigsela/backstage/pull/5) + [kubernetes#202](https://github.com/arigsela/kubernetes/pull/202) plan backport |
+| 7 | Scaffolder `catalog:register` step references `repoContentsUrl` — output does NOT exist on `publish:github:pull-request` (only on direct-push `publish:github`) | Phase 4 e2e (Run of Application failed at step 3/3) | [arigsela/backstage#6](https://github.com/arigsela/backstage/pull/6) + [kubernetes#205](https://github.com/arigsela/kubernetes/pull/205) plan backport |
+| 8 | Scaffolder writes `catalog-info.yaml` (Backstage Component, not a CRD) into a directory ArgoCD scans → `no matches for kind Component` | Phase 4 e2e (helloapp ArgoCD app SyncFailed) | [kubernetes#207](https://github.com/arigsela/kubernetes/pull/207) (existing app fix) + [arigsela/backstage#7](https://github.com/arigsela/backstage/pull/7) (template fix) |
+| 9 | Crossplane SA missing RBAC for `networking.k8s.io/Ingress` and `postgresql.cnpg.io/Cluster` — Composition could compose Deployment + Service but not Ingress | Phase 4 e2e (Crossplane `ComposeResources` warning event) | [kubernetes#208](https://github.com/arigsela/kubernetes/pull/208) (Task 1.5b in plan) + spec §4 row 9 |
+
+**Final PR sequence (`arigsela/kubernetes`):**
+- #199 — Phase 1 platform foundations
+- #200 — Phase 2 Composition Python
+- #202 — plan backport: app-config.production.yaml gotcha
+- #203 — Backstage v1.0.3 tag bump (post-PR-fix-merge)
+- #204 — `scaffold/helloapp` (real e2e onboarding via the wizard)
+- #205 — plan backport: catalog:register removal
+- #206 — Backstage v1.0.4 tag bump
+- #207 — helloapp directory.exclude fix
+- #208 — Crossplane SA RBAC ClusterRole
+- #209 — helloapp teardown
+- (this PR) — final spec/plan backport + Phase 4 run notes
+
+**Decommission gotcha noted in spec §8:** when master-app prunes a per-app ArgoCD Application, the XApplication and its composed children are orphaned (the Application that managed them is gone before the prune cascade reaps them). Reliable decommission flow is `kubectl delete xapplication` first, *then* PR-delete the directory.
+
+**v2 follow-up candidates** (open thread for next IDP iteration):
+
+1. AWS resources in the Composition (S3 + IAM via the Upbound providers already installed). Spec §10 row 1.
+2. Vault round-trip for DB credentials. Spec §10 row 2.
+3. Source-code repo creation in the scaffolder (lean on existing `aws:ecr:create` + `aws:ecr:build-push` actions). Spec §10 row 3.
+4. **`healthCheckPath` as an XR field** (default `/healthz`). Eliminates the v1 nginx-unprivileged probe trap.
+5. **Auto-discovery of `base-apps/*/catalog-info.yaml`** in the Backstage GitHub provider — replaces the manual `/catalog-import` step.
+6. TeraSky/Roadie Crossplane Backstage plugin for live XR/managed-resource graph on the entity page. Spec §10 row 4.
+7. Decommission scaffolder template (calls `kubectl delete xapplication` and opens the teardown PR in one shot). Spec §10 row 5.
