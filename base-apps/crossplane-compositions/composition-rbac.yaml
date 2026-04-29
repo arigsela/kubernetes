@@ -1,0 +1,41 @@
+# base-apps/crossplane-compositions/composition-rbac.yaml
+# RBAC extension for the Crossplane controller's ServiceAccount.
+#
+# Why this exists:
+#   Crossplane v2 namespaced XRs use the controller's own SA
+#   (system:serviceaccount:crossplane-system:crossplane) to apply composed
+#   resources into target namespaces. The default `crossplane` ClusterRole
+#   shipped by the chart covers Deployments, Services, Secrets, ServiceAccounts,
+#   ConfigMaps — but NOT Ingresses or CNPG Clusters.
+#
+#   Without this extension, our `application` Composition fails to compose its
+#   Ingress child with:
+#     ingresses.networking.k8s.io is forbidden:
+#     User "system:serviceaccount:crossplane-system:crossplane" cannot patch
+#     resource "ingresses" in API group "networking.k8s.io" in the namespace ...
+#
+#   And the dbNeeded path would similarly fail on postgresql.cnpg.io/clusters.
+#
+# How it works:
+#   The `rbac.crossplane.io/aggregate-to-crossplane: "true"` label causes the
+#   Crossplane chart's rbac-manager to aggregate these rules into the active
+#   `crossplane` ClusterRole. No ClusterRoleBinding is needed — the existing
+#   binding to the `crossplane` SA picks up the aggregated rules automatically.
+#
+# Sync wave 1 ensures this lands alongside / before the Function (also wave 1)
+# and the Composition (wave 3) inside this ArgoCD app.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crossplane:compositions:application
+  labels:
+    rbac.crossplane.io/aggregate-to-crossplane: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
