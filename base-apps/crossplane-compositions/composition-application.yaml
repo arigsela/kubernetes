@@ -35,7 +35,18 @@ spec:
               labels["backstage.io/kubernetes-id"] = name
               return labels
 
-          def make_deployment(name, namespace, image, port, replicas, env_list, env_from_secret):
+          TERASKY_ANNOTATION_PREFIXES = ("terasky.backstage.io/", "backstage.io/")
+
+          def std_annotations(xr_annotations, resource_name):
+              """Copy TeraSky/Backstage annotations from the XR + add per-resource name."""
+              copied = {
+                  k: v for k, v in (xr_annotations or {}).items()
+                  if k.startswith(TERASKY_ANNOTATION_PREFIXES)
+              }
+              copied["crossplane.io/composition-resource-name"] = resource_name
+              return copied
+
+          def make_deployment(name, namespace, image, port, replicas, env_list, env_from_secret, annotations):
               container = {
                   "name": "app",
                   "image": image,
@@ -64,7 +75,12 @@ spec:
               return {
                   "apiVersion": "apps/v1",
                   "kind": "Deployment",
-                  "metadata": {"name": name, "namespace": namespace, "labels": std_labels(name)},
+                  "metadata": {
+                      "name": name,
+                      "namespace": namespace,
+                      "labels": std_labels(name),
+                      "annotations": annotations,
+                  },
                   "spec": {
                       "replicas": replicas,
                       "selector": {"matchLabels": {"app.kubernetes.io/name": name}},
@@ -78,11 +94,16 @@ spec:
                   },
               }
 
-          def make_service(name, namespace, port):
+          def make_service(name, namespace, port, annotations):
               return {
                   "apiVersion": "v1",
                   "kind": "Service",
-                  "metadata": {"name": name, "namespace": namespace, "labels": std_labels(name)},
+                  "metadata": {
+                      "name": name,
+                      "namespace": namespace,
+                      "labels": std_labels(name),
+                      "annotations": annotations,
+                  },
                   "spec": {
                       "type": "ClusterIP",
                       "selector": {"app.kubernetes.io/name": name},
@@ -90,17 +111,21 @@ spec:
                   },
               }
 
-          def make_ingress(name, namespace, host):
+          def make_ingress(name, namespace, host, annotations):
+              base_annotations = {
+                  "cert-manager.io/cluster-issuer": "letsencrypt-prod",
+                  "nginx.ingress.kubernetes.io/ssl-redirect": "true",
+                  "nginx.ingress.kubernetes.io/force-ssl-redirect": "true",
+              }
+              merged_annotations = {**base_annotations, **annotations}
               return {
                   "apiVersion": "networking.k8s.io/v1",
                   "kind": "Ingress",
                   "metadata": {
-                      "name": name, "namespace": namespace, "labels": std_labels(name),
-                      "annotations": {
-                          "cert-manager.io/cluster-issuer": "letsencrypt-prod",
-                          "nginx.ingress.kubernetes.io/ssl-redirect": "true",
-                          "nginx.ingress.kubernetes.io/force-ssl-redirect": "true",
-                      },
+                      "name": name,
+                      "namespace": namespace,
+                      "labels": std_labels(name),
+                      "annotations": merged_annotations,
                   },
                   "spec": {
                       "ingressClassName": "nginx",
@@ -115,7 +140,7 @@ spec:
                   },
               }
 
-          def make_cnpg_cluster(parent_name, namespace, instances, storage):
+          def make_cnpg_cluster(parent_name, namespace, instances, storage, annotations):
               return {
                   "apiVersion": "postgresql.cnpg.io/v1",
                   "kind": "Cluster",
@@ -123,6 +148,7 @@ spec:
                       "name": f"{parent_name}-db",
                       "namespace": namespace,
                       "labels": std_labels(parent_name),
+                      "annotations": annotations,
                   },
                   "spec": {
                       "instances": instances,
@@ -137,6 +163,7 @@ spec:
               spec = xr["spec"]
               name = xr["metadata"]["name"]
               namespace = xr["metadata"]["namespace"]
+              xr_annotations = xr["metadata"].get("annotations", {})
 
               # Integers from a protobuf Struct round-trip as Python floats
               # (Struct's number_value is a double). Cast at the boundary so
@@ -151,20 +178,24 @@ spec:
               resource.update(
                   rsp.desired.resources["deployment"],
                   make_deployment(name, namespace, spec["image"], port,
-                                  replicas, spec.get("env", []), env_from),
+                                  replicas, spec.get("env", []), env_from,
+                                  annotations=std_annotations(xr_annotations, "deployment")),
               )
               resource.update(
                   rsp.desired.resources["service"],
-                  make_service(name, namespace, port),
+                  make_service(name, namespace, port,
+                               annotations=std_annotations(xr_annotations, "service")),
               )
               resource.update(
                   rsp.desired.resources["ingress"],
-                  make_ingress(name, namespace, spec["host"]),
+                  make_ingress(name, namespace, spec["host"],
+                               annotations=std_annotations(xr_annotations, "ingress")),
               )
 
               if spec.get("dbNeeded"):
                   resource.update(
                       rsp.desired.resources["dbcluster"],
                       make_cnpg_cluster(name, namespace,
-                                        instances=1, storage=spec.get("dbStorage", "1Gi")),
+                                        instances=1, storage=spec.get("dbStorage", "1Gi"),
+                                        annotations=std_annotations(xr_annotations, "dbcluster")),
                   )
