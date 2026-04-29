@@ -4,6 +4,13 @@
 apiVersion: platform.arigsela.com/v1alpha1
 kind: XApplication
 metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-db-app
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
   name: smoke-db-app
   namespace: platform-smoke
 spec:
@@ -18,7 +25,13 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-db-app
     crossplane.io/composition-resource-name: deployment
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
   labels:
     app.kubernetes.io/managed-by: crossplane
     app.kubernetes.io/name: smoke-db-app
@@ -78,7 +91,13 @@ apiVersion: v1
 kind: Service
 metadata:
   annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-db-app
     crossplane.io/composition-resource-name: service
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
   labels:
     app.kubernetes.io/managed-by: crossplane
     app.kubernetes.io/name: smoke-db-app
@@ -98,10 +117,16 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-db-app
     cert-manager.io/cluster-issuer: letsencrypt-prod
     crossplane.io/composition-resource-name: ingress
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
   labels:
     app.kubernetes.io/managed-by: crossplane
     app.kubernetes.io/name: smoke-db-app
@@ -130,7 +155,13 @@ apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-db-app
     crossplane.io/composition-resource-name: dbcluster
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
   labels:
     app.kubernetes.io/managed-by: crossplane
     app.kubernetes.io/name: smoke-db-app

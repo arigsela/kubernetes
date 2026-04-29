@@ -5,6 +5,13 @@ kind: XApplication
 metadata:
   name: smoke-app
   namespace: platform-smoke
+  annotations:
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/system: platform
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-app
 spec:
   image: nginxinc/nginx-unprivileged:1.25-alpine
   host: smoke-app.arigsela.com
