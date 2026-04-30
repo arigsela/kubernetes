@@ -56,10 +56,10 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: uri
-                  name: smoke-db-app-db-app
+                  name: smoke-db-app-db
           envFrom:
             - secretRef:
-                name: smoke-db-app-db-app
+                name: smoke-db-app-db
           image: nginxinc/nginx-unprivileged:1.25-alpine
           livenessProbe:
             httpGet:
@@ -177,3 +177,160 @@ spec:
   instances: 1
   storage:
     size: 1Gi
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-db-app
+    crossplane.io/composition-resource-name: externalsecret
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-db-app
+    backstage.io/kubernetes-id: smoke-db-app
+  name: smoke-db-app-db
+  namespace: platform-smoke
+spec:
+  data:
+    - remoteRef:
+        key: platform-smoke/db
+        property: dbname
+      secretKey: dbname
+    - remoteRef:
+        key: platform-smoke/db
+        property: host
+      secretKey: host
+    - remoteRef:
+        key: platform-smoke/db
+        property: jdbc-uri
+      secretKey: jdbc-uri
+    - remoteRef:
+        key: platform-smoke/db
+        property: password
+      secretKey: password
+    - remoteRef:
+        key: platform-smoke/db
+        property: pgpass
+      secretKey: pgpass
+    - remoteRef:
+        key: platform-smoke/db
+        property: port
+      secretKey: port
+    - remoteRef:
+        key: platform-smoke/db
+        property: uri
+      secretKey: uri
+    - remoteRef:
+        key: platform-smoke/db
+        property: username
+      secretKey: username
+  refreshInterval: 15s
+  secretStoreRef:
+    kind: SecretStore
+    name: vault-backend
+  target:
+    creationPolicy: Owner
+    name: smoke-db-app-db
+---
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-db-app
+    crossplane.io/composition-resource-name: pushsecret
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-db-app
+    backstage.io/kubernetes-id: smoke-db-app
+  name: smoke-db-app-db-push
+  namespace: platform-smoke
+spec:
+  data:
+    - match:
+        remoteRef:
+          property: dbname
+          remoteKey: platform-smoke/db
+        secretKey: dbname
+    - match:
+        remoteRef:
+          property: host
+          remoteKey: platform-smoke/db
+        secretKey: host
+    - match:
+        remoteRef:
+          property: jdbc-uri
+          remoteKey: platform-smoke/db
+        secretKey: jdbc-uri
+    - match:
+        remoteRef:
+          property: password
+          remoteKey: platform-smoke/db
+        secretKey: password
+    - match:
+        remoteRef:
+          property: pgpass
+          remoteKey: platform-smoke/db
+        secretKey: pgpass
+    - match:
+        remoteRef:
+          property: port
+          remoteKey: platform-smoke/db
+        secretKey: port
+    - match:
+        remoteRef:
+          property: uri
+          remoteKey: platform-smoke/db
+        secretKey: uri
+    - match:
+        remoteRef:
+          property: username
+          remoteKey: platform-smoke/db
+        secretKey: username
+  deletionPolicy: Delete
+  refreshInterval: 1h
+  secretStoreRefs:
+    - kind: SecretStore
+      name: vault-backend
+  selector:
+    secret:
+      name: smoke-db-app-db-app
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-db-app
+    crossplane.io/composition-resource-name: secretstore
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-db-app
+    backstage.io/kubernetes-id: smoke-db-app
+  name: vault-backend
+  namespace: platform-smoke
+spec:
+  provider:
+    vault:
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: platform-smoke
+          serviceAccountRef:
+            name: default
+      path: k8s-secrets
+      server: http://vault.vault.svc.cluster.local:8200
+      version: v2
