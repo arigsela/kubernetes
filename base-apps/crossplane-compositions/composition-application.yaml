@@ -46,6 +46,108 @@ spec:
               copied["crossplane.io/composition-resource-name"] = resource_name
               return copied
 
+          # Canonical keys CNPG auto-generates in <name>-db-app. Names are preserved
+          # verbatim through Vault → ESO → projected Secret so workload env vars stay
+          # byte-identical to v1.1 behavior. (Renaming uri→DATABASE_URL etc. is a
+          # separate v1 ergonomic improvement, NOT in v1.2 scope.)
+          DB_SECRET_KEYS = ["dbname", "host", "jdbc-uri", "password",
+                            "pgpass", "port", "uri", "username"]
+
+          def make_secret_store(name, namespace, annotations):
+              return {
+                  "apiVersion": "external-secrets.io/v1beta1",
+                  "kind": "SecretStore",
+                  "metadata": {
+                      "name": "vault-backend",
+                      "namespace": namespace,
+                      "labels": std_labels(name),
+                      "annotations": annotations,
+                  },
+                  "spec": {
+                      "provider": {
+                          "vault": {
+                              "server": "http://vault.vault.svc.cluster.local:8200",
+                              "path": "k8s-secrets",
+                              "version": "v2",
+                              "auth": {
+                                  "kubernetes": {
+                                      "mountPath": "kubernetes",
+                                      "role": namespace,
+                                      "serviceAccountRef": {"name": "default"},
+                                  },
+                              },
+                          },
+                      },
+                  },
+              }
+
+          def make_push_secret(name, namespace, annotations):
+              return {
+                  "apiVersion": "external-secrets.io/v1alpha1",
+                  "kind": "PushSecret",
+                  "metadata": {
+                      "name": f"{name}-db-push",
+                      "namespace": namespace,
+                      "labels": std_labels(name),
+                      "annotations": annotations,
+                  },
+                  "spec": {
+                      "refreshInterval": "1h",
+                      "deletionPolicy": "Delete",
+                      "secretStoreRefs": [
+                          {"name": "vault-backend", "kind": "SecretStore"},
+                      ],
+                      "selector": {
+                          "secret": {"name": f"{name}-db-app"},
+                      },
+                      "data": [
+                          {
+                              "match": {
+                                  "secretKey": k,
+                                  "remoteRef": {
+                                      "remoteKey": f"{namespace}/db",
+                                      "property": k,
+                                  },
+                              },
+                          }
+                          for k in DB_SECRET_KEYS
+                      ],
+                  },
+              }
+
+          def make_external_secret(name, namespace, annotations):
+              return {
+                  "apiVersion": "external-secrets.io/v1beta1",
+                  "kind": "ExternalSecret",
+                  "metadata": {
+                      "name": f"{name}-db",
+                      "namespace": namespace,
+                      "labels": std_labels(name),
+                      "annotations": annotations,
+                  },
+                  "spec": {
+                      "refreshInterval": "15s",
+                      "secretStoreRef": {
+                          "name": "vault-backend",
+                          "kind": "SecretStore",
+                      },
+                      "target": {
+                          "name": f"{name}-db",
+                          "creationPolicy": "Owner",
+                      },
+                      "data": [
+                          {
+                              "secretKey": k,
+                              "remoteRef": {
+                                  "key": f"{namespace}/db",
+                                  "property": k,
+                              },
+                          }
+                          for k in DB_SECRET_KEYS
+                      ],
+                  },
+              }
+
           def make_deployment(name, namespace, image, port, replicas, env_list, env_from_secret, annotations):
               container = {
                   "name": "app",
@@ -172,7 +274,7 @@ spec:
               port = int(spec["port"])
               replicas = int(spec.get("replicas", 2))
 
-              db_secret = f"{name}-db-app" if spec.get("dbNeeded") else None
+              db_secret = f"{name}-db" if spec.get("dbNeeded") else None
               env_from  = db_secret
 
               resource.update(
@@ -198,4 +300,19 @@ spec:
                       make_cnpg_cluster(name, namespace,
                                         instances=1, storage=spec.get("dbStorage", "1Gi"),
                                         annotations=std_annotations(xr_annotations, "dbcluster")),
+                  )
+                  resource.update(
+                      rsp.desired.resources["secretstore"],
+                      make_secret_store(name, namespace,
+                                        annotations=std_annotations(xr_annotations, "secretstore")),
+                  )
+                  resource.update(
+                      rsp.desired.resources["pushsecret"],
+                      make_push_secret(name, namespace,
+                                       annotations=std_annotations(xr_annotations, "pushsecret")),
+                  )
+                  resource.update(
+                      rsp.desired.resources["externalsecret"],
+                      make_external_secret(name, namespace,
+                                           annotations=std_annotations(xr_annotations, "externalsecret")),
                   )
