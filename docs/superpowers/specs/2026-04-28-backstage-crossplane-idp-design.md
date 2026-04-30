@@ -314,17 +314,21 @@ content-k8s/
 1. **No retries inside the Composition.** Crossplane reconciles again on the next loop; the Python script is deterministic given the XR.
 2. **Failures upstream of Crossplane are someone else's concern.** Image, cert-manager, cluster-storage failures are not platform-team triage paths.
 
-**Decommissioning in v1 — manual three-step:**
+**Decommissioning in v1 — manual three-step (CORRECTED — original ordering caused selfHeal recreation):**
 
-1. **Delete the XApplication first** (`kubectl -n <ns> delete xapplication <name>`). Crossplane's owner-references then reap the composed Deployment/Service/Ingress/Cluster cleanly. cert-manager's `Certificate` and ACME solver objects (children of the Ingress) GC along with it.
-2. **Open a PR removing `base-apps/<name>.yaml` + `base-apps/<name>/`.** Master-app prunes the per-app Argo CD Application; the now-empty source directory simply disappears.
+1. **PR-delete the manifests FIRST.** Open a PR removing `base-apps/<name>.yaml` + `base-apps/<name>/`. Merge it. Master-app reconciles within ~30s and prunes the per-app Argo CD Application that was managing the XR.
+2. **Once the per-app Application is gone, the XR is orphaned** — no controller is reconciling it back. NOW run:
+   ```bash
+   kubectl -n <name> delete xapplication <name>
+   ```
+   Crossplane's owner-references then reap the composed Deployment / Service / Ingress / Cluster cleanly. cert-manager's Certificate and ACME solver objects (children of the Ingress) GC along with it.
 3. **`kubectl delete ns <name>`** — the namespace was created by `CreateNamespace=true` on the per-app Application; ArgoCD does NOT auto-delete it on Application removal.
 
-**Why delete the XApplication first** rather than just rely on ArgoCD's prune cascade: when master-app prunes the per-app Application, the XApplication and its composed children become orphaned (the Application that managed them is gone before the prune cascade reaps them). Deleting the XApplication explicitly first triggers Crossplane's owner-ref cascade synchronously.
+**Why this order matters** (the original v1 spec had it backwards): the per-app ArgoCD Application has `syncPolicy.automated.selfHeal: true`. If you `kubectl delete xapplication` before merging the teardown PR, ArgoCD detects the drift and re-applies the XR from the still-in-repo manifest within seconds — the delete is undone instantly. The PR-first order ensures that by the time you `kubectl delete xapplication`, no controller is reconciling it back.
 
 **CNPG PVC retention:** `Cluster` deletion does NOT auto-delete its PVC (CNPG default). When decommissioning a `dbNeeded: true` app, also clean up the PVC manually if you don't want to retain the data.
 
-**Backstage catalog Location cleanup:** if you registered the app via `/catalog-import`, that Location entity needs to be unregistered manually after PR merge — otherwise Backstage's refresh perpetually fails to fetch the deleted catalog-info.yaml URL.
+**Backstage catalog Location cleanup (v1 only — superseded by v1.1):** if you registered the app via `/catalog-import` in v1, the Location entity needs to be unregistered manually after PR merge. v1.1's TeraSky `kubernetes-ingestor` makes this automatic — entities auto-deingest within ~30–120s of the XR being deleted.
 
 ## 9. Testing strategy
 
