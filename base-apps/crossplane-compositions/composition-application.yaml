@@ -92,7 +92,7 @@ spec:
                       "annotations": annotations,
                   },
                   "spec": {
-                      "refreshInterval": "1h",
+                      "refreshInterval": "5m",
                       "deletionPolicy": "Delete",
                       "secretStoreRefs": [
                           {"name": "vault-backend", "kind": "SecretStore"},
@@ -148,7 +148,7 @@ spec:
                   },
               }
 
-          def make_deployment(name, namespace, image, port, replicas, env_list, env_from_secret, annotations):
+          def make_deployment(name, namespace, image, port, replicas, env_list, env_from_secret, annotations, health_path):
               container = {
                   "name": "app",
                   "image": image,
@@ -158,11 +158,11 @@ spec:
                       "limits":   {"cpu": "500m", "memory": "512Mi"},
                   },
                   "livenessProbe": {
-                      "httpGet": {"path": "/healthz", "port": port},
+                      "httpGet": {"path": health_path, "port": port},
                       "initialDelaySeconds": 30, "periodSeconds": 30,
                   },
                   "readinessProbe": {
-                      "httpGet": {"path": "/healthz", "port": port},
+                      "httpGet": {"path": health_path, "port": port},
                       "initialDelaySeconds": 5, "periodSeconds": 10,
                   },
               }
@@ -281,7 +281,8 @@ spec:
                   rsp.desired.resources["deployment"],
                   make_deployment(name, namespace, spec["image"], port,
                                   replicas, spec.get("env", []), env_from,
-                                  annotations=std_annotations(xr_annotations, "deployment")),
+                                  annotations=std_annotations(xr_annotations, "deployment"),
+                                  health_path=spec.get("healthCheckPath", "/")),
               )
               resource.update(
                   rsp.desired.resources["service"],
