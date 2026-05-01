@@ -1,0 +1,53 @@
+# CloudNativePG operator (cnpg-system)
+#
+# Installs the CNPG operator + webhook via the upstream Helm chart so that
+# Crossplane Compositions producing postgresql.cnpg.io/Cluster resources
+# (e.g. v1+ IDP apps with `dbNeeded: true`) have a controller available
+# to reconcile them.
+#
+# Discovery context: v1.2 IDP smoke validation found the operator was
+# manually installed at some point in the past and subsequently removed,
+# leaving only the CRDs and a webhook Service stub. This Application
+# brings CNPG back under GitOps so it can't drift again.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cnpg-system
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://cloudnative-pg.github.io/charts
+    chart: cloudnative-pg
+    targetRevision: 0.22.1
+    helm:
+      releaseName: cnpg
+      values: |
+        # Pin operator + webhook to infrastructure nodes per cluster convention
+        # (cert-manager / external-secrets follow the same selector + tolerations).
+        nodeSelector:
+          node.kubernetes.io/workload: infrastructure
+        tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+
+        # CRDs already installed on this cluster from a prior manual install
+        # (dating back to 2025-12-03). The Helm chart's hook-based CRD install
+        # would conflict; let upstream chart manage them on subsequent upgrades.
+        crds:
+          create: true
+
+        # Default monitoring / metrics off for now — observability stack
+        # integration can be a follow-up.
+        monitoring:
+          podMonitorEnabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cnpg-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
