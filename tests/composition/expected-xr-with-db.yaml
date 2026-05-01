@@ -63,7 +63,7 @@ spec:
           image: nginxinc/nginx-unprivileged:1.25-alpine
           livenessProbe:
             httpGet:
-              path: /healthz
+              path: /
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 30
@@ -73,7 +73,7 @@ spec:
               name: http
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
@@ -297,7 +297,7 @@ spec:
           remoteKey: platform-smoke/db
         secretKey: username
   deletionPolicy: Delete
-  refreshInterval: 1h
+  refreshInterval: 5m
   secretStoreRefs:
     - kind: SecretStore
       name: vault-backend

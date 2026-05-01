@@ -46,6 +46,15 @@ spec:
                   default: 2
                   minimum: 1
                   maximum: 10
+                healthCheckPath:
+                  type: string
+                  default: "/"
+                  pattern: "^/.*"
+                  description: |
+                    HTTP path for liveness and readiness probes. Defaults to '/'
+                    which works for most images (nginx, generic web servers).
+                    Override for images that expose a dedicated health endpoint
+                    (e.g. '/api/health', '/actuator/health').
                 env:
                   type: array
                   description: "Plain-text env vars; never use for secrets"
