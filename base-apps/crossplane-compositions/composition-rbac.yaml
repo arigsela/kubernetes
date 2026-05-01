@@ -36,6 +36,25 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # CNPG Cluster + status. The /status subresource is required for Crossplane's
+  # informer to sync — without it, compose fails with:
+  #   "Timeout: failed waiting for *unstructured.Unstructured Informer to sync"
+  # because Crossplane can't read back the Cluster's reconciled state.
   - apiGroups: ["postgresql.cnpg.io"]
-    resources: ["clusters"]
+    resources: ["clusters", "clusters/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # External Secrets Operator resources — v1.2 IDP apps with `dbNeeded: true`
+  # have the Composition emit SecretStore / PushSecret / ExternalSecret per
+  # namespace to round-trip CNPG-generated DB creds through Vault. Crossplane
+  # needs full lifecycle access plus /status for readiness signaling.
+  - apiGroups: ["external-secrets.io"]
+    resources:
+      - secretstores
+      - secretstores/status
+      - pushsecrets
+      - pushsecrets/status
+      - externalsecrets
+      - externalsecrets/status
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
