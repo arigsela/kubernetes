@@ -16,7 +16,7 @@ metadata:
     backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-v121
 spec:
   image: nginxinc/nginx-unprivileged:1.25-alpine
-  host: smoke-v121.arigsela.com.
+  host: smoke-v121.arigsela.com
   port: 8080
   replicas: 1
   dbNeeded: false
