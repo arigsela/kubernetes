@@ -62,8 +62,10 @@ spec:
                     type: object
                     required: [name, value]
                     properties:
-                      name:  { type: string }
-                      value: { type: string }
+                      name:
+                        type: string
+                      value:
+                        type: string
                 dbNeeded:
                   type: boolean
                   default: false
