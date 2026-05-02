@@ -72,6 +72,17 @@ spec:
                 dbStorage:
                   type: string
                   default: "1Gi"
+                s3Needed:
+                  type: boolean
+                  default: false
+                  description: |
+                    When true, the Composition provisions an S3 bucket + dedicated
+                    IAM user + S3-RW-on-own-bucket policy + access key, and routes
+                    AWS credentials through Vault. The workload Deployment receives
+                    AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, and
+                    BUCKET_NAME env vars (zero application-side configuration).
+                    WARNING: bucket is forceDestroy:true — contents are permanently
+                    deleted on teardown.
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true
