@@ -1,0 +1,24 @@
+# ArgoCD Application for smoke-v13
+# Sync wave 10 ensures XRD/Composition land before this app's XR.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: smoke-v13
+  namespace: argo-cd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/smoke-v13
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: smoke-v13
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

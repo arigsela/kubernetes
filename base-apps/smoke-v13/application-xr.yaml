@@ -1,0 +1,24 @@
+# XApplication (Crossplane) for smoke-v13
+# metadata.annotations are read by TeraSky's kubernetes-ingestor and copied
+# onto every composed child by the cluster-side Composition (see
+# arigsela/kubernetes:base-apps/crossplane-compositions/composition-application.yaml).
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XApplication
+metadata:
+  name: smoke-v13
+  namespace: smoke-v13
+  annotations:
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/system: platform
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-v13
+spec:
+  image: mazon/aws-cli:latest
+  host: smoke-v13.arigsela.com
+  port: 8080
+  replicas: 1
+  dbNeeded: false
+  dbStorage: 1Gi
+  s3Needed: true
