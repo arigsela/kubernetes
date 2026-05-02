@@ -15,7 +15,7 @@ metadata:
     terasky.backstage.io/system: platform
     backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-v13
 spec:
-  image: mazon/aws-cli:latest
+  image: amazon/aws-cli:latest
   host: smoke-v13.arigsela.com
   port: 8080
   replicas: 1
