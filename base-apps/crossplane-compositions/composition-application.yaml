@@ -53,6 +53,12 @@ spec:
           DB_SECRET_KEYS = ["dbname", "host", "jdbc-uri", "password",
                             "pgpass", "port", "uri", "username"]
 
+          # AWS account + region constants. Confirmed from existing default
+          # ProviderConfig (status shows 10 resources using it) + chores-tracker-backend
+          # ECR image refs. Single account for all v1.x infra.
+          AWS_ACCOUNT_ID = "852893458518"
+          AWS_REGION = "us-east-2"
+
           def make_secret_store(name, namespace, annotations):
               return {
                   "apiVersion": "external-secrets.io/v1beta1",
@@ -148,7 +154,92 @@ spec:
                   },
               }
 
-          def make_deployment(name, namespace, image, port, replicas, env_list, env_from_secret, annotations, health_path):
+          def make_aws_push_secret(name, namespace, annotations):
+              """Pushes 2 keys (id + secret) from <name>-aws-key (AccessKey-generated)
+              to Vault path k8s-secrets/<namespace>/aws-creds with key remap to
+              AWS SDK convention (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)."""
+              return {
+                  "apiVersion": "external-secrets.io/v1alpha1",
+                  "kind": "PushSecret",
+                  "metadata": {
+                      "name": f"{name}-aws-push",
+                      "namespace": namespace,
+                      "labels": std_labels(name),
+                      "annotations": annotations,
+                  },
+                  "spec": {
+                      "refreshInterval": "5m",
+                      "deletionPolicy": "Delete",
+                      "secretStoreRefs": [
+                          {"name": "vault-backend", "kind": "SecretStore"},
+                      ],
+                      "selector": {
+                          "secret": {"name": f"{name}-aws-key"},
+                      },
+                      "data": [
+                          {
+                              "match": {
+                                  "secretKey": "attribute.id",
+                                  "remoteRef": {
+                                      "remoteKey": f"{namespace}/aws-creds",
+                                      "property": "AWS_ACCESS_KEY_ID",
+                                  },
+                              },
+                          },
+                          {
+                              "match": {
+                                  "secretKey": "attribute.secret",
+                                  "remoteRef": {
+                                      "remoteKey": f"{namespace}/aws-creds",
+                                      "property": "AWS_SECRET_ACCESS_KEY",
+                                  },
+                              },
+                          },
+                      ],
+                  },
+              }
+
+          def make_aws_external_secret(name, namespace, annotations):
+              """Reads from Vault → projects to K8s Secret <name>-aws with AWS SDK-named keys."""
+              return {
+                  "apiVersion": "external-secrets.io/v1beta1",
+                  "kind": "ExternalSecret",
+                  "metadata": {
+                      "name": f"{name}-aws",
+                      "namespace": namespace,
+                      "labels": std_labels(name),
+                      "annotations": annotations,
+                  },
+                  "spec": {
+                      "refreshInterval": "15s",
+                      "secretStoreRef": {
+                          "name": "vault-backend",
+                          "kind": "SecretStore",
+                      },
+                      "target": {
+                          "name": f"{name}-aws",
+                          "creationPolicy": "Owner",
+                      },
+                      "data": [
+                          {
+                              "secretKey": "AWS_ACCESS_KEY_ID",
+                              "remoteRef": {
+                                  "key": f"{namespace}/aws-creds",
+                                  "property": "AWS_ACCESS_KEY_ID",
+                              },
+                          },
+                          {
+                              "secretKey": "AWS_SECRET_ACCESS_KEY",
+                              "remoteRef": {
+                                  "key": f"{namespace}/aws-creds",
+                                  "property": "AWS_SECRET_ACCESS_KEY",
+                              },
+                          },
+                      ],
+                  },
+              }
+
+          def make_deployment(name, namespace, image, port, replicas, env_list, db_secret, aws_secret, health_path, annotations):
               container = {
                   "name": "app",
                   "image": image,
@@ -166,14 +257,34 @@ spec:
                       "initialDelaySeconds": 5, "periodSeconds": 10,
                   },
               }
-              if env_list:
-                  container["env"] = [{"name": e["name"], "value": e["value"]} for e in env_list]
-              if env_from_secret:
-                  container.setdefault("env", []).append({
+              # Build envFrom dynamically based on what the app needs
+              env_from_blocks = []
+              if db_secret:
+                  env_from_blocks.append({"secretRef": {"name": db_secret}})
+              if aws_secret:
+                  env_from_blocks.append({"secretRef": {"name": aws_secret}})
+
+              # DATABASE_URL env var via secretKeyRef (preserve v1.2 behavior)
+              db_env = []
+              if db_secret:
+                  db_env.append({
                       "name": "DATABASE_URL",
-                      "valueFrom": {"secretKeyRef": {"name": env_from_secret, "key": "uri"}},
+                      "valueFrom": {"secretKeyRef": {"name": db_secret, "key": "uri"}},
                   })
-                  container["envFrom"] = [{"secretRef": {"name": env_from_secret}}]
+
+              # Inject AWS configuration as static env vars
+              aws_env = []
+              if aws_secret:
+                  aws_env.extend([
+                      {"name": "AWS_REGION", "value": AWS_REGION},
+                      {"name": "BUCKET_NAME", "value": f"{AWS_ACCOUNT_ID}-{name}"},
+                  ])
+
+              container_env = list(env_list) + db_env + aws_env
+              if container_env:
+                  container["env"] = container_env
+              if env_from_blocks:
+                  container["envFrom"] = env_from_blocks
               return {
                   "apiVersion": "apps/v1",
                   "kind": "Deployment",
@@ -275,14 +386,15 @@ spec:
               replicas = int(spec.get("replicas", 2))
 
               db_secret = f"{name}-db" if spec.get("dbNeeded") else None
-              env_from  = db_secret
+              aws_secret = f"{name}-aws" if spec.get("s3Needed") else None
 
               resource.update(
                   rsp.desired.resources["deployment"],
                   make_deployment(name, namespace, spec["image"], port,
-                                  replicas, spec.get("env", []), env_from,
-                                  annotations=std_annotations(xr_annotations, "deployment"),
-                                  health_path=spec.get("healthCheckPath", "/")),
+                                  replicas, spec.get("env", []),
+                                  db_secret, aws_secret,
+                                  health_path=spec.get("healthCheckPath", "/"),
+                                  annotations=std_annotations(xr_annotations, "deployment")),
               )
               resource.update(
                   rsp.desired.resources["service"],
@@ -295,6 +407,15 @@ spec:
                                annotations=std_annotations(xr_annotations, "ingress")),
               )
 
+              # SecretStore is shared between db and aws paths — emit once if EITHER is needed
+              needs_secret_store = bool(spec.get("dbNeeded") or spec.get("s3Needed"))
+              if needs_secret_store:
+                  resource.update(
+                      rsp.desired.resources["secretstore"],
+                      make_secret_store(name, namespace,
+                                        annotations=std_annotations(xr_annotations, "secretstore")),
+                  )
+
               if spec.get("dbNeeded"):
                   resource.update(
                       rsp.desired.resources["dbcluster"],
@@ -302,11 +423,8 @@ spec:
                                         instances=1, storage=spec.get("dbStorage", "1Gi"),
                                         annotations=std_annotations(xr_annotations, "dbcluster")),
                   )
-                  resource.update(
-                      rsp.desired.resources["secretstore"],
-                      make_secret_store(name, namespace,
-                                        annotations=std_annotations(xr_annotations, "secretstore")),
-                  )
+                  # NOTE: SecretStore emission moved out — handled by the shared
+                  # `needs_secret_store` block above
                   resource.update(
                       rsp.desired.resources["pushsecret"],
                       make_push_secret(name, namespace,
@@ -317,3 +435,18 @@ spec:
                       make_external_secret(name, namespace,
                                            annotations=std_annotations(xr_annotations, "externalsecret")),
                   )
+
+              if spec.get("s3Needed"):
+                  resource.update(
+                      rsp.desired.resources["awspushsecret"],
+                      make_aws_push_secret(name, namespace,
+                                           annotations=std_annotations(xr_annotations, "awspushsecret")),
+                  )
+                  resource.update(
+                      rsp.desired.resources["awsexternalsecret"],
+                      make_aws_external_secret(name, namespace,
+                                               annotations=std_annotations(xr_annotations, "awsexternalsecret")),
+                  )
+                  # NOTE: NO Bucket/User/Policy/UserPolicyAttachment/AccessKey emission here.
+                  # Those are scaffolder-emitted raw manifests in
+                  # base-apps/<name>/aws-resources.yaml. v1.3.1 architecture (Option B).
