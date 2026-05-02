@@ -1,0 +1,351 @@
+# tests/composition/expected-xr-with-s3.yaml
+# Sorted by yq -P 'sort_keys(..)'. Keep alphabetic key order.
+---
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XApplication
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-s3-app
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  name: smoke-s3-app
+  namespace: platform-smoke
+spec:
+  host: smoke-s3-app.arigsela.com
+  image: nginxinc/nginx-unprivileged:1.25-alpine
+  port: 8080
+  replicas: 1
+  s3Needed: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-s3-app
+    crossplane.io/composition-resource-name: deployment
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-s3-app
+    backstage.io/kubernetes-id: smoke-s3-app
+  name: smoke-s3-app
+  namespace: platform-smoke
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: smoke-s3-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: crossplane
+        app.kubernetes.io/name: smoke-s3-app
+        backstage.io/kubernetes-id: smoke-s3-app
+    spec:
+      containers:
+        - env:
+            - name: AWS_REGION
+              value: us-east-2
+            - name: BUCKET_NAME
+              value: 852893458518-smoke-s3-app
+          envFrom:
+            - secretRef:
+                name: smoke-s3-app-aws
+          image: nginxinc/nginx-unprivileged:1.25-alpine
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          name: app
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+      imagePullSecrets:
+        - name: ecr-auth
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-s3-app
+    crossplane.io/composition-resource-name: service
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-s3-app
+    backstage.io/kubernetes-id: smoke-s3-app
+  name: smoke-s3-app
+  namespace: platform-smoke
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: smoke-s3-app
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-s3-app
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    crossplane.io/composition-resource-name: ingress
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-s3-app
+    backstage.io/kubernetes-id: smoke-s3-app
+  name: smoke-s3-app
+  namespace: platform-smoke
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: smoke-s3-app.arigsela.com
+      http:
+        paths:
+          - backend:
+              service:
+                name: smoke-s3-app
+                port:
+                  number: 80
+            path: /
+            pathType: Prefix
+  tls:
+    - hosts:
+        - smoke-s3-app.arigsela.com
+      secretName: smoke-s3-app-tls
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-s3-app
+    crossplane.io/composition-resource-name: secretstore
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-s3-app
+    backstage.io/kubernetes-id: smoke-s3-app
+  name: vault-backend
+  namespace: platform-smoke
+spec:
+  provider:
+    vault:
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: platform-smoke
+          serviceAccountRef:
+            name: default
+      path: k8s-secrets
+      server: http://vault.vault.svc.cluster.local:8200
+      version: v2
+---
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-s3-app
+    crossplane.io/composition-resource-name: bucket
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-s3-app
+    backstage.io/kubernetes-id: smoke-s3-app
+  name: 852893458518-smoke-s3-app
+  namespace: platform-smoke
+spec:
+  forProvider:
+    forceDestroy: true
+    region: us-east-2
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: User
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-s3-app
+    crossplane.io/composition-resource-name: iamuser
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-s3-app
+    backstage.io/kubernetes-id: smoke-s3-app
+  name: smoke-s3-app-app
+  namespace: platform-smoke
+spec:
+  forProvider: {}
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: UserPolicy
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-s3-app
+    crossplane.io/composition-resource-name: iamuserpolicy
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-s3-app
+    backstage.io/kubernetes-id: smoke-s3-app
+  name: smoke-s3-app-s3-rw
+  namespace: platform-smoke
+spec:
+  forProvider:
+    policy: '{"Statement": [{"Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"], "Effect": "Allow", "Resource": ["arn:aws:s3:::852893458518-smoke-s3-app", "arn:aws:s3:::852893458518-smoke-s3-app/*"]}], "Version": "2012-10-17"}'
+    userRef:
+      name: smoke-s3-app-app
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: AccessKey
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-s3-app
+    crossplane.io/composition-resource-name: iamaccesskey
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-s3-app
+    backstage.io/kubernetes-id: smoke-s3-app
+  name: smoke-s3-app-app-key
+  namespace: platform-smoke
+spec:
+  forProvider:
+    userRef:
+      name: smoke-s3-app-app
+  providerConfigRef:
+    name: default
+  writeConnectionSecretToRef:
+    name: smoke-s3-app-aws-key
+    namespace: platform-smoke
+---
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-s3-app
+    crossplane.io/composition-resource-name: awspushsecret
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-s3-app
+    backstage.io/kubernetes-id: smoke-s3-app
+  name: smoke-s3-app-aws-push
+  namespace: platform-smoke
+spec:
+  data:
+    - match:
+        remoteRef:
+          property: AWS_ACCESS_KEY_ID
+          remoteKey: platform-smoke/aws-creds
+        secretKey: attribute.id
+    - match:
+        remoteRef:
+          property: AWS_SECRET_ACCESS_KEY
+          remoteKey: platform-smoke/aws-creds
+        secretKey: attribute.secret
+  deletionPolicy: Delete
+  refreshInterval: 5m
+  secretStoreRefs:
+    - kind: SecretStore
+      name: vault-backend
+  selector:
+    secret:
+      name: smoke-s3-app-aws-key
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  annotations:
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/smoke-s3-app
+    crossplane.io/composition-resource-name: awsexternalsecret
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/system: platform
+  labels:
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: smoke-s3-app
+    backstage.io/kubernetes-id: smoke-s3-app
+  name: smoke-s3-app-aws
+  namespace: platform-smoke
+spec:
+  data:
+    - remoteRef:
+        key: platform-smoke/aws-creds
+        property: AWS_ACCESS_KEY_ID
+      secretKey: AWS_ACCESS_KEY_ID
+    - remoteRef:
+        key: platform-smoke/aws-creds
+        property: AWS_SECRET_ACCESS_KEY
+      secretKey: AWS_SECRET_ACCESS_KEY
+  refreshInterval: 15s
+  secretStoreRef:
+    kind: SecretStore
+    name: vault-backend
+  target:
+    creationPolicy: Owner
+    name: smoke-s3-app-aws
