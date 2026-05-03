@@ -94,6 +94,14 @@ rules:
     resources: ["*"]
     verbs: ["get", "list", "watch"]
 
+  # External Secrets Operator (ESO) — v1.2 + v1.3.1 IDP apps emit SecretStore /
+  # PushSecret / ExternalSecret as part of their Vault round-trip flow.
+  # Without this, the Backstage Crossplane tab can't list these resources
+  # even though they're in the XR's resourceRefs.
+  - apiGroups: ["external-secrets.io"]
+    resources: ["secretstores", "pushsecrets", "externalsecrets"]
+    verbs: ["get", "list", "watch"]
+
   # Crossplane internal status resources used by the resources plugin's graph
   - apiGroups: ["protection.crossplane.io"]
     resources: ["*"]
