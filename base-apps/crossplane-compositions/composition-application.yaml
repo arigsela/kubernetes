@@ -179,7 +179,7 @@ spec:
                       "data": [
                           {
                               "match": {
-                                  "secretKey": "attribute.id",
+                                  "secretKey": "username",
                                   "remoteRef": {
                                       "remoteKey": f"{namespace}/aws-creds",
                                       "property": "AWS_ACCESS_KEY_ID",
@@ -188,7 +188,7 @@ spec:
                           },
                           {
                               "match": {
-                                  "secretKey": "attribute.secret",
+                                  "secretKey": "password",
                                   "remoteRef": {
                                       "remoteKey": f"{namespace}/aws-creds",
                                       "property": "AWS_SECRET_ACCESS_KEY",

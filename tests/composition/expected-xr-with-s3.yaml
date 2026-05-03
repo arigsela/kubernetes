@@ -207,12 +207,12 @@ spec:
         remoteRef:
           property: AWS_ACCESS_KEY_ID
           remoteKey: platform-smoke/aws-creds
-        secretKey: attribute.id
+        secretKey: username
     - match:
         remoteRef:
           property: AWS_SECRET_ACCESS_KEY
           remoteKey: platform-smoke/aws-creds
-        secretKey: attribute.secret
+        secretKey: password
   deletionPolicy: Delete
   refreshInterval: 5m
   secretStoreRefs:
