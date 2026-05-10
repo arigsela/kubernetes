@@ -51,6 +51,17 @@ spec:
             apiKeySecretRef: kagent-anthropic
             apiKeySecretKey: ANTHROPIC_API_KEY
 
+        # UI image override: custom Node-20 build for older HP server CPUs.
+        # Upstream cr.kagent.dev/kagent-dev/kagent/ui:0.8.6 ships Node 24 with
+        # x86-64-v2 baseline → SIGILL on this hardware.
+        # Track upstream: https://github.com/kagent-dev/kagent/issues/1505
+        ui:
+          image:
+            registry: "852893458518.dkr.ecr.us-east-2.amazonaws.com"
+            repository: "kagent-ui"
+            tag: "0.8.6-node20"
+            pullPolicy: IfNotPresent
+
         # Right-sized agent resources (Task 3.3)
         # Read-heavy agents: 512Mi limit; Write-heavy agents: keep 1Gi
         agents:
