@@ -83,6 +83,34 @@ spec:
                     BUCKET_NAME env vars (zero application-side configuration).
                     WARNING: bucket is forceDestroy:true — contents are permanently
                     deleted on teardown.
+                s3Versioning:
+                  type: boolean
+                  default: false
+                  description: |
+                    When true (and s3Needed:true), emits BucketVersioning resource enabling
+                    object versioning on the bucket. Useful for recovery from accidental
+                    deletes or overwrites.
+                    Note: AWS only supports `Suspended` (not full disable) once enabled —
+                    flipping back to false suspends versioning but doesn't delete history.
+                s3LifecycleDays:
+                  type: integer
+                  default: 0
+                  minimum: 0
+                  description: |
+                    When > 0 (and s3Needed:true), emits BucketLifecycleConfiguration with a
+                    single rule that expires all objects after N days. When 0, no lifecycle
+                    rule is created.
+                    Common values: 7 (transient logs), 30 (build artifacts), 365 (compliance
+                    retention).
+                s3CorsEnabled:
+                  type: boolean
+                  default: false
+                  description: |
+                    When true (and s3Needed:true), emits BucketCorsConfiguration with
+                    permissive defaults: allow all origins, GET/PUT/POST/DELETE/HEAD methods,
+                    all headers, max-age 3600s. Useful for web apps that load assets directly
+                    from S3.
+                    For granular CORS configuration, see v1.5+ (deferred).
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true
