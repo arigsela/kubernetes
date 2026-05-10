@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kagent-ui-nginx
+  namespace: kagent
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    # Admin-tool whitelist: home IPs + internal cluster network.
+    # Matches backstage/argo-rollouts/argo-workflows pattern.
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32,170.85.130.202/32,10.0.0.0/8"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - kagent.arigsela.com
+    secretName: kagent-tls
+  rules:
+  - host: kagent.arigsela.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kagent-ui
+            port:
+              number: 8080
