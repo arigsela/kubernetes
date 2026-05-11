@@ -99,7 +99,7 @@ spec:
                   },
                   "spec": {
                       "refreshInterval": "5m",
-                      "deletionPolicy": "Retain",
+                      "deletionPolicy": "None",
                       "secretStoreRefs": [
                           {"name": "vault-backend", "kind": "SecretStore"},
                       ],
@@ -169,7 +169,7 @@ spec:
                   },
                   "spec": {
                       "refreshInterval": "5m",
-                      "deletionPolicy": "Retain",
+                      "deletionPolicy": "None",
                       "secretStoreRefs": [
                           {"name": "vault-backend", "kind": "SecretStore"},
                       ],
