@@ -213,7 +213,7 @@ spec:
           property: AWS_SECRET_ACCESS_KEY
           remoteKey: platform-smoke/aws-creds
         secretKey: password
-  deletionPolicy: Delete
+  deletionPolicy: Retain
   refreshInterval: 5m
   secretStoreRefs:
     - kind: SecretStore

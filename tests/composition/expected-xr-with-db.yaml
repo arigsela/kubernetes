@@ -296,7 +296,7 @@ spec:
           property: username
           remoteKey: platform-smoke/db
         secretKey: username
-  deletionPolicy: Delete
+  deletionPolicy: Retain
   refreshInterval: 5m
   secretStoreRefs:
     - kind: SecretStore
