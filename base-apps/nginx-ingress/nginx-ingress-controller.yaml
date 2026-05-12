@@ -18,6 +18,8 @@ spec:
         effect: NoSchedule
       kind: DaemonSet
       hostNetwork: true
+      extraArgs:
+        enable-ssl-passthrough: "true"
       service:
         type: ClusterIP
         ports:
