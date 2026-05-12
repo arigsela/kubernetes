@@ -1,0 +1,34 @@
+# Default Helm values for ad-hoc vclusters in the homelab.
+# Pass via: vcluster create <name> --namespace vcluster-<name> -f this-file
+#
+# This matches the shape used by the GitOps-managed sandbox-1 instance
+# (base-apps/vcluster-sandbox-1.yaml), minus the per-instance hostname SAN.
+#
+# For ingress-style access add to your `vcluster create` flags:
+#   --set controlPlane.proxy.extraSANs[0]=<name>.vcluster.arigsela.com
+controlPlane:
+  backingStore:
+    etcd:
+      embedded:
+        enabled: false   # use sqlite (default), no PVC
+  statefulSet:
+    persistence:
+      volumeClaim:
+        enabled: false   # ephemeral
+    resources:
+      limits:
+        cpu: 1
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+  service:
+    spec:
+      type: ClusterIP    # external access via Ingress, not LB
+sync:
+  toHost:
+    ingresses:
+      enabled: false     # don't sync vcluster Ingresses to host
+  fromHost:
+    storageClasses:
+      enabled: true      # vcluster can see host StorageClasses
