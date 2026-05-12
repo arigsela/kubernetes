@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vcluster-tls
+  namespace: vcluster-sandbox-1
+spec:
+  secretName: vcluster-tls
+  issuerRef:
+    name: letsencrypt-route53
+    kind: ClusterIssuer
+  commonName: sandbox-1.vcluster.arigsela.com
+  dnsNames:
+    - sandbox-1.vcluster.arigsela.com
