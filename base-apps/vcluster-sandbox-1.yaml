@@ -1,0 +1,56 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vcluster-sandbox-1
+  namespace: argo-cd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vcluster-sandbox-1
+  sources:
+    - repoURL: https://charts.loft.sh
+      chart: vcluster
+      targetRevision: 0.34.0
+      helm:
+        releaseName: vcluster
+        valuesObject:
+          controlPlane:
+            backingStore:
+              etcd:
+                embedded:
+                  enabled: false
+            statefulSet:
+              persistence:
+                volumeClaim:
+                  enabled: false
+              resources:
+                limits:
+                  cpu: 1
+                  memory: 512Mi
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+            service:
+              spec:
+                type: ClusterIP
+            proxy:
+              extraSANs:
+                - sandbox-1.vcluster.arigsela.com
+          sync:
+            toHost:
+              ingresses:
+                enabled: false
+            fromHost:
+              storageClasses:
+                enabled: true
+    - repoURL: https://github.com/arigsela/kubernetes
+      targetRevision: main
+      path: base-apps/vcluster-sandbox-1
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
