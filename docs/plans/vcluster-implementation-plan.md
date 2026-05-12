@@ -2,9 +2,10 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Phase 0 (not started) — 0/5 phases complete
+**Status:** ✅ All phases complete (5/5) — see "Post-execution notes" at the bottom for deviations
 **Last Updated:** 2026-05-12
 **Spec:** [docs/superpowers/specs/2026-05-12-vcluster-design.md](../superpowers/specs/2026-05-12-vcluster-design.md)
+**Runbook:** [docs/reference/vcluster/README.md](../reference/vcluster/README.md) — source of truth for actual usage
 
 ## Goal
 
@@ -792,3 +793,52 @@ To remove `sandbox-1` only:
 
 1. `git rm base-apps/vcluster-sandbox-1.yaml` and `git rm -r base-apps/vcluster-sandbox-1/`
 2. Commit and push — ArgoCD prune will delete the namespace and resources.
+
+---
+
+## Post-execution notes (2026-05-12)
+
+The implementation completed end-to-end, but reality diverged from the plan in several material ways. Captured here for future planners.
+
+### Major pivot: ssl-passthrough → nginx-terminated TLS
+
+The plan's central design (per the spec) was nginx ssl-passthrough so the vcluster pod could serve a Let's Encrypt cert directly. **This broke the cluster in production.** With `--enable-ssl-passthrough=true`, ingress-nginx restructures into two nginx instances; the inner nginx saw all non-passthrough traffic with `client: 127.0.0.1`, breaking `whitelist-source-range` on `argocd-server`, `atlantis`, `backstage`, and any other ingress relying on real-client-IP enforcement. The fix would have been adding `use-proxy-protocol: "true"` to the ConfigMap, but that has its own blast radius (would break any path that delivers traffic without PROXY protocol).
+
+**Pivoted to nginx-terminated TLS** (PR #264): nginx terminates the LE cert at the edge and proxies HTTPS to the vcluster service. The vcluster pod's internal cert is not on the wire seen by kubectl. This is actually the cleaner design and what the spec should have specified from the start.
+
+Phase 1 was reverted (PR #263) and `enable-ssl-passthrough` is **not** enabled on the cluster.
+
+### Surfaced pre-existing issue: Route 53 IAM credentials
+
+The cert-manager Route 53 credentials in Vault (`k8s-secrets/cert-manager/route53`) pointed at an access key that did not exist in the AWS account. cert-manager had been silently failing DNS-01 challenges for any newly requested cert for an unknown period (the oncall-crewai cert had been stuck for 70 days). Existing valid certs kept working because renewal only happens close to expiration.
+
+**Remediation:** created a scoped IAM user `cert-manager-route53` with least-privilege Route 53 access (only the arigsela.com hosted zone for record changes; cluster-wide for zone lookups), minted a new access key, updated Vault, force-resynced ESO. All previously stuck CertificateRequests were deleted and reissued successfully.
+
+This problem was not in the original risk list because the existing cert validity check (Task 0.2) only verified the *secret existed*, not that the keys *worked*. Future runbooks should test against AWS, e.g. `aws sts get-caller-identity` from a pod using the credentials.
+
+### Operational discoveries (now in the runbook)
+
+1. **vcluster CLI uses Helm `releaseName` as the identifier**, not the chart metadata name. The GitOps `sandbox-1` was deployed with `releaseName: vcluster`, so it's `vcluster connect vcluster --namespace vcluster-sandbox-1`. Cosmetic; can be fixed by changing `releaseName` in the Application values and reinstalling.
+2. **Modern CLI uses `--print`**; the original plan referenced deprecated `--update-current` and `--kube-config` flags.
+3. **kubeconfig CA must be stripped.** `vcluster connect --print` always embeds the vcluster internal CA. With nginx-terminated TLS, the wire cert is LE-signed — kubectl uses the OS CA bundle only if `certificate-authority-data` is absent from the kubeconfig.
+4. **Token-based auth is required.** Default client-cert auth doesn't survive TLS termination at nginx — the cert never reaches the backend, so kubectl is `system:anonymous`. Pass `--service-account admin --cluster-role cluster-admin` to `vcluster connect` to get a bearer-token kubeconfig.
+5. **Streaming annotations** are needed for `kubectl exec` / `port-forward` / `logs -f` through the nginx hop. The runbook's `ingress.tmpl.yaml` includes them.
+
+### What was actually delivered
+
+| Phase | Plan PR(s) | Status |
+|---|---|---|
+| Phase 0 | (read-only) | ✅ done in session |
+| Phase 1 | #261 enable, #263 revert | ✅ reverted by design — see pivot above |
+| Phase 2 | #262 initial, #264 TLS redesign | ✅ vcluster-sandbox-1 deployed and validated end-to-end |
+| Phase 3 | (read-only) | ✅ Kyverno/ECR confirmed clean |
+| Phase 4 | #265 | ✅ `docs/reference/vcluster/` runbook + templates |
+| Phase 5 | (CLI exercise) | ✅ ad-hoc `vcluster create/delete` lifecycle validated |
+| Side-quest | (AWS + Vault, no PR) | ✅ created `cert-manager-route53` IAM user, rotated Vault credentials |
+
+### Follow-ups not done in this iteration
+
+- `oncall-crewai/chores-tracker-agent-tls` was reissued successfully after the credential fix but no other validation done.
+- The cert-manager Certificate in `base-apps/vcluster-sandbox-1/` is currently unused (LE cert is on the wire via nginx; vcluster pod serves its own internal cert that kubectl never sees in this design). Could be removed for cleanliness, but it's harmless and useful for future browser/curl access if we choose to mount it into the vcluster pod.
+- vcluster `releaseName: sandbox-1` rename for cleaner CLI UX.
+- Wildcard DNS for `*.vcluster.arigsela.com → 10.0.1.50` at the LAN resolver (replacing `/etc/hosts`).
