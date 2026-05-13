@@ -24,8 +24,10 @@ spec:
           from crossplane.function import resource
 
           def compose(req, rsp):
-              spec = req.observed.composite.resource.get("spec", {})
-              name = req.observed.composite.resource.get("metadata", {}).get("name", "unknown")
+              # req.observed.composite.resource is a protobuf Struct; convert to dict before access.
+              xr = resource.struct_to_dict(req.observed.composite.resource)
+              spec = xr.get("spec", {})
+              name = xr.get("metadata", {}).get("name", "unknown")
               ns_name = f"vcluster-{name}"
               host = spec.get("host", "")
               ingress_host = f"{host}.smoke.arigsela.com"
@@ -96,9 +98,5 @@ spec:
               }
               resource.update(rsp.desired.resources["vcluster-application"], vcluster_app)
 
-              # Status (Phase 1: always Provisioning)
-              rsp.desired.composite.resource.setdefault("status", {}).update({
-                  "phase": "Provisioning",
-                  "vclusterURL": f"https://vcluster.{ns_name}.svc:443",
-                  "ingressURL": f"http://{ingress_host}",
-              })
+              # NOTE: status writing on the XR uses protobuf Struct semantics — defer to Phase 2
+              # where we'll add it properly alongside the function-extra-resources wiring.
