@@ -32,3 +32,16 @@ rules:
   - apiGroups: ["argoproj.io"]
     resources: ["applications", "applications/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Phase 2 — bootstrap Job + its RBAC (cross-namespace SA pattern).
+  # The bootstrap Job reads vcluster's generated kubeconfig Secret and
+  # patches the placeholder ArgoCD cluster Secret with TLS material.
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
