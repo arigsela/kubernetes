@@ -1,0 +1,8 @@
+# Image to deploy (required — no default)
+image: ""
+# Container port the Service routes to
+port: 80
+# Full hostname for the Ingress (Composition passes <host>.smoke.arigsela.com)
+host: ""
+# Pod replica count
+replicas: 1
