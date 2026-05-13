@@ -1,0 +1,57 @@
+# base-apps/crossplane-compositions/xrd-smoke-test.yaml
+# XSmokeTestApp — namespaced XR for IDP smoke-test app provisioning.
+# Spec: docs/superpowers/specs/2026-05-13-smoke-test-app-design.md
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xsmoketestapps.platform.arigsela.com
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  group: platform.arigsela.com
+  names:
+    kind: XSmokeTestApp
+    plural: xsmoketestapps
+  claimNames:
+    kind: SmokeTestApp
+    plural: smoketestapps
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [image, host]
+              properties:
+                image:
+                  type: string
+                  description: Container image to deploy (e.g. nginx, ghcr.io/me/app:v1)
+                host:
+                  type: string
+                  pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+                  maxLength: 30
+                  description: Subdomain label — ingress at <host>.smoke.arigsela.com
+                port:
+                  type: integer
+                  default: 80
+                  minimum: 1
+                  maximum: 65535
+                replicas:
+                  type: integer
+                  default: 1
+                  minimum: 1
+                  maximum: 3
+            status:
+              type: object
+              properties:
+                vclusterURL:
+                  type: string
+                ingressURL:
+                  type: string
+                phase:
+                  type: string
+                  enum: [Provisioning, Ready, Failed]
