@@ -1,0 +1,15 @@
+# base-apps/crossplane-functions/function-extra-resources.yaml
+# Reads existing K8s resources during Composition rendering so the smoke-test
+# Composition can pick up vcluster's generated kubeconfig secret on the second
+# reconcile pass. See docs/superpowers/specs/2026-05-13-smoke-test-app-design.md.
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-extra-resources
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  package: xpkg.upbound.io/crossplane-contrib/function-extra-resources:v0.3.0
+  packagePullPolicy: IfNotPresent
+  revisionActivationPolicy: Automatic
+  revisionHistoryLimit: 1
