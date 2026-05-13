@@ -1,0 +1,34 @@
+# base-apps/crossplane-compositions/composition-rbac-smoke-test.yaml
+# RBAC extension for the smoke-test Composition.
+#
+# The default `crossplane` ClusterRole does not grant the Crossplane controller
+# SA permission to create Namespaces or ArgoCD Applications, which the smoke-test
+# Composition emits. Without this:
+#   - Phase 1 fails to create namespaces/<ns> ("forbidden: cannot patch resource namespaces")
+#   - Phase 2 fails to create applications.argoproj.io ("forbidden: cannot patch ...")
+#
+# Aggregated into the existing `crossplane` ClusterRole via the standard
+# rbac.crossplane.io/aggregate-to-crossplane label — no extra binding needed.
+#
+# Mirrors the existing composition-rbac.yaml (which handles the application
+# Composition's Ingress/CNPG/ESO needs); split into its own file so each
+# Composition's RBAC stays scoped and discoverable.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crossplane:compositions:smoke-test
+  labels:
+    rbac.crossplane.io/aggregate-to-crossplane: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+rules:
+  # Namespaces — the Composition creates one per smoke test (vcluster-<name>)
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # ArgoCD Applications — the Composition emits the vcluster Application
+  # (Phase 1) and the workload Application (Phase 2)
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications", "applications/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
