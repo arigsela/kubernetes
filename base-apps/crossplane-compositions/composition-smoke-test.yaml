@@ -101,7 +101,13 @@ spec:
                       },
                       "syncPolicy": {
                           "automated": {"prune": True, "selfHeal": True},
-                          "syncOptions": ["CreateNamespace=true", "ServerSideApply=true"],
+                          # NOTE: CreateNamespace=true is intentionally OMITTED — Crossplane
+                          # owns the namespace (resource #1). If ArgoCD raced ahead and
+                          # auto-created it via CreateNamespace, the namespace would lack
+                          # the crossplane.io/composition-resource-name annotation and
+                          # subsequent Crossplane reconciles would fail with
+                          # "composed resource without required annotation".
+                          "syncOptions": ["ServerSideApply=true"],
                       },
                   },
               })
