@@ -1928,3 +1928,37 @@ kubectl exec -n backstage <pod> -- node -e \
 in `template.yaml` (no `| dump`), and iterate with
 `{% for skill in values.skills %}` in the content template (no `parseJson`).
 Tasks 4 and 5 above now reflect this.
+
+### 3. ArgoCD Directory source needs `recurse: true`
+
+The plan assumed `base-apps/kagent-secrets.yaml` already synced
+`base-apps/kagent/` recursively. It did not — ArgoCD's Directory source
+defaults to `recurse: false`, so files in `base-apps/kagent/agents/` were
+silently skipped at sync time even after ArgoCD reconciled to the
+post-merge commit.
+
+**Symptom:** the agent's PR merges cleanly, ArgoCD reconciles to the
+post-merge commit, but the Agent CRD never appears (`kubectl get agent
+-n kagent <name>` returns NotFound) and is missing from the Application's
+resources tree.
+
+**Diagnosis tool:**
+```bash
+kubectl get application kagent-secrets -n argo-cd -o yaml | yq '.status.resources[].name'
+```
+
+**Required pre-work for this plan:** before running Phase 3 smoke tests
+(or before merging any IDP-created agent PR), `base-apps/kagent-secrets.yaml`
+in `arigsela/kubernetes` must include `directory.recurse: true`:
+
+```yaml
+spec:
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/kagent
+    directory:
+      recurse: true   # REQUIRED for the agents/ subdir to be synced
+```
+
+This was done in `arigsela/kubernetes` PR #279.
