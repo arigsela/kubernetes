@@ -11,7 +11,7 @@ metadata:
     terasky.backstage.io/component-type: kagent-agent
     backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/homelab-knowledge.yaml
     backstage.io/owner: group:default/platform-engineering
-    arigsela.com/kagent-about: |
+    terasky.backstage.io/kagent-about: |
       # homelab-knowledge
 
       Answers questions about the homelab GitOps repo, base-apps deployments, and live cluster state by delegating to k8s and helm specialists
