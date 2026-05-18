@@ -65,7 +65,6 @@ spec:
           CRDs, namespaces) → delegate to k8s-agent. Always prefer this over guessing.
         - For Helm release questions (what charts are installed, versions, values
           diffs, release history) → delegate to helm-agent.
-        - For metrics, dashboards, alert investigation → delegate to observability-agent.
         - For repo/manifest questions (what's in base-apps/<x>/, ArgoCD sync status,
           Vault role names, ingress hostnames) → answer from your own knowledge if
           possible, then cross-check live state via k8s-agent.
@@ -129,9 +128,6 @@ spec:
     - type: Agent
       agent:
         name: helm-agent
-    - type: Agent
-      agent:
-        name: observability-agent
     deployment:
       resources:
         requests:
