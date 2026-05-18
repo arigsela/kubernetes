@@ -397,3 +397,40 @@ catch malformed manifests at sync time anyway, just with worse UX.
 - **MCP-server tool support** — for agents that need direct tool access
   rather than delegation (i.e., not orchestrator-style). Adds significant
   wizard complexity (`requireApproval` lists, MCP server URLs, tool names).
+
+## Findings from production deployment
+
+Two issues surfaced during the first deploy + smoke test that aren't
+predictable from this design alone. Both are now reflected in the
+implementation plan as required steps.
+
+### 1. `app-config.production.yaml` overrides arrays
+
+The Backstage container starts with
+`node packages/backend --config app-config.yaml --config app-config.production.yaml`.
+Backstage's config layering merges **objects** but **replaces** entire **arrays**.
+`app-config.production.yaml` has its own `catalog.locations` block, so the
+two new kagent location entries added to `app-config.yaml` were silently
+dropped at startup — the production file's `catalog.locations` replaced
+them whole. The catalog only loaded the 4 templates listed in
+production config.
+
+**Required:** add new `catalog.locations` entries to **both**
+`app-config.yaml` and `app-config.production.yaml`. There is already a
+comment in `app-config.production.yaml` calling out the same constraint for
+the `kubernetesIngestor` block — the same pattern applies here.
+
+### 2. `parseJson` Nunjucks filter not in this Backstage version
+
+The original plan passed the `skills` array into `fetch:template` as
+`${{ parameters.skills | dump }}` (JSON-stringify), then deserialized
+inside the content template with
+`{% set skillsList = values.skills | parseJson %}`.
+
+This Backstage version's Nunjucks scope does not expose `parseJson`, so
+the dry-run fails with `Error: filter not found: parseJson`.
+
+**Required:** pass the array through directly. In `template.yaml` use
+`skills: ${{ parameters.skills }}` (no `| dump`); in the content template
+iterate with `{% if values.skills | length > 0 %}` / `{% for skill in
+values.skills %}` (no `| parseJson`).

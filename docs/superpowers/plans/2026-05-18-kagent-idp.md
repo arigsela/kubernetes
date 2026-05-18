@@ -1283,7 +1283,7 @@ spec:
           systemMessage: ${{ parameters.systemMessage }}
           includeBuiltinPrompts: ${{ parameters.includeBuiltinPrompts }}
           delegateAgents: ${{ parameters.delegateAgents }}
-          skills: ${{ parameters.skills | dump }}
+          skills: ${{ parameters.skills }}
           cpuRequest: ${{ parameters.cpuRequest | trim }}
           cpuLimit: ${{ parameters.cpuLimit | trim }}
           memoryRequest: ${{ parameters.memoryRequest | trim }}
@@ -1403,11 +1403,10 @@ spec:
         overlapSize: ${{ values.overlapSize }}
     systemMessage: |
       ${{ values.systemMessage | indent(6) }}
-{%- set skillsList = values.skills | parseJson %}
-{%- if skillsList | length > 0 %}
+{%- if values.skills | length > 0 %}
     a2aConfig:
       skills:
-{%- for skill in skillsList %}
+{%- for skill in values.skills %}
       - id: ${{ skill.id }}
         name: ${{ skill.name }}
         description: ${{ skill.description }}
@@ -1441,7 +1440,7 @@ spec:
           memory: ${{ values.memoryLimit }}
 ```
 
-**Note on `parseJson`:** Backstage's Nunjucks scope provides `parseJson` as a built-in filter so `skills` (passed in as a JSON string via `| dump` in template.yaml) can be parsed back into an array for iteration. If `parseJson` is not available in this Backstage version, an alternative is to pass `skills` through unchanged and use it directly; the `| dump` round-trip is a safe-default pattern that handles arrays of objects reliably.
+**Why no `| parseJson`:** Confirmed during smoke test — this Backstage version's Nunjucks scope does NOT expose `parseJson`, so `{% set skillsList = values.skills | parseJson %}` fails at render time with `Error: filter not found: parseJson`. The fix is to pass `skills` through as a native array (no `| dump` in `template.yaml`, no `| parseJson` here) and iterate directly. See the Findings section at the end of this plan.
 
 - [ ] **Step 2: Commit**
 
@@ -1544,27 +1543,19 @@ a teardown PR for an IDP-managed kagent Agent."
 
 ---
 
-### Task 7: Register both templates in `app-config.yaml`
+### Task 7: Register both templates in `app-config.yaml` AND `app-config.production.yaml`
 
 **Why:** Without these `catalog.locations` entries, the new templates won't appear in Backstage's `/create` page.
 
+**CRITICAL:** Backstage's config layering MERGES objects but REPLACES arrays. The production config has its own `catalog.locations` block, so adding the new locations to `app-config.yaml` alone is silently dropped at startup when the production overlay loads. The new entries MUST appear in BOTH files. (Confirmed during the v1.6 deploy — the production override was the root cause of the kagent templates not appearing initially. See the Findings section.)
+
 **Files:**
 - Modify: `app-config.yaml`
+- Modify: `app-config.production.yaml`
 
-- [ ] **Step 1: Read the existing file**
+- [ ] **Step 1: Add two new entries to `app-config.yaml`**
 
-The relevant section is `catalog.locations:` (around line 213-260). The existing templates are added like this:
-
-```yaml
-    - type: file
-      target: ../../examples/templates/application/template.yaml
-      rules:
-        - allow: [Template]
-```
-
-- [ ] **Step 2: Add two new entries**
-
-After the `decommission-application` entry (around line 251), insert:
+The relevant section is `catalog.locations:` (around line 213-260). After the `decommission-application` entry (around line 251), insert:
 
 ```yaml
     # Kagent Declarative Agent — create new kagent.dev orchestrator-style agents.
@@ -1578,6 +1569,26 @@ After the `decommission-application` entry (around line 251), insert:
     # See: examples/templates/kagent-agent-decommission/template.yaml
     - type: file
       target: ../../examples/templates/kagent-agent-decommission/template.yaml
+      rules:
+        - allow: [Template]
+```
+
+- [ ] **Step 2: Add the SAME two entries to `app-config.production.yaml`**
+
+The production config has its own `catalog.locations` block. After the `decommission` entry, insert the exact same two entries — but note that paths in production config are `./examples/...` (relative to `/app` in the container), not `../../examples/...`:
+
+```yaml
+    # Kagent Declarative Agent — create new kagent.dev orchestrator-style agents.
+    # See: examples/templates/kagent-agent/template.yaml
+    - type: file
+      target: ./examples/templates/kagent-agent/template.yaml
+      rules:
+        - allow: [Template]
+
+    # Decommission Kagent Agent — tear down an IDP-managed kagent agent.
+    # See: examples/templates/kagent-agent-decommission/template.yaml
+    - type: file
+      target: ./examples/templates/kagent-agent-decommission/template.yaml
       rules:
         - allow: [Template]
 ```
@@ -1602,11 +1613,13 @@ Stop the dev server with Ctrl-C when verified.
 
 ```bash
 cd /Users/arisela/git/kubernetes/docs/reference/backstage
-git add app-config.yaml
+git add app-config.yaml app-config.production.yaml
 git commit -m "feat(idp): register kagent create + decommission templates
 
-Adds two catalog locations so the kagent-agent and kagent-agent-decommission
-templates appear in the /create page."
+Adds two catalog locations to BOTH app-config.yaml and app-config.production.yaml
+so the kagent-agent and kagent-agent-decommission templates appear in the /create
+page. The production config must be updated separately because Backstage replaces
+(rather than merges) array values in layered configs."
 ```
 
 ---
@@ -1859,3 +1872,59 @@ considered complete when all of Phase 1, Phase 2, and Phase 3 succeed.
 3. **No automatic `kubectl apply --dry-run=server` validation step** — relies
    on ArgoCD to catch malformed manifests at sync time. v1.1 follow-up if
    the failure UX proves bad.
+
+## Findings from production deployment
+
+Two issues surfaced during the v1.6 smoke test in `arigsela/backstage` PR #19
+that the plan didn't anticipate. The plan above has been updated to incorporate
+the fixes (Task 5 and Task 7) so re-running this plan from scratch will not
+hit them. They're recorded here so future template authors recognize the
+patterns.
+
+### 1. `app-config.production.yaml` overrides `catalog.locations` entirely
+
+The container starts with
+`node packages/backend --config app-config.yaml --config app-config.production.yaml`.
+Backstage merges objects but **replaces** arrays. The production config has
+its own `catalog.locations` block, so the two new kagent entries added only
+to `app-config.yaml` were silently dropped at startup — the production
+overlay's `catalog.locations` replaced the base config's entirely.
+
+**Symptom:** Pod deploys cleanly, scaffolder action registration succeeds,
+template YAML files are present on disk, `app-config.yaml` inside the pod
+has the new locations — but `/create` shows the original templates only.
+
+**Diagnosis tool:**
+```bash
+kubectl exec -n backstage <pod> -- node -e \
+  "fetch('http://localhost:7007/api/catalog/entities?filter=kind=Location').then(r=>r.json()).then(d=>d.forEach(l=>console.log(l.spec?.target)))"
+```
+Compare against the list of locations in both `app-config.yaml` and
+`app-config.production.yaml`. Anything in app-config.yaml but missing from
+production was clobbered.
+
+**Fix:** Add the new entries to both files. Task 7 above now reflects this.
+
+### 2. `parseJson` Nunjucks filter not in this Backstage version
+
+The original plan passed `skills` (array of objects) into `fetch:template`
+as `${{ parameters.skills | dump }}` (JSON-stringified) and parsed back
+inside the content template with `{% set skillsList = values.skills | parseJson %}`.
+This Backstage version's Nunjucks scope does not expose `parseJson`, so the
+template fails to render at the `fetch` step with:
+
+```
+Error: filter not found: parseJson
+    at render (<isolated-vm>:10437:13)
+```
+
+**Diagnosis tool:**
+```bash
+kubectl exec -n backstage <pod> -- node -e \
+  "fetch('http://localhost:7007/api/scaffolder/v2/tasks/<task-id>/events').then(r=>r.json()).then(d=>d.filter(e=>e.type==='completion').forEach(e=>console.log(JSON.stringify(e.body.error||{}))))"
+```
+
+**Fix:** Pass the array through directly with `skills: ${{ parameters.skills }}`
+in `template.yaml` (no `| dump`), and iterate with
+`{% for skill in values.skills %}` in the content template (no `parseJson`).
+Tasks 4 and 5 above now reflect this.
