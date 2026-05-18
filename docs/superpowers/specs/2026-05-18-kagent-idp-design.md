@@ -434,3 +434,38 @@ the dry-run fails with `Error: filter not found: parseJson`.
 `skills: ${{ parameters.skills }}` (no `| dump`); in the content template
 iterate with `{% if values.skills | length > 0 %}` / `{% for skill in
 values.skills %}` (no `| parseJson`).
+
+### 3. ArgoCD Directory source needs `recurse: true`
+
+The plan assumed dropping a rendered Agent CRD into
+`base-apps/kagent/agents/<name>.yaml` would be picked up automatically by
+the existing `kagent-secrets` ArgoCD Application. It is not — ArgoCD's
+Directory source has `recurse: false` by default, so files inside
+subdirectories are silently skipped at sync time.
+
+**Symptom:** PR merges cleanly, ArgoCD reconciles to the post-merge
+commit and reports `Synced`, but the new Agent CRD never appears in the
+cluster and is missing from the Application's resources tree. The kagent
+UI shows no new agent.
+
+**Diagnosis tool:**
+```bash
+kubectl get application kagent-secrets -n argo-cd -o yaml | yq '.status.resources[].name'
+```
+If your IDP-created agent isn't in the list, the parent directory isn't
+recursing.
+
+**Required:** the `kagent-secrets` Application's `spec.source` must include
+`directory.recurse: true`:
+
+```yaml
+spec:
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/kagent
+    directory:
+      recurse: true   # REQUIRED — without this, agents/ subdir is ignored
+```
+
+Fixed in `arigsela/kubernetes` PR #279.
