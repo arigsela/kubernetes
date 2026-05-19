@@ -707,7 +707,112 @@ If everything passes, the rollout is complete. If anything's off, capture screen
 
 ## Known limitations carried from the spec
 
-1. **Stale annotation on hand-edited YAML.** If someone changes the `systemMessage` in an agent YAML directly without also updating `arigsela.com/kagent-about`, the entity card shows the old content. Operators can re-render by editing the annotation in the same PR.
-2. **Hardcoded `delegate_descriptions` lookup table.** When a new built-in agent is enabled in the kagent Helm values AND added to the wizard's `delegateAgents` enum, the lookup needs a matching entry. The fallback rendered text is `(see kagent docs)`.
-3. **No Docs tab content.** The card lives on Overview; the entity's `/docs` tab stays empty until a future iteration adds TechDocs scaffolding.
-4. **Nunjucks `replace` filter for indentation.** Task 2 deliberately uses `${{ values.systemMessage | replace('\n', '\n      ') }}` instead of the simpler-looking `| indent(6)` to avoid the v1.6 bug where `indent(6)` added extra spaces on continuation lines.
+1. **Hardcoded `DELEGATE_DESCRIPTIONS` lookup.** When a new built-in agent is enabled in the kagent Helm values AND added to the wizard's `delegateAgents` enum, the TypeScript lookup in `EntityPage.tsx` needs a matching entry. The fallback rendered text is `(see kagent docs)`.
+2. **No Docs tab content.** The card lives on Overview; the entity's `/docs` tab stays empty until a future iteration adds TechDocs scaffolding.
+3. **Network call per page load.** The card makes one fetch through the K8s plugin proxy each time a kagent-agent entity page is opened. Backstage caches at the plugin layer; in practice the latency is invisible.
+4. **Cluster name hardcoded.** The card calls `kubernetesApi.proxy({clusterName: 'homelab', ...})`. A multi-cluster deployment would need to read the cluster name from the entity (e.g. from `backstage.io/kubernetes-cluster` annotation or `tags: ['cluster:...']`).
+
+## Findings from production deployment
+
+> ⚠️ **Tasks 1–4 above describe the ORIGINAL annotation-baked design
+> that DID NOT WORK in production.** They are kept verbatim as a
+> historical record of what we tried first. If you're re-running this
+> plan today, read this Findings section first, then **execute against
+> the shipped code in commit `d1f194b` of `arigsela/backstage`** plus
+> the `backstage-kagent-read` ClusterRole shipped in
+> `arigsela/kubernetes` PR #285 — both are referenced below.
+
+During execution we discovered three blockers that forced a complete
+pivot from the spec's original "annotation baked at scaffold time"
+approach to a "live K8s fetch from the card" approach. For the
+historical record + so future template work avoids the same trap,
+here's what went wrong:
+
+### Finding 1: kagent controller filters multi-line annotations
+
+We added `arigsela.com/kagent-about` (originally) then
+`terasky.backstage.io/kagent-about` (after a rename) to the Agent CRD
+via the scaffolder template. Both annotations carried ~100 lines of
+Markdown as YAML literal block (`|`).
+
+- The annotation **was** on the Agent CRD (confirmed via
+  `kubectl get agent -n kagent <name> -o yaml`).
+- The annotation **was NOT** on the Deployment that kagent's controller
+  spawned (confirmed via `kubectl get deploy -n kagent <name> -o yaml`).
+- TeraSky's `kubernetes-ingestor` reads annotations from the
+  **Deployment** (not the Agent CRD), so the Backstage entity ended up
+  with no `kagent-about` annotation, and the card had nothing to render.
+
+Short `terasky.backstage.io/*` annotations DID propagate
+(`add-to-catalog`, `component-type` made it through). The filter is
+most likely length/content-based, not namespace-based. Fixing it would
+require patching kagent's reconciler — out of scope.
+
+**Lesson:** GitOps-set annotations on a kagent Agent CRD that contain
+multi-line values WILL NOT reach the Backstage entity. Use short
+single-line annotations only.
+
+### Finding 2: TeraSky `kubernetes-resource-*` annotations point at the workload
+
+When the card's pivot to live-fetch design landed, the first version
+checked `terasky.backstage.io/kubernetes-resource-api-version === 'kagent.dev/v1alpha2'`
+to decide whether to fetch. The check always failed because TeraSky
+sets these annotations from the **workload** (the Deployment), not the
+source Agent CRD:
+
+```
+terasky.backstage.io/kubernetes-resource-api-version = apps/v1
+terasky.backstage.io/kubernetes-resource-kind        = Deployment
+```
+
+The `name` and `namespace` are correct (they match by IDP convention),
+but `api-version` and `kind` describe the Deployment.
+
+**Lesson:** Code that wants to fetch the Agent CRD from Backstage must
+**hardcode** the kagent API path. Use the annotation's `name` and
+`namespace` for those values; ignore its `api-version` and `kind`.
+
+### Finding 3: Custom CRD fetches via Backstage proxy need explicit RBAC
+
+The Backstage ServiceAccount has RBAC for standard k8s resources
+(`backstage-read-only`) and Crossplane (`backstage-crossplane-read`),
+but NO access to `kagent.dev/*`. The K8s plugin proxy returns 403,
+which Backstage's UI surfaces as a misleading **502 toast** ("bad
+gateway from upstream").
+
+**Lesson:** A new ClusterRole + ClusterRoleBinding granting the
+Backstage SA `get/list/watch` on the relevant CRDs is REQUIRED for any
+custom-CRD entity-page card. The fix is captured in Task 3 (RBAC)
+above; if you re-run this plan, ship Tasks 1–3 together.
+
+### Finding 4: The pivot is the durable pattern
+
+For any future Backstage entity-page card backed by data that lives in
+a custom K8s CRD, **use the live-fetch pattern** (Task 1's
+`KagentAboutCardContent` is the template). Do not try to bake the
+content into an annotation at scaffold time. The pivot has two bonus
+properties beyond just working:
+
+- Hand-edits to the source CRD (`spec.declarative.systemMessage`)
+  reflect in the entity card immediately after ArgoCD syncs — no
+  re-scaffold cycle needed.
+- The entity YAML stays clean (no ~100-line annotation blocks).
+
+**Lesson:** "Bake content into an annotation" is a tempting shortcut
+when you don't want a network call. For workloads spawned by a
+controller (kagent, Crossplane Composition Functions, etc.), the
+annotation chain is fragile. Live fetch is more code (~80 LOC) but
+much more reliable.
+
+### Cycle PRs (for archaeology)
+
+The execution cycle produced more PRs than the spec anticipated. For
+future debugging, here's the timeline:
+
+| PR | Repo | Purpose | Outcome |
+|---|---|---|---|
+| arigsela/backstage#20 | backstage | Card + scaffolder (4 iterations) | Merged — final commit `d1f194b` |
+| arigsela/kubernetes#282 | kubernetes | Original annotation backfill | Merged, later proved dead |
+| arigsela/kubernetes#283 | kubernetes | Rename annotation namespace | Merged, also dead |
+| arigsela/kubernetes#284 | kubernetes | Remove dead annotation | Merged (cleanup) |
+| arigsela/kubernetes#285 | kubernetes | `backstage-kagent-read` RBAC | Merged — the unblocker |

@@ -344,11 +344,130 @@ Expected: each kagent-agent entity prints its name and at least one
 
 - **TechDocs scaffold** — wizard checkbox to generate a per-agent `mkdocs.yml`
   + `docs/index.md` for proper multi-page documentation.
-- **Live data card** — switch from annotation to a live K8s fetch so the
-  card always reflects the current spec. Adds ~150 LOC + network call per
-  page load.
 - **Delegate graph** — a small SVG showing the A2A delegation tree for the
   current agent and the agents it points to. Would need a custom React
   component but no plugin.
 - **Embedded kagent UI iframe** — clickable conversation widget on the
   entity page. Requires auth coordination between Backstage and kagent UI.
+
+## Findings from production deployment
+
+This spec's original design (Option A — bake the Markdown into an
+annotation at scaffold time) **did not work**. We had to pivot to a
+live-K8s-fetch design (originally called Option B and rejected in
+brainstorming as "too much code"). The shipped implementation differs
+significantly from what's documented above — these findings explain why
+and what changed.
+
+### 1. kagent controller filters annotations when spawning the Deployment
+
+We knew TeraSky's `kubernetes-ingestor` reads from the Deployment that
+kagent's controller spawns, not directly from the Agent CRD. We
+incorrectly assumed kagent would propagate arbitrary annotations from
+the Agent CRD to the spawned Deployment. It doesn't:
+
+- **Short** `terasky.backstage.io/*` and `backstage.io/*` annotations
+  DO get propagated (verified: `add-to-catalog`, `component-type`,
+  `managed-by-location`, `owner` all appear on both the Agent CRD AND
+  the Deployment).
+- **Multi-line annotations** (anything with a `|` literal block YAML
+  value) are silently dropped. Our `terasky.backstage.io/kagent-about`
+  carrying ~100 lines of Markdown never made it onto the Deployment, so
+  TeraSky never saw it, so the Backstage entity never carried it.
+
+This is not a namespace filter (we tried `arigsela.com/*` and
+`terasky.backstage.io/*` — same result). It's most likely a
+length/content filter inside kagent's reconciler. Fixing this would
+require forking kagent — out of scope for an IDP enhancement.
+
+### 2. TeraSky's `kubernetes-resource-*` annotations point at the workload, not the source
+
+We naively assumed TeraSky's `terasky.backstage.io/kubernetes-resource-{api-version, kind, name, namespace}`
+annotations would point at the Agent CRD because the entity's
+`spec.type` is `kagent-agent`. They actually point at the
+**workload** (the Deployment that kagent spawned):
+
+```
+terasky.backstage.io/kubernetes-resource-api-version = apps/v1
+terasky.backstage.io/kubernetes-resource-kind        = Deployment
+terasky.backstage.io/kubernetes-resource-name        = homelab-knowledge
+terasky.backstage.io/kubernetes-resource-namespace   = kagent
+```
+
+The `name` and `namespace` happen to match the Agent CRD by IDP
+convention (the Deployment is named after the Agent), but `kind` and
+`api-version` describe the Deployment. Code that wants to fetch the
+Agent CRD must hardcode the kagent API path (`kagent.dev/v1alpha2/agents`)
+rather than reading it from these annotations.
+
+### 3. Custom CRD fetches via Backstage's K8s proxy need explicit RBAC
+
+The Backstage ServiceAccount comes with RBAC for standard k8s resources
+(pods, deployments, services via `backstage-read-only`) and Crossplane
+resources (via `backstage-crossplane-read`). It has **no** access to
+`kagent.dev` types by default. Without a matching ClusterRole +
+ClusterRoleBinding, the K8s plugin proxy returns 403, which Backstage's
+proxy wrapper surfaces as a 502 toast in the UI.
+
+This wasn't an obvious requirement until we hit it live. The fix is a
+new `backstage-kagent-read` ClusterRole granting `get/list/watch` on
+`agents`, `modelconfigs`, and `remotemcpservers` in the `kagent.dev`
+API group, bound to the `backstage` ServiceAccount in the `backstage`
+namespace. Lives in `base-apps/backstage/rbac.yaml` alongside the
+existing Crossplane RBAC.
+
+### 4. The card pivot — what actually shipped
+
+After the annotation approach proved impossible, we pivoted to:
+
+- **No annotation** on the Agent CRD (originally added in arigsela/kubernetes
+  PR #282, renamed in PR #283, removed in PR #284 once the pivot
+  shipped — net change to the Agent CRD shape: zero).
+- **No Nunjucks block** in the scaffolder content template (the
+  delegate-description lookup, the Markdown body, the indent
+  workaround — all removed).
+- **EntityPage card now fetches the Agent CRD live** via the K8s
+  plugin proxy at render time. The card reads
+  `terasky.backstage.io/kubernetes-resource-name` and
+  `kubernetes-resource-namespace` from the entity (these survive
+  ingestion), hardcodes the kagent API path, and proxies
+  `/apis/kagent.dev/v1alpha2/namespaces/<ns>/agents/<name>`.
+- **Markdown builder lives in TypeScript** (`buildKagentMarkdown` in
+  EntityPage.tsx) — same Markdown structure as the original spec, just
+  generated client-side from the fetched `spec.declarative.*` fields.
+- **Delegate descriptions** live in a TypeScript `DELEGATE_DESCRIPTIONS`
+  constant in the same file. Same maintenance pattern as the original
+  Nunjucks lookup, different language.
+- **Required RBAC**: `backstage-kagent-read` ClusterRole + Binding.
+- **Bonus property** of this approach (not available with annotation):
+  hand-edits to `spec.declarative.systemMessage` in the GitOps repo
+  reflect in the entity card **immediately** after ArgoCD syncs. No
+  re-scaffold cycle needed for refresh.
+
+### What this means for re-running this plan from scratch
+
+If you re-execute the v1.7 work today, **do not** add an annotation to
+the scaffolder template. **Do** implement the EntityPage card as a
+fetch-based component reading `terasky.backstage.io/kubernetes-resource-*`
+annotations (for name + namespace), and **do** ship the
+`backstage-kagent-read` ClusterRole as part of the same rollout.
+
+The companion plan file (`docs/superpowers/plans/2026-05-18-kagent-idp-v1.7.md`)
+still has its original task structure — those tasks describe the
+**failed** annotation-baked approach as a historical record, with a
+prominent warning at the top of the Findings section pointing readers
+to the shipped code. The shipped code is in:
+
+- `arigsela/backstage` commit `d1f194b` (EntityPage.tsx +
+  examples/templates/kagent-agent/content/...)
+- `arigsela/kubernetes` PR #285 (`base-apps/backstage/rbac.yaml`)
+
+### Coordination order for the corrected design
+
+1. Open PR with: EntityPage.tsx card + scaffolder template (no annotation block)
+2. Open PR with: `base-apps/backstage/rbac.yaml` ClusterRole + Binding
+3. Build + deploy the Backstage image from PR #1
+4. Merge PR #2 → ArgoCD syncs the RBAC
+5. Visit a kagent-agent entity page → card renders live data
+
+No backfill of existing agents needed (data is read from the live CRD).
