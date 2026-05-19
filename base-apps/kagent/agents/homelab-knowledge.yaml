@@ -5,7 +5,10 @@ metadata:
   namespace: kagent
   labels:
     app.kubernetes.io/part-of: kagent
-    app.kubernetes.io/managed-by: backstage-scaffolder
+    app.kubernetes.io/managed-by: kagent
+    app.kubernetes.io/name: homelab-knowledge
+    app: kagent
+    arigsela.com/idp-managed: "true"
   annotations:
     terasky.backstage.io/add-to-catalog: "true"
     terasky.backstage.io/component-type: kagent-agent
