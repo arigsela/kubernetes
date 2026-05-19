@@ -121,3 +121,34 @@ roleRef:
   kind: ClusterRole
   name: backstage-crossplane-read
   apiGroup: rbac.authorization.k8s.io
+
+---
+
+# kagent IDP v1.7 — Backstage entity-page card fetches the live Agent CRD via
+# the Kubernetes plugin proxy at render time (it can't use the annotation
+# approach we originally tried because the kagent controller drops multi-line
+# annotations during Deployment creation). Without this RBAC the proxy fetch
+# returns 403 Forbidden and the card shows "Could not load agent details".
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backstage-kagent-read
+rules:
+  - apiGroups: ["kagent.dev"]
+    resources: ["agents", "modelconfigs", "remotemcpservers"]
+    verbs: ["get", "list", "watch"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backstage-kagent-read
+subjects:
+  - kind: ServiceAccount
+    name: backstage
+    namespace: backstage
+roleRef:
+  kind: ClusterRole
+  name: backstage-kagent-read
+  apiGroup: rbac.authorization.k8s.io
