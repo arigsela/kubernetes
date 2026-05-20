@@ -1,0 +1,57 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: dnd-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/managed-by: kagent
+    app.kubernetes.io/name: dnd-agent
+    app: kagent
+    arigsela.com/idp-managed: "true"
+  annotations:
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: kagent-agent
+    backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/dnd-agent.yaml
+    backstage.io/owner: group:default/platform-engineering
+    # === agents.platform.ai/* v1 contract ===
+    # Structured metadata mirrored to the Backstage catalog by the TeraSky
+    # kubernetes-ingestor. Consumed by future MCP-backed assistants to
+    # enumerate and call this agent. Contract spec:
+    # docs/superpowers/specs/2026-05-19-aicontext-catalog-kind-design.md
+    agents.platform.ai/version: "v1"
+    agents.platform.ai/runtime: kagent
+    agents.platform.ai/description: |-
+      test agent
+    # Port 8080 is the kagent default A2A service port.
+    agents.platform.ai/a2a-endpoint: http://dnd-agent.kagent.svc.cluster.local:8080
+    agents.platform.ai/skills: |-
+      []
+    agents.platform.ai/delegates: |-
+      []
+    agents.platform.ai/capabilities: '{"streaming":true,"a2a":true}'
+spec:
+  description: |-
+    test agent
+  type: Declarative
+  declarative:
+    modelConfig: default-model-config
+    memory:
+      modelConfig: embedding-model-config
+    runtime: python
+    stream: true
+    context:
+      compaction:
+        compactionInterval: 5
+        overlapSize: 2
+    systemMessage: |
+      you are an expert dungeons and dragons e5 dungeon master
+    tools: []
+    deployment:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
