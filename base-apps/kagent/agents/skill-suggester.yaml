@@ -1,0 +1,58 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: skill-suggester
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/managed-by: kagent
+    app.kubernetes.io/name: skill-suggester
+    app: kagent
+    arigsela.com/idp-managed: "true"
+  annotations:
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: kagent-agent
+    backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/skill-suggester.yaml
+    backstage.io/owner: group:default/platform-engineering
+    # === agents.platform.ai/* v1 contract ===
+    # Structured metadata mirrored to the Backstage catalog by the TeraSky
+    # kubernetes-ingestor. Consumed by future MCP-backed assistants to
+    # enumerate and call this agent. Contract spec:
+    # docs/superpowers/specs/2026-05-19-aicontext-catalog-kind-design.md
+    agents.platform.ai/version: "v1"
+    agents.platform.ai/runtime: kagent
+    agents.platform.ai/description: |-
+      Suggests A2A skills for new kagent agents based on a one-line description
+    # Port 8080 is the kagent default A2A service port.
+    agents.platform.ai/a2a-endpoint: http://skill-suggester.kagent.svc.cluster.local:8080
+    agents.platform.ai/skills: |-
+      []
+    agents.platform.ai/delegates: |-
+      []
+    agents.platform.ai/capabilities: '{"streaming":true,"a2a":true}'
+spec:
+  description: |-
+    Suggests A2A skills for new kagent agents based on a one-line description
+  type: Declarative
+  declarative:
+    modelConfig: default-model-config
+    memory:
+      modelConfig: embedding-model-config
+    runtime: python
+    stream: true
+    context:
+      compaction:
+        compactionInterval: 5
+        overlapSize: 2
+    systemMessage: |
+      You receive an agent description. Respond with ONLY a JSON array of exactly 3 skills, each shaped {id (kebab-case), name 
+        (Title Case), description (one sentence)}. No prose, no markdown.
+    tools: []
+    deployment:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
