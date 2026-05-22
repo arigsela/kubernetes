@@ -1,0 +1,75 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: dungeon-crawler-carl-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/managed-by: kagent
+    app.kubernetes.io/name: dungeon-crawler-carl-agent
+    app: kagent
+    arigsela.com/idp-managed: "true"
+  annotations:
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: kagent-agent
+    terasky.backstage.io/links: '[{"url":"https://kagent.arigsela.com/agents/kagent/dungeon-crawler-carl-agent/chat","title":"Chat with this agent","icon":"chat"}]'
+    backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/dungeon-crawler-carl-agent.yaml
+    backstage.io/owner: group:default/platform-engineering
+    # === agents.platform.ai/* v1 contract ===
+    # Structured metadata mirrored to the Backstage catalog by the TeraSky
+    # kubernetes-ingestor. Consumed by future MCP-backed assistants to
+    # enumerate and call this agent. Contract spec:
+    # docs/superpowers/specs/2026-05-19-aicontext-catalog-kind-design.md
+    agents.platform.ai/version: "v1"
+    agents.platform.ai/runtime: kagent
+    agents.platform.ai/description: |-
+      expert in the book dungeon crawler carl
+    # Port 8080 is the kagent default A2A service port.
+    agents.platform.ai/a2a-endpoint: http://dungeon-crawler-carl-agent.kagent.svc.cluster.local:8080
+    agents.platform.ai/skills: |-
+      [{"id":"dungeon-crawler-carl-lore","name":"Dungeon Crawler Carl Lore Expert","description":"Provides in-depth knowledge about characters, plot points, and world-building from the Dungeon Crawler Carl series."},{"id":"carl-character-analysis","name":"Carl Character Analysis","description":"Analyzes character development, motivations, and relationships within the Dungeon Crawler Carl narrative."},{"id":"dungeon-crawler-mechanics-guide","name":"Dungeon Crawler Mechanics Guide","description":"Explains the game mechanics, progression systems, and dungeon exploration elements featured in Dungeon Crawler Carl."}]
+    agents.platform.ai/delegates: |-
+      []
+    agents.platform.ai/capabilities: '{"streaming":true,"a2a":true}'
+spec:
+  description: |-
+    expert in the book dungeon crawler carl
+  type: Declarative
+  declarative:
+    modelConfig: default-model-config
+    memory:
+      modelConfig: embedding-model-config
+    runtime: python
+    stream: true
+    context:
+      compaction:
+        compactionInterval: 5
+        overlapSize: 2
+    systemMessage: |
+      you are an expert in dungeon crawler carl book, its characters and its story/plot.
+      
+      You are not allowed to give any spoilers related to any other of the series books.
+      
+    a2aConfig:
+      skills:
+      - id: dungeon-crawler-carl-lore
+        name: Dungeon Crawler Carl Lore Expert
+        description: Provides in-depth knowledge about characters, plot points, and world-building from the Dungeon Crawler Carl series.
+        tags: []
+      - id: carl-character-analysis
+        name: Carl Character Analysis
+        description: Analyzes character development, motivations, and relationships within the Dungeon Crawler Carl narrative.
+        tags: []
+      - id: dungeon-crawler-mechanics-guide
+        name: Dungeon Crawler Mechanics Guide
+        description: Explains the game mechanics, progression systems, and dungeon exploration elements featured in Dungeon Crawler Carl.
+        tags: []
+    tools: []
+    deployment:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
