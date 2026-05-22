@@ -1,0 +1,25 @@
+# XApplication (Crossplane) for nginx-hello-world
+# metadata.annotations are read by TeraSky's kubernetes-ingestor and copied
+# onto every composed child by the cluster-side Composition (see
+# arigsela/kubernetes:base-apps/crossplane-compositions/composition-application.yaml).
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XApplication
+metadata:
+  name: nginx-hello-world
+  namespace: nginx-hello-world
+  annotations:
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/owner: group:default/platform-engineering
+    terasky.backstage.io/component-type: service
+    terasky.backstage.io/lifecycle: experimental
+    terasky.backstage.io/system: platform
+    backstage.io/source-location: url:https://github.com/arigsela/kubernetes/tree/main/base-apps/nginx-hello-world
+spec:
+  image: nginx:latest
+  host: my-app.arigsela.com
+  port: 8080
+  replicas: 1
+  dbNeeded: true
+  dbStorage: 1Gi
+  s3Needed: true
+  s3LifecycleDays: 60

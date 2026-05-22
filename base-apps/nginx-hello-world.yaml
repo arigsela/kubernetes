@@ -1,0 +1,26 @@
+# ArgoCD Application for nginx-hello-world
+# Sync wave 10 ensures XRD/Composition land before this app's XR.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nginx-hello-world
+  namespace: argo-cd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/nginx-hello-world
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nginx-hello-world
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
