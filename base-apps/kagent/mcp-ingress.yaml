@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kagent-mcp-nginx
+  namespace: kagent
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # MCP Streamable HTTP uses SSE on the response. Disable buffering and
+    # extend read/send timeouts so long-running agent tasks stream cleanly.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # Shares the IP whitelist with the UI ingress.
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32,170.85.130.202/32,104.28.177.82/32,10.0.0.0/8"
+spec:
+  ingressClassName: nginx
+  # Reuses the kagent-tls secret created by cert-manager via the kagent-ui-nginx ingress.
+  tls:
+  - hosts:
+    - kagent.arigsela.com
+    secretName: kagent-tls
+  rules:
+  - host: kagent.arigsela.com
+    http:
+      paths:
+      - path: /mcp
+        pathType: Prefix
+        backend:
+          service:
+            name: kagent-controller
+            port:
+              number: 8083
