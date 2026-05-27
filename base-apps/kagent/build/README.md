@@ -1,6 +1,6 @@
 # kagent UI custom image build
 
-Builds a Node-20-on-Debian replacement for `cr.kagent.dev/kagent-dev/kagent/ui:0.8.6` so the Next.js process doesn't `SIGILL` on the HP server's older x86-64 CPU.
+Builds a Node-20-on-Debian replacement for `cr.kagent.dev/kagent-dev/kagent/ui:0.9.4` so the Next.js process doesn't `SIGILL` on the HP server's older x86-64 CPU.
 
 **Background:** [Design spec](../../../docs/superpowers/specs/2026-05-09-kagent-ui-custom-image-design.md) · [Upstream issue #1505](https://github.com/kagent-dev/kagent/issues/1505)
 
@@ -25,9 +25,9 @@ From the repo root:
 ```
 
 This will:
-1. `git clone --depth 1 --branch v0.8.6 https://github.com/kagent-dev/kagent.git` into a tmp dir
+1. `git clone --depth 1 --branch v0.9.4 https://github.com/kagent-dev/kagent.git` into a tmp dir
 2. Copy our patched `Dockerfile` into `ui/`
-3. `docker buildx build --platform linux/amd64 --push` to `852893458518.dkr.ecr.us-east-2.amazonaws.com/kagent-ui:0.8.6-node20`
+3. `docker buildx build --platform linux/amd64 --push` to `852893458518.dkr.ecr.us-east-2.amazonaws.com/kagent-ui:0.9.4-node20`
 4. Clean up the tmp dir on exit
 
 Expected runtime: 3–5 min.

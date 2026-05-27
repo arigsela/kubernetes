@@ -17,7 +17,7 @@ spec:
   source:
     chart: kagent
     repoURL: ghcr.io/kagent-dev/kagent/helm
-    targetRevision: 0.8.6
+    targetRevision: 0.9.4
     helm:
       valuesObject:
         # Database: use existing PostgreSQL with pgvector
@@ -52,14 +52,16 @@ spec:
             apiKeySecretKey: ANTHROPIC_API_KEY
 
         # UI image override: custom Node-20 build for older HP server CPUs.
-        # Upstream cr.kagent.dev/kagent-dev/kagent/ui:0.8.6 ships Node 24 with
+        # Upstream cr.kagent.dev/kagent-dev/kagent/ui:0.9.4 ships Node 24 with
         # x86-64-v2 baseline → SIGILL on this hardware.
         # Track upstream: https://github.com/kagent-dev/kagent/issues/1505
+        # NOTE: Image must be built via base-apps/kagent/build/build.sh BEFORE
+        # this PR merges to main, otherwise the kagent-ui pod will ImagePullBackOff.
         ui:
           image:
             registry: "852893458518.dkr.ecr.us-east-2.amazonaws.com"
             repository: "kagent-ui"
-            tag: "0.8.6-node20"
+            tag: "0.9.4-node20"
             pullPolicy: IfNotPresent
 
         # Right-sized agent resources (Task 3.3)
