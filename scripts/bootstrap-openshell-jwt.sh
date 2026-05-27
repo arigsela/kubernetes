@@ -16,6 +16,7 @@ K8S_SA="default"
 ROTATE=false
 DRY_RUN=false
 ALLOW_ROOT=false
+tmp=""
 
 usage() {
   cat <<EOF
@@ -140,7 +141,6 @@ main() {
     exit 0
   fi
 
-  local tmp
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
 
