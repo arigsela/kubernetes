@@ -41,6 +41,15 @@ spec:
             - name: db-secret
               mountPath: /etc/kagent/secrets
               readOnly: true
+          # OpenShell integration (Phase 2). OPENSHELL_INSECURE skips TLS
+          # verification because the chart-issued openshell-ca-tls isn't yet
+          # mounted into the controller; tighten by mounting that CA and
+          # flipping this to "false" in a follow-up.
+          env:
+            - name: OPENSHELL_GATEWAY_URL
+              value: "https://openshell.openshell.svc.cluster.local:8080"
+            - name: OPENSHELL_INSECURE
+              value: "true"
 
         # LLM provider: use Anthropic with existing secret
         providers:

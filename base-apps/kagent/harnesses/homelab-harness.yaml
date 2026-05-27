@@ -1,0 +1,9 @@
+apiVersion: kagent.dev/v1alpha2
+kind: AgentHarness
+metadata:
+  name: homelab-harness
+  namespace: kagent
+spec:
+  backend: openclaw
+  description: "Homelab remote execution environment for ad-hoc operator and agent shell access."
+  modelConfigRef: default-model-config
