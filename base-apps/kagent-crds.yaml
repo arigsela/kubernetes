@@ -10,7 +10,7 @@ spec:
   source:
     chart: kagent-crds
     repoURL: ghcr.io/kagent-dev/kagent/helm
-    targetRevision: 0.8.6
+    targetRevision: 0.9.4
   destination:
     server: https://kubernetes.default.svc
     namespace: kagent
