@@ -1,0 +1,46 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openshell
+  namespace: argo-cd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    chart: helm-chart
+    repoURL: ghcr.io/nvidia/openshell
+    targetRevision: 0.0.49
+    helm:
+      valuesObject:
+        # PKI via cert-manager — chart auto-creates a namespaced Issuer and
+        # Certificates. Disable the bootstrap Job so we don't double-write the
+        # server/client TLS Secrets.
+        certManager:
+          enabled: true
+        pkiInitJob:
+          enabled: false
+
+        # Gateway pod resource bounds. Kyverno require-resource-limits policy
+        # only warns when missing, but declaring explicitly keeps events clean.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+        # Restricts sandbox-pod SSH ingress to the gateway only.
+        networkPolicy:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openshell
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

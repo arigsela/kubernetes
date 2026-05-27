@@ -54,8 +54,6 @@ RUN mkdir -p /app/ui/public \
     && chown -R nextjs:nginx /tmp/nginx/
 
 WORKDIR /app
-COPY conf/nginx.conf /etc/nginx/nginx.conf
-COPY conf/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY scripts/init.sh /usr/local/bin/init.sh
 
 WORKDIR /app/ui
