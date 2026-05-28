@@ -219,6 +219,18 @@ Resolution shipped in the follow-up PR:
 
 **Future work:** re-enable encryption when either upstream lands a fix — openshell chart should gate `client_ca_path` rendering, OR kagent should add client-cert config fields to its openshell client. Both tracked in issue #306.
 
+### Second post-merge finding (after PR #308)
+
+Disabling TLS unblocked the controller's TCP dial but surfaced a third chart gate: the gateway requires app-layer bearer-token auth by default. With OIDC disabled (the chart default) and no token wired into the controller, every gRPC call from the controller was rejected with `Unauthenticated: missing authorization header`.
+
+Resolution in the next follow-up PR:
+
+- `base-apps/openshell.yaml` — add `server.auth.allowUnauthenticatedUsers: true`. The chart documents this flag as "UNSAFE: accept unauthenticated CLI/user requests as a local developer principal", intended for "trusted local Skaffold/k3d development or a fully trusted fronting proxy."
+
+**Trade-off:** anything that can reach the gateway gRPC port is now an authenticated principal. NetworkPolicies + intra-cluster RBAC become the only perimeter. Consistent with the `disableTls=true` posture from PR #308 — both choices accept that the cluster's pod-network is the trust boundary.
+
+**Future work:** re-enable identity-bearing auth when either an OIDC issuer is available in-cluster OR kagent gains a way to mint/forward auth tokens. Tracked in issue #306.
+
 ## Out of scope
 
 - **Upstream kagent client-cert support.** Not opening an upstream issue or PR. If/when kagent adds `CertPEM`/`KeyPEM` config fields, a future follow-up can swap our server-TLS-only posture back to full mTLS.
