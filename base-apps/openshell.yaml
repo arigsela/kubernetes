@@ -66,6 +66,23 @@ spec:
           # mTLS client certs (then we can flip back to identity-bearing auth).
           auth:
             allowUnauthenticatedUsers: true
+          # enableUserNamespaces=true: gateway emits
+          # `enable_user_namespaces = true` in gateway.toml; the kubernetes
+          # driver then creates sandbox pods with hostUsers=false. The agent
+          # container inside the sandbox runs in its own user namespace, so
+          # CAP_SYS_ADMIN/CAP_NET_ADMIN are namespaced and the agent can
+          # create network namespaces without host-level privileges.
+          #
+          # Why: post-PR #309 verification surfaced that sandbox pods crash
+          # at startup with `mount --make-shared /run/netns: Permission
+          # denied` even with SYS_ADMIN granted, because containerd's
+          # seccomp/AppArmor profile blocks the underlying syscall at the
+          # host level. User namespaces give the agent its own namespace
+          # where the capabilities are real. See issue #310.
+          #
+          # Prereqs in this cluster: kernel 6.8 (chart requires 5.12+),
+          # k8s 1.33 (hostUsers field went GA in 1.30).
+          enableUserNamespaces: true
 
         # Gateway pod resource bounds. Kyverno require-resource-limits policy
         # only warns when missing, but declaring explicitly keeps events clean.
