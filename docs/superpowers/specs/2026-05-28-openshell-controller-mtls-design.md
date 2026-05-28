@@ -231,6 +231,26 @@ Resolution in the next follow-up PR:
 
 **Future work:** re-enable identity-bearing auth when either an OIDC issuer is available in-cluster OR kagent gains a way to mint/forward auth tokens. Tracked in issue #306.
 
+### Third post-merge finding (after PR #309)
+
+The controller-to-gateway path was fully working after PR #309 — `AgentHarness` reached `Accepted=True` and the gateway successfully created sandbox pods via its kubernetes driver. But the sandbox pod itself (e.g. `kagent-homelab-harness`) crashed at startup with:
+
+```
+mount --make-shared /run/netns failed: Permission denied
+```
+
+The pod is granted `CAP_SYS_ADMIN` + `CAP_NET_ADMIN` in its securityContext, but containerd's default seccomp/AppArmor profile blocks the `mount` syscall at the host level regardless of the granted capabilities.
+
+Resolution in the follow-up PR (`fix/openshell-user-namespaces`):
+
+- `base-apps/openshell.yaml` — add `server.enableUserNamespaces: true`. The gateway-config emits `enable_user_namespaces = true` and the gateway's kubernetes driver creates sandbox pods with `pod.spec.hostUsers: false`. The agent container then runs in its own user namespace where `CAP_SYS_ADMIN`/`CAP_NET_ADMIN` are namespaced — it can manipulate netns within its own user namespace without host-level privileges.
+
+Cluster prereqs satisfied:
+- Kernel 6.8.0 — well above the 5.12 floor that the chart documents.
+- Kubernetes 1.33 — well above 1.30 where `pod.spec.hostUsers` went GA.
+
+This is also a real **security improvement** vs. the previous state (sandbox container UID 0 = host UID 0 with elevated caps).
+
 ## Out of scope
 
 - **Upstream kagent client-cert support.** Not opening an upstream issue or PR. If/when kagent adds `CertPEM`/`KeyPEM` config fields, a future follow-up can swap our server-TLS-only posture back to full mTLS.
