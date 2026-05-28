@@ -203,6 +203,22 @@ After merge + sync, expect:
 
 Single commit revert. ArgoCD prunes the new Application + ExternalSecret + RBAC. The `kagent.yaml` env-var changes revert; controller goes back to `INSECURE=true` and stops trying to verify the gateway. `openshell.yaml` reverts and the gateway goes back to mTLS-required mode. Net effect: cluster returns to the pre-PR state (controller CrashLoop, old controller still serving). No data loss.
 
+## Post-merge addendum (after PR #307)
+
+PR #307 implemented the design above and merged. Cluster verification revealed a **second chart limitation** that the design did not catch: openshell chart v0.0.49's `templates/gateway-config.yaml` renders `client_ca_path` **unconditionally** inside the `[openshell.gateway.tls]` block (lines 60-64) whenever TLS is enabled. There is no `{{- if }}` gate. The `clientCaFromServerTlsSecret` flag only affects the StatefulSet's volume mount, not the rendered ConfigMap. So even with the flag flipped, the gateway still demands client certs.
+
+The chart has no clean "encrypted, server-cert-only" mode for v0.0.49. The only escape hatch is `server.disableTls: true`, which drops the entire TLS block.
+
+Resolution shipped in the follow-up PR:
+
+- `base-apps/openshell.yaml` — replace `certManager.clientCaFromServerTlsSecret: false` with `server.disableTls: true`. Gateway runs plain h2c on :8080.
+- `base-apps/kagent.yaml` — revert `OPENSHELL_INSECURE` to `"true"`, drop `OPENSHELL_TLS_CA_FILE` env var, drop the `openshell-ca` volume + volumeMount, drop the `https://` scheme from `OPENSHELL_GATEWAY_URL`.
+- Delete the ESO infrastructure introduced by PR #307 (no longer used): `base-apps/eso-kubernetes-clusterstore.yaml`, `base-apps/eso-kubernetes-clusterstore/`, `base-apps/kagent/external-secret-openshell-ca.yaml`.
+
+**Trade-off:** lost encryption between controller and gateway. Cluster pod-to-pod traffic stays on the CNI overlay with NetworkPolicy enforcement, so this is an acceptable interim posture but a real regression from the encrypted target.
+
+**Future work:** re-enable encryption when either upstream lands a fix — openshell chart should gate `client_ca_path` rendering, OR kagent should add client-cert config fields to its openshell client. Both tracked in issue #306.
+
 ## Out of scope
 
 - **Upstream kagent client-cert support.** Not opening an upstream issue or PR. If/when kagent adds `CertPEM`/`KeyPEM` config fields, a future follow-up can swap our server-TLS-only posture back to full mTLS.

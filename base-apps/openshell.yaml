@@ -15,20 +15,36 @@ spec:
       valuesObject:
         # PKI via cert-manager — chart auto-creates a namespaced Issuer and
         # Certificates. Disable the bootstrap Job so we don't double-write the
-        # server/client TLS Secrets.
-        #
-        # clientCaFromServerTlsSecret=false drops the gateway's client_ca_path
-        # config line — gateway no longer requires mTLS client certs.
-        # Rationale: kagent v0.9.4's openshell client supports server-cert
-        # verification only (no CertPEM/KeyPEM config fields). Server-TLS-only
-        # is the sane interim posture; re-enable mTLS once upstream kagent
-        # adds client-cert support. See issue #306 and the design spec at
-        # docs/superpowers/specs/2026-05-28-openshell-controller-mtls-design.md.
+        # server/client TLS Secrets. (PR #305 context.)
         certManager:
           enabled: true
-          clientCaFromServerTlsSecret: false
         pkiInitJob:
           enabled: false
+
+        # server.disableTls=true: plain-h2c gRPC on :8080.
+        #
+        # Background: PR #307 attempted "server-TLS-only" (drop the gateway's
+        # client_ca requirement, keep encryption). That worked at the volume
+        # mount level but the chart's templates/gateway-config.yaml renders
+        # `client_ca_path` UNCONDITIONALLY inside the `[openshell.gateway.tls]`
+        # block — there is no `{{- if }}` gate on it in v0.0.49. With the
+        # volume mount removed by clientCaFromServerTlsSecret=false, the
+        # gateway would try to read a path that doesn't exist. There is no
+        # clean "encrypted but no client-cert demand" mode for this chart.
+        #
+        # And on the controller side, kagent v0.9.4's openshell client has
+        # no client-cert config fields (verified in
+        # go/core/pkg/sandboxbackend/openshell/{client,config}.go at v0.9.4).
+        # It can dial insecure (no TLS) or TLS-with-CA (server verify only) —
+        # never present a client cert.
+        #
+        # Net: disable TLS entirely. Gateway speaks plain h2c; the controller
+        # dials with OPENSHELL_INSECURE=true. Traffic stays on the CNI overlay
+        # behind NetworkPolicy. Re-enable encryption once either upstream
+        # fixes lands. See issues #306, kagent docs, and the design spec at
+        # docs/superpowers/specs/2026-05-28-openshell-controller-mtls-design.md.
+        server:
+          disableTls: true
 
         # Gateway pod resource bounds. Kyverno require-resource-limits policy
         # only warns when missing, but declaring explicitly keeps events clean.
