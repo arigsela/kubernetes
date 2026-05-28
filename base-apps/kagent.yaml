@@ -28,7 +28,7 @@ spec:
             urlFile: /etc/kagent/secrets/db-url
             vectorEnabled: true
 
-        # Mount the database URL secret + the openshell CA cert.
+        # Mount the database URL secret.
         controller:
           volumes:
             - name: db-secret
@@ -37,37 +37,25 @@ spec:
                 items:
                   - key: db-url
                     path: db-url
-            - name: openshell-ca
-              secret:
-                # Mirrored from openshell ns/openshell-ca-tls via the
-                # kubernetes-cluster-reader ClusterSecretStore. See
-                # base-apps/kagent/external-secret-openshell-ca.yaml.
-                secretName: kagent-openshell-ca
-                items:
-                  - key: ca.crt
-                    path: ca.crt
           volumeMounts:
             - name: db-secret
               mountPath: /etc/kagent/secrets
               readOnly: true
-            - name: openshell-ca
-              mountPath: /etc/openshell-tls/ca
-              readOnly: true
-          # OpenShell integration (Phase 2). The kagent v0.9.4 controller's
-          # openshell client only supports server-cert verification — there
-          # is no client-cert config field in the openshell.Config struct.
-          # We verify the gateway's cert with the chart-issued CA mounted
-          # above (OPENSHELL_TLS_CA_FILE). The gateway has been put into
-          # server-TLS-only mode via the openshell chart values; full mTLS
-          # is blocked on upstream kagent adding client-cert support.
+          # OpenShell integration (Phase 2). Gateway runs in plain h2c mode
+          # because the openshell chart v0.0.49 cannot be configured for
+          # "server-TLS-only" — its gateway-config.yaml unconditionally
+          # renders client_ca_path inside [openshell.gateway.tls], forcing
+          # mTLS-required posture whenever TLS is enabled. And the kagent
+          # v0.9.4 controller has no client-cert config fields. So we drop
+          # TLS entirely on the openshell side (server.disableTls=true in
+          # base-apps/openshell.yaml) and dial insecure here.
+          # Re-evaluate when either upstream fix lands.
           # See issue #306 and docs/superpowers/specs/2026-05-28-openshell-controller-mtls-design.md.
           env:
             - name: OPENSHELL_GATEWAY_URL
-              value: "https://openshell.openshell.svc.cluster.local:8080"
+              value: "openshell.openshell.svc.cluster.local:8080"
             - name: OPENSHELL_INSECURE
-              value: "false"
-            - name: OPENSHELL_TLS_CA_FILE
-              value: "/etc/openshell-tls/ca/ca.crt"
+              value: "true"
 
         # LLM provider: use Anthropic with existing secret
         providers:
