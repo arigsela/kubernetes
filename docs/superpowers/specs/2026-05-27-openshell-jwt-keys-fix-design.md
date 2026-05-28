@@ -262,7 +262,7 @@ Run one trivial sandbox-backed task through the kagent UI (e.g., ask the harness
 |---|---|
 | ExternalSecret stuck `SecretSyncError` | `kubectl describe externalsecret -n openshell openshell-jwt-keys` — most likely Vault role/policy mismatch. Re-run script with `--dry-run` to inspect role/policy definition. |
 | openshell-0 Running but readinessProbe failing | `kubectl logs -n openshell openshell-0` — chart may complain about kid/public.pem mismatch if rotated mid-run. |
-| New kagent controller still crashlooping after openshell-0 is Ready | Likely a TLS or `OPENSHELL_INSECURE` issue, **not** JWT. Out of scope for this fix — see below. |
+| New kagent controller still crashlooping after openshell-0 is Ready | Gateway-required mTLS + kagent v0.9.4 controller lacks client-cert support. `OPENSHELL_INSECURE=true` only skips server-cert verify; it does NOT make the gateway stop demanding a client cert. Resolved in a follow-up PR — see issue #306 and `docs/superpowers/specs/2026-05-28-openshell-controller-mtls-design.md`. |
 
 ## Out of scope
 

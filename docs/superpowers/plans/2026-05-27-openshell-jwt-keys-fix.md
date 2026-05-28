@@ -679,6 +679,8 @@ kubectl get pods -n kagent -l app.kubernetes.io/component=controller
 ```
 Expected: exactly **one** controller pod, on ReplicaSet `568c7b55fb` (the new hash), STATUS `Running`, RESTARTS low. The old ReplicaSet (`857c56b6`) should be scaled to 0 by the rollout.
 
+> **Post-merge note (2026-05-28):** This step did NOT pass after PR #305 merged. The new controller continued to CrashLoop with the same surface error (`context deadline exceeded`) for a different root cause: the openshell gateway requires mTLS client certs (chart's `client_ca_path` is set) and the kagent v0.9.4 controller does not support client certs. `OPENSHELL_INSECURE=true` only addresses one half of TLS. Tracked as issue #306 and resolved in a follow-up PR (spec: `docs/superpowers/specs/2026-05-28-openshell-controller-mtls-design.md`). The old ReplicaSet remained 1/1 Running throughout, so no user-facing impact.
+
 ```bash
 kubectl logs -n kagent -l app.kubernetes.io/component=controller --tail=30 | grep -iE 'openshell|sandbox|error'
 ```

@@ -1,0 +1,16 @@
+# Intentional: RoleBinding (not ClusterRoleBinding). The ClusterRole is
+# cluster-scoped but the binding is namespace-scoped to `openshell`, so the
+# effective permission grant is bounded to that single namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eso-kubernetes-reader
+  namespace: openshell
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: eso-kubernetes-reader
+subjects:
+  - kind: ServiceAccount
+    name: eso-kubernetes-reader
+    namespace: external-secrets
