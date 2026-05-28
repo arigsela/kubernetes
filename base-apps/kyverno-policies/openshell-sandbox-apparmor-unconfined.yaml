@@ -1,0 +1,62 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: openshell-sandbox-apparmor-unconfined
+  annotations:
+    policies.kyverno.io/title: OpenShell Sandbox AppArmor Unconfined
+    policies.kyverno.io/category: Workaround
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Adds the AppArmor "unconfined" annotation to OpenShell sandbox pods
+      (Pods in the openshell namespace owned by a Sandbox CR) so their
+      `agent` container can call mount(2) with MS_SHARED to set up its
+      own network namespace via `ip netns`.
+
+      Background: the sandbox agent's startup runs `ip netns add ...`,
+      which internally does `mount --make-shared /run/netns`. The default
+      containerd AppArmor profile (`cri-containerd.apparmor.d`) denies
+      `mount` outright — capabilities like CAP_SYS_ADMIN don't help
+      because AppArmor blocks the syscall before the kernel's capability
+      check. Without this annotation the pod CrashLoops with
+      "mount --make-shared /run/netns failed: Permission denied".
+
+      The Pod-spec `securityContext.appArmorProfile.type: Unconfined`
+      field SHOULD work but doesn't always propagate through containerd
+      — see https://github.com/kubernetes/kubernetes/issues/125069. The
+      legacy annotation form does.
+
+      Remove this policy once one of these upstream changes lands:
+        - openshell ships `NetworkMode::Platform` (skips netns creation
+          entirely) — tracked at https://github.com/NVIDIA/OpenShell/issues/899
+        - sigs.k8s.io/agent-sandbox propagates `runtimeClassName` from
+          the Sandbox CR, allowing us to pin sandbox pods to `crun`
+        - kubelet/containerd honor pod-level `appArmorProfile.Unconfined`
+spec:
+  # mutateExistingOnPolicyUpdate: false — only mutate new admissions.
+  rules:
+    - name: annotate-agent-apparmor-unconfined
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - openshell
+      preconditions:
+        all:
+          # Only sandbox pods (owned by a Sandbox CR). The gateway pod
+          # itself is owned by a StatefulSet, so it's excluded.
+          - key: "{{ request.object.metadata.ownerReferences[?kind=='Sandbox'] | length(@) }}"
+            operator: GreaterThanOrEquals
+            value: 1
+          # And only when the pod has an `agent` container — defends against
+          # future Sandbox CR variants that might use a different container name.
+          - key: "{{ request.object.spec.containers[?name=='agent'] | length(@) }}"
+            operator: GreaterThanOrEquals
+            value: 1
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            annotations:
+              container.apparmor.security.beta.kubernetes.io/agent: unconfined
