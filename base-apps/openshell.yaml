@@ -45,6 +45,27 @@ spec:
         # docs/superpowers/specs/2026-05-28-openshell-controller-mtls-design.md.
         server:
           disableTls: true
+          # allowUnauthenticatedUsers=true: gateway accepts requests without
+          # an Authorization: Bearer <token> header, treating the caller as a
+          # local-developer principal.
+          #
+          # Why: PR #308 disabled TLS to work around the chart's inability to
+          # express server-TLS-only. Even after that landed, the kagent v0.9.4
+          # controller's connections were rejected at the gRPC application
+          # layer with "Unauthenticated: missing authorization header" — the
+          # gateway requires bearer tokens by default unless OIDC is enabled
+          # (it isn't) or auth is explicitly opened. The kagent controller
+          # config has a Token/TokenFile field but no token source is wired
+          # in our deployment; standing up an OIDC issuer is out of scope for
+          # this homelab.
+          #
+          # Trade-off: anything that can reach the gateway gRPC port becomes
+          # an authenticated principal. NetworkPolicies + intra-cluster RBAC
+          # are the perimeter. Consistent with the disableTls=true posture.
+          # Revisit when an OIDC issuer is available OR when kagent supports
+          # mTLS client certs (then we can flip back to identity-bearing auth).
+          auth:
+            allowUnauthenticatedUsers: true
 
         # Gateway pod resource bounds. Kyverno require-resource-limits policy
         # only warns when missing, but declaring explicitly keeps events clean.
