@@ -16,8 +16,17 @@ spec:
         # PKI via cert-manager — chart auto-creates a namespaced Issuer and
         # Certificates. Disable the bootstrap Job so we don't double-write the
         # server/client TLS Secrets.
+        #
+        # clientCaFromServerTlsSecret=false drops the gateway's client_ca_path
+        # config line — gateway no longer requires mTLS client certs.
+        # Rationale: kagent v0.9.4's openshell client supports server-cert
+        # verification only (no CertPEM/KeyPEM config fields). Server-TLS-only
+        # is the sane interim posture; re-enable mTLS once upstream kagent
+        # adds client-cert support. See issue #306 and the design spec at
+        # docs/superpowers/specs/2026-05-28-openshell-controller-mtls-design.md.
         certManager:
           enabled: true
+          clientCaFromServerTlsSecret: false
         pkiInitJob:
           enabled: false
 
