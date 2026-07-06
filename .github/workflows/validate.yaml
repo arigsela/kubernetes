@@ -19,10 +19,12 @@ jobs:
       - name: Get changed YAML files
         id: changed
         run: |
+          # --diff-filter=d excludes deleted files so downstream lint/validate
+          # steps don't try to read paths that no longer exist on disk.
           if [ "${{ github.event_name }}" = "push" ]; then
-            FILES=$(git diff --name-only HEAD~1 HEAD -- 'base-apps/**/*.yaml' | tr '\n' ' ')
+            FILES=$(git diff --name-only --diff-filter=d HEAD~1 HEAD -- 'base-apps/**/*.yaml' | tr '\n' ' ')
           else
-            FILES=$(git diff --name-only origin/main...HEAD -- 'base-apps/**/*.yaml' | tr '\n' ' ')
+            FILES=$(git diff --name-only --diff-filter=d origin/main...HEAD -- 'base-apps/**/*.yaml' | tr '\n' ' ')
           fi
           echo "yaml_files=$FILES" >> "$GITHUB_OUTPUT"
           if [ -n "$FILES" ]; then
