@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: vault
+  namespace: vault
+  annotations:
+    agent-docs/path: docs.md
+  tags: [secrets, stateful, kv-v2]
+spec:
+  type: infrastructure
+  lifecycle: production
+  owner: platform
+  system: platform-secrets
