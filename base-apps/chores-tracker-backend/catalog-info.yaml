@@ -1,0 +1,15 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: chores-tracker-backend
+  namespace: chores-tracker
+  annotations:
+    agent-docs/path: docs.md
+  tags: [fastapi, mysql, jwt]
+spec:
+  type: service
+  lifecycle: production
+  owner: platform
+  system: chores-tracker
+  dependsOn:
+    - resource:default/vault
