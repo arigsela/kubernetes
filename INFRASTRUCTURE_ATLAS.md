@@ -4,7 +4,7 @@
 
 ## 1. System context
 - Kubernetes API: `https://192.168.0.100:6443`
-- GitOps: Argo CD watches this repo; `base-apps/master-app.yaml` creates an Application per `.yaml` in `base-apps/`.
+- GitOps: Argo CD watches this repo; the app-of-apps "master-app" (defined in `terraform/modules/application-sets/`, watching `base-apps/`) creates an Application per `.yaml` in `base-apps/`.
 - Secrets: HashiCorp Vault at `vault.vault.svc.cluster.local:8200` (KV v2, path `k8s-secrets`), surfaced via External Secrets Operator.
 - Terraform state: S3 bucket `asela-terraform-states`.
 
@@ -19,7 +19,7 @@
 
 ## 4. Cross-cutting concerns
 - **Secrets:** Vault + External Secrets Operator; per-namespace `SecretStore`.
-- **TLS/certs:** cert-manager (`base-apps/cert-manager/`) with Route 53 DNS-01.
+- **TLS/certs:** cert-manager (`base-apps/cert-manager/`) issuing from Let's Encrypt — `letsencrypt-prod`/`letsencrypt-staging` use HTTP-01 via nginx; a separate `letsencrypt-route53` issuer uses Route 53 DNS-01.
 - **Ingress/mesh:** nginx-ingress and Istio ambient mesh.
 - **Observability:** logging/Loki/coroot.
 
@@ -32,7 +32,7 @@
 | Domain | Authoritative location |
 |---|---|
 | App manifests | `base-apps/<app>/` |
-| Argo CD Applications | `base-apps/<app>.yaml`, `base-apps/master-app.yaml` |
+| Argo CD Applications | `base-apps/<app>.yaml`; app-of-apps master-app in `terraform/modules/application-sets/` |
 | Infrastructure | `terraform/roots/asela-cluster/`, `terraform/modules/` |
 | Secret wiring | per-app `secret-store.yaml` / `external-secret*.yaml` |
 | Doc contract & index | `templates/agent-docs/README.md`, `base-apps/_INDEX.md` |
