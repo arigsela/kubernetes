@@ -1283,7 +1283,15 @@ git commit -m "ci(agent-docs): validate the agent-docs contract on PRs"
 - [ ] Run validator tests: `python -m pytest tests/agent-docs/ -v` → all pass.
 - [ ] `wc -l CLAUDE.md` → < 200; `grep '@AGENTS.md' CLAUDE.md` → match.
 - [ ] `git log --oneline` shows one commit per task, all on `docs/agent-ready-docs-framework` (none on `main`).
-- [ ] Confirm no existing `base-apps/**/*.yaml` manifest was modified: `git diff --name-only main...HEAD | grep -vE '(catalog-info\.yaml|docs\.md|runbook\.md|_INDEX\.md|INFRASTRUCTURE_ATLAS\.md|CLAUDE\.md|validate\.yaml|agent-docs|templates/agent-docs)' | grep 'base-apps/.*\.yaml$'` → no output.
+- [ ] Confirm the only modified existing `base-apps/**/*.yaml` manifests are the 4 pilot Applications receiving a `directory.exclude: catalog-info.yaml` guard (`base-apps/chores-tracker-backend.yaml`, `base-apps/vault.yaml`, `base-apps/argo-cd.yaml`, `base-apps/cert-manager-config.yaml`); no other existing manifest is modified.
+- [ ] For the Terraform change (`terraform/roots/asela-cluster/argocd.tf`), run the repo's standard Terraform validation (mirrored by Atlantis on the PR): `terraform fmt -check -recursive terraform/`, `cd terraform/roots/asela-cluster && terraform init -backend=false && terraform validate`, and `tflint --format compact`.
+
+## Post-review additions (GitOps safety)
+
+Added during review to make co-located `catalog-info.yaml` safe under Argo CD (these are not part of the original Task 1–9 sequence; they resolve a deployment hazard the reviews surfaced):
+
+- **Argo CD `resource.exclusions`** (`terraform/roots/asela-cluster/argocd.tf`): exclude `backstage.io` `Component`/`Resource` so Argo CD ignores catalog-info objects cluster-wide. Enforced by the validator (`check_argocd_backstage_exclusion`, which parses the heredoc — a commented or malformed entry fails).
+- **Per-app `directory.exclude: catalog-info.yaml`** on the 4 pilot Applications: in-band guard so a merge is safe regardless of when the Terraform change is applied.
 
 ## Success criteria (from the spec)
 

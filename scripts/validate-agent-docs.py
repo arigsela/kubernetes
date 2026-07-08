@@ -72,6 +72,7 @@ def _as_date(value) -> date:
 
 
 CONTRACT_FILES = ["catalog-info.yaml", "docs.md", "runbook.md"]
+CATALOG_KINDS = {"Component", "Resource"}
 
 
 def _read_frontmatter_file(path: Path) -> tuple[dict | None, list[str]]:
@@ -92,7 +93,20 @@ def check_app_contract(repo_root: Path, app: str) -> list[str]:
         return errors  # can't check further without the files
 
     catalog = yaml.safe_load((app_dir / "catalog-info.yaml").read_text()) or {}
-    catalog_name = (catalog.get("metadata") or {}).get("name")
+    metadata = catalog.get("metadata") or {}
+    catalog_name = metadata.get("name")
+
+    if catalog.get("apiVersion") != "backstage.io/v1alpha1":
+        errors.append(
+            f"{app}: catalog-info.yaml apiVersion must be 'backstage.io/v1alpha1', "
+            f"got {catalog.get('apiVersion')!r}")
+    if catalog.get("kind") not in CATALOG_KINDS:
+        errors.append(
+            f"{app}: catalog-info.yaml kind must be one of {sorted(CATALOG_KINDS)}, "
+            f"got {catalog.get('kind')!r}")
+    if (metadata.get("annotations") or {}).get("agent-docs/path") != "docs.md":
+        errors.append(
+            f"{app}: catalog-info.yaml must set annotation 'agent-docs/path: docs.md'")
 
     for md in ("docs.md", "runbook.md"):
         fm, fm_errors = _read_frontmatter_file(app_dir / md)

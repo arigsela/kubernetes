@@ -109,6 +109,30 @@ def test_check_app_contract_flags_catalog_name_mismatch(tmp_path):
     assert any("catalog_entity" in e or "name" in e for e in errors)
 
 
+def test_check_app_contract_flags_bad_catalog_apiversion(tmp_path):
+    root = _make_repo(tmp_path)
+    ci = root / "base-apps" / "demo" / "catalog-info.yaml"
+    ci.write_text(ci.read_text().replace("backstage.io/v1alpha1", "example.com/v1"))
+    errors = validate_agent_docs.check_app_contract(root, "demo")
+    assert any("apiVersion" in e for e in errors)
+
+
+def test_check_app_contract_flags_bad_catalog_kind(tmp_path):
+    root = _make_repo(tmp_path)
+    ci = root / "base-apps" / "demo" / "catalog-info.yaml"
+    ci.write_text(ci.read_text().replace("kind: Component", "kind: Widget"))
+    errors = validate_agent_docs.check_app_contract(root, "demo")
+    assert any("kind must be one of" in e for e in errors)
+
+
+def test_check_app_contract_flags_missing_agent_docs_annotation(tmp_path):
+    root = _make_repo(tmp_path)
+    ci = root / "base-apps" / "demo" / "catalog-info.yaml"
+    ci.write_text(ci.read_text().replace("    agent-docs/path: docs.md\n", ""))
+    errors = validate_agent_docs.check_app_contract(root, "demo")
+    assert any("agent-docs/path" in e for e in errors)
+
+
 def test_check_index_coverage_flags_missing_row(tmp_path):
     root = _make_repo(tmp_path)
     # add an app dir with no index row
