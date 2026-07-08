@@ -123,7 +123,7 @@ Chosen to exercise four distinct shapes so the contract is validated broadly, no
 | `chores-tracker-backend` | Typical app workload (FastAPI/MySQL, Vault secrets) | Becomes the reusable app template |
 | `vault` | Stateful, high-stakes platform infra | Exercises a serious operational runbook |
 | `argo-cd` | The GitOps control plane itself | Central to triage; meta-important |
-| `istio-istiod` | Cross-cutting service-mesh infra | Exercises a non-app, platform-wide component |
+| `cert-manager` | Cross-cutting platform infra (TLS/DNS-01 + ExternalSecrets/Vault) | Exercises a non-app, platform-wide component with its own directory (`istio-istiod` is a bare app YAML with no directory, so it can't carry the co-located contract) |
 
 All other apps get a stub `_INDEX.md` row now; deep docs are backfilled later under CI gating.
 
@@ -165,7 +165,8 @@ The framework is shaped so a later spec can wire agents with minimal rework: kag
 - **Duplication with Backstage catalog** — *Mitigation:* the two-layer contract; structured facts only in `catalog-info.yaml`.
 - **CI friction blocks unrelated PRs** — *Mitigation:* explicit in-scope list (pilot only at first) and staleness in warn mode during rollout.
 
-## Open questions
+## Resolved during planning
 
-- Exact `owner`/`system` taxonomy for `catalog-info.yaml` — align with whatever the existing Backstage catalog already uses (confirm during Phase 1).
-- Whether the CI validator lives as a standalone Python script or a make target invoking it — decide during Phase 2 to match existing CI conventions.
+- **`owner`/`system` taxonomy:** the repo currently has no `catalog-info.yaml` files, so there is no in-repo convention to match. The plan defines defaults: `owner: platform` for shared infra, `owner` set to the app's team where known; `system` groups related components (e.g. `chores-tracker`). Revisit if/when the live Backstage catalog's taxonomy is confirmed.
+- **CI validator form:** the repo has no Makefile, so the validator is a standalone `scripts/validate-agent-docs.py` invoked directly from CI (a new job in `.github/workflows/validate.yaml`).
+- **4th pilot app:** `istio-istiod` is a bare app YAML with no directory, so it was swapped for `cert-manager` (which has a directory and is cross-cutting).
