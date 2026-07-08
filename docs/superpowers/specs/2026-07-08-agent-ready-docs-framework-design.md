@@ -20,7 +20,7 @@ The goal is a **docs-as-code framework**: a git-tracked, markdown-first knowledg
 
 ## GitOps safety constraint
 
-`catalog-info.yaml` is a Backstage entity (`apiVersion: backstage.io/v1alpha1`), not a Kubernetes manifest, yet co-location places it inside an Argo CD-synced directory (`base-apps/<app>/`). Argo CD would otherwise try to apply it and fail sync, since no `backstage.io` CRD exists. The framework therefore requires the Argo CD config to exclude the `backstage.io` group globally via `resource.exclusions` in `terraform/roots/asela-cluster/argocd.tf` — reusing the mechanism already applied to Crossplane kinds. The validator enforces this exclusion whenever any `catalog-info.yaml` is present, and CI fails without it. One global exclusion covers all current and future apps; no per-app Argo CD change is needed.
+`catalog-info.yaml` is a Backstage entity (`apiVersion: backstage.io/v1alpha1`), not a Kubernetes manifest, yet co-location places it inside an Argo CD-synced directory (`base-apps/<app>/`). Argo CD would otherwise try to apply it and fail sync, since no `backstage.io` CRD exists. The framework therefore requires the Argo CD config to exclude the `backstage.io` group globally via `resource.exclusions` in `terraform/roots/asela-cluster/argocd.tf` — reusing the mechanism already applied to Crossplane kinds. The validator enforces this exclusion whenever any `catalog-info.yaml` is present, and CI fails without it. Since the global exclusion is applied out-of-band (Terraform) while docs sync on merge, each pilot `Application` also carries `spec.source.directory.exclude: catalog-info.yaml` (in-band, so the merge is safe regardless of Terraform timing); the global exclusion then covers future apps.
 
 ## Non-goals
 
