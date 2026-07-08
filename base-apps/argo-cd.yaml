@@ -9,6 +9,13 @@ spec:
     repoURL: https://github.com/arigsela/kubernetes
     targetRevision: main
     path: base-apps/argo-cd
+    directory:
+      # catalog-info.yaml is a Backstage entity (backstage.io/v1alpha1), not a
+      # Kubernetes manifest. Exclude it so Argo CD does not try to apply it and
+      # fail sync. (Also covered globally via resource.exclusions in
+      # terraform/roots/asela-cluster/argocd.tf; this per-app exclude makes the
+      # merge safe regardless of when that Terraform change is applied.)
+      exclude: catalog-info.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: argo-cd
