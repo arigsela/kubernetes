@@ -5,7 +5,7 @@ metadata:
   namespace: chores-tracker
   annotations:
     agent-docs/path: docs.md
-  tags: [fastapi, mysql, jwt]
+  tags: [fastapi, postgresql, jwt]
 spec:
   type: service
   lifecycle: production
