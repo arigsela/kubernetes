@@ -16,6 +16,16 @@ spec:
           repository: infracost/infracost-atlantis
           tag: atlantis0.40-infracost0.10
 
+        # Use OpenTofu instead of Terraform. Atlantis verifies Terraform
+        # release signatures against HashiCorp's GPG key, which has expired —
+        # breaking `terraform` binary downloads with
+        # "unable to verify checksums signature: openpgp: key expired".
+        # OpenTofu uses its own signing, sidestepping the expired key.
+        # providers.tf requires >= 1.11.0; OpenTofu 1.12.3 satisfies it.
+        environment:
+          ATLANTIS_TF_DISTRIBUTION: tofu
+          ATLANTIS_DEFAULT_TF_VERSION: "1.12.3"
+
         orgAllowlist: github.com/arigsela/*
 
         github:
