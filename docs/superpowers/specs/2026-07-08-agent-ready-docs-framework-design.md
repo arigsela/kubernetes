@@ -136,12 +136,16 @@ All other apps get a stub `_INDEX.md` row now; deep docs are backfilled later un
 A validator, `scripts/validate-agent-docs.py`, run in CI alongside the existing `yamllint`/`kubeconform` steps. It reads an explicit **in-scope list** (starts as the pilot 4; grows as apps are backfilled) and checks:
 
 1. **Contract presence** — each in-scope `base-apps/<app>/` has `catalog-info.yaml`, `docs.md`, and `runbook.md`.
-2. **Frontmatter validity** — required keys present; `last_reviewed` parses as a date; `kind` ∈ {docs, runbook}; `status` ∈ {current, wip, deprecated}; `catalog_entity` resolves to a `metadata.name` in some `catalog-info.yaml`.
-3. **Link resolution** — every markdown link and every `sources:` path resolves to a file that exists.
-4. **Staleness** — flag docs whose `last_reviewed` is older than 180 days. Configurable warn-vs-fail; default warn during rollout.
-5. **Index coverage** — every directory in `base-apps/` appears as a row in `base-apps/_INDEX.md`.
+2. **Catalog-info structure** — `apiVersion: backstage.io/v1alpha1`, `kind` ∈ {Component, Resource}, and the `agent-docs/path: docs.md` annotation present.
+3. **Frontmatter validity** — required keys present; `last_reviewed` parses as a date; `kind` ∈ {docs, runbook}; `status` ∈ {current, wip, deprecated}; `catalog_entity` equals the sibling `catalog-info.yaml` `metadata.name`.
+4. **Source resolution** — every `sources:` path resolves to a file or directory that exists (`.exists()`).
+5. **Staleness** — flag docs whose `last_reviewed` is older than 180 days. Configurable warn-vs-fail; default warn during rollout.
+6. **Index coverage** — every directory in `base-apps/` appears as a row in `base-apps/_INDEX.md`.
+7. **Argo CD exclusion** — when any `catalog-info.yaml` exists, the Argo CD `resource.exclusions` (parsed from Terraform, not substring-matched) must exclude the `backstage.io` apiGroup.
 
-A new app must satisfy the contract, or carry an explicit opt-out marker (a documented annotation), to pass CI. Wiring is added to the existing CI workflow as a new step; failures block merge (except staleness while in warn mode).
+**Not enforced by the validator (explicit non-goals for the pilot):** resolution of arbitrary markdown links within `docs.md`/`runbook.md` prose (only the structured `sources:` list is checked), and resolution of Backstage `dependsOn` entity refs. These are candidates for a later hardening pass.
+
+The validator suite (`tests/agent-docs/`) also runs in CI so validator regressions are gated. A new app must satisfy the contract to pass CI. Wiring is a new job in the existing CI workflow; failures block merge (except staleness while in warn mode).
 
 ### 6. Retrieval readiness (Phase 2 preview — not designed here)
 

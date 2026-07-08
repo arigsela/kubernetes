@@ -12,4 +12,4 @@ spec:
   owner: platform
   system: platform-networking
   dependsOn:
-    - resource:default/vault
+    - resource:vault/vault
