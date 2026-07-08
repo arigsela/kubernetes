@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Start here:** Read [`INFRASTRUCTURE_ATLAS.md`](INFRASTRUCTURE_ATLAS.md) first — it is the navigation front door (system context, topology, per-app index). For an app, follow `base-apps/_INDEX.md` → the app's `docs.md`/`runbook.md`. The agent-docs contract is documented in [`templates/agent-docs/README.md`](templates/agent-docs/README.md).
+
+@AGENTS.md
+
 ## Repository Overview
 
 This is a GitOps-based Kubernetes infrastructure repository that manages application deployments using ArgoCD, Kargo for progressive delivery, and Terraform for infrastructure provisioning. The repository follows a declarative approach where all changes are made through Git commits, which then automatically sync to the cluster.
@@ -10,7 +14,7 @@ This is a GitOps-based Kubernetes infrastructure repository that manages applica
 
 ### GitOps Workflow
 - **ArgoCD** monitors this repository and automatically syncs changes to the cluster
-- **Master App Pattern**: A master ArgoCD application in `base-apps/master-app.yaml` watches the `/base-apps` directory and creates applications for each `.yaml` file
+- **Master App Pattern**: A master ArgoCD app-of-apps, defined in `terraform/modules/application-sets/`, watches the `base-apps/` directory and creates an Application for each `.yaml` file
 - **Auto-sync**: All applications have `prune: true` and `selfHeal: true` enabled
 - **External Secrets Operator**: Manages secrets from Vault using Kubernetes authentication
 
@@ -33,99 +37,8 @@ This is a GitOps-based Kubernetes infrastructure repository that manages applica
 
 ## Common Development Tasks
 
-### Deploy a New Application
-```bash
-# 1. Create application directory
-mkdir -p base-apps/my-app
-
-# 2. Add Kubernetes manifests (deployments.yaml, services.yaml, etc.)
-
-# 3. Create ArgoCD Application manifest
-cat > base-apps/my-app.yaml << EOF
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: my-app
-  namespace: argo-cd
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/arigsela/kubernetes
-    targetRevision: main
-    path: base-apps/my-app
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: my-app
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
-EOF
-
-# 4. Commit and push - ArgoCD will auto-deploy
-git add base-apps/my-app*
-git commit -m "Deploy my-app"
-git push origin main
-```
-
-### Update an Existing Application
-```bash
-# Edit the application files
-vi base-apps/chores-tracker/deployments.yaml
-
-# Commit and push - changes auto-sync
-git add base-apps/chores-tracker/deployments.yaml
-git commit -m "Update chores-tracker image to v1.0.0"
-git push origin main
-```
-
-### Add Secret Management to Application
-```bash
-# Create a SecretStore for your application namespace
-cat > base-apps/my-app/secret-store.yaml << EOF
-apiVersion: external-secrets.io/v1beta1
-kind: SecretStore
-metadata:
-  name: vault-backend
-  namespace: my-app
-spec:
-  provider:
-    vault:
-      server: "http://vault.vault.svc.cluster.local:8200"
-      path: "k8s-secrets"
-      version: "v2"
-      auth:
-        kubernetes:
-          mountPath: "kubernetes"
-          role: "my-app"  # Must match Vault role configuration
-          serviceAccountRef:
-            name: "default"
-EOF
-
-# Create an ExternalSecret to sync specific secrets
-cat > base-apps/my-app/external-secret.yaml << EOF
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: my-app-secrets
-  namespace: my-app
-spec:
-  refreshInterval: 15s
-  secretStoreRef:
-    kind: SecretStore
-    name: vault-backend
-  target:
-    name: my-app-secrets
-    creationPolicy: Owner
-  data:
-  - secretKey: database-password
-    remoteRef:
-      key: my-app/database
-      property: password
-EOF
-```
+### Deploy / update apps & secrets
+See `AGENTS.md` for build/test/validation commands, and `templates/agent-docs/README.md` for the per-app doc contract. Deploy pattern: add `base-apps/<app>.yaml` (Argo CD Application) + `base-apps/<app>/` manifests; Argo CD's master-app creates the Application on sync. Secret pattern: per-namespace `secret-store.yaml` + `external-secret*.yaml` resolving from Vault (`k8s-secrets`).
 
 ### Run Terraform Commands
 ```bash
@@ -178,7 +91,7 @@ git status
 - Image updates trigger automatic deployments via ArgoCD
 
 ### Application Examples
-- **Chores Tracker**: FastAPI/Python backend with MySQL, JWT auth, HTMX frontend
+- **Chores Tracker**: FastAPI/Python backend with PostgreSQL (CloudNativePG), JWT auth, HTMX frontend
 - **Cert-Manager**: Automated TLS certificate management with Route 53 DNS challenges
 - **External Secrets**: Vault integration for secure secret management
 
