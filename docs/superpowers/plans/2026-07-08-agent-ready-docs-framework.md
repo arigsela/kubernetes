@@ -1291,4 +1291,4 @@ git commit -m "ci(agent-docs): validate the agent-docs contract on PRs"
 - Atlas → index → app traversal reaches any pilot runbook in a few hops. ✅ Task 3 + 4–7.
 - The validator passes on the pilot and fails on a deliberately broken contract. ✅ Task 9 Step 4.
 - CLAUDE.md is under 200 lines and imports AGENTS.md. ✅ Task 8.
-- No runtime behavior changes. ✅ Final verification last checkbox.
+- No workload behavior changes; the only control-plane change is the scoped Argo CD `backstage.io` `resource.exclusions` addition, which must be applied before the co-located `catalog-info.yaml` files sync (see the GitOps-safety constraint). ✅ Final verification last checkbox.
