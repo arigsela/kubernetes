@@ -99,12 +99,14 @@ module "argocd" {
             - "*"
           # Agent-docs framework: catalog-info.yaml files are co-located in
           # base-apps/<app>/ for AI-agent/Backstage consumption. They are NOT
-          # Kubernetes manifests, so Argo CD must ignore the backstage.io group
-          # to avoid failing sync on those app directories.
+          # Kubernetes manifests, so Argo CD must ignore the Backstage entity
+          # kinds to avoid failing sync on those app directories. Scoped to the
+          # kinds the framework actually emits (Component, Resource).
           - apiGroups:
             - backstage.io
             kinds:
-            - "*"
+            - Component
+            - Resource
             clusters:
             - "*"
         EOT

@@ -123,6 +123,21 @@ def test_check_staleness_warns_when_old(tmp_path):
     assert any("demo" in w for w in warnings)
 
 
+_ARGOCD_TF_OK = (
+    'config = {\n'
+    '  "resource.exclusions" = <<-EOT\n'
+    '    - apiGroups:\n'
+    '      - backstage.io\n'
+    '      kinds:\n'
+    '      - Component\n'
+    '      - Resource\n'
+    '      clusters:\n'
+    '      - "*"\n'
+    '  EOT\n'
+    '}\n'
+)
+
+
 def test_argocd_exclusion_flags_missing_when_catalog_present(tmp_path):
     # _make_repo writes a catalog-info.yaml but no terraform config.
     root = _make_repo(tmp_path)
@@ -132,12 +147,28 @@ def test_argocd_exclusion_flags_missing_when_catalog_present(tmp_path):
 
 def test_argocd_exclusion_passes_when_configured(tmp_path):
     root = _make_repo(tmp_path)
+    _write(root / "terraform" / "roots" / "asela-cluster" / "argocd.tf", _ARGOCD_TF_OK)
+    assert validate_agent_docs.check_argocd_backstage_exclusion(root) == []
+
+
+def test_argocd_exclusion_rejects_commented_out_entry(tmp_path):
+    # A commented backstage.io line must NOT satisfy the check (parsed, not grep).
+    root = _make_repo(tmp_path)
     _write(
         root / "terraform" / "roots" / "asela-cluster" / "argocd.tf",
-        'config = {\n  "resource.exclusions" = <<-EOT\n'
-        "  - apiGroups:\n    - backstage.io\n    kinds:\n    - \"*\"\n  EOT\n}\n",
+        'config = {\n'
+        '  "resource.exclusions" = <<-EOT\n'
+        '    # - apiGroups:\n'
+        '    #   - backstage.io\n'
+        '    - apiGroups:\n'
+        '      - other.io\n'
+        '      kinds:\n'
+        '      - Foo\n'
+        '  EOT\n'
+        '}\n',
     )
-    assert validate_agent_docs.check_argocd_backstage_exclusion(root) == []
+    errors = validate_agent_docs.check_argocd_backstage_exclusion(root)
+    assert any("backstage.io" in e for e in errors)
 
 
 def test_argocd_exclusion_ok_when_no_catalog(tmp_path):
