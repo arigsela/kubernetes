@@ -92,7 +92,7 @@ git status
 
 ### Application Examples
 - **Chores Tracker**: FastAPI/Python backend with PostgreSQL (CloudNativePG), JWT auth, HTMX frontend
-- **Cert-Manager**: Automated TLS certificate management with Route 53 DNS challenges
+- **Cert-Manager**: TLS via Let's Encrypt — HTTP-01 via nginx for prod/staging, plus a Route 53 DNS-01 issuer
 - **External Secrets**: Vault integration for secure secret management
 
 ## Architecture Decision Records

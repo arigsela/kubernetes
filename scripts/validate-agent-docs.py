@@ -8,7 +8,6 @@ and base-apps index coverage. Staleness is a warning unless --staleness-fails.
 from __future__ import annotations
 
 import argparse
-import sys
 from datetime import date, datetime
 from pathlib import Path
 
