@@ -121,3 +121,27 @@ def test_check_staleness_warns_when_old(tmp_path):
     root = _make_repo(tmp_path)
     warnings = validate_agent_docs.check_staleness(root, ["demo"], date(2030, 1, 1), 180)
     assert any("demo" in w for w in warnings)
+
+
+def test_argocd_exclusion_flags_missing_when_catalog_present(tmp_path):
+    # _make_repo writes a catalog-info.yaml but no terraform config.
+    root = _make_repo(tmp_path)
+    errors = validate_agent_docs.check_argocd_backstage_exclusion(root)
+    assert any("backstage.io" in e for e in errors)
+
+
+def test_argocd_exclusion_passes_when_configured(tmp_path):
+    root = _make_repo(tmp_path)
+    _write(
+        root / "terraform" / "roots" / "asela-cluster" / "argocd.tf",
+        'config = {\n  "resource.exclusions" = <<-EOT\n'
+        "  - apiGroups:\n    - backstage.io\n    kinds:\n    - \"*\"\n  EOT\n}\n",
+    )
+    assert validate_agent_docs.check_argocd_backstage_exclusion(root) == []
+
+
+def test_argocd_exclusion_ok_when_no_catalog(tmp_path):
+    root = _make_repo(tmp_path)
+    (root / "base-apps" / "demo" / "catalog-info.yaml").unlink()
+    # No catalog-info.yaml anywhere -> nothing to protect, even with no tf config.
+    assert validate_agent_docs.check_argocd_backstage_exclusion(root) == []
