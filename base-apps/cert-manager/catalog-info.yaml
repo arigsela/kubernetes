@@ -1,0 +1,15 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+  annotations:
+    agent-docs/path: docs.md
+  tags: [tls, certificates, route53]
+spec:
+  type: infrastructure
+  lifecycle: production
+  owner: platform
+  system: platform-networking
+  dependsOn:
+    - resource:default/vault
