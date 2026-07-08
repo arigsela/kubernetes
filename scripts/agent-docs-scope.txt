@@ -1,0 +1,4 @@
+chores-tracker-backend
+vault
+argo-cd
+cert-manager

@@ -1,0 +1,16 @@
+# Structured-facts layer for an app. Copy into base-apps/<app>/catalog-info.yaml.
+# Authoritative for: owner, dependencies, namespace, lifecycle. Do NOT restate these in markdown.
+apiVersion: backstage.io/v1alpha1
+kind: Component            # Component for services; Resource for stateful infra (e.g. vault)
+metadata:
+  name: REPLACE_ME         # must equal catalog_entity in the sibling docs.md/runbook.md
+  namespace: REPLACE_ME    # Kubernetes namespace the app runs in
+  annotations:
+    agent-docs/path: docs.md
+  tags: []                 # short lowercase tokens, e.g. [fastapi, mysql]
+spec:
+  type: service            # service | database | infrastructure
+  lifecycle: production    # production | experimental | deprecated
+  owner: platform          # team or person; default 'platform' for shared infra
+  system: REPLACE_ME       # groups related components, e.g. chores-tracker
+  dependsOn: []            # e.g. [resource:default/vault]
