@@ -18,6 +18,10 @@ The goal is a **docs-as-code framework**: a git-tracked, markdown-first knowledg
 - Enforce the contract and freshness in **CI from the start** so docs cannot silently drift.
 - Leave the framework **retrieval-ready** for a later kagent/Backstage MCP phase.
 
+## GitOps safety constraint
+
+`catalog-info.yaml` is a Backstage entity (`apiVersion: backstage.io/v1alpha1`), not a Kubernetes manifest, yet co-location places it inside an Argo CD-synced directory (`base-apps/<app>/`). Argo CD would otherwise try to apply it and fail sync, since no `backstage.io` CRD exists. The framework therefore requires the Argo CD config to exclude the `backstage.io` group globally via `resource.exclusions` in `terraform/roots/asela-cluster/argocd.tf` — reusing the mechanism already applied to Crossplane kinds. The validator enforces this exclusion whenever any `catalog-info.yaml` is present, and CI fails without it. One global exclusion covers all current and future apps; no per-app Argo CD change is needed.
+
 ## Non-goals
 
 - Designing or deploying the kagent agents, Backstage MCP Actions backend, or any retrieval loop (separate spec).

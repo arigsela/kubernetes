@@ -3,7 +3,9 @@
 
 Checks (hard failures, exit 1): contract-file presence for in-scope apps,
 frontmatter validity, link/source resolution, catalog_entity name match,
-and base-apps index coverage. Staleness is a warning unless --staleness-fails.
+base-apps index coverage, and that Argo CD is configured to exclude the
+backstage.io group (co-located catalog-info.yaml files would otherwise fail
+Argo CD sync). Staleness is a warning unless --staleness-fails.
 """
 from __future__ import annotations
 
@@ -139,6 +141,38 @@ def check_staleness(repo_root: Path, apps: list[str], today: date, max_age_days:
     return warnings
 
 
+def check_argocd_backstage_exclusion(repo_root: Path) -> list[str]:
+    """Co-located catalog-info.yaml files sit inside Argo CD-synced app
+    directories, so Argo CD would try to apply their backstage.io
+    Component/Resource objects (not Kubernetes resources) and fail sync.
+    The Argo CD config MUST exclude the backstage.io group via
+    resource.exclusions. Fail if any catalog-info.yaml exists without it.
+    """
+    base_apps = repo_root / "base-apps"
+    if not base_apps.is_dir():
+        return []
+    has_catalog = any(
+        (child / "catalog-info.yaml").is_file()
+        for child in base_apps.iterdir()
+        if child.is_dir()
+    )
+    if not has_catalog:
+        return []
+    tf_dir = repo_root / "terraform"
+    if tf_dir.is_dir():
+        for tf in tf_dir.rglob("*.tf"):
+            text = tf.read_text(errors="ignore")
+            if "resource.exclusions" in text and "backstage.io" in text:
+                return []
+    return [
+        "Argo CD is not configured to exclude the backstage.io group, but "
+        "co-located catalog-info.yaml files exist under base-apps/. Argo CD "
+        "would try to apply them and fail sync. Add a backstage.io entry to "
+        "resource.exclusions in the Argo CD Terraform config "
+        "(terraform/roots/asela-cluster/argocd.tf)."
+    ]
+
+
 def _load_scope(repo_root: Path) -> list[str]:
     scope = repo_root / "scripts" / "agent-docs-scope.txt"
     return [ln.strip() for ln in scope.read_text().splitlines() if ln.strip() and not ln.startswith("#")]
@@ -159,6 +193,7 @@ def main(argv=None) -> int:
     for app in apps:
         errors.extend(check_app_contract(repo_root, app))
     errors.extend(check_index_coverage(repo_root))
+    errors.extend(check_argocd_backstage_exclusion(repo_root))
 
     warnings = check_staleness(repo_root, apps, today)
 

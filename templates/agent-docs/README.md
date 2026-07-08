@@ -21,7 +21,12 @@ Every in-scope `base-apps/<app>/` directory carries three files:
 | `tags` | list | short lowercase tokens |
 | `sources` | list | repo-relative paths to authoritative files; each must exist |
 
+## GitOps safety (important)
+`catalog-info.yaml` is a **Backstage** entity (`apiVersion: backstage.io/v1alpha1`), **not** a Kubernetes manifest. Because it is co-located inside an Argo CD-synced app directory (`base-apps/<app>/`), Argo CD would otherwise try to apply it and **fail sync** (no `backstage.io` CRD exists in the cluster).
+
+This is prevented globally: the Argo CD config excludes the whole `backstage.io` group via `resource.exclusions` in `terraform/roots/asela-cluster/argocd.tf`, so Argo CD ignores every `catalog-info.yaml` object cluster-wide. The validator (`scripts/validate-agent-docs.py`) enforces that this exclusion exists whenever any `catalog-info.yaml` is present, and CI fails if it is missing. Do not remove that exclusion while co-located `catalog-info.yaml` files exist.
+
 ## Rules
 - Structured facts live only in `catalog-info.yaml`; prose only in markdown.
 - The atlas and docs are a navigation/summary layer. `sources:` files remain authoritative — when a summary looks wrong, go to the source.
-- Adding an app to the contract: copy the three templates, fill them in, add the app name to `scripts/agent-docs-scope.txt`, and add a row to `base-apps/_INDEX.md`.
+- Adding an app to the contract: copy the three templates, fill them in, add the app name to `scripts/agent-docs-scope.txt`, and add a row to `base-apps/_INDEX.md`. The global `backstage.io` Argo CD exclusion already covers the new `catalog-info.yaml` — no per-app Argo CD change is needed.
