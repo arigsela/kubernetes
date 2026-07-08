@@ -5,7 +5,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 
 | app | purpose | namespace | docs | runbook | catalog |
 |---|---|---|---|---|---|
-| chores-tracker-backend | FastAPI chores backend (MySQL, Vault, JWT) | chores-tracker | docs.md | runbook.md | catalog-info.yaml |
+| chores-tracker-backend | FastAPI chores backend (PostgreSQL, Vault, JWT) | chores-tracker | docs.md | runbook.md | catalog-info.yaml |
 | vault | In-cluster secret backend (KV v2) | vault | docs.md | runbook.md | catalog-info.yaml |
 | argo-cd | GitOps control plane | argo-cd | docs.md | runbook.md | catalog-info.yaml |
 | cert-manager | TLS via Let's Encrypt (HTTP-01 via nginx; Route 53 DNS-01 issuer) | cert-manager | docs.md | runbook.md | catalog-info.yaml |
