@@ -27,7 +27,7 @@ The goal is a **docs-as-code framework**: a git-tracked, markdown-first knowledg
 - Designing or deploying the kagent agents, Backstage MCP Actions backend, or any retrieval loop (separate spec).
 - Documenting all ~90 apps in this pass (only the pilot 4 are deep; the rest get stub index rows).
 - Migrating existing `docs/` content or changing Backstage catalog internals beyond adding `catalog-info.yaml` files.
-- Any change to Kubernetes, Terraform, Helm, Crossplane, Vault, ingress, IAM, or RBAC runtime behavior. This is docs + CI only.
+- Any change to Kubernetes workload, Helm, Crossplane, Vault, ingress, IAM, or RBAC behavior. This is docs + validator + CI, plus one scoped Argo CD `resource.exclusions` addition (see "GitOps safety constraint") — no running workload is affected.
 
 ## Chosen approach
 
@@ -160,7 +160,7 @@ The framework is shaped so a later spec can wire agents with minimal rework: kag
 - `INFRASTRUCTURE_ATLAS.md` lets a fresh agent session reach any pilot app's runbook via atlas → index → app in a small number of hops.
 - The CI validator passes on the pilot and fails on a deliberately broken contract (missing file, bad frontmatter, dangling `sources:` path).
 - `CLAUDE.md` is under 200 lines and imports `AGENTS.md`.
-- No runtime (Kubernetes/Terraform/Vault/ingress/RBAC) behavior changes.
+- No workload behavior changes (Kubernetes/Vault/ingress/RBAC); the only control-plane change is the scoped Argo CD `backstage.io` `resource.exclusions` addition.
 
 ## Risks & mitigations
 

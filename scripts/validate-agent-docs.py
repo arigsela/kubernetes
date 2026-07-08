@@ -10,6 +10,8 @@ Argo CD sync). Staleness is a warning unless --staleness-fails.
 from __future__ import annotations
 
 import argparse
+import re
+import textwrap
 from datetime import date, datetime
 from pathlib import Path
 
@@ -141,12 +143,42 @@ def check_staleness(repo_root: Path, apps: list[str], today: date, max_age_days:
     return warnings
 
 
+_EXCLUSIONS_RE = re.compile(
+    r'"resource\.exclusions"\s*=\s*<<-?(?P<tag>\w+)\n(?P<body>.*?)\n[ \t]*(?P=tag)',
+    re.DOTALL,
+)
+
+
+def _resource_exclusions_lists(tf_text: str) -> list:
+    """Extract every `resource.exclusions` heredoc from Terraform text and
+    parse each as YAML. Returns the list of parsed exclusion lists (parsing,
+    not substring matching, so comments and malformed entries don't count)."""
+    parsed = []
+    for m in _EXCLUSIONS_RE.finditer(tf_text):
+        body = textwrap.dedent(m.group("body"))
+        try:
+            data = yaml.safe_load(body)
+        except yaml.YAMLError:
+            continue
+        if isinstance(data, list):
+            parsed.append(data)
+    return parsed
+
+
+def _excludes_backstage(exclusion_list: list) -> bool:
+    for item in exclusion_list:
+        if isinstance(item, dict) and "backstage.io" in (item.get("apiGroups") or []):
+            return True
+    return False
+
+
 def check_argocd_backstage_exclusion(repo_root: Path) -> list[str]:
     """Co-located catalog-info.yaml files sit inside Argo CD-synced app
     directories, so Argo CD would try to apply their backstage.io
     Component/Resource objects (not Kubernetes resources) and fail sync.
-    The Argo CD config MUST exclude the backstage.io group via
-    resource.exclusions. Fail if any catalog-info.yaml exists without it.
+    The Argo CD config MUST exclude the backstage.io apiGroup via a real
+    (structurally valid, non-commented) resource.exclusions entry. Fail if
+    any catalog-info.yaml exists without it.
     """
     base_apps = repo_root / "base-apps"
     if not base_apps.is_dir():
@@ -161,15 +193,15 @@ def check_argocd_backstage_exclusion(repo_root: Path) -> list[str]:
     tf_dir = repo_root / "terraform"
     if tf_dir.is_dir():
         for tf in tf_dir.rglob("*.tf"):
-            text = tf.read_text(errors="ignore")
-            if "resource.exclusions" in text and "backstage.io" in text:
-                return []
+            for exclusions in _resource_exclusions_lists(tf.read_text(errors="ignore")):
+                if _excludes_backstage(exclusions):
+                    return []
     return [
-        "Argo CD is not configured to exclude the backstage.io group, but "
+        "Argo CD is not configured to exclude the backstage.io apiGroup, but "
         "co-located catalog-info.yaml files exist under base-apps/. Argo CD "
-        "would try to apply them and fail sync. Add a backstage.io entry to "
-        "resource.exclusions in the Argo CD Terraform config "
-        "(terraform/roots/asela-cluster/argocd.tf)."
+        "would try to apply them and fail sync. Add a structurally valid "
+        "backstage.io entry to resource.exclusions in the Argo CD Terraform "
+        "config (terraform/roots/asela-cluster/argocd.tf)."
     ]
 
 
