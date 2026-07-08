@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: argo-cd
+  namespace: argo-cd
+  annotations:
+    agent-docs/path: docs.md
+  tags: [gitops, control-plane]
+spec:
+  type: infrastructure
+  lifecycle: production
+  owner: platform
+  system: platform-gitops
