@@ -119,6 +119,12 @@ spec:
         apiGroup: kagent.dev
         kind: RemoteMCPServer
         name: agent-docs
+        # kagent binds only the tools listed here (like every other agent);
+        # without toolNames the ref resolves to nothing → "Unknown Tool".
+        # These are the read tools the systemMessage drives.
+        toolNames:
+        - get_file_contents
+        - search_code
     - type: Agent
       agent:
         name: k8s-agent
