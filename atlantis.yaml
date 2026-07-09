@@ -12,9 +12,14 @@ projects:
         - "**/*.tfvars"
         - "../../modules/**/*.tf"
       enabled: true
-    apply_requirements:
-      - approved
-      - mergeable
+    # Solo repo: branch protection requires an approving review that you can't
+    # give yourself, which leaves PRs mergeStateStatus=BLOCKED. That makes both
+    # "approved" AND "mergeable" unsatisfiable for Atlantis, so apply is gated
+    # solely by the required-reviewer GitHub Environment on the "Terraform
+    # Apply" Action (and, in practice, by you being the only commenter).
+    # Re-add "mergeable"/"approved" here if you add a second reviewer or relax
+    # the branch-protection review requirement.
+    apply_requirements: []
 
 workflows:
   default:
