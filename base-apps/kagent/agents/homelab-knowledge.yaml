@@ -28,10 +28,12 @@ spec:
       - alias: builtin
         kind: ConfigMap
         name: kagent-builtin-prompts
-    context:
-      compaction:
-        compactionInterval: 5
-        overlapSize: 2
+    # No context.compaction: this agent delegates to k8s-agent/helm-agent, whose
+    # live-state replies can grow the conversation large. kagent's EXPERIMENTAL
+    # sliding-window compaction summarizer then sends a malformed request to the
+    # Anthropic API (400 "system: Input should be a valid array") and the turn
+    # fails. Every working delegation agent (k8s-agent, helm-agent, cilium-*,
+    # istio, ...) runs WITHOUT compaction on the same model — match them.
     systemMessage: |
       You are HomelabAssist, an expert assistant for this homelab Kubernetes
       cluster and its GitOps repo at github.com/arigsela/kubernetes. You answer
