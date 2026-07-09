@@ -157,8 +157,14 @@ spec:
     # Injects GITHUB_PERSONAL_ACCESS_TOKEN from the K8s Secret (Task 1).
     secretRefs:
       - name: agent-docs-github-mcp-token
-    env:
-      GITHUB_TOOLSETS: repos
+    # Thin stdio proxy; bounded so it never runs BestEffort on infra nodes.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
     nodeSelector:
       node.kubernetes.io/workload: infrastructure
     tolerations:
@@ -166,14 +172,20 @@ spec:
         effect: NoSchedule
 ```
 
+(The `--toolsets repos` arg already restricts the toolset — no separate
+`GITHUB_TOOLSETS` env is needed, and `--read-only` enforces read-only
+regardless.)
+
 - [ ] **Step 4: Lint + validate the manifest**
 
 Run:
 ```bash
 yamllint -c .yamllint.yaml base-apps/kagent/agent-docs-mcp.yaml
 python3 -c "import yaml; d=yaml.safe_load(open('base-apps/kagent/agent-docs-mcp.yaml')); assert d['kind']=='MCPServer'; assert '--read-only' in d['spec']['deployment']['args']; assert d['spec']['deployment']['secretRefs'][0]['name']=='agent-docs-github-mcp-token'; print('ok')"
+# Real CRD schema validation against the live cluster (validates only — applies nothing):
+kubectl apply --dry-run=server -f base-apps/kagent/agent-docs-mcp.yaml
 ```
-Expected: yamllint clean and `ok`. (kubeconform will `-ignore-missing-schemas` the kagent CRD in CI — that's fine.)
+Expected: yamllint clean, `ok`, and `mcpserver.kagent.dev/agent-docs-mcp created (server dry run)` (proves the manifest is valid against the actual `mcpservers.kagent.dev` CRD — kubeconform in CI `-ignore-missing-schemas` the kagent CRD, so the server dry-run is the authoritative schema check). **Validated on 2026-07-09:** all three manifests passed server-side dry-run (`externalsecret … created`, `mcpserver … created`, `agent … configured`).
 
 - [ ] **Step 5: Commit**
 
