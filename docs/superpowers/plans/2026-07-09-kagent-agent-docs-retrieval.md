@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Post-implementation correction (2026-07-09):** Task 3 below wires the agent's tool to `kind: MCPServer`, and Task 4 reads `discoveredTools` off the MCPServer. That was **wrong** for this kagent version: an `MCPServer` (container) only **deploys** the pod + Service `agent-docs-mcp.kagent:3000` — it registers **0** tools. Tool registration requires a separate **`RemoteMCPServer`** (`kind: kagent.dev/v1alpha2`, `protocol: STREAMABLE_HTTP`, `url: http://agent-docs-mcp.kagent:3000/mcp`) that points at that Service; kagent then discovers the tools (confirmed live: 13). The fix (follow-up PR): keep `agent-docs-mcp.yaml` (MCPServer, deploys the container) **and** add `agent-docs-mcp-remote.yaml` (RemoteMCPServer `agent-docs`), and change the agent's tool ref to `kind: RemoteMCPServer, name: agent-docs`. Read the `## Design` in the spec for the authoritative wiring.
+
 **Goal:** Rework the `homelab-knowledge` kagent agent to answer from the live agent-docs — read from `arigsela/kubernetes@main` at query time via a read-only, repo-scoped GitHub MCP — instead of a staleable hardcoded prompt.
 
 **Architecture:** Deploy the official `github-mcp-server` as a kagent `MCPServer` (read-only, single-repo token from Vault), then add it as a tool on `homelab-knowledge` and rewrite that agent's `systemMessage` to retrieve the atlas → index → per-app `docs.md`/`runbook.md`/`catalog-info.yaml`. Everything is declarative under `base-apps/kagent/` and syncs via Argo CD.

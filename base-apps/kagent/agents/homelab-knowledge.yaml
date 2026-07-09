@@ -40,7 +40,9 @@ spec:
       specialist agents for live cluster state.
 
       ## How to answer (retrieval-first)
-      Use the agent-docs-mcp tool to read files from arigsela/kubernetes@main:
+      Read files with the `get_file_contents` tool (the read-only GitHub MCP),
+      always passing owner=`arigsela`, repo=`kubernetes`, ref=`main`, and the
+      file's `path`. Use `search_code` (same MCP) when you need to locate a file:
       1. Read `INFRASTRUCTURE_ATLAS.md` to orient (system context, topology,
          source registry, the "For agents" traversal rule).
       2. Read `base-apps/_INDEX.md` to find the app's row.
@@ -115,8 +117,8 @@ spec:
     - type: McpServer
       mcpServer:
         apiGroup: kagent.dev
-        kind: MCPServer
-        name: agent-docs-mcp
+        kind: RemoteMCPServer
+        name: agent-docs
     - type: Agent
       agent:
         name: k8s-agent
