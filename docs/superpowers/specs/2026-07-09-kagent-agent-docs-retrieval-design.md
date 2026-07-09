@@ -42,13 +42,13 @@ Three declarative pieces (in `base-apps/kagent/`) plus one Vault secret:
 ```
 homelab-knowledge Agent (reworked)
   tools:
-    - RemoteMCPServer/MCPServer: agent-docs-github-mcp  ──reads──▶ GitHub API (arigsela/kubernetes@main)
+    - RemoteMCPServer/MCPServer: agent-docs-mcp  ──reads──▶ GitHub API (arigsela/kubernetes@main)
     - Agent: k8s-agent   (live cluster state)                       INFRASTRUCTURE_ATLAS.md
     - Agent: helm-agent  (live helm state)                          base-apps/_INDEX.md
                                                                     base-apps/<app>/docs.md · runbook.md · catalog-info.yaml
 ```
 
-### 1. `agent-docs-github-mcp` (the repo MCP)
+### 1. `agent-docs-mcp` (the repo MCP)
 
 - **Image:** the official `github/github-mcp-server` container, deployed as a kagent MCP server manifest under `base-apps/kagent/` (following the existing agent/MCP layout).
 - **Read-only + scoped:** started in read-only mode with only read toolsets enabled (repo contents + code search — no write, issue, or PR tools). The token is a **fine-grained PAT limited to `arigsela/kubernetes` with read-only Contents permission**, so worst-case exposure is read of this one repo.
@@ -58,7 +58,7 @@ homelab-knowledge Agent (reworked)
 
 ### 2. Reworked `homelab-knowledge` Agent
 
-- **Tools:** add `agent-docs-github-mcp` alongside the existing `k8s-agent` and `helm-agent` delegates.
+- **Tools:** add `agent-docs-mcp` alongside the existing `k8s-agent` and `helm-agent` delegates.
 - **`systemMessage` rewrite (retrieval, not recall):**
   - **Remove** the large hardcoded architectural block (stale GitOps/master-app/MySQL/Crossplane facts).
   - **Add** the framework navigation: *"For any question about an app or the platform, first read `INFRASTRUCTURE_ATLAS.md`, then `base-apps/_INDEX.md`, then the app's `docs.md`/`runbook.md`/`catalog-info.yaml` via the GitHub MCP. The `sources:` files listed in a doc are authoritative; never invent file paths or resource names — read them."*

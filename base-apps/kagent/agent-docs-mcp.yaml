@@ -21,8 +21,14 @@ spec:
     # Injects GITHUB_PERSONAL_ACCESS_TOKEN from the K8s Secret (Task 1).
     secretRefs:
       - name: agent-docs-github-mcp-token
-    env:
-      GITHUB_TOOLSETS: repos
+    # Thin stdio proxy; bounded so it never runs BestEffort on infra nodes.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
     nodeSelector:
       node.kubernetes.io/workload: infrastructure
     tolerations:
