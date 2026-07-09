@@ -1,0 +1,30 @@
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: agent-docs-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: agent-docs-mcp
+spec:
+  # Read the agent-docs from arigsela/kubernetes@main over MCP. Read-only,
+  # single-repo (token scope) — see agent-docs-mcp-external-secret.yaml.
+  transportType: stdio
+  deployment:
+    image: ghcr.io/github/github-mcp-server:v1.5.0
+    cmd: ./github-mcp-server
+    args:
+      - stdio
+      - --read-only
+      - --toolsets
+      - repos
+    # Injects GITHUB_PERSONAL_ACCESS_TOKEN from the K8s Secret (Task 1).
+    secretRefs:
+      - name: agent-docs-github-mcp-token
+    env:
+      GITHUB_TOOLSETS: repos
+    nodeSelector:
+      node.kubernetes.io/workload: infrastructure
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
