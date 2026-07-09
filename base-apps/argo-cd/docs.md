@@ -34,6 +34,6 @@ All Applications, including `argo-cd-config` (`base-apps/argo-cd.yaml`) itself, 
 
 ## Gotchas & tribal knowledge
 - Because every Application (including `argo-cd-config`) has `selfHeal: true`, manual `kubectl` edits anywhere are reverted — all changes must go through git.
-- Argo CD's own server config sets `resource.exclusions` for Crossplane's `XMySQLDatabase` and `mysql.sql.crossplane.io` `User`/`Database`/`Grant` kinds (`terraform/roots/asela-cluster/argocd.tf`) — Argo CD deliberately does not track or diff those resources.
+- The `resource.exclusions` in `terraform/roots/asela-cluster/argocd.tf` (Crossplane kinds, etc.) is currently **ineffective** — the argocd module passes config under the deprecated Helm `server.config.*` path while the chart reads `configs.cm.*`, so the live `argocd-cm` uses the chart's own default exclusions instead. If you actually need those exclusions live, migrate the module to write `configs.cm.*` (and include the chart's default exclusions, since the value replaces rather than merges). This is why the agent-docs framework uses per-app `spec.source.directory.exclude` rather than a global exclusion.
 - The Argo CD server runs with `server.insecure=true` — do not expose the `argo-cd-argocd-server` Service directly without a TLS-terminating proxy (currently the nginx `Ingress`) in front of it.
 - A stuck/broken Argo CD, or a broken `master-app` Application specifically, affects every app's ability to sync — triage the control plane before chasing individual-app symptoms.

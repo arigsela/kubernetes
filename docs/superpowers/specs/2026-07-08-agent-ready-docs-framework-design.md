@@ -20,7 +20,11 @@ The goal is a **docs-as-code framework**: a git-tracked, markdown-first knowledg
 
 ## GitOps safety constraint
 
-`catalog-info.yaml` is a Backstage entity (`apiVersion: backstage.io/v1alpha1`), not a Kubernetes manifest, yet co-location places it inside an Argo CD-synced directory (`base-apps/<app>/`). Argo CD would otherwise try to apply it and fail sync, since no `backstage.io` CRD exists. The framework therefore requires the Argo CD config to exclude the `backstage.io` group globally via `resource.exclusions` in `terraform/roots/asela-cluster/argocd.tf` — reusing the mechanism already applied to Crossplane kinds. The validator enforces this exclusion whenever any `catalog-info.yaml` is present, and CI fails without it. Since the global exclusion is applied out-of-band (Terraform) while docs sync on merge, each pilot `Application` also carries `spec.source.directory.exclude: catalog-info.yaml` (in-band, so the merge is safe regardless of Terraform timing); the global exclusion then covers future apps.
+`catalog-info.yaml` is a Backstage entity (`apiVersion: backstage.io/v1alpha1`), not a Kubernetes manifest, yet co-location places it inside an Argo CD-synced directory (`base-apps/<app>/`). Argo CD would otherwise try to apply it and fail sync, since no `backstage.io` CRD exists.
+
+**Mechanism: per-app `directory.exclude` (required, in-band).** Each app carrying a `catalog-info.yaml` sets `spec.source.directory.exclude: catalog-info.yaml` on its Argo CD `Application` (matched by `spec.source.path == base-apps/<app>`). Argo CD honors the exclude at render time, so the file is never applied; because the Application spec and the file land in the same commit, a merge is always safe. The validator enforces this per app and CI fails without it.
+
+**A global `resource.exclusions` was tried and abandoned.** The Argo CD Terraform module writes config under the deprecated Helm `server.config.*` path while the chart reads `configs.cm.*`, so a global `backstage.io` exclusion in `argocd.tf` never reaches the live `argocd-cm` (the chart's own default exclusions win, and migrating to `configs.cm` would clobber them since the value replaces rather than merges). The per-app guard is therefore the sole, load-bearing mechanism; see the note in `argocd.tf`.
 
 ## Non-goals
 
@@ -141,7 +145,7 @@ A validator, `scripts/validate-agent-docs.py`, run in CI alongside the existing 
 4. **Source resolution** — every `sources:` path resolves to a file or directory that exists (`.exists()`).
 5. **Staleness** — flag docs whose `last_reviewed` is older than 180 days. Configurable warn-vs-fail; default warn during rollout.
 6. **Index coverage** — every directory in `base-apps/` appears as a row in `base-apps/_INDEX.md`.
-7. **Argo CD exclusion** — when any `catalog-info.yaml` exists, the Argo CD `resource.exclusions` (parsed from Terraform, not substring-matched) must exclude the `backstage.io` apiGroup.
+7. **Per-app `directory.exclude`** — for each in-scope app that has a `catalog-info.yaml`, the Argo CD `Application` whose `spec.source.path` is `base-apps/<app>` must set `spec.source.directory.exclude` to cover `catalog-info.yaml`.
 
 **Not enforced by the validator (explicit non-goals for the pilot):** resolution of arbitrary markdown links within `docs.md`/`runbook.md` prose (only the structured `sources:` list is checked), and resolution of Backstage `dependsOn` entity refs. These are candidates for a later hardening pass.
 

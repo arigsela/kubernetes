@@ -74,6 +74,12 @@ def _make_repo(tmp_path: Path) -> Path:
     _write(app / "docs.md", GOOD_FM)
     runbook = GOOD_FM.replace("kind: docs", "kind: runbook")
     _write(app / "runbook.md", runbook)
+    # Argo CD Application for 'demo' that excludes catalog-info.yaml (in-band guard).
+    _write(root / "base-apps" / "demo.yaml",
+           "apiVersion: argoproj.io/v1alpha1\nkind: Application\n"
+           "metadata:\n  name: demo\nspec:\n  source:\n"
+           "    path: base-apps/demo\n"
+           "    directory:\n      exclude: catalog-info.yaml\n")
     _write(root / "base-apps" / "_INDEX.md",
            "| app | purpose | namespace | docs | runbook | catalog |\n"
            "|---|---|---|---|---|---|\n"
@@ -147,56 +153,42 @@ def test_check_staleness_warns_when_old(tmp_path):
     assert any("demo" in w for w in warnings)
 
 
-_ARGOCD_TF_OK = (
-    'config = {\n'
-    '  "resource.exclusions" = <<-EOT\n'
-    '    - apiGroups:\n'
-    '      - backstage.io\n'
-    '      kinds:\n'
-    '      - Component\n'
-    '      - Resource\n'
-    '      clusters:\n'
-    '      - "*"\n'
-    '  EOT\n'
-    '}\n'
-)
-
-
-def test_argocd_exclusion_flags_missing_when_catalog_present(tmp_path):
-    # _make_repo writes a catalog-info.yaml but no terraform config.
+def test_directory_exclude_passes_on_good_repo(tmp_path):
     root = _make_repo(tmp_path)
-    errors = validate_agent_docs.check_argocd_backstage_exclusion(root)
-    assert any("backstage.io" in e for e in errors)
+    assert validate_agent_docs.check_app_directory_exclude(root, "demo") == []
 
 
-def test_argocd_exclusion_passes_when_configured(tmp_path):
+def test_directory_exclude_flags_missing_exclude(tmp_path):
     root = _make_repo(tmp_path)
-    _write(root / "terraform" / "roots" / "asela-cluster" / "argocd.tf", _ARGOCD_TF_OK)
-    assert validate_agent_docs.check_argocd_backstage_exclusion(root) == []
+    # Application exists but drops the directory.exclude guard.
+    _write(root / "base-apps" / "demo.yaml",
+           "apiVersion: argoproj.io/v1alpha1\nkind: Application\n"
+           "metadata:\n  name: demo\nspec:\n  source:\n    path: base-apps/demo\n")
+    errors = validate_agent_docs.check_app_directory_exclude(root, "demo")
+    assert any("directory.exclude" in e for e in errors)
 
 
-def test_argocd_exclusion_rejects_commented_out_entry(tmp_path):
-    # A commented backstage.io line must NOT satisfy the check (parsed, not grep).
+def test_directory_exclude_flags_no_application(tmp_path):
     root = _make_repo(tmp_path)
-    _write(
-        root / "terraform" / "roots" / "asela-cluster" / "argocd.tf",
-        'config = {\n'
-        '  "resource.exclusions" = <<-EOT\n'
-        '    # - apiGroups:\n'
-        '    #   - backstage.io\n'
-        '    - apiGroups:\n'
-        '      - other.io\n'
-        '      kinds:\n'
-        '      - Foo\n'
-        '  EOT\n'
-        '}\n',
-    )
-    errors = validate_agent_docs.check_argocd_backstage_exclusion(root)
-    assert any("backstage.io" in e for e in errors)
+    (root / "base-apps" / "demo.yaml").unlink()
+    errors = validate_agent_docs.check_app_directory_exclude(root, "demo")
+    assert any("no Argo CD Application" in e for e in errors)
 
 
-def test_argocd_exclusion_ok_when_no_catalog(tmp_path):
+def test_directory_exclude_matches_by_source_path_not_filename(tmp_path):
+    # App synced by a differently-named manifest (like cert-manager-config.yaml).
+    root = _make_repo(tmp_path)
+    (root / "base-apps" / "demo.yaml").unlink()
+    _write(root / "base-apps" / "demo-config.yaml",
+           "apiVersion: argoproj.io/v1alpha1\nkind: Application\n"
+           "metadata:\n  name: demo-config\nspec:\n  source:\n"
+           "    path: base-apps/demo\n"
+           "    directory:\n      exclude: catalog-info.yaml\n")
+    assert validate_agent_docs.check_app_directory_exclude(root, "demo") == []
+
+
+def test_directory_exclude_ok_when_no_catalog(tmp_path):
     root = _make_repo(tmp_path)
     (root / "base-apps" / "demo" / "catalog-info.yaml").unlink()
-    # No catalog-info.yaml anywhere -> nothing to protect, even with no tf config.
-    assert validate_agent_docs.check_argocd_backstage_exclusion(root) == []
+    # No catalog-info.yaml -> nothing to guard, even with no Application.
+    assert validate_agent_docs.check_app_directory_exclude(root, "demo") == []

@@ -82,6 +82,16 @@ module "argocd" {
         }
       ]
       config = {
+        # NOTE: this "resource.exclusions" is currently INEFFECTIVE. The module
+        # passes config under the deprecated Helm `server.config.*` path, but the
+        # argo-cd chart reads `configs.cm.*` — so the live argocd-cm uses the
+        # chart's own default exclusions, not these. (Migrating to configs.cm
+        # would clobber those chart defaults, since the value replaces rather
+        # than merges.) The agent-docs framework therefore does NOT rely on a
+        # global backstage.io exclusion; each app's Argo CD Application instead
+        # carries `spec.source.directory.exclude: catalog-info.yaml` (an in-band
+        # guard that Argo CD honors at render time). See the agent-docs contract
+        # README for the per-app requirement.
         "resource.exclusions" = <<-EOT
           - apiGroups:
             - platform.io
@@ -95,18 +105,6 @@ module "argocd" {
             - User
             - Database
             - Grant
-            clusters:
-            - "*"
-          # Agent-docs framework: catalog-info.yaml files are co-located in
-          # base-apps/<app>/ for AI-agent/Backstage consumption. They are NOT
-          # Kubernetes manifests, so Argo CD must ignore the Backstage entity
-          # kinds to avoid failing sync on those app directories. Scoped to the
-          # kinds the framework actually emits (Component, Resource).
-          - apiGroups:
-            - backstage.io
-            kinds:
-            - Component
-            - Resource
             clusters:
             - "*"
         EOT
