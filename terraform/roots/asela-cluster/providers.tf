@@ -1,3 +1,9 @@
+# Apply workflow (Atlantis is apply-BEFORE-merge):
+# On a terraform PR, run the gated "Terraform Apply" GitHub Action (or comment
+# `atlantis apply -p asela-cluster`) while the PR is still OPEN, then merge.
+# Merged PRs are closed and cannot be applied — a merged-but-unapplied change
+# becomes drift that the next PR's plan will surface.
+
 terraform {
   required_version = ">= 1.11.0"
 
