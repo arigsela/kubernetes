@@ -1,0 +1,56 @@
+name: Terraform Apply (gated)
+
+# Manually-triggered, approval-gated Terraform apply.
+#
+# GitHub-hosted runners cannot reach the private cluster API or AWS, so this
+# workflow does NOT run `tofu apply` itself. Instead it posts an
+# `atlantis apply` comment on the target PR, and the in-cluster Atlantis (which
+# has the AWS creds + cluster reachability) performs the apply.
+#
+# The gate is the `terraform-apply` GitHub Environment: configure it in
+# repo Settings > Environments with yourself as a Required reviewer. The job
+# below will pause until you approve the deployment before it posts the comment.
+# (Atlantis still enforces its own apply_requirements: [approved, mergeable].)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Open PR number to run 'atlantis apply' on"
+        required: true
+        type: string
+      project:
+        description: "Atlantis project to apply"
+        required: false
+        default: "asela-cluster"
+        type: string
+
+permissions:
+  pull-requests: write
+
+jobs:
+  apply:
+    name: Trigger gated Atlantis apply
+    runs-on: ubuntu-latest
+    environment: terraform-apply
+    steps:
+      - name: Validate PR is open
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          state=$(gh pr view "${{ inputs.pr_number }}" \
+            --repo "${{ github.repository }}" --json state --jq '.state')
+          echo "PR #${{ inputs.pr_number }} state: $state"
+          if [ "$state" != "OPEN" ]; then
+            echo "::error::PR #${{ inputs.pr_number }} is not OPEN (state=$state). Atlantis apply requires an open PR."
+            exit 1
+          fi
+      - name: Post 'atlantis apply' comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ inputs.pr_number }}" \
+            --repo "${{ github.repository }}" \
+            --body "atlantis apply -p ${{ inputs.project }}"
+          echo "Requested 'atlantis apply -p ${{ inputs.project }}' on PR #${{ inputs.pr_number }}."
+          echo "Watch the PR for Atlantis's apply result."

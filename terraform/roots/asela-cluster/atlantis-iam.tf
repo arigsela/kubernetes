@@ -25,16 +25,15 @@ resource "aws_iam_user" "atlantis" {
   name = "atlantis-terraform"
   path = "/system/"
 
+  # Tags match the live AWS state (extra Environment/Team/CostCenter/Owner tags
+  # were added in code during e2e testing but never applied). Reconcile any
+  # tag additions via a deliberate, gated apply.
   tags = {
     Name        = "atlantis-terraform"
     Purpose     = "Atlantis-Terraform-Automation"
     ManagedBy   = "Terraform"
     Service     = "Platform-Engineering"
-    Environment = "Prod"
-    Team        = "Platform"
     Description = "IAM user for Atlantis to run terraform plan/apply via PR workflow"
-    CostCenter  = "Platform"
-    Owner       = "Platform-Engineering"
   }
 }
 
@@ -49,12 +48,7 @@ resource "aws_iam_policy" "atlantis" {
   path        = "/system/"
   description = "Scoped policy for Atlantis to run terraform plan/apply"
 
-  tags = {
-    ManagedBy   = "Terraform"
-    Service     = "Platform-Engineering"
-    Environment = "Prod"
-    Team        = "Platform"
-  }
+  # AWS has no tags on this policy (tags_all = {}); keep it tag-free to avoid drift.
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -193,6 +187,8 @@ resource "aws_iam_policy" "atlantis" {
           "kms:DisableKey",
           "kms:GetKeyPolicy",
           "kms:GetKeyRotationStatus",
+          "kms:ListKeys",
+          "kms:ListAliases",
           "kms:ListResourceTags",
           "kms:PutKeyPolicy",
           "kms:UpdateKeyDescription",
@@ -204,16 +200,6 @@ resource "aws_iam_policy" "atlantis" {
         Resource = [
           "arn:aws:kms:us-east-2:${data.aws_caller_identity.current.account_id}:key/*"
         ]
-      },
-      # kms:ListAliases and kms:ListKeys require * resource (AWS limitation)
-      {
-        Sid    = "KMSListActions"
-        Effect = "Allow"
-        Action = [
-          "kms:ListAliases",
-          "kms:ListKeys"
-        ]
-        Resource = ["*"]
       },
       {
         Sid    = "KMSAliasManagement"
