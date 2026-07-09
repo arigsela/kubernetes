@@ -1,0 +1,20 @@
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: agent-docs
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: agent-docs
+spec:
+  # Registers (discovers) the read-only GitHub MCP tools with kagent so agents
+  # can reference them. The MCPServer `agent-docs-mcp` only DEPLOYS the
+  # github-mcp-server container + Service; in this kagent version a container
+  # MCPServer does not register its tools — only a RemoteMCPServer does. This
+  # points at that Service's streamable-HTTP endpoint.
+  description: Read-only GitHub MCP for the agent-docs (arigsela/kubernetes@main)
+  protocol: STREAMABLE_HTTP
+  url: http://agent-docs-mcp.kagent:3000/mcp
+  timeout: 30s
+  sseReadTimeout: 5m0s
+  terminateOnClose: true

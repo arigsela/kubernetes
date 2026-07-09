@@ -42,7 +42,7 @@ Three declarative pieces (in `base-apps/kagent/`) plus one Vault secret:
 ```
 homelab-knowledge Agent (reworked)
   tools:
-    - RemoteMCPServer/MCPServer: agent-docs-mcp  ──reads──▶ GitHub API (arigsela/kubernetes@main)
+    - RemoteMCPServer: agent-docs  ─registers→ MCPServer: agent-docs-mcp ──reads──▶ GitHub API (arigsela/kubernetes@main)
     - Agent: k8s-agent   (live cluster state)                       INFRASTRUCTURE_ATLAS.md
     - Agent: helm-agent  (live helm state)                          base-apps/_INDEX.md
                                                                     base-apps/<app>/docs.md · runbook.md · catalog-info.yaml
@@ -53,8 +53,7 @@ homelab-knowledge Agent (reworked)
 - **Image:** the official `github/github-mcp-server` container, deployed as a kagent MCP server manifest under `base-apps/kagent/` (following the existing agent/MCP layout).
 - **Read-only + scoped:** started in read-only mode with only read toolsets enabled (repo contents + code search — no write, issue, or PR tools). The token is a **fine-grained PAT limited to `arigsela/kubernetes` with read-only Contents permission**, so worst-case exposure is read of this one repo.
 - **Token flow:** the PAT is stored in Vault (`k8s-secrets`), pulled via an **ExternalSecret** in the `kagent` namespace into a K8s Secret, and injected as the MCP server's env (`GITHUB_PERSONAL_ACCESS_TOKEN`) — mirroring how Backstage already receives its `github-token`.
-- **Registration:** exposed to kagent as an `MCPServer`/`RemoteMCPServer` the agent references as a tool, the same way `kagent-tool-server` is wired today.
-- **Open implementation detail (for the plan):** confirm the exact kagent `MCPServer` CRD shape for a container-based MCP (transport, command/args, env) and whether it registers as `MCPServer` or `RemoteMCPServer`.
+- **Registration (resolved):** in this kagent version the two CRDs split responsibilities. `MCPServer` (`agent-docs-mcp`) only **deploys** the github-mcp-server container + a `Service` (`agent-docs-mcp.kagent:3000`) — it does **not** register the container's tools. A `RemoteMCPServer` (`agent-docs`, `protocol: STREAMABLE_HTTP`, `url: http://agent-docs-mcp.kagent:3000/mcp`) is what **discovers/registers** the tools with kagent (confirmed live: 13 read-only tools), the same way `kagent-tool-server` is wired. The agent references the **RemoteMCPServer** as its tool, not the MCPServer.
 
 ### 2. Reworked `homelab-knowledge` Agent
 
@@ -103,7 +102,7 @@ Drive the agent via the kagent UI / A2A with the gold questions after deploy; ey
 
 Once v1 proves out, add the **Backstage MCP** (Backstage's MCP Actions backend) as a second tool so the agent can query **structured catalog relations** — ownership, `dependsOn`/`dependencyOf` graphs, systems, and cross-entity questions — from the Backstage catalog rather than reconstructing them from individual `catalog-info.yaml` files. This is the natural evolution of the framework's two-layer design (structured facts → Backstage; narrative → git) and is intentionally deferred so v1 stays small.
 
-## Open questions
+## Open questions (resolved)
 
-- Exact kagent `MCPServer` CRD shape for a container-based GitHub MCP (transport + env) — pin during the plan by inspecting the live CRD and an existing MCP manifest.
-- Whether to reuse Backstage's existing `github-token` (broader scope) or mint a dedicated read-only single-repo PAT — the plan defaults to a **dedicated** read-only PAT for least privilege.
+- ~~Exact kagent `MCPServer` CRD shape for a container-based GitHub MCP~~ — **resolved:** `MCPServer` (`spec.transportType: stdio`, `spec.deployment.{image,cmd,args,secretRefs,resources}`) deploys the container + Service but does **not** register tools; a `RemoteMCPServer` pointing at that Service (`http://agent-docs-mcp.kagent:3000/mcp`, `protocol: STREAMABLE_HTTP`) registers them. The agent's tool ref uses `kind: RemoteMCPServer`. (Discovered during the live deploy; the initial wiring to `kind: MCPServer` registered 0 tools.)
+- Whether to reuse Backstage's existing `github-token` (broader scope) or mint a dedicated read-only single-repo PAT — resolved to a **dedicated** read-only PAT for least privilege.
