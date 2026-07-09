@@ -3,15 +3,14 @@
 
 Checks (hard failures, exit 1): contract-file presence for in-scope apps,
 frontmatter validity, link/source resolution, catalog_entity name match,
-base-apps index coverage, and that Argo CD is configured to exclude the
-backstage.io group (co-located catalog-info.yaml files would otherwise fail
-Argo CD sync). Staleness is a warning unless --staleness-fails.
+base-apps index coverage, and that each in-scope app's Argo CD Application
+excludes its catalog-info.yaml via spec.source.directory.exclude (co-located
+catalog-info.yaml files would otherwise fail Argo CD sync). Staleness is a
+warning unless --staleness-fails.
 """
 from __future__ import annotations
 
 import argparse
-import re
-import textwrap
 from datetime import date, datetime
 from pathlib import Path
 
@@ -157,66 +156,63 @@ def check_staleness(repo_root: Path, apps: list[str], today: date, max_age_days:
     return warnings
 
 
-_EXCLUSIONS_RE = re.compile(
-    r'"resource\.exclusions"\s*=\s*<<-?(?P<tag>\w+)\n(?P<body>.*?)\n[ \t]*(?P=tag)',
-    re.DOTALL,
-)
-
-
-def _resource_exclusions_lists(tf_text: str) -> list:
-    """Extract every `resource.exclusions` heredoc from Terraform text and
-    parse each as YAML. Returns the list of parsed exclusion lists (parsing,
-    not substring matching, so comments and malformed entries don't count)."""
-    parsed = []
-    for m in _EXCLUSIONS_RE.finditer(tf_text):
-        body = textwrap.dedent(m.group("body"))
-        try:
-            data = yaml.safe_load(body)
-        except yaml.YAMLError:
-            continue
-        if isinstance(data, list):
-            parsed.append(data)
-    return parsed
-
-
-def _excludes_backstage(exclusion_list: list) -> bool:
-    for item in exclusion_list:
-        if isinstance(item, dict) and "backstage.io" in (item.get("apiGroups") or []):
-            return True
+def _exclude_covers_catalog(exclude) -> bool:
+    """Whether an Argo CD Application's spec.source.directory.exclude covers
+    catalog-info.yaml (accepts a string glob or a list of globs)."""
+    if isinstance(exclude, str):
+        return "catalog-info.yaml" in exclude
+    if isinstance(exclude, list):
+        return any("catalog-info.yaml" in str(e) for e in exclude)
     return False
 
 
-def check_argocd_backstage_exclusion(repo_root: Path) -> list[str]:
-    """Co-located catalog-info.yaml files sit inside Argo CD-synced app
-    directories, so Argo CD would try to apply their backstage.io
-    Component/Resource objects (not Kubernetes resources) and fail sync.
-    The Argo CD config MUST exclude the backstage.io apiGroup via a real
-    (structurally valid, non-commented) resource.exclusions entry. Fail if
-    any catalog-info.yaml exists without it.
-    """
+def _app_manifest_excludes_catalog(repo_root: Path, app: str) -> tuple[bool, bool]:
+    """Find the Argo CD Application whose source.path is base-apps/<app> and
+    report (found, excludes_catalog_info). Matching by source.path (not file
+    name) handles apps synced by a differently-named manifest, e.g.
+    cert-manager-config.yaml sources base-apps/cert-manager."""
     base_apps = repo_root / "base-apps"
     if not base_apps.is_dir():
+        return (False, False)
+    for yml in sorted(base_apps.glob("*.yaml")):
+        try:
+            docs = list(yaml.safe_load_all(yml.read_text()))
+        except yaml.YAMLError:
+            continue
+        for doc in docs:
+            if not isinstance(doc, dict) or doc.get("kind") != "Application":
+                continue
+            source = (doc.get("spec") or {}).get("source") or {}
+            if source.get("path") != f"base-apps/{app}":
+                continue
+            exclude = (source.get("directory") or {}).get("exclude")
+            return (True, _exclude_covers_catalog(exclude))
+    return (False, False)
+
+
+def check_app_directory_exclude(repo_root: Path, app: str) -> list[str]:
+    """A co-located catalog-info.yaml is a Backstage entity, not a Kubernetes
+    manifest, sitting inside an Argo CD-synced directory. Its Argo CD
+    Application MUST set `spec.source.directory.exclude` to cover
+    catalog-info.yaml — otherwise Argo CD would try to apply it and fail sync.
+    This in-band guard is the framework's load-bearing safety mechanism (a
+    global resource.exclusions is not relied upon; see argocd.tf note)."""
+    if not (repo_root / "base-apps" / app / "catalog-info.yaml").is_file():
         return []
-    has_catalog = any(
-        (child / "catalog-info.yaml").is_file()
-        for child in base_apps.iterdir()
-        if child.is_dir()
-    )
-    if not has_catalog:
-        return []
-    tf_dir = repo_root / "terraform"
-    if tf_dir.is_dir():
-        for tf in tf_dir.rglob("*.tf"):
-            for exclusions in _resource_exclusions_lists(tf.read_text(errors="ignore")):
-                if _excludes_backstage(exclusions):
-                    return []
-    return [
-        "Argo CD is not configured to exclude the backstage.io apiGroup, but "
-        "co-located catalog-info.yaml files exist under base-apps/. Argo CD "
-        "would try to apply them and fail sync. Add a structurally valid "
-        "backstage.io entry to resource.exclusions in the Argo CD Terraform "
-        "config (terraform/roots/asela-cluster/argocd.tf)."
-    ]
+    found, excludes = _app_manifest_excludes_catalog(repo_root, app)
+    if not found:
+        return [
+            f"{app}: no Argo CD Application (a base-apps/*.yaml with "
+            f"spec.source.path 'base-apps/{app}') found to exclude its "
+            f"catalog-info.yaml from sync."
+        ]
+    if not excludes:
+        return [
+            f"{app}: the Argo CD Application for base-apps/{app} must set "
+            f"spec.source.directory.exclude to cover 'catalog-info.yaml' so "
+            f"Argo CD does not try to apply the Backstage entity."
+        ]
+    return []
 
 
 def _load_scope(repo_root: Path) -> list[str]:
@@ -238,8 +234,8 @@ def main(argv=None) -> int:
     errors: list[str] = []
     for app in apps:
         errors.extend(check_app_contract(repo_root, app))
+        errors.extend(check_app_directory_exclude(repo_root, app))
     errors.extend(check_index_coverage(repo_root))
-    errors.extend(check_argocd_backstage_exclusion(repo_root))
 
     warnings = check_staleness(repo_root, apps, today)
 

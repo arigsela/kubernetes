@@ -21,17 +21,14 @@ Every in-scope `base-apps/<app>/` directory carries three files:
 | `tags` | list | short lowercase tokens |
 | `sources` | list | repo-relative paths to authoritative files; each must exist |
 
-## GitOps safety (important)
+## GitOps safety (important, load-bearing)
 `catalog-info.yaml` is a **Backstage** entity (`apiVersion: backstage.io/v1alpha1`), **not** a Kubernetes manifest. Because it is co-located inside an Argo CD-synced app directory (`base-apps/<app>/`), Argo CD would otherwise try to apply it and **fail sync** (no `backstage.io` CRD exists in the cluster).
 
-This is prevented two ways:
+**The mechanism: per-app `directory.exclude` (required, in-band).** Every app whose directory carries a `catalog-info.yaml` MUST set `spec.source.directory.exclude: catalog-info.yaml` on its Argo CD `Application` (the manifest whose `spec.source.path` is `base-apps/<app>`). Because the `Application` spec and the `catalog-info.yaml` land in the same commit, Argo CD honors the exclude at render time and never applies the file. The validator (`scripts/validate-agent-docs.py`) enforces this per app and CI fails if it is missing.
 
-1. **Globally** — the Argo CD config excludes the `backstage.io` `Component`/`Resource` kinds via `resource.exclusions` in `terraform/roots/asela-cluster/argocd.tf`, so Argo CD ignores every `catalog-info.yaml` object cluster-wide. The validator (`scripts/validate-agent-docs.py`) parses that config and fails CI if the exclusion is missing whenever any `catalog-info.yaml` is present. This is applied out-of-band via Terraform, so it must be live before the docs sync.
-2. **Per app (in-band)** — each app whose directory carries a `catalog-info.yaml` also sets `spec.source.directory.exclude: catalog-info.yaml` on its Argo CD `Application`. Because the `Application` spec and the `catalog-info.yaml` land in the same commit, Argo CD never renders the file — making a merge safe regardless of when the Terraform change is applied.
-
-Do not remove either guard while co-located `catalog-info.yaml` files exist.
+**Why not a global `resource.exclusions`?** A global `backstage.io` exclusion in `argocd.tf` was tried but found **ineffective**: the argocd Terraform module writes config under the deprecated Helm `server.config.*` path, while the chart reads `configs.cm.*`, so the live `argocd-cm` uses the chart's own default exclusions and never picks ours up. Migrating to `configs.cm` would clobber those chart defaults (the value replaces rather than merges), so the framework relies on the per-app guard instead. See the note in `terraform/roots/asela-cluster/argocd.tf`.
 
 ## Rules
 - Structured facts live only in `catalog-info.yaml`; prose only in markdown.
 - The atlas and docs are a navigation/summary layer. `sources:` files remain authoritative — when a summary looks wrong, go to the source.
-- Adding an app to the contract: copy the three templates, fill them in, add the app name to `scripts/agent-docs-scope.txt`, and add a row to `base-apps/_INDEX.md`. Once the global `backstage.io` exclusion is live it already covers the new `catalog-info.yaml`; adding `spec.source.directory.exclude: catalog-info.yaml` to the app's `Application` is recommended as in-band defense-in-depth.
+- Adding an app to the contract: copy the three templates, fill them in, add the app name to `scripts/agent-docs-scope.txt`, add a row to `base-apps/_INDEX.md`, **and add `spec.source.directory.exclude: catalog-info.yaml` to the app's Argo CD `Application`** (the validator requires it).
