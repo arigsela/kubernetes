@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: n8n
+  namespace: n8n
+  annotations:
+    agent-docs/path: docs.md
+  tags: [automation, postgresql, webhooks]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-automation
+  dependsOn:
+    - resource:vault/vault
+    - resource:postgresql/postgresql

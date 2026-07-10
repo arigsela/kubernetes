@@ -32,7 +32,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | kyverno-policies | | | | | |
 | logging | | | | | |
 | loki-aws-infrastructure | | | | | |
-| n8n | | | | | |
+| n8n | Workflow automation platform (shared PostgreSQL, Vault, admin UI + public webhooks) | n8n | docs.md | runbook.md | catalog-info.yaml |
 | nginx-ingress | Shared `nginx` IngressClass controller (Rancher HelmChart, DaemonSet, Cloudflare-aware) | ingress-nginx | docs.md | runbook.md | catalog-info.yaml |
 | ollama | | | | | |
 | oncall-agent | AI on-call/incident-response agent (Anthropic Claude, Slack, GitOps PRs) | oncall-agent | docs.md | runbook.md | catalog-info.yaml |
