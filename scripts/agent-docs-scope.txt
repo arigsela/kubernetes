@@ -11,3 +11,4 @@ weather-kitchen-frontend
 n8n
 ollama
 kagent
+backstage

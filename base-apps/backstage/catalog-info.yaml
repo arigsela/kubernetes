@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: backstage
+  namespace: backstage
+  annotations:
+    agent-docs/path: docs.md
+  tags: [backstage, developer-portal, catalog, kubernetes-ingestor]
+spec:
+  type: website
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-tooling
+  dependsOn:
+    - resource:postgresql/postgresql
+    - resource:vault/vault
