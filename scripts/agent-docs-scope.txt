@@ -7,3 +7,4 @@ postgresql
 chores-tracker-frontend
 oncall-agent
 weather-kitchen-backend
+weather-kitchen-frontend

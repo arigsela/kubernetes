@@ -1,0 +1,15 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: weather-kitchen-frontend
+  namespace: weather-kitchen-frontend
+  annotations:
+    agent-docs/path: docs.md
+  tags: [nginx, node, frontend]
+spec:
+  type: website
+  lifecycle: production
+  owner: group:default/platform
+  system: default/weather-kitchen
+  dependsOn:
+    - component:weather-kitchen/weather-kitchen-backend
