@@ -1,0 +1,15 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: oncall-agent
+  namespace: oncall-agent
+  annotations:
+    agent-docs/path: docs.md
+  tags: [ai-agent, anthropic, incident-response, slack]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-observability
+  dependsOn:
+    - resource:vault/vault

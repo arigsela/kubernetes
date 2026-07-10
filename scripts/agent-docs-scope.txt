@@ -5,3 +5,4 @@ cert-manager
 nginx-ingress
 postgresql
 chores-tracker-frontend
+oncall-agent
