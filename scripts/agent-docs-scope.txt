@@ -13,3 +13,4 @@ ollama
 kagent
 backstage
 atlantis
+coroot

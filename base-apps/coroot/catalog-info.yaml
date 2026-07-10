@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: coroot
+  namespace: coroot
+  annotations:
+    agent-docs/path: docs.md
+  tags: [observability, ebpf, apm, clickhouse]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-observability

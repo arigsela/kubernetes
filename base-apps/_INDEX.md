@@ -19,7 +19,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | chores-tracker | | | | | |
 | chores-tracker-frontend | HTMX/nginx web frontend for Chores Tracker | chores-tracker-frontend | docs.md | runbook.md | catalog-info.yaml |
 | cluster-scanner | | | | | |
-| coroot | | | | | |
+| coroot | eBPF-based observability/APM (Coroot operator + instance, node/cluster agents, ClickHouse) | coroot | docs.md | runbook.md | catalog-info.yaml |
 | crossplane-aws-provider | | | | | |
 | crossplane-compositions | | | | | |
 | crossplane-functions | | | | | |
