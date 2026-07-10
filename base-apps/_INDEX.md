@@ -15,7 +15,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | argo-workflows | | | | | |
 | argo-workflows-aws-infrastructure | | | | | |
 | atlantis | | | | | |
-| backstage | | | | | |
+| backstage | Internal developer portal / software catalog (Backstage, shared PostgreSQL, Vault, kubernetes-ingestor) | backstage | docs.md | runbook.md | catalog-info.yaml |
 | chores-tracker | | | | | |
 | chores-tracker-frontend | HTMX/nginx web frontend for Chores Tracker | chores-tracker-frontend | docs.md | runbook.md | catalog-info.yaml |
 | cluster-scanner | | | | | |
