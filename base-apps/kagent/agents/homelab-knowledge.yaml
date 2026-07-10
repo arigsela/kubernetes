@@ -60,7 +60,7 @@ spec:
 
       For OWNERSHIP, DEPENDENCY, or SYSTEM-membership questions ("who owns X?",
       "what depends on X?", "what system is X part of?"), use the
-      `catalog.get-catalog-entity` tool instead of raw files: it returns an
+      `get-catalog-entity` tool instead of raw files: it returns an
       entity plus its RESOLVED relations — including reverse relations like
       `dependencyOf` that no single catalog-info.yaml contains. Look an entity up
       by name (kind/namespace optional to disambiguate). Fall back to the GitHub
@@ -149,7 +149,7 @@ spec:
         # intentionally excluded — its input schema uses anyOf/$ref that
         # kagent's ADK schema converter cannot parse (KeyError: 'anyOf').
         toolNames:
-        - catalog.get-catalog-entity
+        - get-catalog-entity
     - type: Agent
       agent:
         name: k8s-agent
