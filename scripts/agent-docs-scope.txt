@@ -12,3 +12,4 @@ n8n
 ollama
 kagent
 backstage
+atlantis
