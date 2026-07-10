@@ -15,6 +15,14 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     # Shares the IP whitelist with the UI ingress.
     nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32,170.85.130.202/32,104.28.177.82/32,10.0.0.0/8"
+    # Basic-auth gate for external MCP clients (Claude Code CLI). The controller's
+    # /mcp (invoke_agent/list_agents) has no auth of its own; this + the IP
+    # allowlist bound who can invoke agents. Credential from Vault via the
+    # kagent-mcp-basic-auth ExternalSecret. In-cluster consumers use internal
+    # service DNS, not this public path, so they are unaffected.
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: kagent-mcp-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: "kagent MCP"
 spec:
   ingressClassName: nginx
   # Reuses the kagent-tls secret created by cert-manager via the kagent-ui-nginx ingress.
