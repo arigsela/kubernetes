@@ -13,6 +13,7 @@ sources:
   - base-apps/kagent/embedding-model-config.yaml
   - base-apps/kagent/secret-store.yaml
   - base-apps/kagent/external-secrets.yaml
+  - base-apps/kagent/mcp-basic-auth-external-secret.yaml
   - base-apps/kagent/agents/homelab-knowledge.yaml
   - base-apps/kagent/agent-docs-mcp.yaml
   - base-apps/kagent/agent-docs-mcp-remote.yaml
