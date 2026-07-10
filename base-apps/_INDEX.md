@@ -30,7 +30,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | kagent | Kubernetes-native AI agent platform (kagent Helm controller, declarative agents, MCP tool servers) | kagent | docs.md | runbook.md | catalog-info.yaml |
 | kube-system | | | | | |
 | kyverno-policies | | | | | |
-| logging | | | | | |
+| logging | Observability stack (Alloy collector, Loki logs on S3, Prometheus metrics, Grafana) | logging | docs.md | runbook.md | catalog-info.yaml |
 | loki-aws-infrastructure | | | | | |
 | n8n | Workflow automation platform (shared PostgreSQL, Vault, admin UI + public webhooks) | n8n | docs.md | runbook.md | catalog-info.yaml |
 | nginx-ingress | Shared `nginx` IngressClass controller (Rancher HelmChart, DaemonSet, Cloudflare-aware) | ingress-nginx | docs.md | runbook.md | catalog-info.yaml |
