@@ -6,3 +6,4 @@ nginx-ingress
 postgresql
 chores-tracker-frontend
 oncall-agent
+weather-kitchen-backend

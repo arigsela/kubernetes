@@ -1,0 +1,15 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: weather-kitchen-backend
+  namespace: weather-kitchen
+  annotations:
+    agent-docs/path: docs.md
+  tags: [fastapi, jwt, postgresql]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/weather-kitchen
+  dependsOn:
+    - resource:vault/vault
