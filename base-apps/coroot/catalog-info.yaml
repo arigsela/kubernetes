@@ -11,3 +11,6 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: default/platform-observability
+  dependsOn:
+    # coroot-instance.yaml externalPrometheus.url points at the logging stack's Prometheus.
+    - component:logging/logging
