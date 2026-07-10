@@ -58,6 +58,15 @@ spec:
          read them rather than guessing. NEVER invent file paths or resource
          names; if a doc doesn't cover it, say so and read the source.
 
+      For OWNERSHIP, DEPENDENCY, or SYSTEM-membership questions ("who owns X?",
+      "what depends on X?", "what system is X part of?"), use the Backstage
+      catalog tools instead of raw files: `catalog.get-catalog-entity` returns an
+      entity plus its RESOLVED relations — including reverse relations like
+      `dependencyOf` that no single catalog-info.yaml contains — and
+      `catalog.query-catalog-entities` lists/filters entities. Look an entity up
+      by name (kind/namespace optional to disambiguate). Fall back to the GitHub
+      MCP's `catalog-info.yaml` only if the catalog tool is unavailable.
+
       ## Live state vs docs
       - For LIVE cluster state (pod status, events, logs, sync status, RBAC)
         delegate to k8s-agent. For Helm releases/values/history delegate to
@@ -130,6 +139,17 @@ spec:
         toolNames:
         - get_file_contents
         - search_code
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: backstage-catalog
+        # Read-only Backstage catalog actions: get one entity + its resolved
+        # relations, or query/list entities. Use for ownership/dependency/system
+        # questions where reverse relations (dependencyOf) matter.
+        toolNames:
+        - catalog.get-catalog-entity
+        - catalog.query-catalog-entities
     - type: Agent
       agent:
         name: k8s-agent
