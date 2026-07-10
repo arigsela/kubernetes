@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ollama
+  namespace: ollama
+  annotations:
+    agent-docs/path: docs.md
+  tags: [llm, embeddings, gpu-optional]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-ai

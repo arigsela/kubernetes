@@ -9,3 +9,4 @@ oncall-agent
 weather-kitchen-backend
 weather-kitchen-frontend
 n8n
+ollama
