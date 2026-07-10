@@ -9,7 +9,7 @@ metadata:
 spec:
   type: service
   lifecycle: production
-  owner: platform
-  system: chores-tracker
+  owner: group:default/platform
+  system: default/chores-tracker
   dependsOn:
     - resource:vault/vault

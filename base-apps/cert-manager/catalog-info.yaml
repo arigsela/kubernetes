@@ -9,7 +9,7 @@ metadata:
 spec:
   type: infrastructure
   lifecycle: production
-  owner: platform
-  system: platform-networking
+  owner: group:default/platform
+  system: default/platform-networking
   dependsOn:
     - resource:vault/vault
