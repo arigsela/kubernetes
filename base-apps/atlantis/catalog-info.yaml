@@ -1,0 +1,15 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: atlantis
+  namespace: atlantis
+  annotations:
+    agent-docs/path: docs.md
+  tags: [terraform, opentofu, gitops, ci-cd]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-gitops
+  dependsOn:
+    - resource:vault/vault

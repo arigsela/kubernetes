@@ -14,7 +14,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | argo-workflow-tasks | | | | | |
 | argo-workflows | | | | | |
 | argo-workflows-aws-infrastructure | | | | | |
-| atlantis | | | | | |
+| atlantis | Terraform/OpenTofu PR automation (Atlantis, GitHub + AWS auth via Vault, Infracost) | atlantis | docs.md | runbook.md | catalog-info.yaml |
 | backstage | Internal developer portal / software catalog (Backstage, shared PostgreSQL, Vault, kubernetes-ingestor) | backstage | docs.md | runbook.md | catalog-info.yaml |
 | chores-tracker | | | | | |
 | chores-tracker-frontend | HTMX/nginx web frontend for Chores Tracker | chores-tracker-frontend | docs.md | runbook.md | catalog-info.yaml |
