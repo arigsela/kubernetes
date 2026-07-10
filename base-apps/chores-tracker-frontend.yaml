@@ -9,6 +9,10 @@ spec:
     repoURL: https://github.com/arigsela/kubernetes
     targetRevision: main
     path: base-apps/chores-tracker-frontend
+    directory:
+      # catalog-info.yaml is a Backstage entity, not a Kubernetes manifest.
+      # Exclude it so Argo CD does not try to apply it and fail sync.
+      exclude: catalog-info.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: chores-tracker-frontend

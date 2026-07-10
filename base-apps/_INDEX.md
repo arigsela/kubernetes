@@ -17,7 +17,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | atlantis | | | | | |
 | backstage | | | | | |
 | chores-tracker | | | | | |
-| chores-tracker-frontend | | | | | |
+| chores-tracker-frontend | HTMX/nginx web frontend for Chores Tracker | chores-tracker-frontend | docs.md | runbook.md | catalog-info.yaml |
 | cluster-scanner | | | | | |
 | coroot | | | | | |
 | crossplane-aws-provider | | | | | |
