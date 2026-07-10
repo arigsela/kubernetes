@@ -1,0 +1,15 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: logging
+  namespace: logging
+  annotations:
+    agent-docs/path: docs.md
+  tags: [loki, grafana, prometheus, alloy]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-observability
+  dependsOn:
+    - resource:vault/vault
