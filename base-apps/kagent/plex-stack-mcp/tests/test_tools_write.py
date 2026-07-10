@@ -1,0 +1,58 @@
+import httpx
+import pytest
+from plex_stack_mcp.plex_client import PlexClient
+from plex_stack_mcp.qbit_client import QbitClient
+from plex_stack_mcp import tools
+
+
+def qbit_recorder(records):
+    def h(req):
+        records.append((req.url.path, req.content.decode()))
+        if req.url.path == "/api/v2/auth/login":
+            return httpx.Response(200, text="Ok.")
+        if req.url.path == "/api/v2/transfer/info":
+            return httpx.Response(200, json={"connection_status": "connected",
+                                             "dl_info_speed": 0, "up_info_speed": 0})
+        if req.url.path == "/api/v2/torrents/info":
+            return httpx.Response(200, json=[
+                {"hash": "aaa", "name": "x", "state": "stalledDL"}])
+        return httpx.Response(200, text="Ok.")
+    return QbitClient("http://q", "b", "p", httpx.Client(transport=httpx.MockTransport(h)))
+
+
+def test_resume_explicit_hashes():
+    recs = []
+    reg = tools.Registry(family=None, private=None, qbit=qbit_recorder(recs))
+    out = tools.tool_qbit_resume(reg, hashes=["h1", "h2"])
+    assert out == {"resumed": ["h1", "h2"], "count": 2}
+    assert any(p == "/api/v2/torrents/resume" and "h1%7Ch2" in c for p, c in recs)
+
+
+def test_resume_all_stalled():
+    reg = tools.Registry(family=None, private=None, qbit=qbit_recorder([]))
+    out = tools.tool_qbit_resume(reg, hashes=None, all_stalled=True)
+    assert out == {"resumed": ["aaa"], "count": 1}
+
+
+def test_resume_requires_input():
+    reg = tools.Registry(family=None, private=None, qbit=qbit_recorder([]))
+    with pytest.raises(ValueError):
+        tools.tool_qbit_resume(reg, hashes=None, all_stalled=False)
+
+
+def test_recheck_empty_raises():
+    reg = tools.Registry(family=None, private=None, qbit=qbit_recorder([]))
+    with pytest.raises(ValueError):
+        tools.tool_qbit_recheck(reg, hashes=[])
+
+
+def test_plex_scan():
+    recs = []
+    def h(req):
+        recs.append(req.url.path)
+        return httpx.Response(200, text="")
+    plex = PlexClient("http://p", "t", httpx.Client(transport=httpx.MockTransport(h)))
+    reg = tools.Registry(family=plex, private=plex, qbit=None)
+    out = tools.tool_plex_scan_library(reg, "family", "1")
+    assert out == {"instance": "family", "section_key": "1", "scan_triggered": True}
+    assert "/library/sections/1/refresh" in recs
