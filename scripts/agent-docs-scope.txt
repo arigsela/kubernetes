@@ -4,3 +4,4 @@ argo-cd
 cert-manager
 nginx-ingress
 postgresql
+chores-tracker-frontend

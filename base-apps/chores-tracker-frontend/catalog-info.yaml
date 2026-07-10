@@ -1,0 +1,15 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: chores-tracker-frontend
+  namespace: chores-tracker-frontend
+  annotations:
+    agent-docs/path: docs.md
+  tags: [nginx, htmx, frontend]
+spec:
+  type: website
+  lifecycle: production
+  owner: group:default/platform
+  system: default/chores-tracker
+  dependsOn:
+    - component:chores-tracker/chores-tracker-backend
