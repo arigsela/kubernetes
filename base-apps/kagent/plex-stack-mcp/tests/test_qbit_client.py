@@ -42,3 +42,11 @@ def test_torrents():
     assert out == [
         {"hash": "aaa", "name": "ubuntu.iso", "state": "stalledDL"},
         {"hash": "bbb", "name": "debian.iso", "state": "uploading"}]
+
+
+def test_resume_sends_referer_for_csrf():
+    def handler(req):
+        assert req.url.path == "/api/v2/torrents/resume"
+        assert req.headers["Referer"] == "http://qbit"
+        return httpx.Response(200, text="Ok.")
+    QbitClient("http://qbit", "b", "p", _client(handler)).resume(["aaa"])

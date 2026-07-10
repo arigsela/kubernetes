@@ -62,8 +62,11 @@ def tool_qbit_resume(reg: Registry, hashes: list[str] | None,
                      all_stalled: bool = False) -> dict:
     if all_stalled:
         status = tool_qbit_status(reg)
+        if status.get("reachable") is False:
+            return {"reachable": False, "error": status.get("error"), "note": DOWN_NOTE}
         target = status.get("stalled", [])
     elif hashes:
+        reg.qbit.login()
         target = hashes
     else:
         raise ValueError("provide hashes=[...] or all_stalled=True")
@@ -75,11 +78,17 @@ def tool_qbit_resume(reg: Registry, hashes: list[str] | None,
 def tool_qbit_recheck(reg: Registry, hashes: list[str]) -> dict:
     if not hashes:
         raise ValueError("hashes must be a non-empty list")
+    reg.qbit.login()
     reg.qbit.recheck(hashes)
     return {"rechecked": hashes, "count": len(hashes)}
 
 
 def tool_plex_scan_library(reg: Registry, instance: str, section_key: str) -> dict:
     plex = resolve_plex(reg, instance)
+    ident = plex.identity()
+    if not ident["reachable"]:
+        return {"instance": instance, "reachable": False,
+                "error": ident["error"], "note": DOWN_NOTE}
     plex.scan(section_key)
-    return {"instance": instance, "section_key": section_key, "scan_triggered": True}
+    return {"instance": instance, "section_key": section_key,
+            "scan_triggered": True, "reachable": True}
