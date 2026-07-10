@@ -1,0 +1,15 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: postgresql
+  namespace: postgresql
+  annotations:
+    agent-docs/path: docs.md
+  tags: [database, stateful, pgvector]
+spec:
+  type: database
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-data
+  dependsOn:
+    - resource:vault/vault

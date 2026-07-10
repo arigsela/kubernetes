@@ -38,7 +38,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | oncall-agent | | | | | |
 | oncall-crewai | | | | | |
 | openshell | | | | | |
-| postgresql | | | | | |
+| postgresql | Shared PostgreSQL + pgvector instance (root DB, kagent DB) | postgresql | docs.md | runbook.md | catalog-info.yaml |
 | vcluster-sandbox-1 | | | | | |
 | weather-kitchen-backend | | | | | |
 | weather-kitchen-frontend | | | | | |

@@ -3,3 +3,4 @@ vault
 argo-cd
 cert-manager
 nginx-ingress
+postgresql
