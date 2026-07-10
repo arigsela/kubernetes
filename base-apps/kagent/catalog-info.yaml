@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: kagent
+  namespace: kagent
+  annotations:
+    agent-docs/path: docs.md
+  tags: [ai-agent, kagent, mcp, anthropic]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-ai
+  dependsOn:
+    - component:ollama/ollama
+    - resource:vault/vault
+    - resource:postgresql/postgresql
