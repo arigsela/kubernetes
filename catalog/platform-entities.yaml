@@ -1,0 +1,46 @@
+# Backstage-only catalog entities (Group + Systems) for the platform taxonomy.
+# NOT a Kubernetes manifest and NOT under base-apps/, so Argo CD never syncs it.
+# Ingested by Backstage via a url catalog Location (arigsela/backstage app-config).
+# These give the base-apps/* Resources/Components resolvable owner (Group) and
+# system (System) relations. All in the default namespace so the pilots'
+# fully-qualified refs (group:default/platform, default/platform-*) resolve.
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform
+  description: Platform engineering — owns shared infrastructure capabilities.
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: platform-networking
+  description: Networking and certificate capabilities.
+spec:
+  owner: platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: platform-secrets
+  description: Secret management capabilities.
+spec:
+  owner: platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: platform-gitops
+  description: GitOps and continuous delivery capabilities.
+spec:
+  owner: platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: chores-tracker
+  description: Chores Tracker application system.
+spec:
+  owner: platform

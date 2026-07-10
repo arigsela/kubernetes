@@ -9,5 +9,5 @@ metadata:
 spec:
   type: infrastructure
   lifecycle: production
-  owner: platform
-  system: platform-gitops
+  owner: group:default/platform
+  system: default/platform-gitops
