@@ -27,7 +27,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | ecr-auth | | | | | |
 | istio-ambient-config | | | | | |
 | k8s-monitor | | | | | |
-| kagent | | | | | |
+| kagent | Kubernetes-native AI agent platform (kagent Helm controller, declarative agents, MCP tool servers) | kagent | docs.md | runbook.md | catalog-info.yaml |
 | kube-system | | | | | |
 | kyverno-policies | | | | | |
 | logging | | | | | |
