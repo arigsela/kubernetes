@@ -56,3 +56,30 @@ def tool_qbit_status(reg: Registry) -> dict:
     return {"reachable": True, "connection_status": info["connection_status"],
             "dl_info_speed": info["dl_info_speed"], "up_info_speed": info["up_info_speed"],
             "torrents": torrents, "stalled": stalled}
+
+
+def tool_qbit_resume(reg: Registry, hashes: list[str] | None,
+                     all_stalled: bool = False) -> dict:
+    if all_stalled:
+        status = tool_qbit_status(reg)
+        target = status.get("stalled", [])
+    elif hashes:
+        target = hashes
+    else:
+        raise ValueError("provide hashes=[...] or all_stalled=True")
+    if target:
+        reg.qbit.resume(target)
+    return {"resumed": target, "count": len(target)}
+
+
+def tool_qbit_recheck(reg: Registry, hashes: list[str]) -> dict:
+    if not hashes:
+        raise ValueError("hashes must be a non-empty list")
+    reg.qbit.recheck(hashes)
+    return {"rechecked": hashes, "count": len(hashes)}
+
+
+def tool_plex_scan_library(reg: Registry, instance: str, section_key: str) -> dict:
+    plex = resolve_plex(reg, instance)
+    plex.scan(section_key)
+    return {"instance": instance, "section_key": section_key, "scan_triggered": True}
