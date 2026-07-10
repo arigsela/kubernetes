@@ -35,7 +35,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | n8n | | | | | |
 | nginx-ingress | Shared `nginx` IngressClass controller (Rancher HelmChart, DaemonSet, Cloudflare-aware) | ingress-nginx | docs.md | runbook.md | catalog-info.yaml |
 | ollama | | | | | |
-| oncall-agent | | | | | |
+| oncall-agent | AI on-call/incident-response agent (Anthropic Claude, Slack, GitOps PRs) | oncall-agent | docs.md | runbook.md | catalog-info.yaml |
 | oncall-crewai | | | | | |
 | openshell | | | | | |
 | postgresql | Shared PostgreSQL + pgvector instance (root DB, kagent DB) | postgresql | docs.md | runbook.md | catalog-info.yaml |
