@@ -41,5 +41,5 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | postgresql | Shared PostgreSQL + pgvector instance (root DB, kagent DB) | postgresql | docs.md | runbook.md | catalog-info.yaml |
 | vcluster-sandbox-1 | | | | | |
 | weather-kitchen-backend | Backend API for Weather Kitchen (likely FastAPI, JWT, Vault-backed DB) | weather-kitchen | docs.md | runbook.md | catalog-info.yaml |
-| weather-kitchen-frontend | | | | | |
+| weather-kitchen-frontend | Web frontend for Weather Kitchen (nginx-fronted Node build) | weather-kitchen-frontend | docs.md | runbook.md | catalog-info.yaml |
 | whoami-test | | | | | |
