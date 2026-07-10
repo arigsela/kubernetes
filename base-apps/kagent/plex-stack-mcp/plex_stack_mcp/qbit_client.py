@@ -19,7 +19,8 @@ class QbitClient:
             raise RuntimeError("qBittorrent login failed (bad credentials or IP-banned)")
 
     def transfer_info(self) -> dict:
-        resp = self._client.get(f"{self._base}/api/v2/transfer/info")
+        resp = self._client.get(f"{self._base}/api/v2/transfer/info",
+                                headers={"Referer": self._base})
         resp.raise_for_status()
         d = resp.json()
         return {"connection_status": d.get("connection_status"),
@@ -27,17 +28,20 @@ class QbitClient:
                 "up_info_speed": d.get("up_info_speed")}
 
     def torrents(self) -> list[dict]:
-        resp = self._client.get(f"{self._base}/api/v2/torrents/info")
+        resp = self._client.get(f"{self._base}/api/v2/torrents/info",
+                                headers={"Referer": self._base})
         resp.raise_for_status()
         return [{"hash": t.get("hash"), "name": t.get("name"), "state": t.get("state")}
                 for t in resp.json()]
 
     def resume(self, hashes: list[str]) -> None:
         resp = self._client.post(f"{self._base}/api/v2/torrents/resume",
-                                 data={"hashes": "|".join(hashes)})
+                                 data={"hashes": "|".join(hashes)},
+                                 headers={"Referer": self._base})
         resp.raise_for_status()
 
     def recheck(self, hashes: list[str]) -> None:
         resp = self._client.post(f"{self._base}/api/v2/torrents/recheck",
-                                 data={"hashes": "|".join(hashes)})
+                                 data={"hashes": "|".join(hashes)},
+                                 headers={"Referer": self._base})
         resp.raise_for_status()
