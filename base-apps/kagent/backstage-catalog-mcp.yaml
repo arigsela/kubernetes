@@ -1,0 +1,25 @@
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: backstage-catalog
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: backstage-catalog
+spec:
+  # Read-only Backstage catalog MCP: returns an entity plus its RESOLVED
+  # relations (ownedBy, partOf, and computed reverse relations like
+  # dependencyOf) that no single catalog-info.yaml contains. Auth header is
+  # injected from the backstage-mcp-token Secret (ExternalSecret from Vault).
+  description: Read-only Backstage catalog MCP (catalog:entity) for resolved entity relations
+  protocol: STREAMABLE_HTTP
+  url: http://backstage.backstage.svc.cluster.local/api/mcp-actions/v1/catalog
+  timeout: 30s
+  sseReadTimeout: 5m0s
+  terminateOnClose: true
+  headersFrom:
+    - name: Authorization
+      valueFrom:
+        type: Secret
+        name: backstage-mcp-token
+        key: authorization
