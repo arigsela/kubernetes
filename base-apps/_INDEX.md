@@ -33,7 +33,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | logging | | | | | |
 | loki-aws-infrastructure | | | | | |
 | n8n | | | | | |
-| nginx-ingress | | | | | |
+| nginx-ingress | Shared `nginx` IngressClass controller (Rancher HelmChart, DaemonSet, Cloudflare-aware) | ingress-nginx | docs.md | runbook.md | catalog-info.yaml |
 | ollama | | | | | |
 | oncall-agent | | | | | |
 | oncall-crewai | | | | | |
