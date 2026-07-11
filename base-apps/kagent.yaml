@@ -7,25 +7,9 @@ metadata:
     argocd.argoproj.io/sync-wave: "0"
 spec:
   project: default
-  # Ignore diffs on Agent CRD tools and memory fields - managed separately via
-  # base-apps/kagent/post-deploy-patches.sh (HITL requireApproval + memory config).
-  #
-  # ignoreDifferences alone only suppresses drift *detection*. It does NOT stop a
-  # sync from overwriting these fields, so any sync of this app (a chart bump, a
-  # manual sync) silently strips the requireApproval gates off the write-capable
-  # agents — verified live during the 0.9.4 -> 0.9.11 bump. RespectIgnoreDifferences
-  # pre-patches the ignored paths out of the desired state before apply, so the live
-  # (patched) values survive.
-  #
-  # Safe on a fresh install: the option is only effective when the resource already
-  # exists. With no live state, Argo applies the desired state as-is, so the chart's
-  # tools/memory land normally on first create.
-  ignoreDifferences:
-    - group: kagent.dev
-      kind: Agent
-      jsonPointers:
-        - /spec/declarative/tools
-        - /spec/declarative/memory
+  # No ignoreDifferences: the agents whose tools/memory we customize are no longer
+  # rendered by this chart. They are owned in Git under base-apps/kagent/agents/,
+  # so Argo reconciles and self-heals them like any other manifest.
   source:
     chart: kagent
     repoURL: ghcr.io/kagent-dev/kagent/helm
@@ -98,72 +82,64 @@ spec:
             tag: "0.9.11-node20"
             pullPolicy: IfNotPresent
 
-        # Right-sized agent resources (Task 3.3)
-        # Read-heavy agents: 512Mi limit; Write-heavy agents: keep 1Gi
-        agents:
-          k8s-agent:
+        # Agent enablement.
+        #
+        # IMPORTANT: these are TOP-LEVEL chart keys (Helm subchart aliases —
+        # the subchart conditions are `k8s-agent.enabled`, `helm-agent.enabled`,
+        # ...). The chart has NO `agents:` map. This block previously nested them
+        # under `agents:`, which Helm silently ignored, so none of it took effect:
+        # every bundled agent ran enabled with default resources, including the
+        # promql/cilium agents we believed were off.
+        #
+        # The two write-capable agents we actually use (k8s, istio) are disabled
+        # here and owned in Git instead, under base-apps/kagent/agents/. They
+        # need two fields the chart cannot express — spec.declarative.memory and
+        # the HITL requireApproval gates on their destructive tools — which we
+        # previously applied out-of-band with kubectl. Argo overwrote those
+        # patches on every sync, silently removing the human-approval gate from
+        # tools like k8s_delete_resource. ignoreDifferences does not prevent this
+        # (it only suppresses drift detection), and RespectIgnoreDifferences is
+        # ignored during sync when combined with ServerSideApply —
+        # argoproj/argo-cd#8970 / #9678, reproduced on this cluster. Owning the
+        # CRs makes both fields declarative and self-healed by Argo.
+        #
+        # observability-agent stays chart-managed: it is read-only, so it needs
+        # no approval gates, and chart 0.9.10+ sets memory natively.
+        k8s-agent:
+          enabled: false
+        istio-agent:
+          enabled: false
+        # Not used in this cluster. helm/kgateway/argo-rollouts are write-capable
+        # and would need approval gates we no longer have a mechanism for, so
+        # they are off rather than left running ungated. promql/cilium were meant
+        # to be off already — the broken `agents:` nesting meant they have been
+        # running all along.
+        helm-agent:
+          enabled: false
+        kgateway-agent:
+          enabled: false
+        argo-rollouts-agent:
+          enabled: false
+        promql-agent:
+          enabled: false
+        cilium-manager-agent:
+          enabled: false
+        cilium-debug-agent:
+          enabled: false
+        cilium-policy-agent:
+          enabled: false
+        observability-agent:
+          enabled: true
+          memory:
             enabled: true
-            resources:
-              requests:
-                cpu: 100m
-                memory: 256Mi
-              limits:
-                cpu: 1000m
-                memory: 1Gi
-          helm-agent:
-            enabled: true
-            resources:
-              requests:
-                cpu: 100m
-                memory: 256Mi
-              limits:
-                cpu: 1000m
-                memory: 1Gi
-          cilium-manager-agent:
-            enabled: false
-          # Read-heavy / read-only agents → reduced to 512Mi
-          promql-agent:
-            enabled: false
-          observability-agent:
-            enabled: true
-            resources:
-              requests:
-                cpu: 50m
-                memory: 128Mi
-              limits:
-                cpu: 500m
-                memory: 512Mi
-          cilium-debug-agent:
-            enabled: false
-          cilium-policy-agent:
-            enabled: false
-          argo-rollouts-agent:
-            enabled: true
-            resources:
-              requests:
-                cpu: 50m
-                memory: 128Mi
-              limits:
-                cpu: 500m
-                memory: 512Mi
-          istio-agent:
-            enabled: true
-            resources:
-              requests:
-                cpu: 50m
-                memory: 128Mi
-              limits:
-                cpu: 500m
-                memory: 512Mi
-          kgateway-agent:
-            enabled: true
-            resources:
-              requests:
-                cpu: 50m
-                memory: 128Mi
-              limits:
-                cpu: 500m
-                memory: 512Mi
+            modelConfigRef: embedding-model-config
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
 
         # OpenTelemetry tracing → Coroot OTLP receiver
         otel:
@@ -191,4 +167,3 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      - RespectIgnoreDifferences=true

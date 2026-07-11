@@ -68,8 +68,8 @@ spec:
 
       ## Live state vs docs
       - For LIVE cluster state (pod status, events, logs, sync status, RBAC)
-        delegate to k8s-agent. For Helm releases/values/history delegate to
-        helm-agent. Prefer these over guessing.
+        delegate to k8s-agent. Prefer this over guessing. Helm release state is
+        not available — helm-agent is not deployed in this cluster.
       - DRIFT: if the docs and the live state disagree (e.g. runbook says X,
         cluster shows Y), call it out explicitly as a drift finding — this is
         valuable signal, since the docs are meant to track reality.
@@ -153,9 +153,6 @@ spec:
     - type: Agent
       agent:
         name: k8s-agent
-    - type: Agent
-      agent:
-        name: helm-agent
     deployment:
       resources:
         requests:
