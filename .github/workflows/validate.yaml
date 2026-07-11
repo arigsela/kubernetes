@@ -21,10 +21,18 @@ jobs:
         run: |
           # --diff-filter=d excludes deleted files so downstream lint/validate
           # steps don't try to read paths that no longer exist on disk.
+          #
+          # Both pathspecs are required: 'base-apps/**/*.yaml' has a literal '/'
+          # after the '**', so it only matches files at least one directory deep
+          # and silently misses the top-level Argo CD Application manifests
+          # (base-apps/<app>.yaml). Without 'base-apps/*.yaml' those files are
+          # never linted or schema-validated, and the jobs below skip while
+          # reporting green.
+          PATHSPEC=('base-apps/*.yaml' 'base-apps/**/*.yaml')
           if [ "${{ github.event_name }}" = "push" ]; then
-            FILES=$(git diff --name-only --diff-filter=d HEAD~1 HEAD -- 'base-apps/**/*.yaml' | tr '\n' ' ')
+            FILES=$(git diff --name-only --diff-filter=d HEAD~1 HEAD -- "${PATHSPEC[@]}" | tr '\n' ' ')
           else
-            FILES=$(git diff --name-only --diff-filter=d origin/main...HEAD -- 'base-apps/**/*.yaml' | tr '\n' ' ')
+            FILES=$(git diff --name-only --diff-filter=d origin/main...HEAD -- "${PATHSPEC[@]}" | tr '\n' ' ')
           fi
           echo "yaml_files=$FILES" >> "$GITHUB_OUTPUT"
           if [ -n "$FILES" ]; then
