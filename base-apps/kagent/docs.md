@@ -13,6 +13,9 @@ sources:
   - base-apps/kagent/embedding-model-config.yaml
   - base-apps/kagent/secret-store.yaml
   - base-apps/kagent/external-secrets.yaml
+  - base-apps/kagent/eso-agent-docs-mcp-serviceaccount.yaml
+  - base-apps/kagent/agent-docs-mcp-secret-store.yaml
+  - base-apps/kagent/model-configs/anthropic-claude-sonnet-4-6.yaml
   - base-apps/kagent/mcp-basic-auth-external-secret.yaml
   - base-apps/kagent/agents/homelab-knowledge.yaml
   - base-apps/kagent/agent-docs-mcp.yaml
@@ -48,6 +51,8 @@ Agents only get the `toolNames` they explicitly list (e.g. `agents/homelab-knowl
 
 ## Secrets & database
 All Secrets in `base-apps/kagent/` flow through Vault: `secret-store.yaml` defines the `vault-backend` `SecretStore` (`http://vault.vault.svc.cluster.local:8200`, KV v2 path `k8s-secrets`, Kubernetes-auth role `kagent`). `ExternalSecret`s pull from Vault key `kagent` (DB creds, GitHub token, Backstage MCP token) and key `plex-stack-mcp` (Plex/qBittorrent creds); `mcp-basic-auth-external-secret.yaml` pulls the `/mcp` ingress basic-auth htpasswd blob.
+
+The `agent-docs-mcp` GitHub token is credential-scoped per the agent-identity contract (`templates/agent-identity/README.md`): it resolves through a dedicated `SecretStore` (`vault-agent-docs-mcp`) whose ESO ServiceAccount (`eso-agent-docs-mcp`) assumes a Vault role scoped to only the `kagent-agent-docs-mcp` path, not the broad `kagent` role.
 
 kagent uses the **shared PostgreSQL** instance (`base-apps/postgresql/`) rather than the chart's bundled DB (`database.postgres.bundled.enabled: false` in `kagent.yaml`): `external-secrets.yaml` here syncs `kagent-db-credentials` (`db-url`, `db-user`, `db-password`, `db-name`) from Vault key `kagent`, matching the `kagent` role/database that `postgresql`'s `init-kagent-db` Job provisions with the `vector` extension enabled (see `base-apps/postgresql/docs.md`). The controller mounts that Secret's `db-url` at `/etc/kagent/secrets/db-url` (`kagent.yaml`'s `controller.volumes`/`volumeMounts`).
 
