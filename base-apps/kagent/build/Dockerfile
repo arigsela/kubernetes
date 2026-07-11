@@ -70,7 +70,7 @@ RUN chown -R nextjs:nginx /app/ui \
 EXPOSE 8080
 
 LABEL org.opencontainers.image.source=https://github.com/arigsela/kubernetes
-LABEL org.opencontainers.image.description="Patched kagent UI v0.9.4 — Node 20 LTS for older x86-64 CPUs"
+LABEL org.opencontainers.image.description="Patched kagent UI v0.9.11 — Node 20 LTS for older x86-64 CPUs"
 
 USER 1001
 CMD ["/usr/local/bin/init.sh"]

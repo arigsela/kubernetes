@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # --- config ---
-KAGENT_VERSION="0.9.4"
+KAGENT_VERSION="0.9.11"
 ECR_REGISTRY="852893458518.dkr.ecr.us-east-2.amazonaws.com"
 ECR_REGION="us-east-2"
 IMAGE_NAME="kagent-ui"

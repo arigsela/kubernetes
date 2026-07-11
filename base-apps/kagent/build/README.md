@@ -1,6 +1,8 @@
 # kagent UI custom image build
 
-Builds a Node-20-on-Debian replacement for `cr.kagent.dev/kagent-dev/kagent/ui:0.9.4` so the Next.js process doesn't `SIGILL` on the HP server's older x86-64 CPU.
+Builds a Node-20-on-Debian replacement for `cr.kagent.dev/kagent-dev/kagent/ui:0.9.11` so the Next.js process doesn't `SIGILL` on the HP server's older x86-64 CPU.
+
+**This is a permanent fork.** Upstream closed [#1505](https://github.com/kagent-dev/kagent/issues/1505) as `not_planned` on 2026-05-23 and still ships Node 24 as of v0.9.11, so this image will not go away. **Every kagent chart bump requires a matching rebuild here** — see "Bumping `KAGENT_VERSION`" below.
 
 **Background:** [Design spec](../../../docs/superpowers/specs/2026-05-09-kagent-ui-custom-image-design.md) · [Upstream issue #1505](https://github.com/kagent-dev/kagent/issues/1505)
 
@@ -25,21 +27,30 @@ From the repo root:
 ```
 
 This will:
-1. `git clone --depth 1 --branch v0.9.4 https://github.com/kagent-dev/kagent.git` into a tmp dir
+1. `git clone --depth 1 --branch v${KAGENT_VERSION} https://github.com/kagent-dev/kagent.git` into a tmp dir
 2. Copy our patched `Dockerfile` into `ui/`
-3. `docker buildx build --platform linux/amd64 --push` to `852893458518.dkr.ecr.us-east-2.amazonaws.com/kagent-ui:0.9.4-node20`
+3. `docker buildx build --platform linux/amd64 --push` to `852893458518.dkr.ecr.us-east-2.amazonaws.com/kagent-ui:0.9.11-node20`
 4. Clean up the tmp dir on exit
 
 Expected runtime: 3–5 min.
 
 ## Bumping `KAGENT_VERSION`
 
-If you need to rebuild this patch against a newer kagent release (because upstream issue #1505 still isn't fixed):
+Required on every kagent chart bump. The image tag and the chart `targetRevision` must always match.
 
 1. Edit `KAGENT_VERSION` at the top of `build.sh`
-2. Update `IMAGE_TAG` if you want a different suffix
-3. Re-run `./build.sh`
-4. Verify upstream's `ui/Dockerfile` hasn't changed in ways our patch is incompatible with — if it has, re-merge the upstream changes into our `Dockerfile` here
+2. Diff upstream's `ui/Dockerfile` between the old and new tags and re-merge anything that affects our patch:
+   ```bash
+   gh api "repos/kagent-dev/kagent/contents/ui/Dockerfile?ref=v<old>" -q .content | base64 -d > /tmp/old
+   gh api "repos/kagent-dev/kagent/contents/ui/Dockerfile?ref=v<new>" -q .content | base64 -d > /tmp/new
+   diff -u /tmp/old /tmp/new
+   ```
+   Our Dockerfile hardcodes upstream's layout: `ui/package*.json`, `npm run build`, `.next/standalone`, `.next/static`, `next.config.ts`, `scripts/init.sh`, uid 1001 `nextjs` / 1002 `nginx`, `EXPOSE 8080`. A restructure upstream breaks the build.
+3. Update the `LABEL org.opencontainers.image.description` version in our `Dockerfile`
+4. Re-run `./build.sh` — **before** the chart bump merges to main, or `kagent-ui` will `ImagePullBackOff`
+5. Update `ui.image.tag` in `base-apps/kagent.yaml` to match
+
+Note: nginx/supervisord config is supplied by the chart (ConfigMap), not baked into this image — chart-side settings like `ui.nginx.proxyReadTimeout` apply to our custom image too.
 
 ## Risk A/B contingency: nginx / supervisord path patches
 
@@ -50,10 +61,11 @@ If the `kagent-ui` pod fails to start because Debian's nginx or supervisord path
 
 Then uncomment the matching block in `build.sh` and re-run.
 
-## Cleanup
+## Retiring this fork
 
-When upstream fixes [#1505](https://github.com/kagent-dev/kagent/issues/1505):
+Upstream closed #1505 as `not_planned`, so there is no fix coming. This directory goes away only if one of these becomes true:
 
-1. Remove the `ui:` block from `base-apps/kagent.yaml`
-2. Bump `targetRevision` in `base-apps/kagent.yaml` and `base-apps/kagent-crds.yaml` to the fixed version
-3. Delete this directory
+- Upstream moves the UI image off Node 24 (check `ARG TOOLS_NODE_VERSION` in their `ui/Dockerfile` on each bump), **or**
+- The cluster's nodes are replaced with CPUs that support the x86-64-v2 baseline.
+
+If either happens: remove the `ui:` block from `base-apps/kagent.yaml`, confirm the stock image starts, then delete this directory.

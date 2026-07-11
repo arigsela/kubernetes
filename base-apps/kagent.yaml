@@ -17,7 +17,7 @@ spec:
   source:
     chart: kagent
     repoURL: ghcr.io/kagent-dev/kagent/helm
-    targetRevision: 0.9.4
+    targetRevision: 0.9.11
     helm:
       valuesObject:
         # Database: use existing PostgreSQL with pgvector
@@ -46,7 +46,9 @@ spec:
           # "server-TLS-only" — its gateway-config.yaml unconditionally
           # renders client_ca_path inside [openshell.gateway.tls], forcing
           # mTLS-required posture whenever TLS is enabled. And the kagent
-          # v0.9.4 controller has no client-cert config fields. So we drop
+          # controller still has no client-cert config fields as of v0.9.11
+          # (sandboxbackend/openshell/config.go exposes only TLSCAPEM +
+          # Insecure — no client keypair). So we drop
           # TLS entirely on the openshell side (server.disableTls=true in
           # base-apps/openshell.yaml) and dial insecure here.
           # Re-evaluate when either upstream fix lands.
@@ -67,16 +69,21 @@ spec:
             apiKeySecretKey: ANTHROPIC_API_KEY
 
         # UI image override: custom Node-20 build for older HP server CPUs.
-        # Upstream cr.kagent.dev/kagent-dev/kagent/ui:0.9.4 ships Node 24 with
-        # x86-64-v2 baseline → SIGILL on this hardware.
-        # Track upstream: https://github.com/kagent-dev/kagent/issues/1505
+        # Upstream cr.kagent.dev/kagent-dev/kagent/ui ships Node 24, which needs
+        # the x86-64-v2 instruction baseline → SIGILL on this hardware.
+        #
+        # This is a PERMANENT fork, not temporary scaffolding: upstream closed
+        # https://github.com/kagent-dev/kagent/issues/1505 as `not_planned`
+        # (2026-05-23), and v0.9.11 still builds on Node 24. Every chart bump
+        # therefore requires a matching image rebuild.
+        #
         # NOTE: Image must be built via base-apps/kagent/build/build.sh BEFORE
         # this PR merges to main, otherwise the kagent-ui pod will ImagePullBackOff.
         ui:
           image:
             registry: "852893458518.dkr.ecr.us-east-2.amazonaws.com"
             repository: "kagent-ui"
-            tag: "0.9.4-node20"
+            tag: "0.9.11-node20"
             pullPolicy: IfNotPresent
 
         # Right-sized agent resources (Task 3.3)
