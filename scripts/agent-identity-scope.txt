@@ -1,0 +1,6 @@
+# agent-identity validator scope. Lines are "key: value"; # and blanks ignored.
+# pilot-credential: an ExternalSecret name that MUST be scoped (hard fail).
+# pilot-agent: an Agent name held to the model + capability invariants (hard fail).
+# Everything else is warn-only (visible backlog) this increment.
+pilot-credential: agent-docs-github-mcp-token
+pilot-agent: homelab-knowledge
