@@ -608,21 +608,11 @@ git commit -m "feat(agent-identity): add agent-principal validator with pytest c
 - Consumes: the validator (Task 2). After this task, `check_model_config_in_git(root, {"homelab-knowledge"})` returns `([], [])`.
 - Produces: an in-git `ModelConfig` named `anthropic-claude-sonnet-4-6` in namespace `kagent`.
 
-**Context:** `homelab-knowledge` references `modelConfig: anthropic-claude-sonnet-4-6`, which exists **live but not in git** (hand-applied). Adopting it must be a **no-op** — the git content must match the live object so Argo CD sync does not mutate it. `apiKeySecretRef` stays `kagent-anthropic` (the existing shared key; "structural only", no billing change).
+**Context:** `homelab-knowledge` references `modelConfig: anthropic-claude-sonnet-4-6`, which exists **live but not in git** (hand-applied). Adopting it must be a **no-op** — the git content must match the live object so Argo CD sync does not mutate it. The live object was captured read-only during execution; it already uses its **own dedicated key secret** (`apiKeySecret: anthropic-claude-sonnet-4-6`), not the shared `kagent-anthropic` key, and the field name is `apiKeySecret` (not `apiKeySecretRef`). Per the user's decision, adopt it **verbatim** (no added labels) — this preserves the existing dedicated-key isolation and is a true no-op.
 
-- [ ] **Step 1: Capture the live object as the source of truth (authoritative)**
+- [ ] **Step 1: Write the manifest (authoritative content, captured from live)**
 
-If you have cluster access, capture the live ModelConfig and strip runtime fields — this is the authoritative content:
-
-```bash
-kubectl -n kagent get modelconfig anthropic-claude-sonnet-4-6 -o yaml \
-  | yq 'del(.metadata.resourceVersion, .metadata.uid, .metadata.generation,
-            .metadata.creationTimestamp, .metadata.managedFields,
-            .metadata.annotations."kubectl.kubernetes.io/last-applied-configuration",
-            .status)'
-```
-
-If you do **not** have cluster access, do not guess the schema: mark this task **BLOCKED** and ask the operator to paste the stripped live YAML. The expected shape (for cross-check only) mirrors `base-apps/kagent/embedding-model-config.yaml` and the Anthropic provider block in `base-apps/kagent.yaml`:
+Write exactly this to `base-apps/kagent/model-configs/anthropic-claude-sonnet-4-6.yaml` — it is the live `spec` with runtime metadata stripped, no labels added (strict no-op):
 
 ```yaml
 apiVersion: kagent.dev/v1alpha2
@@ -630,19 +620,15 @@ kind: ModelConfig
 metadata:
   name: anthropic-claude-sonnet-4-6
   namespace: kagent
-  labels:
-    app.kubernetes.io/part-of: kagent
-    arigsela.com/idp-managed: "true"
 spec:
   provider: Anthropic
-  model: claude-sonnet-4-6          # CONFIRM exact string against live before commit
-  apiKeySecretRef: kagent-anthropic
+  anthropic: {}
+  apiKeySecret: anthropic-claude-sonnet-4-6
   apiKeySecretKey: ANTHROPIC_API_KEY
+  model: claude-sonnet-4-6
 ```
 
-- [ ] **Step 2: Write the manifest**
-
-Write the captured/confirmed content to `base-apps/kagent/model-configs/anthropic-claude-sonnet-4-6.yaml`. The `spec` fields (`provider`, `model`, `apiKeySecretRef`, `apiKeySecretKey`, and any nesting) MUST match live exactly. `apiKeySecretRef` MUST be `kagent-anthropic`.
+Do not add `labels`, `apiKeySecretRef`, or point at `kagent-anthropic` — the live object has none of those, and any addition would make Argo CD mutate the running object (not a no-op).
 
 - [ ] **Step 3: Lint the manifest**
 
