@@ -106,3 +106,18 @@ jobs:
         run: python -m pytest tests/agent-docs/ -q
       - name: Validate agent-docs contract
         run: python scripts/validate-agent-docs.py --repo-root .
+
+  agent-identity-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run agent-identity validator tests
+        run: python -m pytest tests/agent-identity/ -q
+      - name: Validate agent-identity contract
+        run: python scripts/validate-agent-identity.py --repo-root .
