@@ -23,10 +23,7 @@ spec:
       ## Available Agents
 
       - **k8s-agent**: General Kubernetes resource management, pod operations, deployments, troubleshooting
-      - **helm-agent**: Helm chart operations - install, upgrade, rollback, list releases
       - **istio-agent**: Istio service mesh configuration, traffic management, waypoints
-      - **kgateway-agent**: Kubernetes Gateway API management (Envoy-based kgateway)
-      - **argo-rollouts-conversion-agent**: Convert Deployments to Argo Rollouts for progressive delivery
 
       ## Rules
 
@@ -41,16 +38,7 @@ spec:
           name: k8s-agent
       - type: Agent
         agent:
-          name: helm-agent
-      - type: Agent
-        agent:
           name: istio-agent
-      - type: Agent
-        agent:
-          name: kgateway-agent
-      - type: Agent
-        agent:
-          name: argo-rollouts-conversion-agent
     deployment:
       resources:
         requests:

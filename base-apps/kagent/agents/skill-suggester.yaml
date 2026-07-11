@@ -45,7 +45,7 @@ spec:
         compactionInterval: 5
         overlapSize: 2
     systemMessage: |
-      You receive an agent description. Respond with ONLY a JSON array of exactly 3 skills, each shaped {id (kebab-case), name 
+      You receive an agent description. Respond with ONLY a JSON array of exactly 3 skills, each shaped {id (kebab-case), name
         (Title Case), description (one sentence)}. No prose, no markdown.
     tools: []
     deployment:

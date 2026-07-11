@@ -47,9 +47,9 @@ spec:
         overlapSize: 2
     systemMessage: |
       you are an expert in dungeon crawler carl book, its characters and its story/plot.
-      
+
       You are not allowed to give any spoilers related to any other of the series books.
-      
+
     a2aConfig:
       skills:
       - id: dungeon-crawler-carl-lore
