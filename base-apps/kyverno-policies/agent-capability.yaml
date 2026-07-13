@@ -32,10 +32,22 @@
 # computes the full transitive closure over the graph in git, and background
 # PolicyReports re-scan existing agents.
 #
-# Rules 6-7 are the ONLY rules that make a runtime API call (to read the
-# delegate's class). That call is made inside `foreach tools[?type=='Agent']`, so
-# it never fires for an agent that has no delegations — the blast radius of an
-# apiCall failure is the delegating agents alone, not every Agent in the cluster.
+# Rules 6-7 are the ONLY rules that make a runtime API call (an `apiCall` reading
+# the delegate's class). It fires only inside `foreach tools[?type=='Agent']`, so
+# an agent with no delegations never triggers it.
+#
+# !!! That apiCall FAILS OPEN, and that is the sharp edge of this policy. !!!
+# When a Kyverno context entry cannot load, Kyverno SKIPS the rule — it does not
+# deny. So if the admission controller loses read access to kagent.dev/agents, the
+# delegation rules silently stop enforcing and an escalating Agent is ADMITTED.
+# Observed for real:
+#     ERR failed to load data  error="failed to fetch ..."
+#     TRC validation passed          <-- the escalation was allowed
+# The RBAC that keeps this working is base-apps/kyverno-policies/kyverno-kagent-read-rbac.yaml
+# (aggregate-to-admission-controller). Do not remove that aggregation: rules 1-5
+# need no RBAC, but rules 6-7 do, and they degrade silently without it. CI cannot
+# catch that — it is a cluster-RBAC property, not a manifest property. The
+# admission probe in the runbook is what catches it.
 #
 # ---------------------------------------------------------------------------
 # KYVERNO NOTES — both cost real debugging time. Read before editing the generator.
