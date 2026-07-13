@@ -1,0 +1,102 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: agent-identity
+  annotations:
+    policies.kyverno.io/title: Agent Identity Contract
+    policies.kyverno.io/category: Agent Platform
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: ExternalSecret, Agent
+    policies.kyverno.io/description: >-
+      Enforces the agent-principal contract (templates/agent-identity/README.md)
+      at admission. scripts/validate-agent-identity.py checks the same invariants
+      in CI, but CI only sees git — a direct `kubectl apply`, a Helm chart, or an
+      operator writing an Agent bypasses it entirely. This is the runtime half.
+spec:
+  # Enforce, not Audit. Every other policy in this repo is Audit, which means
+  # Kyverno currently blocks nothing and its findings are a report nobody reads.
+  # A safety control that only reports is the same failure mode that let the
+  # kagent HITL requireApproval gates go missing for days while Argo showed
+  # Synced/Healthy. These invariants are cheap to satisfy and the cluster is
+  # already compliant, so they are enforced.
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    # ---- Invariant 1: scoped credentials -----------------------------------
+    - name: credential-must-not-use-broad-secretstore
+      match:
+        any:
+          - resources:
+              kinds:
+                - external-secrets.io/v1beta1/ExternalSecret
+              namespaces:
+                - kagent
+      exclude:
+        any:
+          # Owned by the `kagent-config` Argo app, which lives outside this
+          # repo, so it cannot be scoped from here. It still reads the broad
+          # `vault-backend` store / monolithic `kagent` key. Remove this
+          # exclusion once that app is brought into this repo and scoped.
+          - resources:
+              names:
+                - kagent-anthropic-secrets
+      validate:
+        message: >-
+          ExternalSecret '{{ request.object.metadata.name }}' must not resolve through the
+          broad 'vault-backend' SecretStore. Give it a dedicated ESO ServiceAccount +
+          SecretStore backed by a Vault role that reads only its own path.
+          See templates/agent-identity/README.md (invariant 1).
+        pattern:
+          spec:
+            secretStoreRef:
+              name: "!vault-backend"
+
+    - name: credential-must-not-read-monolithic-vault-key
+      match:
+        any:
+          - resources:
+              kinds:
+                - external-secrets.io/v1beta1/ExternalSecret
+              namespaces:
+                - kagent
+      exclude:
+        any:
+          - resources:
+              names:
+                - kagent-anthropic-secrets
+      validate:
+        message: >-
+          ExternalSecret '{{ request.object.metadata.name }}' must not read the monolithic
+          Vault key 'kagent' — that key holds every consumer's credential, so any token
+          able to read it can read them all. Use a per-consumer key (k8s-secrets/<consumer>).
+          See templates/agent-identity/README.md (invariant 1).
+        foreach:
+          - list: "request.object.spec.data"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.remoteRef.key }}"
+                    operator: Equals
+                    value: kagent
+
+    # ---- Invariant 3: declared capability surface --------------------------
+    - name: agent-mcp-tools-must-list-toolnames
+      match:
+        any:
+          - resources:
+              kinds:
+                - kagent.dev/v1alpha2/Agent
+      validate:
+        message: >-
+          Agent '{{ request.object.metadata.name }}' has an McpServer tool ref with no
+          toolNames. An empty list is an implicit bind-all: the agent silently gains every
+          tool the server exposes, including any added by a future upgrade. List the tools
+          explicitly. See templates/agent-identity/README.md (invariant 3).
+        foreach:
+          - list: "request.object.spec.declarative.tools[?type=='McpServer']"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.mcpServer.toolNames[] || `[]` | length(@) }}"
+                    operator: Equals
+                    value: 0
