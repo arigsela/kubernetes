@@ -4,6 +4,9 @@ metadata:
   name: kagent-mcp-nginx
   namespace: kagent
   annotations:
+    # Own TLS cert for the dedicated MCP host — the UI's kagent-tls secret only
+    # covers kagent.arigsela.com. cert-manager solves HTTP-01 via this ingress.
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
@@ -25,19 +28,33 @@ metadata:
     nginx.ingress.kubernetes.io/auth-realm: "kagent MCP"
 spec:
   ingressClassName: nginx
-  # Reuses the kagent-tls secret created by cert-manager via the kagent-ui-nginx ingress.
+  # Dedicated host — deliberately NOT kagent.arigsela.com.
+  #
+  # This previously served `path: /mcp` on kagent.arigsela.com, which silently
+  # shadowed the kagent UI's own "MCP & tools" page at /mcp. The ingress won the
+  # match, so clicking that menu item returned this endpoint's basic-auth
+  # challenge instead of the UI page — an unanswerable password prompt. The
+  # match was pathType: Prefix, so every /mcp/* UI route was shadowed too.
+  #
+  # Splitting by host removes the whole class of bug: the UI owns every path on
+  # kagent.arigsela.com, and no future UI route can collide with this endpoint.
+  #
+  # Depends on the kagent-mcp.arigsela.com A record (Route 53 -> 73.7.190.154).
+  # DNS for this cluster is created by hand, not in Terraform.
+  #
+  # MCP clients (e.g. Claude Code) must point at https://kagent-mcp.arigsela.com/mcp
   tls:
-  - hosts:
-    - kagent.arigsela.com
-    secretName: kagent-tls
+    - hosts:
+        - kagent-mcp.arigsela.com
+      secretName: kagent-mcp-tls
   rules:
-  - host: kagent.arigsela.com
-    http:
-      paths:
-      - path: /mcp
-        pathType: Prefix
-        backend:
-          service:
-            name: kagent-controller
-            port:
-              number: 8083
+    - host: kagent-mcp.arigsela.com
+      http:
+        paths:
+          - path: /mcp
+            pathType: Prefix
+            backend:
+              service:
+                name: kagent-controller
+                port:
+                  number: 8083
