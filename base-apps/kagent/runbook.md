@@ -37,7 +37,18 @@ sources:
 Edit the Helm `valuesObject` in `base-apps/kagent.yaml` (controller/UI/bundled-agent config) or the declarative CRDs under `base-apps/kagent/` (custom agents, MCP servers, model configs, secrets) and open a PR; Argo CD (`kagent` and `kagent-secrets` Applications, both `prune`/`selfHeal`) syncs on merge into `main`.
 
 ### Rotate a Vault-backed secret
-All Secrets here (`kagent-db-credentials`, `backstage-mcp-token`, `kagent-mcp-basic-auth`) are `ExternalSecret`s resolving from the `vault-backend` `SecretStore` (`secret-store.yaml`, Vault key `kagent`, `refreshInterval: 1h`). The exception is `agent-docs-github-mcp-token`, which is credential-scoped: it resolves from the dedicated `vault-agent-docs-mcp` `SecretStore` (`agent-docs-mcp-secret-store.yaml`, Vault key `kagent-agent-docs-mcp`) — update/rotate it at that path, not the `kagent` key. Update the value at the corresponding Vault path directly (never in Git) — External Secrets Operator picks it up within the refresh interval, or force it immediately: `kubectl -n kagent annotate externalsecret <name> force-sync=$(date +%s) --overwrite`.
+Every Secret here is credential-scoped: each `ExternalSecret` resolves through its **own** `SecretStore` / ESO ServiceAccount / Vault role, reading a **per-consumer Vault key**. Rotate a value at that consumer's own path — the monolithic `kagent` key is no longer read by anything in this namespace.
+
+| Secret | SecretStore | Vault key (rotate here) |
+|---|---|---|
+| `agent-docs-github-mcp-token` | `vault-agent-docs-mcp` | `k8s-secrets/kagent-agent-docs-mcp` (property `github-token`) |
+| `backstage-mcp-token` | `vault-backstage-mcp` | `k8s-secrets/kagent-backstage-mcp` (property `token`) |
+| `kagent-db-credentials` | `vault-kagent-db` | `k8s-secrets/kagent-db` (`db-url`, `db-user`, `db-password`, `db-name`) |
+| `kagent-mcp-basic-auth` | `vault-kagent-mcp-basic-auth` | `k8s-secrets/kagent-mcp-basic-auth` (property `auth`, htpasswd) |
+
+Update the value in Vault directly (never in Git) — External Secrets Operator picks it up within the `refreshInterval` (1h), or force it immediately: `kubectl -n kagent annotate externalsecret <name> force-sync=$(date +%s) --overwrite`.
+
+If an `ExternalSecret` goes `SecretSyncedError` with a Vault **403 permission denied**, the Vault side of its scope is missing or wrong — check that the policy `<role>` grants `read` on that exact path, and that the kubernetes-auth role binds the right ESO ServiceAccount in the `kagent` namespace. (A 403 rather than a 404 is what you get when the *policy* doesn't cover the path, even if the key doesn't exist.)
 
 ### Restart the controller
 `kubectl -n kagent rollout restart deploy/kagent-controller` — safe; agents reconcile again once the controller is back. Verify with `kubectl -n kagent get pods -l app.kubernetes.io/name=kagent` and `kubectl -n kagent get agents`.

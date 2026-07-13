@@ -22,7 +22,14 @@ boundary (ModelConfig), and the capability boundary (`Agent.spec.declarative.too
    git. (Chart-generated configs such as `default-model-config` are exempt.)
 3. **Declared capability surface.** Every `Agent.spec.declarative.tools`
    `McpServer` ref names an MCP server that exists in git and lists non-empty
-   `toolNames` (no implicit bind-all).
+   `toolNames` (no implicit bind-all). MCP servers rendered by the kagent Helm
+   chart (`kagent-tool-server`, `kagent-grafana-mcp`) are exempt from the
+   "exists in git" half, for the same reason `default-model-config` is: they are
+   still declarative — versioned by the chart's `targetRevision` — and adopting
+   them as standalone manifests would put the chart and the `kagent-secrets`
+   Argo app in a tug-of-war over one object. That is not hypothetical: it is the
+   failure mode that silently stripped the agents' HITL `requireApproval` gates
+   on every sync. The `toolNames` half still applies to them.
 
 The validator (`scripts/validate-agent-identity.py`) enforces these. Enforcement
 is staged: the pilot credential and pilot agent named in
@@ -45,7 +52,20 @@ consumer or unresolved reference is a warning (visible backlog).
 
 ## Follow-ons (not yet enforced)
 
-- Kyverno admission policy enforcing invariants 1 & 2 at deploy time.
-- Scoping the remaining credentials (Backstage token, DB creds, MCP basic-auth,
-  Plex/qBit) and onboarding the other declarative agents.
+- Kyverno admission policy enforcing invariants 1 & 2 at deploy time. Until this
+  lands, the invariants are checked only in CI — a direct `kubectl apply` can
+  still violate them.
+- Onboarding the remaining declarative agents.
 - Dedicated per-agent Anthropic keys / budget caps; egress control.
+
+## Done
+
+- **Increment 1** — contract, validator, CI gate; pilot credential
+  (`agent-docs-github-mcp-token`) and pilot agent (`homelab-knowledge`).
+- **Increment 2** — every real credential in the `kagent` namespace is now
+  credential-scoped: `backstage-mcp-token`, `kagent-db-credentials` and
+  `kagent-mcp-basic-auth` each resolve through their own ESO ServiceAccount,
+  `SecretStore`, Vault kubernetes-auth role and per-consumer Vault key. Nothing
+  in this namespace reads the monolithic `kagent` key any more. (The Plex/qBit
+  credential named in the original backlog is gone — that integration was
+  removed, having never worked.)
