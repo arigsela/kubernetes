@@ -50,13 +50,33 @@ consumer or unresolved reference is a warning (visible backlog).
    Never depend on an out-of-band, hand-applied ModelConfig.
 3. **Capability:** list explicit `toolNames` for every `McpServer` tool ref.
 
+## Two gates, deliberately
+
+- **CI** (`scripts/validate-agent-identity.py`, `agent-identity-validate` job)
+  checks all three invariants against **git**. It is the only gate that can see
+  the "exists in git" half of invariants 2 and 3.
+- **Admission** (`base-apps/kyverno-policies/agent-identity.yaml`, Kyverno
+  ClusterPolicy, `Enforce`) checks the structural invariants against **anything
+  applied to the cluster** — including a hand-run `kubectl apply`, a Helm chart,
+  or an operator writing an `Agent`. CI never sees those.
+
+Neither subsumes the other. CI catches what git says; admission catches what the
+cluster is actually asked to run.
+
+The Kyverno policy denies: an `ExternalSecret` in `kagent` using the broad
+`vault-backend` store, one reading the monolithic `kagent` Vault key, and an
+`Agent` whose `McpServer` tool ref lists no `toolNames` (implicit bind-all).
+It carries one documented exclusion: `kagent-anthropic-secrets`, owned by the
+`kagent-config` Argo app outside this repo, which still reads the broad store.
+Remove that exclusion once that app is brought in and scoped.
+
 ## Follow-ons (not yet enforced)
 
-- Kyverno admission policy enforcing invariants 1 & 2 at deploy time. Until this
-  lands, the invariants are checked only in CI — a direct `kubectl apply` can
-  still violate them.
 - Onboarding the remaining declarative agents.
 - Dedicated per-agent Anthropic keys / budget caps; egress control.
+- Invariant 2 has no admission-time equivalent (Kyverno cannot read git). A
+  cluster-existence check on the referenced `ModelConfig` would be the closest
+  analogue if it proves worth the moving parts.
 
 ## Done
 
