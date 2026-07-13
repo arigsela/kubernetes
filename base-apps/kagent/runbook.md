@@ -45,6 +45,7 @@ Every Secret here is credential-scoped: each `ExternalSecret` resolves through i
 | `backstage-mcp-token` | `vault-backstage-mcp` | `k8s-secrets/kagent-backstage-mcp` (property `token`) |
 | `kagent-db-credentials` | `vault-kagent-db` | `k8s-secrets/kagent-db` (`db-url`, `db-user`, `db-password`, `db-name`) |
 | `kagent-mcp-basic-auth` | `vault-kagent-mcp-basic-auth` | `k8s-secrets/kagent-mcp-basic-auth` (property `auth`, htpasswd) |
+| `kagent-anthropic-secrets` | `vault-kagent-anthropic` | `k8s-secrets/kagent-anthropic` (property `anthropic-api-key`) |
 
 Update the value in Vault directly (never in Git) — External Secrets Operator picks it up within the `refreshInterval` (1h), or force it immediately: `kubectl -n kagent annotate externalsecret <name> force-sync=$(date +%s) --overwrite`.
 

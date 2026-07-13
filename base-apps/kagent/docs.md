@@ -11,7 +11,9 @@ sources:
   - base-apps/kagent-secrets.yaml
   - base-apps/kagent-crds.yaml
   - base-apps/kagent/embedding-model-config.yaml
-  - base-apps/kagent/secret-store.yaml
+  - base-apps/kagent/kagent-anthropic-external-secret.yaml
+  - base-apps/kagent/kagent-anthropic-secret-store.yaml
+  - base-apps/kagent/eso-kagent-anthropic-serviceaccount.yaml
   - base-apps/kagent/external-secrets.yaml
   - base-apps/kagent/eso-agent-docs-mcp-serviceaccount.yaml
   - base-apps/kagent/agent-docs-mcp-secret-store.yaml
@@ -55,8 +57,11 @@ All Secrets in `base-apps/kagent/` flow through Vault, and **every one of them i
 | `backstage-mcp-token` | `vault-backstage-mcp` | `eso-backstage-mcp` | `backstage-mcp` | `kagent-backstage-mcp` |
 | `kagent-db-credentials` | `vault-kagent-db` | `eso-kagent-db` | `kagent-db` | `kagent-db` |
 | `kagent-mcp-basic-auth` | `vault-kagent-mcp-basic-auth` | `eso-kagent-mcp-basic-auth` | `kagent-mcp-basic-auth` | `kagent-mcp-basic-auth` |
+| `kagent-anthropic-secrets` | `vault-kagent-anthropic` | `eso-kagent-anthropic` | `kagent-anthropic` | `kagent-anthropic` |
 
-Each Vault policy grants `read` on exactly one path (`k8s-secrets/data/<key>`). `secret-store.yaml` still defines the broad `vault-backend` `SecretStore` (Kubernetes-auth role `kagent`, which can read the monolithic `kagent` key) — it is retained only because the `kagent-anthropic-secrets` `ExternalSecret` is owned by a different Argo app (`kagent-config`) outside this repo. Do not point new consumers at it.
+Each Vault policy grants `read` on exactly one path (`k8s-secrets/data/<key>`), so a token minted for one consumer cannot read another's secret.
+
+The broad `vault-backend` `SecretStore` is **gone**. It authenticated as the namespace's `default` ServiceAccount against Vault role `kagent`, which could read the monolithic `k8s-secrets/kagent` key holding every credential at once. Its last consumer was `kagent-anthropic-secrets` — an `ExternalSecret` that existed only in-cluster, tracked by an Argo app (`kagent-config`) that no longer exists, owned by nothing and declared in no repo. That orphan is now adopted here (`kagent-anthropic-external-secret.yaml`) and scoped like everything else, so the broad store, the `kagent` Vault role/policy and the monolithic key have all been removed. There is no shared credential path left in this namespace.
 
 kagent uses the **shared PostgreSQL** instance (`base-apps/postgresql/`) rather than the chart's bundled DB (`database.postgres.bundled.enabled: false` in `kagent.yaml`): `external-secrets.yaml` here syncs `kagent-db-credentials` (`db-url`, `db-user`, `db-password`, `db-name`) from Vault key `kagent-db`, matching the `kagent` role/database that `postgresql`'s `init-kagent-db` Job provisions with the `vector` extension enabled (see `base-apps/postgresql/docs.md`). The controller mounts that Secret's `db-url` at `/etc/kagent/secrets/db-url` (`kagent.yaml`'s `controller.volumes`/`volumeMounts`).
 
