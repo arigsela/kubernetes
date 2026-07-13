@@ -19,6 +19,11 @@ spec:
   # kagent HITL requireApproval gates go missing for days while Argo showed
   # Synced/Healthy. These invariants are cheap to satisfy and the cluster is
   # already compliant, so they are enforced.
+  #
+  # No exclusions. The credential rules previously exempted
+  # kagent-anthropic-secrets, the last consumer of the broad `vault-backend`
+  # store; it is now scoped like every other, so the policy applies to every
+  # ExternalSecret in the namespace without a hole in it.
   validationFailureAction: Enforce
   background: true
   rules:
@@ -31,15 +36,6 @@ spec:
                 - external-secrets.io/v1beta1/ExternalSecret
               namespaces:
                 - kagent
-      exclude:
-        any:
-          # Owned by the `kagent-config` Argo app, which lives outside this
-          # repo, so it cannot be scoped from here. It still reads the broad
-          # `vault-backend` store / monolithic `kagent` key. Remove this
-          # exclusion once that app is brought into this repo and scoped.
-          - resources:
-              names:
-                - kagent-anthropic-secrets
       validate:
         message: >-
           ExternalSecret '{{ request.object.metadata.name }}' must not resolve through the
@@ -59,11 +55,6 @@ spec:
                 - external-secrets.io/v1beta1/ExternalSecret
               namespaces:
                 - kagent
-      exclude:
-        any:
-          - resources:
-              names:
-                - kagent-anthropic-secrets
       validate:
         message: >-
           ExternalSecret '{{ request.object.metadata.name }}' must not read the monolithic
