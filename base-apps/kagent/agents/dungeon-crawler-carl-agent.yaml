@@ -9,6 +9,8 @@ metadata:
     app.kubernetes.io/name: dungeon-crawler-carl-agent
     app: kagent
     arigsela.com/idp-managed: "true"
+    # Pure LLM, tools: []. Nothing to gate.
+    capability.homelab/class: read
   annotations:
     terasky.backstage.io/add-to-catalog: "true"
     terasky.backstage.io/component-type: kagent-agent

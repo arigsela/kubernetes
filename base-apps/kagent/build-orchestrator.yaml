@@ -5,6 +5,10 @@ metadata:
   namespace: kagent
   labels:
     app.kubernetes.io/part-of: kagent
+    # Binds no MCP tool of its own, but delegates to k8s-agent and istio-agent,
+    # both admin. Effective capability is admin, so it is declared admin —
+    # delegation is transitive and the contract will not let it under-declare.
+    capability.homelab/class: admin
 spec:
   description: Orchestrates across all specialized K8s agents to handle complex multi-domain requests
   type: Declarative

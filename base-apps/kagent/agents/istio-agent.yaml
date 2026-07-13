@@ -17,6 +17,9 @@ kind: Agent
 metadata:
   name: istio-agent
   namespace: kagent
+  labels:
+    # Binds k8s_delete_resource and istio_delete_waypoint.
+    capability.homelab/class: admin
 spec:
   declarative:
     a2aConfig:

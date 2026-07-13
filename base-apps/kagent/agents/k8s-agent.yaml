@@ -17,6 +17,11 @@ kind: Agent
 metadata:
   name: k8s-agent
   namespace: kagent
+  labels:
+    # Binds k8s_delete_resource and k8s_execute_command — the operator agent a
+    # human drives when something actually needs changing. Everything mutating
+    # it holds is gated by requireApproval below.
+    capability.homelab/class: admin
 spec:
   declarative:
     a2aConfig:
@@ -146,6 +151,9 @@ spec:
         apiGroup: kagent.dev
         kind: RemoteMCPServer
         name: kagent-tool-server
+        # Every mutating tool bound below must appear here — the capability
+        # contract enforces it in CI and at admission, so this list can no
+        # longer be silently stripped or fall behind toolNames.
         requireApproval:
         - k8s_patch_resource
         - k8s_create_resource
@@ -153,6 +161,14 @@ spec:
         - k8s_delete_resource
         - k8s_apply_manifest
         - k8s_execute_command
+        # The four label/annotation mutators were bound but UNGATED until the
+        # capability increment. They are not cosmetic: Argo CD sync behaviour
+        # and Kyverno matching are both label/annotation-driven, so an agent
+        # holding these can disable the controls that hold it in.
+        - k8s_annotate_resource
+        - k8s_remove_annotation
+        - k8s_label_resource
+        - k8s_remove_label
         toolNames:
         - k8s_check_service_connectivity
         - k8s_patch_resource

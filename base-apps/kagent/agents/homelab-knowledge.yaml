@@ -9,6 +9,11 @@ metadata:
     app.kubernetes.io/name: homelab-knowledge
     app: kagent
     arigsela.com/idp-managed: "true"
+    # Read-only, and now genuinely so end-to-end: its own three tools are reads
+    # backed by a --read-only MCP binary, and it delegates to k8s-reader rather
+    # than k8s-agent. It previously delegated to k8s-agent, which made its
+    # EFFECTIVE capability admin — it could reach delete/apply/exec by asking.
+    capability.homelab/class: read
   annotations:
     terasky.backstage.io/add-to-catalog: "true"
     terasky.backstage.io/component-type: kagent-agent
@@ -150,9 +155,16 @@ spec:
         # kagent's ADK schema converter cannot parse (KeyError: 'anyOf').
         toolNames:
         - get-catalog-entity
+    # Delegation is capability-transitive: this agent's effective capability is
+    # its own tools UNION everything it can reach by delegating. It used to
+    # delegate to k8s-agent (admin), which silently made this read-only agent
+    # able to reach k8s_delete_resource / k8s_apply_manifest / k8s_execute_command
+    # by simply asking. It now delegates to k8s-reader, which binds only read
+    # tools — the live-cluster investigation ability is kept, the escalation
+    # path is gone.
     - type: Agent
       agent:
-        name: k8s-agent
+        name: k8s-reader
     deployment:
       resources:
         requests:

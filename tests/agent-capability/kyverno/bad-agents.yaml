@@ -1,0 +1,158 @@
+# Each Agent here violates exactly ONE rule of ClusterPolicy/agent-capability.
+# run.sh asserts every one of them is DENIED. If a fixture starts passing, the
+# policy has regressed — that is the point of the file.
+---
+# rule 1 — no capability class declared
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-no-class
+  namespace: kagent
+spec:
+  declarative:
+    tools:
+      - type: McpServer
+        mcpServer:
+          name: kagent-tool-server
+          toolNames: [k8s_get_resources]
+---
+# rule 1 — class is not one of read|write|admin
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-invalid-class
+  namespace: kagent
+  labels:
+    capability.homelab/class: superuser
+spec:
+  declarative:
+    tools:
+      - type: McpServer
+        mcpServer:
+          name: kagent-tool-server
+          toolNames: [k8s_get_resources]
+---
+# rule 2 — binds a tool that is not in the taxonomy (fail-closed; simulates a
+# chart bump introducing a new tool nobody has triaged)
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-unclassified-tool
+  namespace: kagent
+  labels:
+    capability.homelab/class: admin
+spec:
+  declarative:
+    tools:
+      - type: McpServer
+        mcpServer:
+          name: kagent-tool-server
+          toolNames: [k8s_get_resources, k8s_brand_new_tool_from_chart_bump]
+---
+# rule 3 — a read agent binding a destructive tool. This is the shape of the
+# homelab-knowledge hole, expressed directly rather than via delegation.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-read-binds-destructive
+  namespace: kagent
+  labels:
+    capability.homelab/class: read
+spec:
+  declarative:
+    tools:
+      - type: McpServer
+        mcpServer:
+          name: kagent-tool-server
+          toolNames: [k8s_get_resources, k8s_delete_resource]
+          requireApproval: [k8s_delete_resource]
+---
+# rule 4 — a write agent binding a destructive tool
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-write-binds-destructive
+  namespace: kagent
+  labels:
+    capability.homelab/class: write
+spec:
+  declarative:
+    tools:
+      - type: McpServer
+        mcpServer:
+          name: kagent-tool-server
+          toolNames: [k8s_get_resources, k8s_execute_command]
+          requireApproval: [k8s_execute_command]
+---
+# rule 5 — mutating tool bound with NO requireApproval at all. This is exactly
+# what observability-agent looked like before it was adopted and gated.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-ungated-mutating
+  namespace: kagent
+  labels:
+    capability.homelab/class: write
+spec:
+  declarative:
+    tools:
+      - type: McpServer
+        mcpServer:
+          name: kagent-grafana-mcp
+          toolNames: [search_dashboards, update_dashboard]
+---
+# rule 5 — PARTIAL requireApproval: delete is gated, patch is not. This is the
+# real k8s-agent bug (four label/annotation mutators bound but ungated).
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-partially-gated
+  namespace: kagent
+  labels:
+    capability.homelab/class: admin
+spec:
+  declarative:
+    tools:
+      - type: McpServer
+        mcpServer:
+          name: kagent-tool-server
+          toolNames: [k8s_delete_resource, k8s_label_resource]
+          requireApproval: [k8s_delete_resource]
+---
+# rule 6 — a read agent DELEGATING to an admin agent. This is the exact
+# homelab-knowledge -> k8s-agent hole, and it is the one admission previously let
+# through: the agent binds no mutating tool of its own, so rules 1-5 all pass.
+# Its effective capability is admin because it can simply ask k8s-agent.
+# run.sh mocks the delegate's class as `admin` via the values file.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-read-delegates-to-admin
+  namespace: kagent
+  labels:
+    capability.homelab/class: read
+spec:
+  declarative:
+    tools:
+      - type: McpServer
+        mcpServer:
+          name: agent-docs
+          toolNames: [get_file_contents]
+      - type: Agent
+        agent:
+          name: k8s-agent
+---
+# rule 7 — a write agent delegating to an admin agent
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-write-delegates-to-admin
+  namespace: kagent
+  labels:
+    capability.homelab/class: write
+spec:
+  declarative:
+    tools:
+      - type: Agent
+        agent:
+          name: k8s-agent
