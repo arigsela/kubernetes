@@ -21,8 +21,6 @@ sources:
   - base-apps/kagent/agent-docs-mcp.yaml
   - base-apps/kagent/agent-docs-mcp-remote.yaml
   - base-apps/kagent/backstage-catalog-mcp.yaml
-  - base-apps/kagent/plex-stack-mcp.yaml
-  - base-apps/kagent/plex-stack-mcp-remote.yaml
   - base-apps/kagent/mcp-ingress.yaml
   - base-apps/kagent/nginx-ingress.yaml
 ---
@@ -38,19 +36,18 @@ kagent is a Kubernetes-native AI agent platform: a controller (installed via Hel
 
 ## Model configs
 - **`default-model-config`** — the chart's default `ModelConfig`, generated from the `providers` block in `kagent.yaml` (Anthropic, `claude-haiku-4-5-20251001`). Used by simple/low-context agents (e.g. `agents/dungeon-crawler-carl-agent.yaml`, `agents/skill-suggester.yaml`, `build-orchestrator.yaml`).
-- **`anthropic-claude-sonnet-4-6`** — a sonnet-tier `ModelConfig` referenced by `agents/homelab-knowledge.yaml` and `agents/plex-stack-diagnostics.yaml` (both need larger context/more reliable tool-calling for multi-step delegation); its manifest is git-tracked at `model-configs/anthropic-claude-sonnet-4-6.yaml` (adopted into GitOps per the agent-identity contract) and uses its own dedicated `apiKeySecret` (`anthropic-claude-sonnet-4-6`), not the shared `kagent-anthropic` key.
+- **`anthropic-claude-sonnet-4-6`** — a sonnet-tier `ModelConfig` referenced by `agents/homelab-knowledge.yaml` (it needs larger context/more reliable tool-calling for multi-step delegation); its manifest is git-tracked at `model-configs/anthropic-claude-sonnet-4-6.yaml` (adopted into GitOps per the agent-identity contract) and uses its own dedicated `apiKeySecret` (`anthropic-claude-sonnet-4-6`), not the shared `kagent-anthropic` key.
 - **`embedding-model-config`** (`embedding-model-config.yaml`) — points at **Ollama** (`http://ollama.ollama.svc.cluster.local:11434`, model `nomic-embed-text`), used as every declarative agent's `memory.modelConfig` for RAG/embedding recall. This is why the `kagent` component depends on `ollama`.
 
 ## Tools via MCP servers
 Agents get tools by referencing `MCPServer`/`RemoteMCPServer` objects in their `spec.declarative.tools`. Two patterns exist side by side:
 - **stdio proxy**: `agent-docs-mcp.yaml` deploys the read-only GitHub MCP server (`ghcr.io/github/github-mcp-server`, `--read-only --toolsets repos`) as a container; `agent-docs-mcp-remote.yaml` is the `RemoteMCPServer` that registers its tools (`get_file_contents`, `search_code`) with kagent — a container-only `MCPServer` does not register tools in this kagent version, only a `RemoteMCPServer` does.
-- **HTTP server**: `plex-stack-mcp.yaml` runs a FastMCP HTTP process directly (streamable-HTTP on `:3000`, path `/mcp`); `plex-stack-mcp-remote.yaml` registers its tools (`plex_status`, `plex_sessions`, `qbit_status`, `plex_scan_library`, `qbit_resume`, `qbit_recheck`) for `agents/plex-stack-diagnostics.yaml`.
 - **In-cluster remote**: `backstage-catalog-mcp.yaml` points at Backstage's own MCP endpoint (`http://backstage.backstage.svc.cluster.local/api/mcp-actions/v1/catalog`) for resolved-entity/dependency lookups (`get-catalog-entity`), with the `Authorization` header injected from the `backstage-mcp-token` Secret.
 
 Agents only get the `toolNames` they explicitly list (e.g. `agents/homelab-knowledge.yaml` binds `get_file_contents`/`search_code` from `agent-docs` plus `get-catalog-entity` from `backstage-catalog`, and delegates to `k8s-agent` via a `type: Agent` tool entry) — an unlisted tool resolves to nothing and the agent reports "Unknown Tool". A `type: Agent` entry naming an agent that is not deployed resolves to nothing in the same way, so trim delegations when disabling an agent.
 
 ## Secrets & database
-All Secrets in `base-apps/kagent/` flow through Vault: `secret-store.yaml` defines the `vault-backend` `SecretStore` (`http://vault.vault.svc.cluster.local:8200`, KV v2 path `k8s-secrets`, Kubernetes-auth role `kagent`). `ExternalSecret`s pull from Vault key `kagent` (DB creds, Backstage MCP token) and key `plex-stack-mcp` (Plex/qBittorrent creds); `mcp-basic-auth-external-secret.yaml` pulls the `/mcp` ingress basic-auth htpasswd blob.
+All Secrets in `base-apps/kagent/` flow through Vault: `secret-store.yaml` defines the `vault-backend` `SecretStore` (`http://vault.vault.svc.cluster.local:8200`, KV v2 path `k8s-secrets`, Kubernetes-auth role `kagent`). `ExternalSecret`s pull from Vault key `kagent` (DB creds, Backstage MCP token, Anthropic API key); `mcp-basic-auth-external-secret.yaml` pulls the `/mcp` ingress basic-auth htpasswd blob.
 
 The `agent-docs-mcp` GitHub token is credential-scoped per the agent-identity contract (`templates/agent-identity/README.md`): it resolves through a dedicated `SecretStore` (`vault-agent-docs-mcp`) whose ESO ServiceAccount (`eso-agent-docs-mcp`) assumes a Vault role scoped to only the `kagent-agent-docs-mcp` path, not the broad `kagent` role.
 
