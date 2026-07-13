@@ -1,5 +1,26 @@
 # Agent Identity — "Agent Principal" Pattern (increment 1) Implementation Plan
 
+> **STATUS: COMPLETE (2026-07-13). Do not re-run this plan.**
+>
+> Tasks 1–5 all shipped; the unticked `- [ ]` checkboxes below are stale — they
+> were never checked off at merge time. Landed as: contract + templates + scope
+> file, `scripts/validate-agent-identity.py` + pytest suite, `homelab-knowledge`'s
+> ModelConfig adopted into git, the agent-docs MCP credential scoped, and the
+> `agent-identity-validate` CI job.
+>
+> **Caveat worth knowing:** Task 4 shipped only its *Kubernetes* half. The
+> ServiceAccount, SecretStore and ExternalSecret were merged, but the matching
+> **Vault** role, policy and KV key were never created — so the SecretStore sat
+> in `InvalidProviderConfig` and the ExternalSecret in `SecretSyncedError` until
+> 2026-07-13, silently, while the stale Secret kept the pod alive. If you write a
+> plan that spans Git and Vault, verify the Vault side landed too; CI cannot see it.
+>
+> **Increment 2 (2026-07-13):** the remaining credentials (`backstage-mcp-token`,
+> `kagent-db-credentials`, `kagent-mcp-basic-auth`) are now scoped as well, so the
+> validator reports **0 warnings**. Next: Kyverno admission enforcement — until
+> that lands, the invariants are CI-only and a direct `kubectl apply` can violate
+> them freely.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Establish a reusable, GitOps-native "agent-principal" pattern for kagent agents (identity = credentials it can obtain + its model + its capability surface), enforced by a Python validator, and proven end-to-end on the `homelab-knowledge` + `agent-docs-mcp` slice.

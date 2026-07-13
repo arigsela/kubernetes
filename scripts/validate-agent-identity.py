@@ -24,6 +24,15 @@ import yaml
 BROAD_SECRETSTORE = "vault-backend"
 MONOLITHIC_VAULT_KEY = "kagent"
 CHART_GENERATED_MODELCONFIGS = {"default-model-config"}
+# MCP servers rendered by the kagent Helm chart rather than declared in git.
+# Exempt for the same reason as CHART_GENERATED_MODELCONFIGS: they ARE
+# declarative (versioned via base-apps/kagent.yaml's chart targetRevision), just
+# not as standalone manifests. Adopting them into git would put the chart and
+# the kagent-secrets Argo app in a tug-of-war over the same object — the failure
+# mode that silently stripped the agents' HITL requireApproval gates on every
+# sync. Invariant 3's real teeth are the explicit toolNames check below, which
+# still applies to these refs.
+CHART_PROVIDED_MCPSERVERS = {"kagent-tool-server", "kagent-grafana-mcp"}
 
 
 def _load_docs(path: Path) -> list[dict]:
@@ -151,7 +160,7 @@ def check_capability_surface(repo_root: Path, pilot_agents: set[str]) -> tuple[l
             ref = mcp.get("name")
             tool_names = mcp.get("toolNames") or []
             problems = []
-            if ref not in mcp_names:
+            if ref not in mcp_names and ref not in CHART_PROVIDED_MCPSERVERS:
                 problems.append(f"references unknown MCP server {ref!r}")
             if not tool_names:
                 problems.append(f"MCP ref {ref!r} lists no toolNames (binds nothing)")

@@ -165,3 +165,30 @@ def test_pilot_unknown_mcp_ref_is_error(tmp_path):
     _, agents = vai.load_scope(root)
     errors, _ = vai.check_capability_surface(root, agents)
     assert any("does-not-exist" in e for e in errors)
+
+
+def test_chart_provided_mcp_server_ref_is_exempt(tmp_path):
+    """kagent-tool-server is rendered by the kagent Helm chart, not declared in
+    git. Requiring it as a manifest would mean two Argo apps owning one object —
+    the tug-of-war that silently stripped the agents' HITL gates. Exempt, exactly
+    as default-model-config is for the model invariant."""
+    root = _good_repo(tmp_path)
+    _write(root / "base-apps" / "kagent" / "agents" / "k8s-agent.yaml",
+           _agent("k8s-agent", "default-model-config", "kagent-tool-server",
+                  ["k8s_get_resources"]))
+    _, agents = vai.load_scope(root)
+    errors, warnings = vai.check_capability_surface(root, agents)
+    assert errors == []
+    assert not any("kagent-tool-server" in w for w in warnings)
+
+
+def test_chart_provided_mcp_server_still_needs_toolnames(tmp_path):
+    """The exemption covers only 'does this ref resolve'. Invariant 3's real
+    teeth — no implicit bind-all — still apply to chart-provided servers."""
+    root = _good_repo(tmp_path)
+    _write(root / "base-apps" / "kagent" / "agents" / "homelab-knowledge.yaml",
+           _agent("homelab-knowledge", "anthropic-claude-sonnet-4-6",
+                  "kagent-tool-server", []))
+    _, agents = vai.load_scope(root)
+    errors, _ = vai.check_capability_surface(root, agents)
+    assert any("toolNames" in e for e in errors)
