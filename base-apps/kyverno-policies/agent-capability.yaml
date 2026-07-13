@@ -1,0 +1,307 @@
+---
+# Agent capability guardrails — the admission half of the L03 Security pillar.
+#
+# !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
+# Source of truth: base-apps/kyverno-policies/agent-capability-taxonomy.yaml
+# Regenerate:      ./scripts/gen-agent-capability-policy.py
+# CI fails if this file drifts from the taxonomy.
+#
+# ClusterPolicy/agent-identity answers WHO an agent is (its credentials are scoped
+# to a dedicated Vault path). This policy answers what an agent may DO. It DENIES,
+# at admission:
+#
+#   1. an Agent with no capability.homelab/class in {read, write, admin}
+#   2. an Agent binding a tool that is not in the taxonomy   (FAIL-CLOSED)
+#   3. a `read` agent binding any write/destructive tool
+#   4. a `write` agent binding any destructive tool
+#   5. any mutating tool bound without a matching requireApproval entry
+#   6. a `read` agent delegating to a `write` or `admin` agent
+#   7. a `write` agent delegating to an `admin` agent
+#
+# Rules 6-7 close the privilege-escalation path that admission previously left
+# open: an agent's effective capability is its own tools UNION everything it can
+# reach by delegating, so a read-only agent delegating to an admin agent IS an
+# admin agent. This was live (homelab-knowledge -> k8s-agent) and is reachable by
+# an agent, not just a human: k8s-agent holds k8s_create_resource, so it could be
+# driven to create a `read` Agent that delegates straight back to itself.
+#
+# Rules 6-7 check ONE HOP, which is inductively sufficient at admission: if every
+# agent is forbidden from delegating above its own class, no chain can exceed its
+# head's class. The multi-hop closure (A->B->C, where B is later PROMOTED to
+# admin and A is never re-admitted) is not catchable one-object-at-a-time; CI
+# computes the full transitive closure over the graph in git, and background
+# PolicyReports re-scan existing agents.
+#
+# Rules 6-7 are the ONLY rules that make a runtime API call (to read the
+# delegate's class). That call is made inside `foreach tools[?type=='Agent']`, so
+# it never fires for an agent that has no delegations — the blast radius of an
+# apiCall failure is the delegating agents alone, not every Agent in the cluster.
+#
+# ---------------------------------------------------------------------------
+# KYVERNO NOTES — both cost real debugging time. Read before editing the generator.
+#
+# (a) Context variables do NOT resolve inside JMESPath filter expressions.
+#     `toolNames[?contains(mutating, @)]` evaluates `mutating` to nil and the rule
+#     ERRORS ("Invalid type for: <nil>, expected: array|string"). Variables are
+#     substituted by {{ }} templating BEFORE JMESPath runs, so a variable must be
+#     injected as a JSON literal: toolNames[?contains(`{{ mutating }}`, @)].
+#     Prefer the AnyIn/AnyNotIn operators, which compare arrays natively.
+#
+# (b) Keep every jmesPath on ONE line. A YAML folded scalar (>-) preserves
+#     newlines literally when continuation lines are more-indented, embedding \n
+#     into the expression so it fails to parse and the variable resolves to nil.
+#
+# Verified offline against the SHIPPED policy (no substitution):
+#     ./tests/agent-capability/kyverno/run.sh
+#
+# Contract: docs/superpowers/specs/2026-07-13-agent-capability-classes-design.md
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: agent-capability
+  annotations:
+    policies.kyverno.io/title: Agent capability classes
+    policies.kyverno.io/category: Agent Guardrails
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Agent
+    policies.kyverno.io/description: Constrains what a kagent Agent may do. Each Agent declares a capability class; every tool it binds must be classified in the capability taxonomy and permitted by that class; every mutating tool must be gated behind requireApproval; and an agent may not delegate to a higher-class agent.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: agent-must-declare-capability-class
+    match:
+      any:
+      - resources:
+          kinds:
+          - kagent.dev/v1alpha2/Agent
+    validate:
+      message: "Agent must declare a capability class: the label capability.homelab/class must be one of read, write, admin. There is no default \u2014 an agent with no declared class is denied."
+      deny:
+        conditions:
+          any:
+          - key: '{{ request.object.metadata.labels."capability.homelab/class" || ''<none>'' }}'
+            operator: AnyNotIn
+            value:
+            - read
+            - write
+            - admin
+  - name: bound-tools-must-be-classified
+    match:
+      any:
+      - resources:
+          kinds:
+          - kagent.dev/v1alpha2/Agent
+    validate:
+      message: "Agent binds tools that are not in the capability taxonomy. Classify them in base-apps/kyverno-policies/agent-capability-taxonomy.yaml before binding them \u2014 unclassified tools are denied by design, so that a chart upgrade cannot silently widen any agent's capability."
+      foreach:
+      - list: request.object.spec.declarative.tools[?type=='McpServer']
+        deny:
+          conditions:
+            any:
+            - key: '{{ element.mcpServer.toolNames }}'
+              operator: AnyNotIn
+              value:
+              - k8s_get_resources
+              - k8s_get_pod_logs
+              - k8s_describe_resource
+              - k8s_get_events
+              - k8s_get_resource_yaml
+              - k8s_get_cluster_configuration
+              - k8s_get_available_api_resources
+              - k8s_check_service_connectivity
+              - k8s_generate_resource
+              - istio_proxy_status
+              - istio_proxy_config
+              - istio_version
+              - istio_analyze_cluster_configuration
+              - istio_ztunnel_config
+              - istio_waypoint_status
+              - istio_list_waypoints
+              - istio_remote_clusters
+              - istio_generate_manifest
+              - istio_generate_waypoint
+              - search_dashboards
+              - get_dashboard_by_uid
+              - get_dashboard_panel_queries
+              - query_prometheus
+              - query_loki_logs
+              - query_loki_stats
+              - list_prometheus_metric_names
+              - list_prometheus_metric_metadata
+              - list_prometheus_label_names
+              - list_prometheus_label_values
+              - list_loki_label_names
+              - list_loki_label_values
+              - list_datasources
+              - get_datasource
+              - list_alert_rules
+              - get_alert_rule_by_uid
+              - list_contact_points
+              - list_incidents
+              - get_incident
+              - list_teams
+              - list_oncall_users
+              - list_oncall_teams
+              - list_oncall_schedules
+              - get_oncall_shift
+              - get_current_oncall_users
+              - list_sift_investigations
+              - get_sift_investigation
+              - get_sift_analysis
+              - get_assertions
+              - find_slow_requests
+              - find_error_pattern_logs
+              - get_file_contents
+              - search_code
+              - get-catalog-entity
+              - k8s_patch_resource
+              - k8s_apply_manifest
+              - k8s_create_resource
+              - k8s_create_resource_from_url
+              - k8s_annotate_resource
+              - k8s_remove_annotation
+              - k8s_label_resource
+              - k8s_remove_label
+              - istio_apply_waypoint
+              - istio_install_istio
+              - update_dashboard
+              - create_incident
+              - add_activity_to_incident
+              - k8s_delete_resource
+              - k8s_execute_command
+              - istio_delete_waypoint
+  - name: read-agent-must-not-bind-mutating-tools
+    match:
+      any:
+      - resources:
+          kinds:
+          - kagent.dev/v1alpha2/Agent
+          selector:
+            matchLabels:
+              capability.homelab/class: read
+    validate:
+      message: Agent is declared capability.homelab/class=read but binds mutating tools. A read agent may bind only read-classified tools.
+      foreach:
+      - list: request.object.spec.declarative.tools[?type=='McpServer']
+        deny:
+          conditions:
+            any:
+            - key: '{{ element.mcpServer.toolNames }}'
+              operator: AnyIn
+              value: &id001
+              - k8s_patch_resource
+              - k8s_apply_manifest
+              - k8s_create_resource
+              - k8s_create_resource_from_url
+              - k8s_annotate_resource
+              - k8s_remove_annotation
+              - k8s_label_resource
+              - k8s_remove_label
+              - istio_apply_waypoint
+              - istio_install_istio
+              - update_dashboard
+              - create_incident
+              - add_activity_to_incident
+              - k8s_delete_resource
+              - k8s_execute_command
+              - istio_delete_waypoint
+  - name: write-agent-must-not-bind-destructive-tools
+    match:
+      any:
+      - resources:
+          kinds:
+          - kagent.dev/v1alpha2/Agent
+          selector:
+            matchLabels:
+              capability.homelab/class: write
+    validate:
+      message: Agent is declared capability.homelab/class=write but binds destructive tools. Only an admin agent may bind destructive tools.
+      foreach:
+      - list: request.object.spec.declarative.tools[?type=='McpServer']
+        deny:
+          conditions:
+            any:
+            - key: '{{ element.mcpServer.toolNames }}'
+              operator: AnyIn
+              value:
+              - k8s_delete_resource
+              - k8s_execute_command
+              - istio_delete_waypoint
+  - name: mutating-tools-must-require-approval
+    match:
+      any:
+      - resources:
+          kinds:
+          - kagent.dev/v1alpha2/Agent
+    validate:
+      message: Agent binds mutating tools that are not gated behind requireApproval. Every write/destructive tool bound must appear in that same tool ref's requireApproval list. This gate was silently stripped once before; it is enforced now.
+      foreach:
+      - list: request.object.spec.declarative.tools[?type=='McpServer']
+        context:
+        - name: approved
+          variable:
+            jmesPath: element.mcpServer.requireApproval || `[]`
+        - name: mutating
+          variable:
+            value: *id001
+        - name: ungated
+          variable:
+            jmesPath: element.mcpServer.toolNames[?contains(`{{ mutating }}`, @) && !contains(`{{ approved }}`, @)] || `[]`
+        deny:
+          conditions:
+            any:
+            - key: '{{ length(ungated) }}'
+              operator: GreaterThan
+              value: 0
+  - name: read-agent-must-not-delegate-to-higher-class
+    match:
+      any:
+      - resources:
+          kinds:
+          - kagent.dev/v1alpha2/Agent
+          selector:
+            matchLabels:
+              capability.homelab/class: read
+    validate:
+      message: 'Agent is declared capability.homelab/class=read but delegates to a write or admin agent. Delegation is capability-transitive: an agent''s effective capability is its own tools UNION everything it can reach by delegating, so this is a privilege escalation. Delegate to a read-class agent instead (see k8s-reader), or declare the class this agent actually needs.'
+      foreach:
+      - list: request.object.spec.declarative.tools[?type=='Agent']
+        context:
+        - name: delegateClass
+          apiCall:
+            urlPath: /apis/kagent.dev/v1alpha2/namespaces/{{request.object.metadata.namespace}}/agents/{{element.agent.name}}
+            jmesPath: metadata.labels."capability.homelab/class" || 'admin'
+        deny:
+          conditions:
+            any:
+            - key: '{{ delegateClass }}'
+              operator: AnyIn
+              value:
+              - write
+              - admin
+  - name: write-agent-must-not-delegate-to-admin
+    match:
+      any:
+      - resources:
+          kinds:
+          - kagent.dev/v1alpha2/Agent
+          selector:
+            matchLabels:
+              capability.homelab/class: write
+    validate:
+      message: "Agent is declared capability.homelab/class=write but delegates to an admin agent. Delegation is capability-transitive \u2014 this is a privilege escalation."
+      foreach:
+      - list: request.object.spec.declarative.tools[?type=='Agent']
+        context:
+        - name: delegateClass
+          apiCall:
+            urlPath: /apis/kagent.dev/v1alpha2/namespaces/{{request.object.metadata.namespace}}/agents/{{element.agent.name}}
+            jmesPath: metadata.labels."capability.homelab/class" || 'admin'
+        deny:
+          conditions:
+            any:
+            - key: '{{ delegateClass }}'
+              operator: AnyIn
+              value:
+              - admin

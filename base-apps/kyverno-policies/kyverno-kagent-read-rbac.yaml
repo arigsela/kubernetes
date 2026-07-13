@@ -1,0 +1,52 @@
+---
+# Lets Kyverno's REPORTS controller — and only that one — read kagent Agents.
+#
+# Why any grant is needed at all
+# ------------------------------
+# ClusterPolicy/agent-identity has declared `background: true` since it shipped
+# and has produced ZERO PolicyReports for Agents, because the reports controller
+# cannot list them:
+#
+#   $ kubectl auth can-i list agents.kagent.dev \
+#       --as=system:serviceaccount:kyverno:kyverno-reports-controller
+#   no
+#
+# So the identity policy enforces correctly at admission while its background scan
+# quietly does nothing: no report, and no visibility into the agents that already
+# exist. Applying either agent policy makes Kyverno say so itself:
+#
+#   Warning: system:serviceaccount:kyverno:kyverno-reports-controller requires
+#   permissions get,list,watch for resource kagent.dev/v1alpha2/Agent
+#
+# Why ONLY the reports controller
+# -------------------------------
+# Kyverno names exactly one service account in that warning, and the scope of this
+# ClusterRole is deliberately held to it. The other two controllers do not need it,
+# and granting them access would widen a security-critical component's permissions
+# beyond anything demonstrated:
+#
+#   admission controller  — does NOT need read access to validate. The API server
+#                           hands it the object in the AdmissionReview payload.
+#                           This is why agent-identity has been enforcing
+#                           correctly at admission all along with no RBAC at all.
+#
+#   background controller — reconciles `generate` and `mutate-existing` rules.
+#                           Both agent policies are validate-only (zero generate
+#                           or mutate rules), so it has no work to do on Agents.
+#                           Add it here only if a generate/mutate rule is ever
+#                           introduced for this kind.
+#
+# Read-only verbs: Kyverno never needs to mutate an Agent. It validates them at
+# admission (no RBAC) and reports on them in the background (this grant).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno:read-kagent-agents
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    rbac.kyverno.io/aggregate-to-reports-controller: "true"
+rules:
+  - apiGroups: ["kagent.dev"]
+    resources: ["agents"]
+    verbs: ["get", "list", "watch"]

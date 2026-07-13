@@ -103,8 +103,13 @@ spec:
         # argoproj/argo-cd#8970 / #9678, reproduced on this cluster. Owning the
         # CRs makes both fields declarative and self-healed by Argo.
         #
-        # observability-agent stays chart-managed: it is read-only, so it needs
-        # no approval gates, and chart 0.9.10+ sets memory natively.
+        # observability-agent WAS left chart-managed on the belief that it is
+        # "read-only, so it needs no approval gates". That was wrong. It binds 34
+        # kagent-grafana-mcp tools, three of which mutate (update_dashboard,
+        # create_incident, add_activity_to_incident), with no requireApproval at
+        # all — and it delegated to promql-agent, which is disabled below and does
+        # not exist. It is now owned in git like the other two, gated, and declared
+        # class `write`. See base-apps/kagent/agents/observability-agent.yaml.
         k8s-agent:
           enabled: false
         istio-agent:
@@ -129,17 +134,7 @@ spec:
         cilium-policy-agent:
           enabled: false
         observability-agent:
-          enabled: true
-          memory:
-            enabled: true
-            modelConfigRef: embedding-model-config
-          resources:
-            requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+          enabled: false
 
         # OpenTelemetry tracing → Coroot OTLP receiver
         otel:

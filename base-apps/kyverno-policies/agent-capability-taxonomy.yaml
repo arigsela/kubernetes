@@ -1,0 +1,140 @@
+---
+# Agent capability taxonomy — THE single source of truth for what every kagent
+# tool is allowed to DO. Edit the classification here and nowhere else.
+#
+# Three consumers, all reading this exact content:
+#
+#   - scripts/gen-agent-capability-policy.py  compiles it INTO
+#     ClusterPolicy/agent-capability. CI fails if that policy drifts from this
+#     file (`--check`).
+#   - scripts/validate-agent-capability.py    the CI contract gate.
+#   - humans, in-cluster: `kubectl get cm -n kyverno agent-capability-taxonomy`
+#
+# NOTE: Kyverno does NOT read this ConfigMap at admission time. The policy embeds
+# the lists inline instead. A `context.configMap` lookup would be DRYer but is a
+# runtime dependency at rule level — evaluated for EVERY Agent — and if it failed
+# for any reason (RBAC, sync ordering, schema) every rule would error and Kyverno's
+# default failurePolicy=Fail would deny ALL Agent writes, wedging the kagent app.
+# It is also unresolvable by the kyverno CLI, so that riskiest path would have been
+# the one path never covered by tests. Inlining makes the artifact we test
+# byte-for-byte the artifact that ships. See the generator for the full rationale.
+#
+# Three classifications, ordered read < write < destructive:
+#
+#   read         observes state; cannot change anything. Tools that RENDER a
+#                manifest but do not apply it (k8s_generate_resource,
+#                istio_generate_manifest, istio_generate_waypoint) are `read` —
+#                they return YAML to the caller.
+#   write        mutates state. Must appear in the tool ref's requireApproval.
+#   destructive  removes state, or is an arbitrary-code escape hatch whose blast
+#                radius is not bounded by its name (k8s_execute_command). Must
+#                appear in requireApproval, and only an `admin` agent may bind it.
+#
+# FAIL-CLOSED: a tool bound by an Agent but absent from all three lists is
+# DENIED. This is deliberate. A chart upgrade that introduces new tools cannot
+# silently widen any agent's capability — the new tools must be triaged and
+# classified here first. If a sync fails with "tool not in taxonomy", that is
+# the control working, not a bug.
+#
+# The lists are JSON arrays because Kyverno reads them with parse_json().
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-capability-taxonomy
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: agent-guardrails
+data:
+  # ---------------------------------------------------------------- read (53)
+  read: |
+    [
+      "k8s_get_resources",
+      "k8s_get_pod_logs",
+      "k8s_describe_resource",
+      "k8s_get_events",
+      "k8s_get_resource_yaml",
+      "k8s_get_cluster_configuration",
+      "k8s_get_available_api_resources",
+      "k8s_check_service_connectivity",
+      "k8s_generate_resource",
+
+      "istio_proxy_status",
+      "istio_proxy_config",
+      "istio_version",
+      "istio_analyze_cluster_configuration",
+      "istio_ztunnel_config",
+      "istio_waypoint_status",
+      "istio_list_waypoints",
+      "istio_remote_clusters",
+      "istio_generate_manifest",
+      "istio_generate_waypoint",
+
+      "search_dashboards",
+      "get_dashboard_by_uid",
+      "get_dashboard_panel_queries",
+      "query_prometheus",
+      "query_loki_logs",
+      "query_loki_stats",
+      "list_prometheus_metric_names",
+      "list_prometheus_metric_metadata",
+      "list_prometheus_label_names",
+      "list_prometheus_label_values",
+      "list_loki_label_names",
+      "list_loki_label_values",
+      "list_datasources",
+      "get_datasource",
+      "list_alert_rules",
+      "get_alert_rule_by_uid",
+      "list_contact_points",
+      "list_incidents",
+      "get_incident",
+      "list_teams",
+      "list_oncall_users",
+      "list_oncall_teams",
+      "list_oncall_schedules",
+      "get_oncall_shift",
+      "get_current_oncall_users",
+      "list_sift_investigations",
+      "get_sift_investigation",
+      "get_sift_analysis",
+      "get_assertions",
+      "find_slow_requests",
+      "find_error_pattern_logs",
+
+      "get_file_contents",
+      "search_code",
+      "get-catalog-entity"
+    ]
+
+  # --------------------------------------------------------------- write (13)
+  # Every tool here MUST appear in requireApproval wherever it is bound.
+  # The four k8s label/annotation mutators matter more than they look: Argo CD
+  # sync behaviour and Kyverno matching are both label/annotation-driven, so an
+  # agent holding them can disable the very controls that hold it in.
+  write: |
+    [
+      "k8s_patch_resource",
+      "k8s_apply_manifest",
+      "k8s_create_resource",
+      "k8s_create_resource_from_url",
+      "k8s_annotate_resource",
+      "k8s_remove_annotation",
+      "k8s_label_resource",
+      "k8s_remove_label",
+
+      "istio_apply_waypoint",
+      "istio_install_istio",
+
+      "update_dashboard",
+      "create_incident",
+      "add_activity_to_incident"
+    ]
+
+  # ---------------------------------------------------------- destructive (3)
+  # Only an `admin` agent may bind these, and only with requireApproval.
+  destructive: |
+    [
+      "k8s_delete_resource",
+      "k8s_execute_command",
+      "istio_delete_waypoint"
+    ]

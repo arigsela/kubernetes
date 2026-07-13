@@ -121,3 +121,41 @@ jobs:
         run: python -m pytest tests/agent-identity/ -q
       - name: Validate agent-identity contract
         run: python scripts/validate-agent-identity.py --repo-root .
+
+  # The agent-capability contract (L03 Security guardrails). This is the
+  # AUTHORITATIVE gate for all four invariants — in particular "delegation does
+  # not escalate", which Kyverno cannot check at admission because it needs a
+  # transitive closure over the whole agent graph. That graph lives in git, so
+  # this is where it is decided.
+  # Spec: docs/superpowers/specs/2026-07-13-agent-capability-classes-design.md
+  agent-capability-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run agent-capability validator tests
+        run: python -m pytest tests/agent-capability/ -q
+      - name: Validate agent-capability contract
+        run: python scripts/validate-agent-capability.py --repo-root .
+      # ClusterPolicy/agent-capability is GENERATED from the taxonomy. If someone
+      # edits the taxonomy without regenerating (or hand-edits the policy), the
+      # admission gate and the CI gate would silently disagree about what a tool
+      # is allowed to do. Fail loudly instead.
+      - name: Check the Kyverno policy is in sync with the taxonomy
+        run: python scripts/gen-agent-capability-policy.py --check --repo-root .
+      # Verify the SHIPPED policy file verbatim: every real Agent passes (a false
+      # positive would wedge the kagent app on next sync), and every violating
+      # fixture is denied (a false negative is a hole). One fixture per rule.
+      - name: Install Kyverno CLI
+        run: |
+          curl -sSL -o kyverno.tar.gz \
+            https://github.com/kyverno/kyverno/releases/download/v1.13.4/kyverno-cli_v1.13.4_linux_x86_64.tar.gz
+          tar -xzf kyverno.tar.gz kyverno
+          sudo install -m 0755 kyverno /usr/local/bin/kyverno
+      - name: Verify agent-capability Kyverno policy
+        run: ./tests/agent-capability/kyverno/run.sh

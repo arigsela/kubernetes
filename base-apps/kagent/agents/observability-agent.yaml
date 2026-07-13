@@ -1,0 +1,210 @@
+---
+# observability-agent — adopted into git by the agent-capability increment.
+#
+# The chart's bundled copy is disabled via agents.observability-agent.enabled=false
+# in base-apps/kagent.yaml, following the k8s-agent / istio-agent precedent. We own
+# it here so its capability class and HITL requireApproval gates are declarative
+# and self-healed by Argo CD rather than living only in a chart's rendered output.
+#
+# Why it had to be adopted, and what was wrong with it:
+#
+#   * It was described in this repo as "read-only". It was not. It binds 34 tools
+#     from kagent-grafana-mcp, three of which MUTATE — update_dashboard,
+#     create_incident, add_activity_to_incident — with NO requireApproval at all.
+#     It could rewrite dashboards and open incidents, ungated.
+#
+#   * It carried a `type: Agent` delegation to `promql-agent`, an agent that does
+#     not exist in the cluster and is explicitly disabled in base-apps/kagent.yaml.
+#     The reference was dangling. It is removed here: it pointed at nothing, so
+#     removing it restores no behaviour and breaks none. The systemMessage never
+#     referenced promql-agent, so nothing else depended on it.
+#
+# This escaped review because kagent-grafana-mcp is exempt by name from the
+# identity contract's "MCP server must exist in git" invariant, so its 34 tools
+# were never scrutinised. The capability taxonomy's fail-closed rule is what
+# surfaced it: every bound tool must now be classified to be bindable at all.
+#
+# Class is `write`, not `read`: it holds mutating tools, and the contract requires
+# an agent to declare its true capability. The three mutating tools are gated.
+#
+# systemMessage and a2aConfig below are upstream's, captured from chart 0.9.11.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: observability-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/managed-by: kagent
+    app.kubernetes.io/name: observability-agent
+    app: kagent
+    arigsela.com/idp-managed: 'true'
+    capability.homelab/class: write
+  annotations:
+    terasky.backstage.io/add-to-catalog: 'true'
+    terasky.backstage.io/component-type: kagent-agent
+    backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/observability-agent.yaml
+    backstage.io/owner: group:default/platform-engineering
+spec:
+  type: Declarative
+  description: An Observability-oriented Agent specialized in using Prometheus, Grafana, and Kubernetes
+    for monitoring and observability. This agent is equipped with a range of tools to query Prometheus
+    for metrics, create Grafana dashboards, and verify Kubernetes resources.
+  declarative:
+    modelConfig: default-model-config
+    runtime: python
+    memory:
+      modelConfig: embedding-model-config
+      ttlDays: 15
+    promptTemplate:
+      dataSources:
+      - alias: builtin
+        kind: ConfigMap
+        name: kagent-builtin-prompts
+    a2aConfig:
+      skills:
+      - description: Designs Prometheus monitoring strategies, writes PromQL queries, executes them, interprets
+          metrics, and designs alerts.
+        examples:
+        - Generate a PromQL query to show the 99th percentile latency for 'my-service'.
+        - 'Execute this PromQL query and show me the results: `sum(rate(container_cpu_usage_seconds_total[5m]))
+          by (pod)`'
+        - Help me design an alert for when the disk space on my nodes is above 80%.
+        - What are the key metrics I should monitor for a Kafka cluster?
+        id: prometheus-monitoring-querying
+        name: Prometheus Monitoring & Querying
+        tags:
+        - prometheus
+        - promql
+        - monitoring
+        - metrics
+        - alerting
+        - query
+        - analysis
+      - description: "Finds and reads Grafana dashboards, and updates existing ones (update requires human\
+          \ approval). Cannot delete dashboards, manage versions, or change permissions \u2014 no such\
+          \ tool is bound."
+        examples:
+        - Find all Grafana dashboards related to 'nginx'.
+        - Show me the panel queries on the 'Kubernetes Overview' dashboard.
+        - Add a new panel to the 'Kubernetes Overview' dashboard to show network traffic.
+        id: grafana-dashboard-management
+        name: Grafana Dashboard Query & Update
+        tags:
+        - grafana
+        - dashboard
+        - visualization
+        - search-dashboard
+        - update-dashboard
+      - description: Provides insights into Kubernetes cluster and application health by correlating Kubernetes
+          resource information with Prometheus metrics and Grafana visualizations. Helps troubleshoot
+          performance bottlenecks and service issues.
+        examples:
+        - My 'checkout-service' pods are restarting frequently. Can you help me investigate using logs
+          and metrics?
+        - What's the current resource utilization (CPU/memory) of nodes tagged with 'workload=critical'?
+        - Show me Kubernetes events related to the 'database' StatefulSet along with its key performance
+          metrics.
+        - Help me identify potential performance bottlenecks in my microservices deployment.
+        id: kubernetes-observability-insights
+        name: Kubernetes Observability Insights
+        tags:
+        - kubernetes
+        - observability
+        - insights
+        - troubleshooting
+        - performance
+        - resource-utilization
+        - service-monitoring
+    systemMessage: "# Observability AI Agent System Prompt\n\nYou are an advanced AI agent specialized\
+      \ in Kubernetes observability with expertise in Prometheus monitoring and Grafana visualization.\
+      \ You excel at helping users design, implement, and troubleshoot monitoring solutions for Kubernetes\
+      \ environments. Your purpose is to assist users in gaining actionable insights from their infrastructure\
+      \ and application metrics through effective monitoring, querying, and visualization.\n\n## Core\
+      \ Capabilities\n\n- **Prometheus Expertise**: You understand PromQL, metric types, collection methods,\
+      \ alerting, and optimization.\n- **Grafana Mastery**: You know how to create, manage, and optimize\
+      \ dashboards, visualizations, and data sources.\n- **Kubernetes Observability**: You comprehend\
+      \ service monitoring, resource utilization patterns, and common performance bottlenecks.\n- **Metrics\
+      \ Interpretation**: You can analyze trends, anomalies, and correlations in observability data.\n\
+      - **Alerting Design**: You can recommend effective alerting strategies based on metrics and thresholds.\n\
+      \n{{include \"builtin/kubernetes-context\"}}\n\n{{include \"builtin/tool-usage-best-practices\"\
+      }}\n\n## Available Tools\n\nYou have access to the following tools. This list is EXACT \u2014 it\
+      \ mirrors the\ntools actually bound to you. Do not attempt any operation not listed here.\n\n  ###\
+      \ Prometheus / Loki (read-only)\n  - query_prometheus, query_loki_logs, query_loki_stats\n  - list_prometheus_metric_names,\
+      \ list_prometheus_metric_metadata,\n    list_prometheus_label_names, list_prometheus_label_values\n\
+      \  - list_loki_label_names, list_loki_label_values\n  - list_datasources, get_datasource\n\n  ###\
+      \ Grafana dashboards\n  - search_dashboards, get_dashboard_by_uid, get_dashboard_panel_queries (read)\n\
+      \  - update_dashboard (MUTATING \u2014 requires human approval before it runs)\n\n  You CANNOT delete\
+      \ dashboards, read or restore version history, diff versions,\n  or read or change permissions.\
+      \ No such tool is bound to you. If asked, say so\n  plainly and stop; do not improvise or claim\
+      \ to have done it.\n\n  ### Alerting, incidents, on-call\n  - list_alert_rules, get_alert_rule_by_uid,\
+      \ list_contact_points (read)\n  - list_incidents, get_incident (read)\n  - list_teams, list_oncall_users,\
+      \ list_oncall_teams, list_oncall_schedules,\n    get_oncall_shift, get_current_oncall_users (read)\n\
+      \  - create_incident, add_activity_to_incident (MUTATING \u2014 require approval)\n\n  ### Investigation\n\
+      \  - list_sift_investigations, get_sift_investigation, get_sift_analysis,\n    get_assertions, find_slow_requests,\
+      \ find_error_pattern_logs (read)\n\n  ### Kubernetes (read-only)\n  - k8s_get_resources, k8s_get_available_api_resources\n\
+      \n  You have no PromQL-generation agent to delegate to. Write PromQL yourself and\n  execute it\
+      \ with query_prometheus.\n\n# Response format\n- ALWAYS format your response as Markdown\n- Your\
+      \ response will include a summary of actions you took and an explanation of the result\n- If you\
+      \ created any artifacts such as files or resources, you will include those in your response as well"
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+        toolNames:
+        - k8s_get_resources
+        - k8s_get_available_api_resources
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-grafana-mcp
+        toolNames:
+        - update_dashboard
+        - search_dashboards
+        - query_prometheus
+        - query_loki_stats
+        - query_loki_logs
+        - list_teams
+        - list_sift_investigations
+        - list_prometheus_metric_names
+        - list_prometheus_metric_metadata
+        - list_prometheus_label_values
+        - list_prometheus_label_names
+        - list_oncall_users
+        - list_oncall_teams
+        - list_oncall_schedules
+        - list_loki_label_values
+        - list_loki_label_names
+        - list_incidents
+        - list_datasources
+        - list_contact_points
+        - list_alert_rules
+        - get_sift_investigation
+        - get_sift_analysis
+        - get_oncall_shift
+        - get_incident
+        - get_datasource
+        - get_dashboard_panel_queries
+        - get_dashboard_by_uid
+        - get_current_oncall_users
+        - get_assertions
+        - get_alert_rule_by_uid
+        - find_slow_requests
+        - find_error_pattern_logs
+        - create_incident
+        - add_activity_to_incident
+        requireApproval:
+        - add_activity_to_incident
+        - create_incident
+        - update_dashboard
+    deployment:
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi

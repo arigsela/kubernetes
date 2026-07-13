@@ -1,0 +1,35 @@
+---
+# Stubs the ONE thing the kyverno CLI cannot resolve offline: the `apiCall` in
+# rules 6-7, which reads the delegate Agent's capability class from the cluster.
+#
+# Everything else in the policy — including the whole taxonomy — is evaluated for
+# real against the shipped policy file. Only this lookup is supplied here, so the
+# delegation deny-logic is genuinely exercised.
+#
+# `delegateClass` is the class the policy would have READ from the delegate. Set
+# it to what the real delegate actually declares:
+#
+#   homelab-knowledge  -> k8s-reader   (read)   must PASS
+#   bad-read-delegates-to-admin  -> k8s-agent  (admin)  must be DENIED
+#   bad-write-delegates-to-admin -> k8s-agent  (admin)  must be DENIED
+#
+# Agents absent from this list have no `type: Agent` delegation, so the foreach
+# body never runs and no apiCall is made.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Value
+metadata:
+  name: values
+policies:
+  - name: agent-capability
+    resources:
+      # real agents
+      - name: homelab-knowledge
+        values:
+          delegateClass: read
+      # fixtures
+      - name: bad-read-delegates-to-admin
+        values:
+          delegateClass: admin
+      - name: bad-write-delegates-to-admin
+        values:
+          delegateClass: admin

@@ -1,0 +1,119 @@
+---
+# k8s-reader — the read-only half of the Kubernetes capability.
+#
+# Why this agent exists: homelab-knowledge is a read-only documentation agent,
+# but it delegated to k8s-agent so it could answer live-cluster questions ("why
+# is this pod crashlooping"). Delegation is capability-transitive, so that made
+# its EFFECTIVE capability admin — it could reach k8s_delete_resource,
+# k8s_apply_manifest and k8s_execute_command just by asking another agent.
+#
+# Splitting the capability keeps the useful half and drops the dangerous half:
+# homelab-knowledge now delegates here, and this agent binds ONLY tools the
+# capability taxonomy classifies `read`. There is no mutating tool to reach.
+#
+# k8s-agent remains the `admin` operator agent for humans who need to act.
+#
+# Contract: templates/agent-identity/README.md (identity) and the capability
+# taxonomy at base-apps/kyverno-policies/agent-capability-taxonomy.yaml.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: k8s-reader
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/managed-by: kagent
+    app.kubernetes.io/name: k8s-reader
+    app: kagent
+    arigsela.com/idp-managed: "true"
+    # Binds only read-classified k8s tools. No requireApproval needed because
+    # there is nothing mutating to gate.
+    capability.homelab/class: read
+  annotations:
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: kagent-agent
+    backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/k8s-reader.yaml
+    backstage.io/owner: group:default/platform-engineering
+    agents.platform.ai/version: "v1"
+    agents.platform.ai/runtime: kagent
+    agents.platform.ai/description: |-
+      Read-only Kubernetes cluster investigator. Observes state; cannot change it.
+    agents.platform.ai/a2a-endpoint: http://k8s-reader.kagent.svc.cluster.local:8080
+    agents.platform.ai/skills: |-
+      [{"id":"cluster-inspection","name":"Cluster Inspection","description":"Reads Kubernetes resource state, events, logs and cluster configuration to answer questions and diagnose problems."}]
+    agents.platform.ai/delegates: |-
+      []
+    agents.platform.ai/capabilities: '{"streaming":true,"a2a":true}'
+spec:
+  type: Declarative
+  description: A read-only Kubernetes investigator. Inspects cluster state, events and
+    logs to diagnose problems. Cannot create, modify, or delete anything.
+  declarative:
+    modelConfig: default-model-config
+    a2aConfig:
+      skills:
+      - id: cluster-inspection
+        name: Cluster Inspection
+        description: Reads Kubernetes resource state, events, logs and cluster
+          configuration to answer questions and diagnose problems.
+        examples:
+        - Why is the pod X in namespace Y crashlooping?
+        - Show me recent events for the deployment Z.
+        - What are the resource requests and limits on this StatefulSet?
+        - Which pods are not Running right now?
+        tags:
+        - kubernetes
+        - diagnostics
+        - read-only
+    systemMessage: |-
+      You are a read-only Kubernetes investigator.
+
+      ## What you can do
+
+      You inspect cluster state: resources, events, pod logs, cluster
+      configuration, and service connectivity. You diagnose problems and explain
+      what you find, clearly and with evidence.
+
+      ## What you cannot do
+
+      You hold NO mutating tools. You cannot create, patch, apply, label,
+      annotate, delete, or exec. This is enforced by the capability contract,
+      not by your own restraint — the tools are simply not bound to you.
+
+      When a question requires a change to the cluster, do not attempt it and do
+      not pretend you have. Say plainly what change you believe is needed and
+      why, and tell the user that acting on it requires the `k8s-agent` operator
+      agent, which gates every mutating call behind human approval.
+
+      ## How to work
+
+      Gather evidence before concluding. Prefer describing a resource and reading
+      its events and logs over guessing from names. Quote what you actually saw —
+      the status, the event message, the log line — rather than paraphrasing it.
+      If the evidence does not support a conclusion, say so.
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+        # Every tool here is classified `read` in the capability taxonomy.
+        # Adding a mutating tool to this list fails CI and is denied at
+        # admission — a `read` agent may not bind `write` or `destructive`.
+        toolNames:
+        - k8s_get_resources
+        - k8s_get_resource_yaml
+        - k8s_get_pod_logs
+        - k8s_describe_resource
+        - k8s_get_events
+        - k8s_get_cluster_configuration
+        - k8s_get_available_api_resources
+        - k8s_check_service_connectivity
+    deployment:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
