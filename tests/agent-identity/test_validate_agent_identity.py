@@ -124,6 +124,29 @@ def test_any_credential_is_held_to_the_bar_not_just_a_pilot(tmp_path):
     assert vai.main(["--repo-root", str(root)]) == 1
 
 
+def test_monolithic_key_is_caught_in_ANY_namespace(tmp_path):
+    """The regression that shipped: postgresql/kagent-db-credentials is a KAGENT
+    credential living in the postgresql namespace. It kept reading the monolithic
+    `kagent` key, broke silently when that key was destroyed, and was invisible
+    because the validator only globbed base-apps/kagent/."""
+    root = _good_repo(tmp_path)
+    _write(root / "base-apps" / "postgresql" / "external-secrets-kagent.yaml",
+           _external_secret("kagent-db-credentials", "vault-backend", "kagent"))
+    assert vai.main(["--repo-root", str(root)]) == 1
+
+
+def test_vault_backend_OUTSIDE_kagent_is_not_flagged(tmp_path):
+    """`vault-backend` is a legitimate PER-NAMESPACE SecretStore name used by ~30
+    healthy ExternalSecrets (atlantis, backstage, cert-manager, mysql, n8n, ...).
+    Only the kagent-namespace one was retired. Flagging it globally would be a
+    false positive across most of the repo — so the broad-store check stays scoped
+    while the monolithic-key check goes repo-wide."""
+    root = _good_repo(tmp_path)
+    _write(root / "base-apps" / "atlantis" / "external-secrets.yaml",
+           _external_secret("atlantis-env", "vault-backend", "atlantis/aws"))
+    assert vai.main(["--repo-root", str(root)]) == 0
+
+
 # ---------------------------------------- invariant 2: in-git model identity
 
 def test_out_of_band_modelconfig_is_error(tmp_path):
