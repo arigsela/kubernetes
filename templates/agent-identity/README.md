@@ -31,10 +31,18 @@ boundary (ModelConfig), and the capability boundary (`Agent.spec.declarative.too
    failure mode that silently stripped the agents' HITL `requireApproval` gates
    on every sync. The `toolNames` half still applies to them.
 
-The validator (`scripts/validate-agent-identity.py`) enforces these. Enforcement
-is staged: the pilot credential and pilot agent named in
-`scripts/agent-identity-scope.txt` are hard failures; every other unscoped
-consumer or unresolved reference is a warning (visible backlog).
+The validator (`scripts/validate-agent-identity.py`) enforces these. **Every agent
+and every credential is held to all three. There is no staging and no warn tier —
+a violation is a hard failure, whichever agent it is on.**
+
+It was staged once, for a good reason: increment 1 held only a pilot credential
+and pilot agent to the bar and downgraded the rest to warnings, so the gate could
+be green while the backlog stayed visible. That backlog is now empty — every
+credential is scoped and the broad store is retired — and keeping the staging past
+that point made it a loaded gun. Stripping *every* `toolName` from `k8s-agent` (an
+implicit bind-all on the agent holding `k8s_delete_resource` and
+`k8s_execute_command`) produced a **warning and exit 0**. CI stayed green on a real
+capability regression. `scripts/agent-identity-scope.txt` is deleted.
 
 ## Onboard a new agent identity-correctly
 
@@ -66,26 +74,44 @@ cluster is actually asked to run.
 The Kyverno policy denies: an `ExternalSecret` in `kagent` using the broad
 `vault-backend` store, one reading the monolithic `kagent` Vault key, and an
 `Agent` whose `McpServer` tool ref lists no `toolNames` (implicit bind-all).
-It carries one documented exclusion: `kagent-anthropic-secrets`, owned by the
-`kagent-config` Argo app outside this repo, which still reads the broad store.
-Remove that exclusion once that app is brought in and scoped.
+**It carries no exclusions.**
+
+## What this contract does NOT cover
+
+Identity says *who an agent is*. It says nothing about what an agent may **do** —
+that is the capability contract
+(`base-apps/kyverno-policies/agent-capability.yaml`,
+`scripts/validate-agent-capability.py`), which classifies every tool and forbids
+an agent from binding above its class or delegating above it. The two are
+complements; read both before onboarding an agent.
 
 ## Follow-ons (not yet enforced)
 
-- Onboarding the remaining declarative agents.
-- Dedicated per-agent Anthropic keys / budget caps; egress control.
+- **Dedicated per-agent Anthropic keys / budget caps.** Every agent shares the one
+  `kagent-anthropic` key today: no cost attribution, no spend cap, no way to tell
+  which agent is burning tokens.
+- **Egress control.** No `NetworkPolicy` or Istio `AuthorizationPolicy` anywhere
+  in `base-apps/kagent/`; agent pods have unrestricted egress.
 - Invariant 2 has no admission-time equivalent (Kyverno cannot read git). A
   cluster-existence check on the referenced `ModelConfig` would be the closest
   analogue if it proves worth the moving parts.
 
 ## Done
 
-- **Increment 1** — contract, validator, CI gate; pilot credential
-  (`agent-docs-github-mcp-token`) and pilot agent (`homelab-knowledge`).
-- **Increment 2** — every real credential in the `kagent` namespace is now
+- **Increment 1** — contract, validator, CI gate; proven end-to-end on a pilot
+  slice (`agent-docs-github-mcp-token` / `homelab-knowledge`).
+- **Increment 2** — every real credential in the `kagent` namespace is
   credential-scoped: `backstage-mcp-token`, `kagent-db-credentials` and
   `kagent-mcp-basic-auth` each resolve through their own ESO ServiceAccount,
-  `SecretStore`, Vault kubernetes-auth role and per-consumer Vault key. Nothing
-  in this namespace reads the monolithic `kagent` key any more. (The Plex/qBit
-  credential named in the original backlog is gone — that integration was
+  `SecretStore`, Vault kubernetes-auth role and per-consumer Vault key. (The
+  Plex/qBit credential in the original backlog is gone — that integration was
   removed, having never worked.)
+- **Increment 3** — the broad `vault-backend` store, the `kagent` Vault role and
+  policy, and the monolithic `k8s-secrets/kagent` key are all destroyed. Kyverno
+  enforces the contract at admission with no exclusions.
+- **Increment 4 (this one)** — the contract is closed. No pilot staging: every
+  agent and credential is held to all three invariants as a hard failure. Agents
+  are discovered by `kind` rather than by directory, so one placed outside
+  `agents/` can no longer slip through unvalidated. A dangling `type: Agent`
+  delegation is now an error too — `observability-agent` carried one to
+  `promql-agent`, an agent that does not exist, and nothing caught it.
