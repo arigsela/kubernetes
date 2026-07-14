@@ -173,16 +173,19 @@ def summarize_response(resp) -> dict:
 # ------------------------------------------------------------------ taxonomy
 
 
-def load_gated_tools(repo_root: Path) -> set[str]:
+def load_gated_tools(repo_root: Path, taxonomy_path: Path | None = None) -> set[str]:
     """Tools the capability contract says MUST be behind requireApproval.
 
     Single source of truth: the same taxonomy Kyverno enforces at admission. If a
     tool is write/destructive there, an invocation of it with no approval event is
     a finding here. The two cannot drift.
+
+    taxonomy_path lets the in-cluster CronJob point at the mounted ConfigMap
+    instead of a repo checkout. Same content either way.
     """
     import yaml  # local import: only needed for --ungated
 
-    path = repo_root / TAXONOMY
+    path = taxonomy_path or (repo_root / TAXONOMY)
     cm = next(
         d for d in yaml.safe_load_all(path.read_text())
         if d and d.get("kind") == "ConfigMap"
@@ -289,6 +292,44 @@ def report_cost(records) -> dict[str, int]:
     return dict(tokens)
 
 
+def summarize_findings(findings: list[dict]) -> dict:
+    """An ARGUMENT-FREE summary, safe to emit to a log sink.
+
+    This is the alerting payload (--summary), and the omission is the whole point.
+
+    The full --ungated output carries tool ARGUMENTS. Those are only BEST-EFFORT
+    redacted — a secret can hide in a `command` string in a shape no pattern
+    matches. That is acceptable for a human running the tool against the read-only
+    DB. It is NOT acceptable for a payload that lands in Loki and is read through
+    Grafana, because that widens who can see it and how long it persists (30d).
+
+    So the alert says WHAT and HOW MANY and WHO — never WITH WHAT. To see the
+    arguments you must run the tool yourself, against the database, behind the
+    SELECT-only credential. The blast radius of the alert is bounded by construction
+    rather than by trusting the redactor.
+    """
+    by_agent_tool: dict[tuple[str, str], int] = defaultdict(int)
+    for f in findings:
+        by_agent_tool[(f["agent"], f["tool"])] += 1
+
+    return {
+        "check": "agent-audit-ungated",
+        "severity": "warning" if findings else "ok",
+        "ungated_invocations": len(findings),
+        "findings": sorted(
+            (
+                {"agent": agent, "tool": tool, "count": n}
+                for (agent, tool), n in by_agent_tool.items()
+            ),
+            key=lambda d: (-d["count"], d["agent"], d["tool"]),
+        ),
+        "detail": (
+            "Arguments are deliberately omitted. Run "
+            "`agent-audit.py --ungated` against the database to see them."
+        ),
+    }
+
+
 # ---------------------------------------------------------------------- cli
 
 
@@ -328,15 +369,28 @@ def main(argv=None) -> int:
     ap.add_argument("--agent", help="substring match on agent_id")
     ap.add_argument("--ungated", action="store_true",
                     help="gated tools invoked with NO approval request in the session")
+    ap.add_argument("--summary", action="store_true",
+                    help="ARGUMENT-FREE JSON summary of --ungated, safe for a log "
+                         "sink. This is what the CronJob emits: counts and names, "
+                         "never arguments.")
     ap.add_argument("--cost", action="store_true", help="per-agent token rollup")
     ap.add_argument("--format", choices=["table", "json"], default="table")
     ap.add_argument("--repo-root", type=Path,
                     default=Path(__file__).resolve().parent.parent)
+    ap.add_argument("--taxonomy", type=Path,
+                    help="path to the capability taxonomy ConfigMap manifest "
+                         "(the in-cluster CronJob mounts it; defaults to the repo copy)")
     args = ap.parse_args(argv)
 
     with connect() as conn:
         rows = fetch_events(conn, since=parse_since(args.since), agent=args.agent)
     records = list(iter_calls(rows))
+
+    if args.summary:
+        gated = load_gated_tools(args.repo_root, args.taxonomy)
+        findings = report_ungated(records, gated)
+        print(json.dumps(summarize_findings(findings)))
+        return 1 if findings else 0
 
     if args.cost:
         tokens = report_cost(records)
@@ -350,7 +404,7 @@ def main(argv=None) -> int:
         return 0
 
     if args.ungated:
-        gated = load_gated_tools(args.repo_root)
+        gated = load_gated_tools(args.repo_root, args.taxonomy)
         findings = report_ungated(records, gated)
         if args.format == "json":
             print(json.dumps(findings, indent=2))

@@ -203,3 +203,62 @@ def test_cost_rolls_up_per_agent():
         {"kind": "usage", "tokens": 7, "agent": "b", "session": "s", "at": ""},
     ]
     assert aa.report_cost(records) == {"a": 150, "b": 7}
+
+
+# ------------------------- the ALERT payload (--summary) must carry NO arguments
+#
+# This is the O2 boundary. The alert lands in Loki (30d) and is read through
+# Grafana — a wider audience and a longer life than a human running the tool by
+# hand against the read-only DB. Argument redaction is only BEST-EFFORT, so the
+# alert must not depend on it: it carries counts and names, never arguments.
+
+def _finding(agent, tool, args, session="s1"):
+    return {"kind": "call", "agent": agent, "tool": tool, "args": args,
+            "session": session, "at": "2026-07-09T23:41:15"}
+
+
+def test_summary_carries_no_argument_values_at_all():
+    """The real finding: k8s_execute_command inside vault-0, reading /vault/data.
+
+    Assert on whole ARGUMENT VALUES, not on short fragments — 'cat' would match
+    inside 'ungated_invo(cat)ions' and give a false alarm. The property under test
+    is "no argument value survives", so test exactly that.
+    """
+    args = {
+        "pod_name": "vault-0",
+        "namespace": "vault",
+        "command": "/bin/sh -c 'cat /vault/data/core/master'",
+    }
+    blob = json.dumps(aa.summarize_findings([
+        _finding("k8s_agent", "k8s_execute_command", args)
+    ]))
+    for value in args.values():
+        assert value not in blob, f"argument value {value!r} leaked into the alert"
+    # and the distinctive path fragment specifically — this is the sensitive bit
+    assert "/vault/data" not in blob
+
+
+def test_summary_keeps_what_an_alert_actually_needs():
+    findings = [
+        _finding("k8s_agent", "k8s_execute_command", {"command": "x"}),
+        _finding("k8s_agent", "k8s_execute_command", {"command": "y"}),
+        _finding("k8s_agent", "k8s_delete_resource", {"resource_name": "z"}),
+    ]
+    out = aa.summarize_findings(findings)
+    assert out["ungated_invocations"] == 3
+    assert out["severity"] == "warning"
+    assert {"agent": "k8s_agent", "tool": "k8s_execute_command", "count": 2} in out["findings"]
+    assert {"agent": "k8s_agent", "tool": "k8s_delete_resource", "count": 1} in out["findings"]
+
+
+def test_summary_per_finding_fields_are_exactly_agent_tool_count():
+    """No `args` key may ever appear here — assert the shape, not just the values."""
+    out = aa.summarize_findings([_finding("a", "t", {"secret": "hunter2"})])
+    assert set(out["findings"][0]) == {"agent", "tool", "count"}
+
+
+def test_summary_is_clean_when_there_is_nothing_to_report():
+    out = aa.summarize_findings([])
+    assert out["ungated_invocations"] == 0
+    assert out["severity"] == "ok"
+    assert out["findings"] == []
