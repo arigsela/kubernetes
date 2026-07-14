@@ -95,9 +95,45 @@ def collect_agents(repo_root: Path) -> list[tuple[Path, dict]]:
     return agents
 
 
+def collect_external_secrets_repo_wide(repo_root: Path) -> list[tuple[Path, dict]]:
+    """Every ExternalSecret in base-apps/, NOT just base-apps/kagent/.
+
+    Why repo-wide: `postgresql/kagent-db-credentials` is a KAGENT credential that
+    LIVES in the postgresql namespace. It kept reading the monolithic `kagent` Vault
+    key, broke silently when that key was destroyed (SecretSyncedError), and was
+    invisible to this validator because it only ever globbed base-apps/kagent/.
+
+    The contract was enforcing least privilege by LOCATION when it should enforce it
+    by WHAT THE CREDENTIAL IS.
+    """
+    base = repo_root / "base-apps"
+    found: list[tuple[Path, dict]] = []
+    if not base.is_dir():
+        return found
+    for path in sorted(base.rglob("*.yaml")):
+        for doc in _load_docs(path):
+            if doc.get("kind") == "ExternalSecret":
+                found.append((path, doc))
+    return found
+
+
 def check_credential_scoping(repo_root: Path) -> list[str]:
+    """Invariant 1.
+
+    Two different scopes, deliberately:
+
+    * The monolithic `kagent` Vault key is checked REPO-WIDE. That key is destroyed;
+      nothing legitimate reads it from any namespace.
+    * The broad `vault-backend` SecretStore is only checked inside base-apps/kagent/.
+      `vault-backend` is a legitimate PER-NAMESPACE SecretStore name used by ~30
+      healthy ExternalSecrets across the cluster (atlantis, backstage, cert-manager,
+      mysql, n8n, ...). Only the one in the kagent namespace was retired. Flagging it
+      globally would be a false positive on most of the repo.
+    """
     errors: list[str] = []
-    for _path, doc in collect_by_kind(repo_root).get("ExternalSecret", []):
+    kagent_dir = repo_root / "base-apps" / "kagent"
+
+    for path, doc in collect_external_secrets_repo_wide(repo_root):
         name = (doc.get("metadata") or {}).get("name")
         spec = doc.get("spec") or {}
         store = (spec.get("secretStoreRef") or {}).get("name")
@@ -105,15 +141,26 @@ def check_credential_scoping(repo_root: Path) -> list[str]:
             (ref.get("remoteRef") or {}).get("key")
             for ref in (spec.get("data") or [])
         }
-        if store != BROAD_SECRETSTORE and MONOLITHIC_VAULT_KEY not in keys:
-            continue
-        errors.append(
-            f"{name}: credential is not scoped (store={store!r}, "
-            f"keys={sorted(k for k in keys if k)}) — every credential must use a "
-            f"dedicated SecretStore and a per-consumer Vault key. The broad "
-            f"{BROAD_SECRETSTORE!r} store and the monolithic {MONOLITHIC_VAULT_KEY!r} "
-            f"key are retired."
-        )
+
+        # repo-wide: the destroyed monolithic key
+        if MONOLITHIC_VAULT_KEY in keys:
+            errors.append(
+                f"{name} ({path}): reads the monolithic Vault key "
+                f"{MONOLITHIC_VAULT_KEY!r}, which is DESTROYED. It held every "
+                f"consumer's credential at once. Use a per-consumer key "
+                f"(k8s-secrets/<consumer>) with its own ESO ServiceAccount, "
+                f"SecretStore and Vault role. A kagent credential does not stop "
+                f"being kagent's because it is declared in another namespace."
+            )
+
+        # kagent namespace only: the retired broad store
+        in_kagent = kagent_dir in path.parents or path.parent == kagent_dir
+        if in_kagent and store == BROAD_SECRETSTORE:
+            errors.append(
+                f"{name} ({path}): uses the broad {BROAD_SECRETSTORE!r} SecretStore, "
+                f"which is retired in the kagent namespace. Every credential must "
+                f"resolve through a dedicated, path-scoped SecretStore."
+            )
     return errors
 
 

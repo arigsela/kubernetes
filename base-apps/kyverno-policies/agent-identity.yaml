@@ -47,19 +47,35 @@ spec:
             secretStoreRef:
               name: "!vault-backend"
 
+    # CLUSTER-WIDE, deliberately — unlike the broad-store rule above, which stays
+    # scoped to `kagent` because `vault-backend` is a legitimate per-namespace
+    # SecretStore used by ~30 healthy ExternalSecrets across the cluster.
+    #
+    # This rule is different: the `k8s-secrets/kagent` key is DESTROYED. Nothing
+    # legitimate can read it, in any namespace, ever again. Scoping the check to
+    # the kagent namespace left a real hole — `postgresql/kagent-db-credentials` is
+    # a KAGENT credential that LIVES in the postgresql namespace, kept reading the
+    # monolithic key, broke silently when the key was destroyed (SecretSyncedError,
+    # "could not get secret data from provider"), and went unnoticed because its
+    # already-materialized Secret was left behind and kept working, stale.
+    #
+    # The contract was enforcing least privilege by LOCATION when it should enforce
+    # it by WHAT THE CREDENTIAL IS. A credential does not stop being kagent's
+    # because it is declared in another namespace.
     - name: credential-must-not-read-monolithic-vault-key
       match:
         any:
           - resources:
               kinds:
                 - external-secrets.io/v1beta1/ExternalSecret
-              namespaces:
-                - kagent
       validate:
         message: >-
           ExternalSecret '{{ request.object.metadata.name }}' must not read the monolithic
-          Vault key 'kagent' — that key holds every consumer's credential, so any token
-          able to read it can read them all. Use a per-consumer key (k8s-secrets/<consumer>).
+          Vault key 'kagent' — that key held every consumer's credential, so any token
+          able to read it could read them all. It has been DESTROYED; nothing can read it.
+          Use a per-consumer key (k8s-secrets/<consumer>) with its own ESO ServiceAccount,
+          SecretStore and Vault role. This rule is cluster-wide: a kagent credential does
+          not stop being kagent's because it is declared in another namespace.
           See templates/agent-identity/README.md (invariant 1).
         foreach:
           - list: "request.object.spec.data"
