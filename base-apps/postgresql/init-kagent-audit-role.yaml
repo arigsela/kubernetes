@@ -1,0 +1,127 @@
+---
+# Creates the SELECT-only Postgres role the agent-audit tool logs in as.
+#
+# An audit tool with write access to the database it audits is not an audit tool.
+# This role can read kagent's event/session/task tables and nothing else — it
+# cannot INSERT, UPDATE, DELETE, or DDL, and the grants are revoked-then-granted
+# so re-running this Job cannot silently accumulate privilege.
+#
+# The password comes from Vault via kagent-audit-credentials (its own ESO
+# ServiceAccount, SecretStore, Vault role and per-consumer key — the agent-identity
+# contract). It is never in git.
+#
+# Idempotent: safe to re-run. Argo recreates this Job after its TTL expires.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-kagent-audit-role
+  namespace: postgresql
+  annotations:
+    # After init-kagent-db (which creates the kagent database this role reads).
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app: init-kagent-audit-role
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      restartPolicy: OnFailure
+      containers:
+        - name: init-kagent-audit-role
+          image: pgvector/pgvector:0.8.2-pg18
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              PG_HOST="postgresql.postgresql.svc.cluster.local"
+              PG_PORT="5432"
+
+              ESCAPED_PASSWORD=$(echo "$AUDIT_PASSWORD" | sed "s/'/''/g")
+
+              until pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$POSTGRES_USER"; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+
+              # Create (or re-password) the audit login role. NOSUPERUSER/NOCREATEDB/
+              # NOCREATEROLE/NOINHERIT are explicit rather than relying on defaults.
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" \
+                -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+                -v audit_user="$AUDIT_USER" \
+                -v audit_password="$ESCAPED_PASSWORD" <<'EOSQL'
+                SELECT format(
+                  'CREATE ROLE %I WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L',
+                  :'audit_user', :'audit_password')
+                WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'audit_user')\gexec
+
+                SELECT format('ALTER ROLE %I WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD %L',
+                  :'audit_user', :'audit_password')
+                WHERE EXISTS (SELECT FROM pg_roles WHERE rolname = :'audit_user')\gexec
+              EOSQL
+
+              # Grant READ-ONLY on the kagent database. Revoke first so a re-run
+              # cannot accumulate privilege, and so tightening this list actually
+              # tightens it.
+              PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" \
+                -U "$POSTGRES_USER" -d "$AUDIT_DB" \
+                -v audit_user="$AUDIT_USER" \
+                -v audit_db="$AUDIT_DB" <<'EOSQL'
+                -- start from nothing, then grant only SELECT
+                REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM :"audit_user";
+                REVOKE ALL PRIVILEGES ON SCHEMA public FROM :"audit_user";
+
+                GRANT CONNECT ON DATABASE :"audit_db" TO :"audit_user";
+                GRANT USAGE ON SCHEMA public TO :"audit_user";
+                GRANT SELECT ON ALL TABLES IN SCHEMA public TO :"audit_user";
+
+                -- kagent's controller owns and migrates these tables; new ones must
+                -- also be readable, but still only SELECT.
+                ALTER DEFAULT PRIVILEGES IN SCHEMA public
+                  GRANT SELECT ON TABLES TO :"audit_user";
+              EOSQL
+
+              echo "kagent audit role '$AUDIT_USER' created with SELECT-only access to '$AUDIT_DB'"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: n8n-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: n8n-password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: database-name
+            - name: AUDIT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-audit-credentials
+                  key: audit-user
+            - name: AUDIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-audit-credentials
+                  key: audit-password
+            - name: AUDIT_DB
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-audit-credentials
+                  key: audit-database
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
