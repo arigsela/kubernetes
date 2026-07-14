@@ -159,3 +159,20 @@ jobs:
           sudo install -m 0755 kyverno /usr/local/bin/kyverno
       - name: Verify agent-capability Kyverno policy
         run: ./tests/agent-capability/kyverno/run.sh
+
+  # The agent action record (Observability O1). The redaction tests are the point:
+  # event.data contains full tool RESPONSES, and k8s_get_resource_yaml against a
+  # Secret lands its payload there verbatim. A redactor nobody tested is a redactor
+  # that does not work.
+  agent-audit-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run agent-audit redaction tests
+        run: python -m pytest tests/agent-audit/ -q
