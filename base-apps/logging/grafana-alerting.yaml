@@ -1,0 +1,187 @@
+---
+# Grafana unified alerting (Observability O3) — the sink that was missing.
+#
+# WHY GRAFANA AND NOT ALERTMANAGER
+#
+# The obvious move was "deploy Alertmanager". It is the wrong tool here. Alertmanager
+# fires on PROMETHEUS METRICS, and both things we need to alert on are LOGS:
+#
+#   * the agent-audit CronJob emits a JSON finding line  (O2)
+#   * Falco emits JSON detections                        (O3, once it actually fires)
+#
+# Wiring those to Alertmanager would mean inventing a metrics pipeline — a
+# Pushgateway, or an exporter — purely to carry a signal that ALREADY LANDS IN LOKI
+# via Alloy. Grafana 11.3 has a full alerting engine, already runs here, and already
+# has the Loki datasource. It queries logs natively. So the alert engine is the thing
+# we already have, and the new component count is zero.
+#
+# DELIVERY
+#
+# Grafana POSTs to an n8n webhook, and n8n fans out to wherever you want — Slack,
+# email, phone push — changeable later without touching the cluster. There was no
+# Slack credential anywhere in Vault, and n8n is already running with a webhook
+# ingress, so this needs no new secret and no new component either.
+#
+#   ⚠ YOU MUST CREATE THE n8n WORKFLOW. Add a Webhook node listening on the path
+#     `grafana-alerts` (POST). Until it exists, Grafana's notifications will 404 —
+#     the alert rules still evaluate and are visible in Grafana's UI, but nothing
+#     will reach you.
+#
+# WHAT IS DELIBERATELY NOT SENT
+#
+# The agent-audit alert carries the CronJob's --summary payload: counts, agent names,
+# tool names. It carries NO tool arguments, because argument redaction is only
+# best-effort and this payload leaves the cluster. To see what a flagged agent
+# actually ran, you go and look — behind the SELECT-only credential. See
+# scripts/agent-audit.py and docs/superpowers/specs/2026-07-14-agent-action-record-design.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alerting
+  namespace: logging
+  labels:
+    app: grafana
+data:
+  contactpoints.yaml: |
+    apiVersion: 1
+    contactPoints:
+      - orgId: 1
+        name: n8n
+        receivers:
+          - uid: n8n-webhook
+            type: webhook
+            settings:
+              # In-cluster: no ingress, no TLS, no auth to manage. n8n decides where
+              # this actually goes.
+              url: http://n8n.n8n.svc.cluster.local:5678/webhook/grafana-alerts
+              httpMethod: POST
+            disableResolveMessage: false
+
+  policies.yaml: |
+    apiVersion: 1
+    policies:
+      - orgId: 1
+        receiver: n8n
+        group_by:
+          - alertname
+        group_wait: 30s
+        group_interval: 5m
+        # Do not nag every 4h (Grafana's default) for a finding that is a historical
+        # fact — a stripped gate stays stripped until someone fixes it.
+        repeat_interval: 24h
+
+  rules.yaml: |
+    apiVersion: 1
+    groups:
+      - orgId: 1
+        name: agent-guardrails
+        folder: Agent Guardrails
+        interval: 5m
+        rules:
+          # ------------------------------------------------------------------
+          # The alert this whole pillar exists for.
+          #
+          # A write/destructive tool invoked with NO approval request in its session.
+          # That is not hypothetical: k8s-agent executed arbitrary shell commands
+          # inside the VAULT POD, reading /vault/data, 14 times on 2026-07-09, with
+          # no human approval — because Argo was silently stripping requireApproval
+          # on every sync. Nobody saw it for months because nothing looked.
+          - uid: agent-ungated-tool
+            title: Agent invoked a gated tool with NO approval
+            condition: threshold
+            for: 0m
+            annotations:
+              summary: >-
+                An agent invoked a write/destructive tool with no approval request.
+                This is what a silently-stripped requireApproval gate looks like.
+              runbook: >-
+                Run `scripts/agent-audit.py --ungated` against the kagent database
+                (SELECT-only role) to see WHICH agent, WHICH tool, and WITH WHAT
+                arguments. Arguments are deliberately absent from this alert.
+            labels:
+              severity: critical
+              pillar: security
+            noDataState: OK
+            execErrState: Error
+            data:
+              - refId: query
+                relativeTimeRange:
+                  from: 86400
+                  to: 0
+                datasourceUid: loki
+                model:
+                  refId: query
+                  datasource:
+                    type: loki
+                    uid: loki
+                  queryType: instant
+                  expr: >-
+                    sum(count_over_time({namespace="postgresql", app="agent-audit"}
+                    |= "agent-audit-ungated" |= "\"severity\":\"warning\"" [24h]))
+              - refId: threshold
+                relativeTimeRange:
+                  from: 86400
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: query
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 0
+
+          # ------------------------------------------------------------------
+          # Falco. Note this alerts on SPECIFIC rule names, not on "any Falco line".
+          # With priority now at `notice`, "Terminal shell in container" fires on
+          # every kubectl exec and would be pure noise as a blanket alert.
+          - uid: falco-sensitive-detection
+            title: Falco detected a sensitive-file read or unexpected API access
+            condition: threshold
+            for: 0m
+            annotations:
+              summary: >-
+                Falco fired a high-signal rule. Until 2026-07-14 Falco emitted NOTHING
+                at all — its output threshold (priority: warning) silently discarded
+                the NOTICE-level rules it was configured with. If this alert never
+                fires again, suspect the threshold before assuming the cluster is calm.
+              runbook: >-
+                kubectl logs -n falco -l app.kubernetes.io/name=falco --all-containers
+                | grep '"priority"'
+            labels:
+              severity: warning
+              pillar: security
+            noDataState: OK
+            execErrState: Error
+            data:
+              - refId: query
+                relativeTimeRange:
+                  from: 3600
+                  to: 0
+                datasourceUid: loki
+                model:
+                  refId: query
+                  datasource:
+                    type: loki
+                    uid: loki
+                  queryType: instant
+                  expr: >-
+                    sum(count_over_time({namespace="falco"} |= "\"priority\""
+                    |~ "Read sensitive file untrusted|Contact K8S API Server From Container"
+                    [1h]))
+              - refId: threshold
+                relativeTimeRange:
+                  from: 3600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: query
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 0

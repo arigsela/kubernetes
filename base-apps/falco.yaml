@@ -23,7 +23,31 @@ spec:
           - effect: NoSchedule
             key: node-role.kubernetes.io/master
         falco:
-          priority: warning
+          # WAS `warning`, which silently threw away 2 of the 3 rules enabled
+          # below. Falco's `priority` is an OUTPUT THRESHOLD — anything below it is
+          # discarded before it reaches stdout — and the rules do not all sit at
+          # the same level:
+          #
+          #   Terminal shell in container             NOTICE   <- discarded
+          #   Contact K8S API Server From Container   NOTICE   <- discarded
+          #   Read sensitive file untrusted           WARNING
+          #
+          # So Falco ran on three nodes for months and produced ZERO detections
+          # while reporting perfectly healthy. Confirmed empirically: ~12
+          # `kubectl exec` calls into vault-0 and the Postgres pods in one
+          # afternoon produced zero "Terminal shell in container" events, and there
+          # were zero detections of any kind in 7 days.
+          #
+          # Same failure mode as the requireApproval gate Argo was stripping, and
+          # the Kyverno delegation rule that failed open on missing RBAC: a control
+          # that reports healthy while doing nothing. Falco did not need a sink —
+          # it needed to actually fire.
+          #
+          # `notice` is deliberate, not maximal: `informational`/`debug` would bury
+          # the signal. "Terminal shell in container" WILL be chatty (every kubectl
+          # exec, some liveness probes) — which is why the Grafana alert rule filters
+          # on specific rule names rather than alerting on any Falco line at all.
+          priority: notice
           json_output: true
           json_include_output_property: true
           log_level: info

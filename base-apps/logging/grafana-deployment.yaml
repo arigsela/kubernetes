@@ -23,6 +23,11 @@ data:
       # Loki for logs
       - name: Loki
         type: loki
+        # Explicit uid: Grafana alert rules reference a datasource BY UID, and an
+        # auto-generated uid is not stable across a re-provision. Safe to pin — no
+        # provisioned dashboard references a datasource uid (the only uid in the
+        # dashboard JSON is the dashboard's own, `istio-ambient-mesh`).
+        uid: loki
         access: proxy
         url: http://loki.logging.svc.cluster.local:3100
         jsonData:
@@ -97,6 +102,12 @@ spec:
           mountPath: /var/lib/grafana/dashboards/k8s
         - name: dashboards-istio
           mountPath: /var/lib/grafana/dashboards/istio
+        # Grafana unified alerting: contact point, notification policy, alert rules.
+        # Grafana reads this at startup like any other provisioning dir. A malformed
+        # file here makes Grafana FAIL TO START — validate before merging. See
+        # base-apps/logging/grafana-alerting.yaml.
+        - name: alerting
+          mountPath: /etc/grafana/provisioning/alerting
         resources:
           requests:
             cpu: 100m
@@ -136,6 +147,9 @@ spec:
       - name: dashboards-istio
         configMap:
           name: grafana-dashboard-istio-ambient
+      - name: alerting
+        configMap:
+          name: grafana-alerting
 ---
 apiVersion: v1
 kind: Service
