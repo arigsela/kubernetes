@@ -66,6 +66,17 @@ The broad `vault-backend` `SecretStore` is **gone**. It authenticated as the nam
 kagent uses the **shared PostgreSQL** instance (`base-apps/postgresql/`) rather than the chart's bundled DB (`database.postgres.bundled.enabled: false` in `kagent.yaml`): `external-secrets.yaml` here syncs `kagent-db-credentials` (`db-url`, `db-user`, `db-password`, `db-name`) from Vault key `kagent-db`, matching the `kagent` role/database that `postgresql`'s `init-kagent-db` Job provisions with the `vector` extension enabled (see `base-apps/postgresql/docs.md`). The controller mounts that Secret's `db-url` at `/etc/kagent/secrets/db-url` (`kagent.yaml`'s `controller.volumes`/`volumeMounts`).
 
 ## Exposure
-The UI is at `kagent.arigsela.com` (`nginx-ingress.yaml`, IP-whitelisted). Agents are also invocable over **A2A**: each agent's Backstage annotations (e.g. `agents.platform.ai/a2a-endpoint` in `agents/dungeon-crawler-carl-agent.yaml`) point at `http://<agent>.kagent.svc.cluster.local:8080`. External MCP clients (e.g. Claude Code CLI) reach the controller's `/mcp` endpoint (`invoke_agent`/`list_agents`) at **`kagent-mcp.arigsela.com/mcp`** (`mcp-ingress.yaml`, fronting `kagent-controller:8083`), gated by the same IP whitelist plus HTTP basic auth (`kagent-mcp-basic-auth`, since `/mcp` has no auth of its own).
+The UI is at `kagent.arigsela.com` (`nginx-ingress.yaml`, IP-whitelisted). Agents are also invocable over **A2A** at `http://<agent>.kagent.svc.cluster.local:8080` (the kagent default A2A service port). External MCP clients (e.g. Claude Code CLI) reach the controller's `/mcp` endpoint (`invoke_agent`/`list_agents`) at **`kagent-mcp.arigsela.com/mcp`** (`mcp-ingress.yaml`, fronting `kagent-controller:8083`), gated by the same IP whitelist plus HTTP basic auth (`kagent-mcp-basic-auth`, since `/mcp` has no auth of its own).
+
+> The `agents.platform.ai/*` annotation contract was **removed** (2026-07-14). It
+> duplicated data already in the `Agent` spec — `skills` mirrored
+> `a2aConfig.skills`, `delegates` mirrored `tools[type: Agent]`, `a2a-endpoint` was
+> derivable from the name — and it was carried by only 3 of 8 agents, consumed by
+> nothing, enforced by nothing, with a spec doc that never existed. Its `delegates`
+> field never once held a non-empty value, while the two agents that actually
+> delegate did not carry the contract at all. If agent-to-agent discovery is wanted,
+> derive it from the `Agent` CR (which Backstage already ingests) rather than
+> hand-maintaining a parallel copy that drifts. See
+> `docs/superpowers/specs/2026-07-14-adp-remaining-pillars-roadmap.md` (P1).
 
 The MCP endpoint deliberately lives on its **own host**, not on `kagent.arigsela.com`. It used to be served at `kagent.arigsela.com/mcp`, where it shadowed the kagent UI's own "MCP & tools" page (also `/mcp`): the ingress won the path match, so clicking that menu item returned a basic-auth prompt instead of the page, and — because the match was `pathType: Prefix` — every `/mcp/*` UI route was unreachable too. Keep new UI-facing paths on `kagent.arigsela.com` and API/endpoint paths on `kagent-mcp.arigsela.com`. Note DNS for this cluster is created by hand in Route 53 (no external-dns, no wildcard), so a new host needs its A record added before cert-manager can complete the HTTP-01 challenge.

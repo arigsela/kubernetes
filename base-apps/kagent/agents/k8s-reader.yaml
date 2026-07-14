@@ -34,16 +34,6 @@ metadata:
     terasky.backstage.io/component-type: kagent-agent
     backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/k8s-reader.yaml
     backstage.io/owner: group:default/platform-engineering
-    agents.platform.ai/version: "v1"
-    agents.platform.ai/runtime: kagent
-    agents.platform.ai/description: |-
-      Read-only Kubernetes cluster investigator. Observes state; cannot change it.
-    agents.platform.ai/a2a-endpoint: http://k8s-reader.kagent.svc.cluster.local:8080
-    agents.platform.ai/skills: |-
-      [{"id":"cluster-inspection","name":"Cluster Inspection","description":"Reads Kubernetes resource state, events, logs and cluster configuration to answer questions and diagnose problems."}]
-    agents.platform.ai/delegates: |-
-      []
-    agents.platform.ai/capabilities: '{"streaming":true,"a2a":true}'
 spec:
   type: Declarative
   description: A read-only Kubernetes investigator. Inspects cluster state, events and
