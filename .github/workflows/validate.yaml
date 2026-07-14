@@ -176,3 +176,8 @@ jobs:
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run agent-audit redaction tests
         run: python -m pytest tests/agent-audit/ -q
+      # The CronJob ships agent-audit.py inside a ConfigMap. If that copy drifts
+      # from scripts/agent-audit.py, the code we AUDIT WITH stops being the code we
+      # TESTED — and the redaction logic is exactly what you cannot have two of.
+      - name: Check the agent-audit CronJob is in sync with the script
+        run: python scripts/gen-agent-audit-cronjob.py --check --repo-root .

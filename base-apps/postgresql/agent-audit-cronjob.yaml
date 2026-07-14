@@ -1,0 +1,154 @@
+---
+# Agent action record — scheduled check (Observability O2).
+#
+# !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
+# Sources:    scripts/agent-audit.py
+#             base-apps/kyverno-policies/agent-capability-taxonomy.yaml
+# Regenerate: ./scripts/gen-agent-audit-cronjob.py
+# CI fails if this file drifts from either source.
+#
+# WHAT IT WATCHES FOR
+#
+# A write/destructive tool invoked with NO approval request in its session. That is
+# not a hypothetical: k8s-agent executed arbitrary shell commands inside the VAULT
+# POD, reading /vault/data (Vault's storage backend), 14 times on 2026-07-09, with
+# no human approval — because Argo was silently stripping requireApproval on every
+# sync. The gate was in the manifest and it was doing nothing. The evidence sat in
+# kagent's database for months; nobody could see it because nothing looked.
+#
+# This is what looks.
+#
+# WHAT IT EMITS, AND WHAT IT DELIBERATELY DOES NOT
+#
+# It runs `agent-audit.py --summary`: an ARGUMENT-FREE JSON line — counts, agent
+# names, tool names. Never arguments.
+#
+# That omission is the design, not an oversight. The full --ungated output carries
+# tool ARGUMENTS, and those are only BEST-EFFORT redacted; a secret can hide in a
+# `command` string in a shape no pattern matches. That risk is acceptable for a
+# human running the tool by hand against the read-only database. It is NOT
+# acceptable for a payload that lands in Loki (30d retention) and is read through
+# Grafana, because that widens both who can see it and how long it lives.
+#
+# So the alert tells you WHAT, HOW MANY and WHO — and makes you go and look, behind
+# the SELECT-only credential, to learn WITH WHAT.
+#
+# THE SINK, HONESTLY
+#
+# This cluster has NO Alertmanager and NO Pushgateway. Prometheus is running with
+# `rule_files: []` and an alertmanagers stanza pointing at nothing. There is no
+# alerting pipeline to plug into, so this does not pretend to page anyone:
+#
+#   1. the JSON line goes to stdout -> Grafana Alloy -> Loki (30d), queryable and
+#      alertable from Grafana, which does have a Loki datasource;
+#   2. the Job EXITS NON-ZERO on findings, so a failed Job in this CronJob's history
+#      is itself the signal (`kubectl get jobs -n postgresql`);
+#   3. `kubectl logs -n postgresql -l app=agent-audit` shows the finding directly.
+#
+# Wiring a real Alertmanager is a separate gap and is named as such. Falco has the
+# same hole (falcosidekick disabled, detections go to stdout and nothing reads them).
+# Fixing both together is the right move; it is not this increment.
+#
+# It reads the database as kagent_audit_ro — the SELECT-only role. It cannot mutate
+# the evidence it audits. Proven: DELETE/UPDATE/INSERT/DDL are all denied by Postgres.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-audit-code
+  namespace: postgresql
+  labels:
+    app: agent-audit
+data:
+  agent-audit.py: "#!/usr/bin/env python3\n\"\"\"Agent action record \u2014 who called what, with what arguments, was it approved.\n\nkagent already persists all of this; nothing reads it. This is the read side.\n\n    ./scripts/agent-audit.py --ungated          # the query that matters\n    ./scripts/agent-audit.py --cost\n    ./scripts/agent-audit.py --agent k8s_agent --since 7d\n\nWHY IT EXISTS\n-------------\nThe O0 spike ran one query against kagent's Postgres and found this:\n\n    k8s_agent \u2014 gated tools actually invoked:\n      k8s_execute_command    14 calls   on 2026-07-09\n      k8s_delete_resource     1 call    on 2026-04-19\n\n    approval requests raised by k8s_agent in ALL its history:  0\n\nFourteen arbitrary shell commands executed through a human-approval gate that was\nsilently doing nothing, because Argo was stripping `requireApproval` on every sync.\nThe evidence sat in that database for months. Nobody could see it because nothing\nqueried it. `--ungated` is that query, generalised.\n\nREDACTION \u2014 read this before changing anything\n----------------------------------------------\n`event.data` contains full tool RESPONSES. `k8s_get_resource_yaml` against a Secret\nreturns its base64 payload verbatim; `k8s_get_pod_logs` returns whatever the app\nlogged. The raw event stream must be treated as CONTAINING LIVE CREDENTIALS.\n\nThe rule is: **redact at extraction, never at display.** This script never emits a\nresponse body \u2014 not truncated, not \"just for debugging\". It emits the fact that a\nresponse occurred, its length, and a hash. Downstream consumers (a dashboard, an\nalert, an agent) read this output, never the table.\n\nArguments are the genuinely hard case and are kept DELIBERATELY: the single most\nsecurity-relevant fact in the whole record is what `k8s_execute_command` actually\nran, and dropping it would gut the audit. So argument values are pattern-redacted\nand truncated instead.\n\n    Argument redaction is BEST-EFFORT, not a guarantee.\n\nTreat this output as internal. It is *safer*, not *safe*. Do not pipe it to Slack,\na public dashboard, or an agent-readable tool without reviewing the redaction\nagainst what those arguments actually contain.\n\nRead-only by construction: it logs in as the SELECT-only `kagent_audit_ro` role\n(base-apps/postgresql/init-kagent-audit-role.yaml). An audit tool with write access\nto the database it audits is not an audit tool.\n\"\"\"\nfrom __future__ import annotations\n\nimport argparse\nimport base64\nimport binascii\nimport hashlib\nimport json\nimport math\nimport os\nimport re\nimport sys\nfrom collections import defaultdict\nfrom datetime import datetime, timedelta, timezone\nfrom pathlib import Path\n\nTAXONOMY = \"base-apps/kyverno-policies/agent-capability-taxonomy.yaml\"\n\n# The tool kagent uses to request a human confirmation for a gated call.\nCONFIRM_TOOL = \"adk_request_confirmation\"\n\n# ----------------------------------------------------------------- redaction\n\nREDACTED = \"<REDACTED>\"\n\n# Argument KEYS whose value is secret by name alone.\nSECRET_KEY_RE = re.compile(\n    r\"(pass|passwd|password|secret|token|key|credential|auth|bearer|session|cookie\"\n    r\"|private|signature|salt|nonce)\",\n    re.IGNORECASE,\n)\n\n# Value SHAPES that are secret regardless of the key they sit under.\nPEM_RE = re.compile(r\"-----BEGIN [A-Z ]*PRIVATE KEY-----\")\nJWT_RE = re.compile(r\"\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]+\")\nKNOWN_PREFIX_RE = re.compile(\n    r\"\\b(\"\n    r\"hvs\\.[A-Za-z0-9._-]{12,}\"          # Vault\n    r\"|gh[pousr]_[A-Za-z0-9]{20,}\"       # GitHub\n    r\"|sk-[A-Za-z0-9-]{20,}\"             # OpenAI / Anthropic style\n    r\"|AKIA[0-9A-Z]{16}\"                 # AWS access key id\n    r\"|xox[baprs]-[A-Za-z0-9-]{10,}\"     # Slack\n    r\")\"\n)\n# Long unbroken base64-ish blobs \u2014 the shape of an encoded secret.\nB64_BLOB_RE = re.compile(r\"\\b[A-Za-z0-9+/]{40,}={0,2}\\b\")\n\nMAX_VALUE_LEN = 300\n\n\ndef _shannon_entropy(s: str) -> float:\n    if not s:\n        return 0.0\n    counts = defaultdict(int)\n    for ch in s:\n        counts[ch] += 1\n    n = len(s)\n    return -sum((c / n) * math.log2(c / n) for c in counts.values())\n\n\ndef _looks_like_secret_value(value: str) -> bool:\n    \"\"\"Shape-based detection, independent of the key name.\"\"\"\n    if PEM_RE.search(value) or JWT_RE.search(value) or KNOWN_PREFIX_RE.search(value):\n        return True\n    for blob in B64_BLOB_RE.findall(value):\n        # A long, high-entropy, unbroken token is a secret until proven otherwise.\n        if _shannon_entropy(blob) > 4.0:\n            return True\n        # Base64 that decodes to something binary-ish is also suspect.\n        try:\n            base64.b64decode(blob + \"=\" * (-len(blob) % 4), validate=True)\n        except (binascii.Error, ValueError):\n            continue\n        if _shannon_entropy(blob) > 3.5:\n            return True\n    return False\n\n\ndef redact_value(key: str, value):\n    \"\"\"Redact one argument value. FAIL-CLOSED: unclassifiable \u2192 redacted.\"\"\"\n    if value is None or isinstance(value, bool):\n        return value\n    if isinstance(value, (int, float)):\n        return value\n    if isinstance(value, list):\n        return [redact_value(key, v) for v in value]\n    if isinstance(value, dict):\n        return {k: redact_value(k, v) for k, v in value.items()}\n    if not isinstance(value, str):\n        # Unknown type \u2014 do not guess.\n        return REDACTED\n\n    if SECRET_KEY_RE.search(key or \"\"):\n        return REDACTED\n    if _looks_like_secret_value(value):\n        return REDACTED\n    if len(value) > MAX_VALUE_LEN:\n        return value[:MAX_VALUE_LEN] + f\"\u2026[+{len(value) - MAX_VALUE_LEN} chars]\"\n    return value\n\n\ndef redact_args(args: dict | None) -> dict:\n    if not isinstance(args, dict):\n        return {}\n    return {k: redact_value(k, v) for k, v in args.items()}\n\n\ndef summarize_response(resp) -> dict:\n    \"\"\"A response is NEVER emitted. Only that it happened, how big, and a hash.\n\n    This is categorical, not best-effort. Response bodies carry no audit value that\n    could justify the risk \u2014 `k8s_get_resource_yaml` of a Secret lands here verbatim.\n    \"\"\"\n    if resp is None:\n        return {\"present\": False}\n    body = resp if isinstance(resp, str) else json.dumps(resp, sort_keys=True)\n    return {\n        \"present\": True,\n        \"bytes\": len(body),\n        \"sha256_12\": hashlib.sha256(body.encode(\"utf-8\", \"replace\")).hexdigest()[:12],\n    }\n\n\n# ------------------------------------------------------------------ taxonomy\n\n\ndef load_gated_tools(repo_root: Path, taxonomy_path: Path | None = None) -> set[str]:\n    \"\"\"Tools the capability contract says MUST be behind requireApproval.\n\n    Single source of truth: the same taxonomy Kyverno enforces at admission. If a\n    tool is write/destructive there, an invocation of it with no approval event is\n    a finding here. The two cannot drift.\n\n    taxonomy_path lets the in-cluster CronJob point at the mounted ConfigMap\n    instead of a repo checkout. Same content either way.\n    \"\"\"\n    import yaml  # local import: only needed for --ungated\n\n    path = taxonomy_path or (repo_root / TAXONOMY)\n    cm = next(\n        d for d in yaml.safe_load_all(path.read_text())\n        if d and d.get(\"kind\") == \"ConfigMap\"\n    )\n    gated: set[str] = set()\n    for classification in (\"write\", \"destructive\"):\n        gated |= set(json.loads(cm[\"data\"][classification]))\n    return gated\n\n\n# --------------------------------------------------------------- extraction\n\n\ndef iter_calls(event_rows):\n    \"\"\"Yield one redacted record per tool invocation.\n\n    event_rows: (created_at, agent_id, session_id, data_json_text)\n    \"\"\"\n    for created_at, agent_id, session_id, raw in event_rows:\n        try:\n            doc = json.loads(raw)\n        except (json.JSONDecodeError, TypeError):\n            continue\n\n        found: list[dict] = []\n\n        def walk(node):\n            if isinstance(node, dict):\n                fc = node.get(\"function_call\")\n                if isinstance(fc, dict) and fc.get(\"name\"):\n                    found.append({\n                        \"kind\": \"call\",\n                        \"tool\": fc[\"name\"],\n                        \"args\": redact_args(fc.get(\"args\")),\n                    })\n                fr = node.get(\"function_response\")\n                if isinstance(fr, dict) and fr.get(\"name\"):\n                    found.append({\n                        \"kind\": \"response\",\n                        \"tool\": fr[\"name\"],\n                        \"response\": summarize_response(fr.get(\"response\")),\n                    })\n                um = node.get(\"usage_metadata\")\n                if isinstance(um, dict) and um.get(\"total_token_count\"):\n                    found.append({\"kind\": \"usage\", \"tokens\": um[\"total_token_count\"]})\n                for v in node.values():\n                    walk(v)\n            elif isinstance(node, list):\n                for i in node:\n                    walk(i)\n\n        walk(doc)\n        for rec in found:\n            rec[\"at\"] = created_at.isoformat() if hasattr(created_at, \"isoformat\") else str(created_at)\n            rec[\"agent\"] = agent_id\n            rec[\"session\"] = session_id\n            yield rec\n\n\n# ------------------------------------------------------------------- queries\n\n\ndef fetch_events(conn, since=None, agent=None):\n    # The ::casts are required: Postgres cannot infer the type of a NULL bind\n    # parameter and errors with \"could not determine data type of parameter $1\".\n    sql = \"\"\"\n        SELECT e.created_at, s.agent_id, s.id, e.data\n        FROM event e JOIN session s ON s.id = e.session_id\n        WHERE (%(since)s::timestamptz\
+    \ IS NULL OR e.created_at >= %(since)s::timestamptz)\n          AND (%(agent)s::text IS NULL OR s.agent_id ILIKE %(agent)s::text)\n        ORDER BY e.created_at\n    \"\"\"\n    with conn.cursor() as cur:\n        cur.execute(sql, {\"since\": since, \"agent\": f\"%{agent}%\" if agent else None})\n        return cur.fetchall()\n\n\ndef report_ungated(records, gated: set[str]) -> list[dict]:\n    \"\"\"Gated tools invoked in a session that raised NO approval request.\n\n    This is the k8s_agent finding, generalised. A `write`/`destructive` tool ran and\n    nobody was asked \u2014 either requireApproval was missing, or it was silently\n    stripped (which is exactly what Argo was doing for days).\n    \"\"\"\n    approvals_by_session: set[str] = {\n        r[\"session\"] for r in records\n        if r[\"kind\"] == \"call\" and r[\"tool\"] == CONFIRM_TOOL\n    }\n    out = []\n    for r in records:\n        if r[\"kind\"] != \"call\" or r[\"tool\"] not in gated:\n            continue\n        if r[\"session\"] in approvals_by_session:\n            continue\n        out.append(r)\n    return out\n\n\ndef report_cost(records) -> dict[str, int]:\n    tokens: dict[str, int] = defaultdict(int)\n    for r in records:\n        if r[\"kind\"] == \"usage\":\n            tokens[r[\"agent\"]] += r[\"tokens\"]\n    return dict(tokens)\n\n\ndef summarize_findings(findings: list[dict]) -> dict:\n    \"\"\"An ARGUMENT-FREE summary, safe to emit to a log sink.\n\n    This is the alerting payload (--summary), and the omission is the whole point.\n\n    The full --ungated output carries tool ARGUMENTS. Those are only BEST-EFFORT\n    redacted \u2014 a secret can hide in a `command` string in a shape no pattern\n    matches. That is acceptable for a human running the tool against the read-only\n    DB. It is NOT acceptable for a payload that lands in Loki and is read through\n    Grafana, because that widens who can see it and how long it persists (30d).\n\n    So the alert says WHAT and HOW MANY and WHO \u2014 never WITH WHAT. To see the\n    arguments you must run the tool yourself, against the database, behind the\n    SELECT-only credential. The blast radius of the alert is bounded by construction\n    rather than by trusting the redactor.\n    \"\"\"\n    by_agent_tool: dict[tuple[str, str], int] = defaultdict(int)\n    for f in findings:\n        by_agent_tool[(f[\"agent\"], f[\"tool\"])] += 1\n\n    return {\n        \"check\": \"agent-audit-ungated\",\n        \"severity\": \"warning\" if findings else \"ok\",\n        \"ungated_invocations\": len(findings),\n        \"findings\": sorted(\n            (\n                {\"agent\": agent, \"tool\": tool, \"count\": n}\n                for (agent, tool), n in by_agent_tool.items()\n            ),\n            key=lambda d: (-d[\"count\"], d[\"agent\"], d[\"tool\"]),\n        ),\n        \"detail\": (\n            \"Arguments are deliberately omitted. Run \"\n            \"`agent-audit.py --ungated` against the database to see them.\"\n        ),\n    }\n\n\n# ---------------------------------------------------------------------- cli\n\n\ndef parse_since(s: str | None):\n    if not s:\n        return None\n    m = re.fullmatch(r\"(\\d+)([dhm])\", s)\n    if not m:\n        raise SystemExit(f\"--since must look like 7d / 24h / 30m, got {s!r}\")\n    n, unit = int(m.group(1)), m.group(2)\n    delta = {\"d\": timedelta(days=n), \"h\": timedelta(hours=n), \"m\": timedelta(minutes=n)}[unit]\n    return datetime.now(timezone.utc) - delta\n\n\ndef connect():\n    try:\n        import psycopg\n    except ImportError:\n        raise SystemExit(\"pip install 'psycopg[binary]'\")\n    dsn = os.environ.get(\"AGENT_AUDIT_DSN\")\n    if not dsn:\n        raise SystemExit(\n            \"AGENT_AUDIT_DSN is not set.\\n\"\n            \"Use the SELECT-only audit role (never kagent's read/write credential):\\n\"\n            \"  kubectl port-forward -n postgresql svc/postgresql 5432:5432 &\\n\"\n            \"  U=$(kubectl get secret kagent-audit-credentials -n postgresql -o jsonpath='{.data.audit-user}' | base64 -d)\\n\"\n            \"  P=$(kubectl get secret kagent-audit-credentials -n postgresql -o jsonpath='{.data.audit-password}' | base64 -d)\\n\"\n            \"  export AGENT_AUDIT_DSN=\\\"postgresql://$U:$P@127.0.0.1:5432/kagent\\\"\"\n        )\n    return psycopg.connect(dsn)\n\n\ndef main(argv=None) -> int:\n    ap = argparse.ArgumentParser(description=__doc__,\n                                 formatter_class=argparse.RawDescriptionHelpFormatter)\n    ap.add_argument(\"--since\", help=\"7d / 24h / 30m\")\n    ap.add_argument(\"--agent\", help=\"substring match on agent_id\")\n    ap.add_argument(\"--ungated\", action=\"store_true\",\n                    help=\"gated tools invoked with NO approval request in the session\")\n    ap.add_argument(\"--summary\", action=\"store_true\",\n                    help=\"ARGUMENT-FREE JSON summary of --ungated, safe for a log \"\n                         \"sink. This is what the CronJob emits: counts and names, \"\n                         \"never arguments.\")\n    ap.add_argument(\"--cost\", action=\"store_true\", help=\"per-agent token rollup\")\n    ap.add_argument(\"--format\", choices=[\"table\", \"json\"], default=\"table\")\n    ap.add_argument(\"--repo-root\", type=Path,\n                    default=Path(__file__).resolve().parent.parent)\n    ap.add_argument(\"--taxonomy\", type=Path,\n                    help=\"path to the capability taxonomy ConfigMap manifest \"\n                         \"(the in-cluster CronJob mounts it; defaults to the repo copy)\")\n    args = ap.parse_args(argv)\n\n    with connect() as conn:\n        rows = fetch_events(conn, since=parse_since(args.since), agent=args.agent)\n    records = list(iter_calls(rows))\n\n    if args.summary:\n        gated = load_gated_tools(args.repo_root, args.taxonomy)\n        findings = report_ungated(records, gated)\n        print(json.dumps(summarize_findings(findings)))\n        return 1 if findings else 0\n\n    if args.cost:\n        tokens = report_cost(records)\n        if args.format == \"json\":\n            print(json.dumps(tokens, indent=2))\n        else:\n            print(f\"{'agent':<44} {'tokens':>12}\")\n            for a, t in sorted(tokens.items(), key=lambda kv: -kv[1]):\n                print(f\"{a:<44} {t:>12,}\")\n            print(f\"{'TOTAL':<44} {sum(tokens.values()):>12,}\")\n        return 0\n\n    if args.ungated:\n        gated = load_gated_tools(args.repo_root, args.taxonomy)\n        findings = report_ungated(records, gated)\n        if args.format == \"json\":\n            print(json.dumps(findings, indent=2))\n        else:\n            if not findings:\n                print(\"no ungated invocations of write/destructive tools \u2713\")\n                return 0\n            print(f\"{'when':<22} {'agent':<38} {'tool':<26} args\")\n            for r in findings:\n                print(f\"{r['at'][:19]:<22} {r['agent']:<38} {r['tool']:<26} \"\n                      f\"{json.dumps(r['args'])[:60]}\")\n            print(f\"\\n{len(findings)} gated tool invocation(s) with NO approval request.\")\n        # A finding is a failure: this is the requireApproval-stripping incident.\n        return 1 if findings else 0\n\n    calls = [r for r in records if r[\"kind\"] == \"call\"]\n    if args.format == \"json\":\n        print(json.dumps(calls, indent=2))\n    else:\n        print(f\"{'when':<22} {'agent':<38} {'tool':<26} args\")\n        for r in calls:\n            print(f\"{r['at'][:19]:<22} {r['agent']:<38} {r['tool']:<26} \"\n                  f\"{json.dumps(r['args'])[:60]}\")\n        print(f\"\\n{len(calls)} tool invocation(s).\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    raise SystemExit(main())\n"
+  agent-capability-taxonomy.yaml: "---\n# Agent capability taxonomy \u2014 THE single source of truth for what every kagent\n# tool is allowed to DO. Edit the classification here and nowhere else.\n#\n# Three consumers, all reading this exact content:\n#\n#   - scripts/gen-agent-capability-policy.py  compiles it INTO\n#     ClusterPolicy/agent-capability. CI fails if that policy drifts from this\n#     file (`--check`).\n#   - scripts/validate-agent-capability.py    the CI contract gate.\n#   - humans, in-cluster: `kubectl get cm -n kyverno agent-capability-taxonomy`\n#\n# NOTE: Kyverno does NOT read this ConfigMap at admission time. The policy embeds\n# the lists inline instead. A `context.configMap` lookup would be DRYer but is a\n# runtime dependency at rule level \u2014 evaluated for EVERY Agent \u2014 and if it failed\n# for any reason (RBAC, sync ordering, schema) every rule would error and Kyverno's\n# default failurePolicy=Fail would deny ALL Agent writes, wedging the kagent app.\n# It is also unresolvable by the kyverno CLI, so that riskiest path would have been\n# the one path never covered by tests. Inlining makes the artifact we test\n# byte-for-byte the artifact that ships. See the generator for the full rationale.\n#\n# Three classifications, ordered read < write < destructive:\n#\n#   read         observes state; cannot change anything. Tools that RENDER a\n#                manifest but do not apply it (k8s_generate_resource,\n#                istio_generate_manifest, istio_generate_waypoint) are `read` \u2014\n#                they return YAML to the caller.\n#   write        mutates state. Must appear in the tool ref's requireApproval.\n#   destructive  removes state, or is an arbitrary-code escape hatch whose blast\n#                radius is not bounded by its name (k8s_execute_command). Must\n#                appear in requireApproval, and only an `admin` agent may bind it.\n#\n# FAIL-CLOSED: a tool bound by an Agent but absent from all three lists is\n# DENIED. This is deliberate. A chart upgrade that introduces new tools cannot\n# silently widen any agent's capability \u2014 the new tools must be triaged and\n# classified here first. If a sync fails with \"tool not in taxonomy\", that is\n# the control working, not a bug.\n#\n# The lists are JSON arrays because Kyverno reads them with parse_json().\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: agent-capability-taxonomy\n  namespace: kyverno\n  labels:\n    app.kubernetes.io/part-of: agent-guardrails\ndata:\n  # ---------------------------------------------------------------- read (53)\n  read: |\n    [\n      \"k8s_get_resources\",\n      \"k8s_get_pod_logs\",\n      \"k8s_describe_resource\",\n      \"k8s_get_events\",\n      \"k8s_get_resource_yaml\",\n      \"k8s_get_cluster_configuration\",\n      \"k8s_get_available_api_resources\",\n      \"k8s_check_service_connectivity\",\n      \"k8s_generate_resource\",\n\n      \"istio_proxy_status\",\n      \"istio_proxy_config\",\n      \"istio_version\",\n      \"istio_analyze_cluster_configuration\",\n      \"istio_ztunnel_config\",\n      \"istio_waypoint_status\",\n      \"istio_list_waypoints\",\n      \"istio_remote_clusters\",\n      \"istio_generate_manifest\",\n      \"istio_generate_waypoint\",\n\n      \"search_dashboards\",\n      \"get_dashboard_by_uid\",\n      \"get_dashboard_panel_queries\",\n      \"query_prometheus\",\n      \"query_loki_logs\",\n      \"query_loki_stats\",\n      \"list_prometheus_metric_names\",\n      \"list_prometheus_metric_metadata\",\n      \"list_prometheus_label_names\",\n      \"list_prometheus_label_values\",\n      \"list_loki_label_names\",\n      \"list_loki_label_values\",\n      \"list_datasources\",\n      \"get_datasource\",\n      \"list_alert_rules\",\n      \"get_alert_rule_by_uid\",\n      \"list_contact_points\",\n      \"list_incidents\",\n      \"get_incident\",\n      \"list_teams\",\n      \"list_oncall_users\",\n      \"list_oncall_teams\",\n      \"list_oncall_schedules\",\n      \"get_oncall_shift\",\n      \"get_current_oncall_users\",\n      \"list_sift_investigations\",\n      \"get_sift_investigation\",\n      \"get_sift_analysis\",\n      \"get_assertions\",\n      \"find_slow_requests\",\n      \"find_error_pattern_logs\",\n\n      \"get_file_contents\",\n      \"search_code\",\n      \"get-catalog-entity\"\n    ]\n\n  # --------------------------------------------------------------- write (13)\n  # Every tool here MUST appear in requireApproval wherever it is bound.\n  # The four k8s label/annotation mutators matter more than they look: Argo CD\n  # sync behaviour and Kyverno matching are both label/annotation-driven, so an\n  # agent holding them can disable the very controls that hold it in.\n  write: |\n    [\n      \"k8s_patch_resource\",\n      \"k8s_apply_manifest\",\n      \"k8s_create_resource\",\n      \"k8s_create_resource_from_url\",\n      \"k8s_annotate_resource\",\n      \"k8s_remove_annotation\",\n      \"k8s_label_resource\",\n      \"k8s_remove_label\",\n\n      \"istio_apply_waypoint\",\n      \"istio_install_istio\",\n\n      \"update_dashboard\",\n      \"create_incident\",\n      \"add_activity_to_incident\"\n    ]\n\n  # ---------------------------------------------------------- destructive (3)\n  # Only an `admin` agent may bind these, and only with requireApproval.\n  destructive: |\n    [\n      \"k8s_delete_resource\",\n      \"k8s_execute_command\",\n      \"istio_delete_waypoint\"\n    ]\n"
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: agent-audit-ungated
+  namespace: postgresql
+  labels:
+    app: agent-audit
+spec:
+  schedule: 0 7 * * *
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 7
+  successfulJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app: agent-audit
+        spec:
+          restartPolicy: Never
+          nodeSelector:
+            node.kubernetes.io/workload: application
+          containers:
+          - name: agent-audit
+            image: python:3.12-slim
+            command:
+            - /bin/sh
+            - -c
+            args:
+            - 'set -eu
+
+              pip install --quiet --no-cache-dir --target=/scratch/pylib ''psycopg[binary]==3.2.3'' ''pyyaml==6.0.2''
+
+              export PYTHONPATH=/scratch/pylib
+
+              export AGENT_AUDIT_DSN="postgresql://${AUDIT_USER}:${AUDIT_PASSWORD}@postgresql.postgresql.svc.cluster.local:5432/${AUDIT_DB}"
+
+              exec python /opt/audit/agent-audit.py --summary --taxonomy /opt/audit/agent-capability-taxonomy.yaml
+
+              '
+            env:
+            - name: HOME
+              value: /scratch
+            - name: PIP_CACHE_DIR
+              value: /scratch/.cache
+            - name: AUDIT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-audit-credentials
+                  key: audit-user
+            - name: AUDIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-audit-credentials
+                  key: audit-password
+            - name: AUDIT_DB
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-audit-credentials
+                  key: audit-database
+            volumeMounts:
+            - name: code
+              mountPath: /opt/audit
+              readOnly: true
+            - name: scratch
+              mountPath: /scratch
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              runAsNonRoot: true
+              runAsUser: 1000
+              capabilities:
+                drop:
+                - ALL
+          volumes:
+          - name: code
+            configMap:
+              name: agent-audit-code
+          - name: scratch
+            emptyDir:
+              sizeLimit: 256Mi
