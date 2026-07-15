@@ -59,12 +59,12 @@ spec:
         name: postgresql-credentials
   managed:
     roles:
+      # superuser/createdb/createrole are omitted, not set to false: the CNPG
+      # webhook strips explicit-false defaults, so declaring them makes Argo
+      # see a permanent live-vs-Git diff (observed after adoption).
       - name: n8n
         ensure: present
         login: true
-        superuser: false
-        createdb: false
-        createrole: false
         passwordSecret:
           name: postgresql-credentials
   monitoring:

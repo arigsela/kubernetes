@@ -10,7 +10,7 @@
 # ServiceAccount, SecretStore, Vault role and per-consumer key — the agent-identity
 # contract). It is never in git.
 #
-# Idempotent: safe to re-run. Argo recreates this Job after its TTL expires.
+# Idempotent: safe to re-run. Runs as a Sync hook on every sync (see below).
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -19,6 +19,11 @@ metadata:
   annotations:
     # After init-kagent-db (which creates the kagent database this role reads).
     argocd.argoproj.io/sync-wave: "1"
+    # Sync hook, not a desired-state resource — same rationale as
+    # init-kagent-db: a self-deleting Job in desired state leaves the app
+    # permanently OutOfSync/Missing between syncs.
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   ttlSecondsAfterFinished: 300
   backoffLimit: 5

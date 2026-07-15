@@ -68,6 +68,15 @@ spec:
               name: n8n-secrets
               key: slack-bot-token
 
+        # n8n blocks $env access in expressions by default; without this the
+        # grafana-alerts workflow dies with "ExpressionError: access to env
+        # vars denied" (observed on first live execution). Trade-off: any
+        # workflow author can read this pod's env (DB creds, encryption key) —
+        # acceptable here because the editor UI is IP-allowlisted + basic-auth
+        # and this is a single-operator instance.
+        - name: N8N_BLOCK_ENV_ACCESS_IN_NODE
+          value: "false"
+
         # UPDATED: Webhook URL (changed to HTTPS)
         - name: WEBHOOK_URL
           value: "https://n8n.arigsela.com/"
