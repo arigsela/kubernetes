@@ -1,0 +1,75 @@
+# S3 bucket for the durable, redacted agent action record (Observability O4).
+#
+# The record itself lives in kagent's operational Postgres — which is on
+# single-node local-path storage with NO backup. A node failure loses the entire
+# audit trail (and n8n + chores_tracker with it). This bucket is the durable,
+# tamper-resistant copy that survives that.
+#
+# What lands here is ALREADY REDACTED at extraction (scripts/agent-audit.py):
+# no tool response bodies, arguments pattern-redacted. So even though this is
+# durable long-term storage, it is not a durable store of secrets — that is the
+# whole reason the export is the redacted view and not a pg_dump.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: asela-agent-audit-record
+  labels:
+    app: agent-audit
+    component: storage
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-1
+    tags:
+      Name: "Agent Action Record (durable, redacted)"
+      Environment: "homelab"
+      ManagedBy: "Crossplane"
+      Purpose: "L03 Observability audit trail"
+      CostCenter: "security"
+  providerConfigRef:
+    name: default
+---
+# Versioning: an audit trail must be tamper-EVIDENT. With versioning on, an
+# overwrite or delete of an object leaves the prior version recoverable, so the
+# write-only IAM policy (PutObject, no Delete) plus versioning means the record
+# is append-only in practice.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketVersioning
+metadata:
+  name: asela-agent-audit-record-versioning
+  labels:
+    app: agent-audit
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-1
+    bucketSelector:
+      matchLabels:
+        app: agent-audit
+        component: storage
+    versioningConfiguration:
+      - status: Enabled
+  providerConfigRef:
+    name: default
+---
+# Block ALL public access. This is an audit record; it is never public.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketPublicAccessBlock
+metadata:
+  name: asela-agent-audit-record-pab
+  labels:
+    app: agent-audit
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-1
+    bucketSelector:
+      matchLabels:
+        app: agent-audit
+        component: storage
+    blockPublicAcls: true
+    blockPublicPolicy: true
+    ignorePublicAcls: true
+    restrictPublicBuckets: true
+  providerConfigRef:
+    name: default

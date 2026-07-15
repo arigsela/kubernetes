@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agent-audit-aws-infrastructure
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/agent-audit-aws-infrastructure
+  destination:
+    server: https://kubernetes.default.svc
+    # The AccessKey's connection secret is written into postgresql, where the
+    # export CronJob runs alongside the SELECT-only DB credential.
+    namespace: postgresql
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

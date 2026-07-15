@@ -262,3 +262,47 @@ def test_summary_is_clean_when_there_is_nothing_to_report():
     assert out["ungated_invocations"] == 0
     assert out["severity"] == "ok"
     assert out["findings"] == []
+
+
+# ------------------- the durable S3 export (O4) must stay redacted end to end
+#
+# This payload goes to LONG-TERM S3 storage. If a response body ever survived into
+# it, a secret would be durably archived, not just briefly logged. So the export
+# path is held to the same categorical rule as everything else.
+
+def test_export_is_jsonl_one_valid_object_per_line():
+    records = [
+        {"kind": "call", "tool": "k8s_get_resources", "args": {"namespace": "kagent"},
+         "agent": "a", "session": "s", "at": "2026-07-09T00:00:00"},
+        {"kind": "usage", "tokens": 42, "agent": "a", "session": "s", "at": "2026-07-09T00:00:01"},
+    ]
+    out = aa.export_jsonl(records)
+    lines = out.splitlines()
+    assert len(lines) == 2
+    for line in lines:
+        json.loads(line)  # each line parses independently — that is the JSONL contract
+
+
+def test_export_never_carries_a_response_body():
+    """iter_calls already redacts; this proves the export function does not undo it."""
+    rec = {"kind": "response", "tool": "k8s_get_resource_yaml",
+           "response": aa.summarize_response({"result": "kind: Secret\ndata:\n  p: c2VjcmV0"}),
+           "agent": "a", "session": "s", "at": "2026-07-09T00:00:00"}
+    out = aa.export_jsonl([rec])
+    assert "c2VjcmV0" not in out
+    assert "result" not in out
+    # only the summary fields survive
+    assert set(json.loads(out)["response"]) == {"present", "bytes", "sha256_12"}
+
+
+def test_export_keeps_auditable_call_arguments():
+    """The whole point of an audit trail: what k8s_execute_command actually ran."""
+    rec = {"kind": "call", "tool": "k8s_execute_command",
+           "args": {"command": "vault status", "namespace": "vault"},
+           "agent": "a", "session": "s", "at": "2026-07-09T00:00:00"}
+    out = json.loads(aa.export_jsonl([rec]))
+    assert out["args"]["command"] == "vault status"
+
+
+def test_export_of_empty_record_is_empty_not_crash():
+    assert aa.export_jsonl([]) == ""

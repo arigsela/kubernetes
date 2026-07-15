@@ -91,6 +91,87 @@ HEADER = """\
 """
 
 
+DB_ENV = [
+    {"name": "HOME", "value": "/scratch"},
+    {"name": "PIP_CACHE_DIR", "value": "/scratch/.cache"},
+    {"name": "AUDIT_USER", "valueFrom": {"secretKeyRef": {
+        "name": "kagent-audit-credentials", "key": "audit-user"}}},
+    {"name": "AUDIT_PASSWORD", "valueFrom": {"secretKeyRef": {
+        "name": "kagent-audit-credentials", "key": "audit-password"}}},
+    {"name": "AUDIT_DB", "valueFrom": {"secretKeyRef": {
+        "name": "kagent-audit-credentials", "key": "audit-database"}}},
+]
+
+SECURITY_CONTEXT = {
+    "allowPrivilegeEscalation": False,
+    "runAsNonRoot": True,
+    "runAsUser": 1000,
+    "capabilities": {"drop": ["ALL"]},
+}
+
+VOLUME_MOUNTS = [
+    {"name": "code", "mountPath": "/opt/audit", "readOnly": True},
+    {"name": "scratch", "mountPath": "/scratch"},
+]
+
+VOLUMES = [
+    {"name": "code", "configMap": {"name": "agent-audit-code"}},
+    # writable scratch for pip + HOME; the root filesystem stays untouched. A plain
+    # `pip install` dies on a non-writable HOME under runAsNonRoot.
+    {"name": "scratch", "emptyDir": {"sizeLimit": "256Mi"}},
+]
+
+
+def _container(name, pip_pkgs, script, extra_env=()):
+    return {
+        "name": name,
+        "image": "python:3.12-slim",
+        "command": ["/bin/sh", "-c"],
+        "args": [
+            "set -eu\n"
+            f"pip install --quiet --no-cache-dir --target=/scratch/pylib {pip_pkgs}\n"
+            "export PYTHONPATH=/scratch/pylib\n"
+            "export AGENT_AUDIT_DSN="
+            "\"postgresql://${AUDIT_USER}:${AUDIT_PASSWORD}"
+            "@postgresql.postgresql.svc.cluster.local:5432/${AUDIT_DB}\"\n"
+            + script
+        ],
+        "env": DB_ENV + list(extra_env),
+        "volumeMounts": VOLUME_MOUNTS,
+        "resources": {
+            "requests": {"cpu": "50m", "memory": "128Mi"},
+            "limits": {"cpu": "500m", "memory": "512Mi"},
+        },
+        "securityContext": SECURITY_CONTEXT,
+    }
+
+
+def _cronjob(name, schedule, container, *, backoff=0, failed_history=7):
+    return {
+        "apiVersion": "batch/v1",
+        "kind": "CronJob",
+        "metadata": {"name": name, "namespace": "postgresql", "labels": {"app": "agent-audit"}},
+        "spec": {
+            "schedule": schedule,
+            "concurrencyPolicy": "Forbid",
+            "failedJobsHistoryLimit": failed_history,
+            "successfulJobsHistoryLimit": 1,
+            "jobTemplate": {"spec": {
+                "backoffLimit": backoff,
+                "template": {
+                    "metadata": {"labels": {"app": "agent-audit"}},
+                    "spec": {
+                        "restartPolicy": "Never",
+                        "nodeSelector": {"node.kubernetes.io/workload": "application"},
+                        "containers": [container],
+                        "volumes": VOLUMES,
+                    },
+                },
+            }},
+        },
+    }
+
+
 def build(script_src: str, taxonomy_src: str) -> list[dict]:
     code_cm = {
         "apiVersion": "v1",
@@ -106,110 +187,59 @@ def build(script_src: str, taxonomy_src: str) -> list[dict]:
         },
     }
 
-    cronjob = {
-        "apiVersion": "batch/v1",
-        "kind": "CronJob",
-        "metadata": {
-            "name": "agent-audit-ungated",
-            "namespace": "postgresql",
-            "labels": {"app": "agent-audit"},
-        },
-        "spec": {
-            # Daily. The findings this looks for are historical facts, not a
-            # real-time signal — a gate that was stripped stays stripped.
-            "schedule": "0 7 * * *",
-            "concurrencyPolicy": "Forbid",
-            # Keep failures around: a failed Job IS the alert in this cluster.
-            "failedJobsHistoryLimit": 7,
-            "successfulJobsHistoryLimit": 1,
-            "jobTemplate": {
-                "spec": {
-                    "backoffLimit": 0,  # a finding is not a retryable error
-                    "template": {
-                        "metadata": {"labels": {"app": "agent-audit"}},
-                        "spec": {
-                            "restartPolicy": "Never",
-                            "nodeSelector": {
-                                "node.kubernetes.io/workload": "application"
-                            },
-                            "containers": [{
-                                "name": "agent-audit",
-                                "image": "python:3.12-slim",
-                                "command": ["/bin/sh", "-c"],
-                                # The container runs as UID 1000 with a read-only
-                                # root, so HOME is not writable and a plain
-                                # `pip install` dies with
-                                #   OSError: [Errno 13] Permission denied: '/.local'
-                                # Install into a writable emptyDir and point
-                                # PYTHONPATH at it instead of relaxing the
-                                # securityContext.
-                                "args": [
-                                    "set -eu\n"
-                                    "pip install --quiet --no-cache-dir "
-                                    "--target=/scratch/pylib "
-                                    "'psycopg[binary]==3.2.3' 'pyyaml==6.0.2'\n"
-                                    "export PYTHONPATH=/scratch/pylib\n"
-                                    "export AGENT_AUDIT_DSN="
-                                    "\"postgresql://${AUDIT_USER}:${AUDIT_PASSWORD}"
-                                    "@postgresql.postgresql.svc.cluster.local:5432/"
-                                    "${AUDIT_DB}\"\n"
-                                    "exec python /opt/audit/agent-audit.py --summary "
-                                    "--taxonomy /opt/audit/agent-capability-taxonomy.yaml\n"
-                                ],
-                                "env": [
-                                    {"name": "HOME", "value": "/scratch"},
-                                    {"name": "PIP_CACHE_DIR", "value": "/scratch/.cache"},
-                                    {"name": "AUDIT_USER", "valueFrom": {"secretKeyRef": {
-                                        "name": "kagent-audit-credentials",
-                                        "key": "audit-user"}}},
-                                    {"name": "AUDIT_PASSWORD", "valueFrom": {"secretKeyRef": {
-                                        "name": "kagent-audit-credentials",
-                                        "key": "audit-password"}}},
-                                    {"name": "AUDIT_DB", "valueFrom": {"secretKeyRef": {
-                                        "name": "kagent-audit-credentials",
-                                        "key": "audit-database"}}},
-                                ],
-                                "volumeMounts": [
-                                    {
-                                        "name": "code",
-                                        "mountPath": "/opt/audit",
-                                        "readOnly": True,
-                                    },
-                                    {
-                                        "name": "scratch",
-                                        "mountPath": "/scratch",
-                                    },
-                                ],
-                                "resources": {
-                                    "requests": {"cpu": "50m", "memory": "128Mi"},
-                                    "limits": {"cpu": "500m", "memory": "512Mi"},
-                                },
-                                "securityContext": {
-                                    "allowPrivilegeEscalation": False,
-                                    "runAsNonRoot": True,
-                                    "runAsUser": 1000,
-                                    "capabilities": {"drop": ["ALL"]},
-                                },
-                            }],
-                            "volumes": [
-                                {
-                                    "name": "code",
-                                    "configMap": {"name": "agent-audit-code"},
-                                },
-                                {
-                                    # writable scratch for pip + HOME; the root
-                                    # filesystem stays untouched.
-                                    "name": "scratch",
-                                    "emptyDir": {"sizeLimit": "256Mi"},
-                                },
-                            ],
-                        },
-                    },
-                },
-            },
-        },
-    }
-    return [code_cm, cronjob]
+    # --- the alerting check (O2). Daily; the finding is a historical fact, so a
+    # real-time cadence buys nothing. Exits non-zero on a finding, which IS the
+    # signal in a cluster with no Alertmanager.
+    ungated = _cronjob(
+        "agent-audit-ungated", "0 7 * * *",
+        _container(
+            "agent-audit",
+            "'psycopg[binary]==3.2.3' 'pyyaml==6.0.2'",
+            "exec python /opt/audit/agent-audit.py --summary "
+            "--taxonomy /opt/audit/agent-capability-taxonomy.yaml\n",
+        ),
+    )
+
+    # --- the durable export (O4). Writes the REDACTED record to S3, append-only,
+    # date-partitioned. Uses a WRITE-ONLY IAM credential (s3:PutObject only) — it
+    # cannot read the accumulated history back or delete it. Runs after midnight
+    # and exports a 25h window (1h overlap absorbs clock skew; the store is
+    # append-only and keyed by run date, so overlap is harmless).
+    export = _cronjob(
+        "agent-audit-export", "30 1 * * *",
+        _container(
+            "agent-audit-export",
+            "'psycopg[binary]==3.2.3' 'pyyaml==6.0.2' 'boto3==1.35.71'",
+            # write the redacted JSONL, then PutObject it under dt=YYYY-MM-DD/.
+            # KEY is exported so the boto3 one-liner sees it via os.environ.
+            "export KEY=\"dt=$(date -u +%Y-%m-%d)/$(date -u +%H%M%S).jsonl\"\n"
+            "python /opt/audit/agent-audit.py --export --since 25h "
+            "> /scratch/record.jsonl\n"
+            "echo \"exporting $(wc -l < /scratch/record.jsonl) records to ${KEY}\"\n"
+            "python -c \"import boto3,os;"
+            "boto3.client('s3',"
+            "aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],"
+            "aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],"
+            "region_name='us-east-1')"
+            ".upload_file('/scratch/record.jsonl',"
+            "'asela-agent-audit-record', os.environ['KEY'])\"\n"
+            "echo \"uploaded s3://asela-agent-audit-record/${KEY}\"\n",
+            extra_env=[
+                # The Upbound IAM AccessKey connection secret keys, confirmed
+                # against the live argo-workflows-s3-creds secret: `username` holds
+                # the ACCESS KEY ID (AKIA...), `attribute.secret` holds the secret.
+                # There is no `attribute.id` key — do not reintroduce it.
+                {"name": "AWS_ACCESS_KEY_ID", "valueFrom": {"secretKeyRef": {
+                    "name": "agent-audit-s3-creds", "key": "username"}}},
+                {"name": "AWS_SECRET_ACCESS_KEY", "valueFrom": {"secretKeyRef": {
+                    "name": "agent-audit-s3-creds", "key": "attribute.secret"}}},
+            ],
+        ),
+        backoff=2,          # upload is retryable, unlike a finding
+        failed_history=3,
+    )
+
+    return [code_cm, ungated, export]
 
 
 def render(repo: Path) -> str:

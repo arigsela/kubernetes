@@ -1,0 +1,19 @@
+# IAM user for the agent-audit export job. Dedicated service account, one job.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: User
+metadata:
+  name: agent-audit-s3-user
+  labels:
+    app: agent-audit
+    component: iam-user
+    managed-by: crossplane
+spec:
+  forProvider:
+    path: /serviceaccounts/
+    tags:
+      Name: "Agent Audit Export Service Account"
+      Purpose: "Agent-Audit-S3-Write"
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+  providerConfigRef:
+    name: default

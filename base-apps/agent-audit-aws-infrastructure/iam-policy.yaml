@@ -1,0 +1,38 @@
+# WRITE-ONLY S3 policy. This is the security core of O4.
+#
+# The export job can PutObject and nothing else. It cannot GetObject (so a
+# compromised export job cannot read the accumulated audit history back out),
+# cannot DeleteObject, and cannot ListBucket. Combined with bucket versioning,
+# the record is append-only: the credential that writes the audit trail is
+# structurally incapable of altering or exfiltrating it.
+#
+# s3:PutObject only, scoped to this one bucket.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: agent-audit-s3-write
+  labels:
+    app: agent-audit
+    component: iam-policy
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "Write-only (PutObject) access to the agent audit record bucket"
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "AgentAuditWriteOnly",
+            "Effect": "Allow",
+            "Action": ["s3:PutObject"],
+            "Resource": "arn:aws:s3:::asela-agent-audit-record/*"
+          }
+        ]
+      }
+    tags:
+      Name: "Agent Audit S3 Write-Only Policy"
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+  providerConfigRef:
+    name: default

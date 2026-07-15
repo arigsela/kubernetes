@@ -292,6 +292,21 @@ def report_cost(records) -> dict[str, int]:
     return dict(tokens)
 
 
+def export_jsonl(records) -> str:
+    """The durable-export payload: one redacted record per line (JSONL).
+
+    Every record here already went through iter_calls, so it is redacted at
+    EXTRACTION — no response bodies, arguments pattern-redacted. That is what makes
+    it safe to write to long-term S3 storage: the durable audit copy is the redacted
+    copy, never a raw dump. See the O4 design and scripts/agent-audit.py's redaction
+    contract.
+
+    JSONL (not a JSON array) so an append is a concatenation and a partial write
+    truncates cleanly at a line boundary rather than corrupting the whole file.
+    """
+    return "\n".join(json.dumps(r, sort_keys=True) for r in records)
+
+
 def summarize_findings(findings: list[dict]) -> dict:
     """An ARGUMENT-FREE summary, safe to emit to a log sink.
 
@@ -374,6 +389,9 @@ def main(argv=None) -> int:
                          "sink. This is what the CronJob emits: counts and names, "
                          "never arguments.")
     ap.add_argument("--cost", action="store_true", help="per-agent token rollup")
+    ap.add_argument("--export", action="store_true",
+                    help="emit the full REDACTED record as JSONL (for the durable "
+                         "S3 export). No response bodies; arguments pattern-redacted.")
     ap.add_argument("--format", choices=["table", "json"], default="table")
     ap.add_argument("--repo-root", type=Path,
                     default=Path(__file__).resolve().parent.parent)
@@ -385,6 +403,11 @@ def main(argv=None) -> int:
     with connect() as conn:
         rows = fetch_events(conn, since=parse_since(args.since), agent=args.agent)
     records = list(iter_calls(rows))
+
+    if args.export:
+        # All records — call, response-summary, usage — already redacted.
+        print(export_jsonl(records))
+        return 0
 
     if args.summary:
         gated = load_gated_tools(args.repo_root, args.taxonomy)
