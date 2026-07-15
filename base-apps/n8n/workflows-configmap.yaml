@@ -22,11 +22,21 @@
 # only this ConfigMap re-imports the workflow into the DB but the running pod
 # keeps serving the old version until it restarts — bump the deployment (or
 # delete the pod) after workflow-only changes.
+#
+# This ConfigMap is itself a PreSync hook (wave -1, before the import Job at
+# wave 0) because the Job mounts it: as a plain resource it would only be
+# applied in the MAIN sync phase, which never runs until PreSync completes —
+# on a fresh sync the Job's pod would hang forever on
+# 'configmap "n8n-workflows" not found' (observed live on first rollout).
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: n8n-workflows
   namespace: n8n
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "-1"
 data:
   grafana-alerts.json: |
     {
