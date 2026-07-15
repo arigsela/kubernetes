@@ -5,6 +5,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 
 | app | purpose | namespace | docs | runbook | catalog |
 |---|---|---|---|---|---|
+| agent-audit-aws-infrastructure | S3 bucket + write-only IAM for the durable, redacted agent action record (Crossplane) | postgresql | | | |
 | chores-tracker-backend | FastAPI chores backend (PostgreSQL, Vault, JWT) | chores-tracker | docs.md | runbook.md | catalog-info.yaml |
 | vault | In-cluster secret backend (KV v2) | vault | docs.md | runbook.md | catalog-info.yaml |
 | argo-cd | GitOps control plane | argo-cd | docs.md | runbook.md | catalog-info.yaml |
