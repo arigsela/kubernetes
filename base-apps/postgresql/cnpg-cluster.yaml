@@ -1,0 +1,91 @@
+# CloudNativePG cluster backing chores-tracker (and originally n8n).
+#
+# Adopted into GitOps on 2026-07-15. This Cluster has run since 2025-12-03,
+# created by a since-deleted Argo CD Application named "postgresql-cnpg"
+# (its stale tracking-id was still on the live object). It was the only
+# production database in the cluster with no manifest in Git. The spec below
+# is a faithful copy of the live object's last-applied configuration, so
+# adoption is a no-op apply.
+#
+# Notes:
+#   - bootstrap.initdb only runs at first creation and is ignored for the
+#     existing cluster; it is kept so a from-scratch rebuild reproduces the
+#     same initial state. The bootstrap database/owner is `n8n` (historical:
+#     the cluster was created for n8n, which today uses the plain postgresql
+#     Deployment instead).
+#   - The `chores_tracker` database and `chores_user` role were created
+#     manually inside this cluster and are intentionally not declared here;
+#     see base-apps/chores-tracker-backend/crossplane_resources.yaml.
+#   - Backup credentials come from the postgresql-backup-credentials Secret
+#     (see external-secrets-cnpg-backup.yaml, which has a known sync issue).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgresql-cluster
+  namespace: postgresql
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+  affinity:
+    nodeSelector:
+      node.kubernetes.io/workload: infrastructure
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://mysql-backups-asela-cluster/postgresql/
+      data:
+        compression: gzip
+      wal:
+        compression: gzip
+        maxParallel: 2
+      s3Credentials:
+        accessKeyId:
+          name: postgresql-backup-credentials
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: postgresql-backup-credentials
+          key: ACCESS_SECRET_KEY
+        region:
+          name: postgresql-backup-credentials
+          key: AWS_REGION
+    retentionPolicy: 30d
+  bootstrap:
+    initdb:
+      database: n8n
+      owner: n8n
+      secret:
+        name: postgresql-credentials
+  managed:
+    roles:
+      - name: n8n
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        passwordSecret:
+          name: postgresql-credentials
+  monitoring:
+    enablePodMonitor: false
+  postgresql:
+    parameters:
+      checkpoint_completion_target: "0.9"
+      default_statistics_target: "100"
+      effective_cache_size: 512MB
+      effective_io_concurrency: "200"
+      maintenance_work_mem: 64MB
+      max_connections: "100"
+      random_page_cost: "1.1"
+      shared_buffers: 256MB
+      wal_buffers: 16MB
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      memory: 2Gi
+  storage:
+    size: 20Gi
+    storageClass: local-path

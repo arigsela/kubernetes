@@ -3,9 +3,9 @@ app: postgresql
 catalog_entity: postgresql
 kind: docs
 namespace: postgresql
-last_reviewed: 2026-07-10
+last_reviewed: 2026-07-15
 status: current
-tags: [database, stateful, pgvector]
+tags: [database, stateful, pgvector, cnpg]
 sources:
   - base-apps/postgresql/deployments.yaml
   - base-apps/postgresql/services.yaml
@@ -14,12 +14,18 @@ sources:
   - base-apps/postgresql/external-secrets.yaml
   - base-apps/postgresql/external-secrets-kagent.yaml
   - base-apps/postgresql/init-kagent-db.yaml
+  - base-apps/postgresql/cnpg-cluster.yaml
+  - base-apps/postgresql/cnpg-scheduled-backup.yaml
+  - base-apps/postgresql/external-secrets-cnpg-backup.yaml
 ---
 
 # postgresql
 
 ## What it is
-A shared, plain PostgreSQL instance for the cluster — **not** CloudNativePG or any operator-managed StatefulSet. It runs as a single-replica `Deployment` (`deployments.yaml`) on image `pgvector/pgvector:0.8.2-pg18` (Postgres 18 with the `pgvector` extension available), giving other apps a single Postgres server that also supports vector columns.
+Two separate PostgreSQL instances share this namespace:
+
+1. A shared, plain PostgreSQL instance — a single-replica `Deployment` (`deployments.yaml`) on image `pgvector/pgvector:0.8.2-pg18` (Postgres 18 with the `pgvector` extension available), giving other apps a single Postgres server that also supports vector columns.
+2. A CloudNativePG-managed cluster `postgresql-cluster` (`cnpg-cluster.yaml`, Postgres 16.4, single instance), which backs the chores-tracker application at `postgresql-cluster-rw.postgresql.svc.cluster.local:5432`. It was created 2025-12-03 by a since-deleted Argo CD Application (`postgresql-cnpg`) and ran unmanaged until it was adopted into this app on 2026-07-15. Unlike the plain Deployment, it has daily S3 backups (`cnpg-scheduled-backup.yaml`, 02:00 UTC, 30d retention, barman to `s3://mysql-backups-asela-cluster/postgresql/`). Its bootstrap database/owner is `n8n` (historical — n8n now uses the plain Deployment); the `chores_tracker` database and `chores_user` role were created manually inside it and are not declared in Git. **Known issue:** its backup credentials `ExternalSecret` (`external-secrets-cnpg-backup.yaml`) reads the legacy Vault key `mysql`, which has failed to sync since 2026-04-11 — backups work only because the retained Secret still holds valid keys.
 
 ## How it's deployed
 `deployments.yaml` defines one `Deployment` (`replicas: 1`) scheduled onto `node.kubernetes.io/workload: application` nodes, running as the `postgres` container user (`securityContext.runAsUser/runAsGroup/fsGroup: 999`). Data lives on `/var/lib/postgresql/data` (`PGDATA=/var/lib/postgresql/data/pgdata`), backed by the `postgresql-pvc` `PersistentVolumeClaim` (`pvc.yaml`: `storageClassName: local-path`, `10Gi`, `ReadWriteOnce`). `local-path` binds the volume to whichever node first mounts it, so this Postgres pod is effectively pinned to one node — there is no failover if that node or its disk is lost. The `postgresql` `Service` (`services.yaml`, `ClusterIP`, port `5432`) is the in-cluster address other workloads use: `postgresql.postgresql.svc.cluster.local:5432`.

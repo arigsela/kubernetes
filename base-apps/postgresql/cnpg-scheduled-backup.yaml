@@ -1,0 +1,18 @@
+# Daily barman backup of postgresql-cluster to S3 (02:00 UTC, 30d retention
+# set on the Cluster's backup.retentionPolicy).
+#
+# Adopted into GitOps on 2026-07-15 alongside cnpg-cluster.yaml — previously
+# owned by the deleted "postgresql-cnpg" Argo CD Application. Spec matches
+# the live object exactly.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgresql-daily-backup
+  namespace: postgresql
+spec:
+  schedule: "0 0 2 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: postgresql-cluster
+  immediate: true
+  suspend: false

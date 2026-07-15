@@ -16,7 +16,6 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | argo-workflows-aws-infrastructure | | | | | |
 | atlantis | Terraform/OpenTofu PR automation (Atlantis, GitHub + AWS auth via Vault, Infracost) | atlantis | docs.md | runbook.md | catalog-info.yaml |
 | backstage | Internal developer portal / software catalog (Backstage, shared PostgreSQL, Vault, kubernetes-ingestor) | backstage | docs.md | runbook.md | catalog-info.yaml |
-| chores-tracker | | | | | |
 | chores-tracker-frontend | HTMX/nginx web frontend for Chores Tracker | chores-tracker-frontend | docs.md | runbook.md | catalog-info.yaml |
 | cluster-scanner | | | | | |
 | coroot | eBPF-based observability/APM (Coroot operator + instance, node/cluster agents, ClickHouse) | coroot | docs.md | runbook.md | catalog-info.yaml |
@@ -26,9 +25,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | crossplane-system | | | | | |
 | ecr-auth | | | | | |
 | istio-ambient-config | | | | | |
-| k8s-monitor | | | | | |
 | kagent | Kubernetes-native AI agent platform (kagent Helm controller, declarative agents, MCP tool servers) | kagent | docs.md | runbook.md | catalog-info.yaml |
-| kube-system | | | | | |
 | kyverno-policies | | | | | |
 | logging | Observability stack (Alloy collector, Loki logs on S3, Prometheus metrics, Grafana) | logging | docs.md | runbook.md | catalog-info.yaml |
 | loki-aws-infrastructure | | | | | |
@@ -38,7 +35,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | oncall-agent | AI on-call/incident-response agent (Anthropic Claude, Slack, GitOps PRs) | oncall-agent | docs.md | runbook.md | catalog-info.yaml |
 | oncall-crewai | | | | | |
 | openshell | | | | | |
-| postgresql | Shared PostgreSQL + pgvector instance (root DB, kagent DB) | postgresql | docs.md | runbook.md | catalog-info.yaml |
+| postgresql | Shared PostgreSQL + pgvector instance (root DB, kagent DB) + CNPG cluster for chores-tracker (daily S3 backups) | postgresql | docs.md | runbook.md | catalog-info.yaml |
 | vcluster-sandbox-1 | | | | | |
 | weather-kitchen-backend | Backend API for Weather Kitchen (likely FastAPI, JWT, Vault-backed DB) | weather-kitchen | docs.md | runbook.md | catalog-info.yaml |
 | weather-kitchen-frontend | Web frontend for Weather Kitchen (nginx-fronted Node build) | weather-kitchen-frontend | docs.md | runbook.md | catalog-info.yaml |
