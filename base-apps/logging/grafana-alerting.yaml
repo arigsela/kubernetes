@@ -115,9 +115,16 @@ data:
                     type: loki
                     uid: loki
                   queryType: instant
+                  # Parse the JSON, do not substring-match it. The summary is
+                  # emitted by json.dumps, which writes `"severity": "warning"` WITH
+                  # a space after the colon — a `|= "\"severity\":\"warning\""`
+                  # line filter (no space) never matches, so the first version of
+                  # this rule could not fire. Verified against live Loki: the line
+                  # filter returns 0, `| json | severity="warning"` returns 1.
                   expr: >-
                     sum(count_over_time({namespace="postgresql", app="agent-audit"}
-                    |= "agent-audit-ungated" |= "\"severity\":\"warning\"" [24h]))
+                    |= "agent-audit-ungated" | json
+                    | check="agent-audit-ungated" | severity="warning" [24h]))
               - refId: threshold
                 relativeTimeRange:
                   from: 86400
@@ -167,9 +174,13 @@ data:
                     type: loki
                     uid: loki
                   queryType: instant
+                  # Same fix: parse the JSON and match the `rule` field, rather
+                  # than substring-matching the rendered line. `|= "priority"` is
+                  # kept only as a cheap pre-filter to skip Falco's non-JSON startup
+                  # noise before `| json`. Verified against live Loki: returns 236.
                   expr: >-
-                    sum(count_over_time({namespace="falco"} |= "\"priority\""
-                    |~ "Read sensitive file untrusted|Contact K8S API Server From Container"
+                    sum(count_over_time({namespace="falco"} |= "priority" | json
+                    | rule=~"Read sensitive file untrusted|Contact K8S API Server From Container"
                     [1h]))
               - refId: threshold
                 relativeTimeRange:
