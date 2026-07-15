@@ -2,9 +2,17 @@
 #
 # n8n stores workflows in its Postgres database, not on disk, so they can't be
 # applied as Kubernetes resources directly. Instead this ConfigMap holds the
-# workflow JSON and import-workflows-job.yaml (an Argo CD PreSync hook) imports
-# it into the database with the n8n CLI on every sync. The import upserts by the
-# workflow's fixed "id", so re-running is a no-op when nothing changed.
+# workflow JSON, and the n8n Deployment's `import-workflows` initContainer
+# imports it into the database with the n8n CLI at pod start. The import upserts
+# by the workflow's fixed "id", so re-running is a no-op when nothing changed.
+#
+# WHY an initContainer and not a PreSync Job: n8n registers webhook routes for
+# active workflows only at STARTUP. Importing in an initContainer ties the import
+# to the pod lifecycle, so the main container always boots with the workflow
+# active and its webhook registered. To make a workflow EDIT take effect, the pod
+# must roll — the Deployment carries a `checksum/workflows` pod annotation for
+# exactly that: bump it (sha256 of grafana-alerts.json) when editing here, or
+# `kubectl rollout restart deploy/n8n -n n8n`.
 #
 # grafana-alerts.json — the alert-delivery endpoint Grafana depends on
 # (base-apps/logging/grafana-alerting.yaml posts to
@@ -17,26 +25,11 @@
 # material in Git): the HTTP node reads {{ $env.SLACK_BOT_TOKEN }}, injected
 # into the n8n Deployment from the n8n-secrets Secret (Vault key n8n,
 # property slack-bot-token).
-#
-# NOTE: n8n registers webhook routes for active workflows at STARTUP. Changing
-# only this ConfigMap re-imports the workflow into the DB but the running pod
-# keeps serving the old version until it restarts — bump the deployment (or
-# delete the pod) after workflow-only changes.
-#
-# This ConfigMap is itself a PreSync hook (wave -1, before the import Job at
-# wave 0) because the Job mounts it: as a plain resource it would only be
-# applied in the MAIN sync phase, which never runs until PreSync completes —
-# on a fresh sync the Job's pod would hang forever on
-# 'configmap "n8n-workflows" not found' (observed live on first rollout).
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: n8n-workflows
   namespace: n8n
-  annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-    argocd.argoproj.io/sync-wave: "-1"
 data:
   grafana-alerts.json: |
     {

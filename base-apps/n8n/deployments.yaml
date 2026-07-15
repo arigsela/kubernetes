@@ -12,6 +12,14 @@ spec:
     metadata:
       labels:
         app: n8n
+      annotations:
+        # Roll the pod when the workflow JSON changes so the import initContainer
+        # re-imports it and n8n re-registers its webhook at startup. Value is the
+        # sha256 (first 16 hex chars) of workflows-configmap.yaml's
+        # grafana-alerts.json. If you edit the workflow, recompute this — else the
+        # pod won't roll and the change won't take effect. (Or just
+        # `kubectl rollout restart deploy/n8n -n n8n`.)
+        checksum/workflows: "2c16107926191499"
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
@@ -20,6 +28,69 @@ spec:
         fsGroup: 1000
         runAsUser: 1000
         runAsGroup: 1000
+      initContainers:
+      # Import + activate the GitOps-managed workflows into n8n's database BEFORE
+      # the main container starts. n8n registers webhook routes for active
+      # workflows only at STARTUP, so tying the import to the pod lifecycle here
+      # guarantees the main container boots with the workflow active and its
+      # webhook registered. (This replaced a per-sync PreSync Job that re-ran on
+      # unrelated app syncs and left the webhook active-in-DB but unregistered
+      # whenever the pod didn't happen to restart — a real 404 we hit in prod.)
+      - name: import-workflows
+        image: n8nio/n8n:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          n8n import:workflow --input=/workflows/grafana-alerts.json
+          n8n update:workflow --id=grafana-alerts-slack --active=true
+        env:
+        - name: DB_TYPE
+          value: "postgresdb"
+        - name: DB_POSTGRESDB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: db-host
+        - name: DB_POSTGRESDB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: db-port
+        - name: DB_POSTGRESDB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: db-name
+        - name: DB_POSTGRESDB_USER
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: db-user
+        - name: DB_POSTGRESDB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: db-password
+        - name: N8N_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: encryption-key
+        # Keep the CLI's scratch settings dir off the shared PVC.
+        - name: N8N_USER_FOLDER
+          value: /tmp/n8n
+        volumeMounts:
+        - name: workflows
+          mountPath: /workflows
+          readOnly: true
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
       containers:
       - name: n8n
         image: n8nio/n8n:latest
@@ -156,3 +227,6 @@ spec:
       - name: n8n-storage
         persistentVolumeClaim:
           claimName: n8n-pvc
+      - name: workflows
+        configMap:
+          name: n8n-workflows
