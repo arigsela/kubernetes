@@ -19,6 +19,7 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | backstage | Internal developer portal / software catalog (Backstage, shared PostgreSQL, Vault, kubernetes-ingestor) | backstage | docs.md | runbook.md | catalog-info.yaml |
 | chores-tracker-frontend | HTMX/nginx web frontend for Chores Tracker | chores-tracker-frontend | docs.md | runbook.md | catalog-info.yaml |
 | coroot | eBPF-based observability/APM (Coroot operator + instance, node/cluster agents, ClickHouse) | coroot | docs.md | runbook.md | catalog-info.yaml |
+| dex | OIDC provider fronting GitHub — issuer for Vault OIDC (human `vault` login via GitHub SSO) | dex | | | |
 | crossplane-aws-provider | | | | | |
 | crossplane-compositions | | | | | |
 | crossplane-functions | | | | | |

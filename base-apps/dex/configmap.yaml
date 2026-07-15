@@ -1,0 +1,55 @@
+# Dex OIDC provider config. Dex fronts GitHub (which is not OIDC-native) and
+# exposes a real OIDC issuer that Vault trusts.
+#
+# issuer MUST be the exact URL both the browser (GitHub redirect) and Vault
+# (OIDC discovery) use — see the deployment/runbook for the in-cluster
+# reachability of dex.arigsela.com from the Vault pod.
+#
+# Secrets ($GITHUB_CLIENT_ID/$GITHUB_CLIENT_SECRET/$VAULT_CLIENT_SECRET) are
+# substituted from the dex-secrets Secret at startup (Dex expands $ENV refs when
+# the file is loaded via `dex serve`).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dex-config
+  namespace: dex
+data:
+  config.yaml: |
+    issuer: https://dex.arigsela.com
+
+    storage:
+      type: kubernetes
+      config:
+        inCluster: true
+
+    web:
+      http: 0.0.0.0:5556
+
+    # Vault is an OIDC client of Dex. The secret matches Vault's oidc auth
+    # config (oidc_client_secret). redirectURIs cover the Vault CLI helper
+    # (localhost:8250) and the Vault UI OIDC callback.
+    staticClients:
+      - id: vault
+        name: Vault
+        secretEnv: VAULT_CLIENT_SECRET
+        redirectURIs:
+          - http://localhost:8250/oidc/callback
+          - https://vault.local/ui/vault/auth/oidc/oidc/callback
+          - https://vault.10.0.1.110/ui/vault/auth/oidc/oidc/callback
+
+    connectors:
+      - type: github
+        id: github
+        name: GitHub
+        config:
+          clientID: $GITHUB_CLIENT_ID
+          clientSecret: $GITHUB_CLIENT_SECRET
+          redirectURI: https://dex.arigsela.com/callback
+          # No `orgs:` restriction here — that only works for GitHub *orgs*, and
+          # this is a personal account. Access is locked down one layer up:
+          # Vault's oidc role binds to the specific GitHub login (bound_claims),
+          # and the Dex ingress is IP-allowlisted. If you later move to a GitHub
+          # org, add an `orgs:` filter here too.
+
+    oauth2:
+      skipApprovalScreen: true

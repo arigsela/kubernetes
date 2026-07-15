@@ -1,0 +1,36 @@
+# Dex is reached by the browser during the GitHub SSO redirect, and by Vault
+# for OIDC discovery. TLS via letsencrypt-prod; IP-allowlisted like the other
+# admin surfaces (Dex only ever serves your own login).
+#
+# NOTE: Vault (in-cluster) must be able to reach https://dex.arigsela.com for
+# OIDC discovery. If the Vault pod can't resolve/route to the public hostname,
+# add a CoreDNS rewrite so dex.arigsela.com resolves to the ingress in-cluster.
+# See base-apps/dex — verified during rollout.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dex
+  namespace: dex
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32,170.85.130.202/32,104.28.177.82/32,10.0.0.0/8"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - dex.arigsela.com
+      secretName: dex-tls
+  rules:
+    - host: dex.arigsela.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dex
+                port:
+                  number: 5556
