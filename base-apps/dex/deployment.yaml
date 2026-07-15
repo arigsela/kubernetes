@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dex
+  namespace: dex
+  labels:
+    app: dex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dex
+  template:
+    metadata:
+      labels:
+        app: dex
+      annotations:
+        # Roll when the config changes so Dex reloads it.
+        checksum/config: "c8490e95d6e05a03"
+    spec:
+      serviceAccountName: dex
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      containers:
+        - name: dex
+          image: ghcr.io/dexidp/dex:v2.41.1
+          command: ["/usr/local/bin/dex", "serve", "/etc/dex/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 5556
+          # GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET / VAULT_CLIENT_SECRET —
+          # Dex expands these $ENV refs in config.yaml at load time.
+          envFrom:
+            - secretRef:
+                name: dex-secrets
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dex
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5556
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5556
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: config
+          configMap:
+            name: dex-config
