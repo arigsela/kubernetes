@@ -20,9 +20,13 @@ metadata:
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    # After the ConfigMap hook (wave -1) so the volume mount resolves.
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   backoffLimit: 2
-  activeDeadlineSeconds: 300
+  # Generous: the first run on a cold node pulls the full n8nio/n8n image
+  # before the CLI can start.
+  activeDeadlineSeconds: 600
   template:
     metadata:
       labels:
