@@ -177,10 +177,27 @@ data:
                   # Same fix: parse the JSON and match the `rule` field, rather
                   # than substring-matching the rendered line. `|= "priority"` is
                   # kept only as a cheap pre-filter to skip Falco's non-JSON startup
-                  # noise before `| json`. Verified against live Loki: returns 236.
+                  # noise before `| json`.
+                  #
+                  # "Contact K8S API Server From Container" is excluded for the
+                  # controllers that talk to the API *by design* — argo-cd (GitOps
+                  # reconcile), backstage (catalog ingestor), openshell (sandbox
+                  # manager), kagent (its k8s agents). They emit thousands of these
+                  # events/hour and kept this alert permanently firing on benign
+                  # control-plane traffic, which is just alert fatigue. The exclusion
+                  # binds ONLY to that rule: LogQL groups `and` tighter than `or`, so
+                  # this reads `Read-sensitive-file  OR  (Contact-API AND ns-not-a-
+                  # controller)`. So a sensitive-file read STILL alerts from any
+                  # namespace (incl. these four, where it matters most), and an
+                  # *unexpected* container contacting the API STILL alerts — only the
+                  # known controllers are silenced. Verified against live Loki: the
+                  # 2658-events/h baseline drops to 0, and the sensitive-file clause
+                  # is provably unaffected by the namespace filter.
                   expr: >-
                     sum(count_over_time({namespace="falco"} |= "priority" | json
-                    | rule=~"Read sensitive file untrusted|Contact K8S API Server From Container"
+                    | (rule="Read sensitive file untrusted"
+                    or rule="Contact K8S API Server From Container"
+                    and output_fields_k8s_ns_name!~"argo-cd|backstage|openshell|kagent")
                     [1h]))
               - refId: threshold
                 relativeTimeRange:
