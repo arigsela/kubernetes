@@ -3,9 +3,9 @@ app: n8n
 catalog_entity: n8n
 kind: docs
 namespace: n8n
-last_reviewed: 2026-07-10
+last_reviewed: 2026-07-15
 status: current
-tags: [automation, postgresql, webhooks]
+tags: [automation, postgresql, webhooks, alerting]
 sources:
   - base-apps/n8n/deployments.yaml
   - base-apps/n8n/external-secrets.yaml
@@ -14,12 +14,17 @@ sources:
   - base-apps/n8n/services.yaml
   - base-apps/n8n/nginx-ingress-admin.yaml
   - base-apps/n8n/nginx-ingress-webhook.yaml
+  - base-apps/n8n/workflows-configmap.yaml
+  - base-apps/n8n/import-workflows-job.yaml
 ---
 
 # n8n
 
 ## What it is
 n8n (`n8nio/n8n:latest`) is a workflow-automation platform, deployed as a single-replica `Deployment` (`deployments.yaml`) in the `n8n` namespace, listening on container port `5678`.
+
+## GitOps-managed workflows
+Most workflows are authored in the UI and live only in n8n's database, but workflows that other cluster components depend on are declared in Git: `workflows-configmap.yaml` holds the workflow JSON and `import-workflows-job.yaml` (an Argo CD PreSync hook Job) imports and activates it with the n8n CLI on every sync (idempotent upsert by fixed workflow id). Currently one workflow is managed this way: **Grafana Alerts to Slack** — the `POST /webhook/grafana-alerts` endpoint that `base-apps/logging/grafana-alerting.yaml` delivers all Grafana alert notifications to; it formats the unified-alerting payload and posts to Slack `#oncall-alerts` using the `SLACK_BOT_TOKEN` env var (Vault key `n8n`, property `slack-bot-token` — deliberately an env var, not an n8n credential object, because credential objects are encrypted at rest and cannot be imported declaratively). Caveat: n8n registers webhook routes at pod startup, so a change to the workflow JSON alone re-imports the DB row but needs a pod restart to take effect.
 
 ## Architecture & data flow
 The `Deployment` runs one pod on nodes labeled `node.kubernetes.io/workload: application`, with `fsGroup`/`runAsUser`/`runAsGroup` all set to `1000` so it can write to its mounted volume. A `n8n-pvc` `PersistentVolumeClaim` (`pvc.yaml`, `5Gi`, `storageClassName: local-path`) is mounted at `/home/node/.n8n` — this holds n8n's local state directory (settings file, etc.), **not** workflow/execution data: `DB_TYPE` is set to `postgresdb` (`deployments.yaml`), so n8n persists workflows, credentials, and execution history in the shared PostgreSQL instance (`base-apps/postgresql`) via `DB_POSTGRESDB_HOST/PORT/DATABASE/USER/PASSWORD` env vars sourced from the `n8n-secrets` Secret. The `n8n` `Service` (`services.yaml`, ClusterIP, port `5678`) fronts the pod for both ingresses below.

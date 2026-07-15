@@ -59,6 +59,15 @@ spec:
               name: n8n-secrets
               key: encryption-key
 
+        # Slack bot token for GitOps-managed workflows (workflows-configmap.yaml).
+        # Read inside workflow expressions as {{ $env.SLACK_BOT_TOKEN }} so no
+        # n8n credential object (encrypted, DB-resident, un-importable) is needed.
+        - name: SLACK_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: slack-bot-token
+
         # UPDATED: Webhook URL (changed to HTTPS)
         - name: WEBHOOK_URL
           value: "https://n8n.arigsela.com/"

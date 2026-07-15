@@ -1,0 +1,98 @@
+# GitOps-managed n8n workflows.
+#
+# n8n stores workflows in its Postgres database, not on disk, so they can't be
+# applied as Kubernetes resources directly. Instead this ConfigMap holds the
+# workflow JSON and import-workflows-job.yaml (an Argo CD PreSync hook) imports
+# it into the database with the n8n CLI on every sync. The import upserts by the
+# workflow's fixed "id", so re-running is a no-op when nothing changed.
+#
+# grafana-alerts.json — the alert-delivery endpoint Grafana depends on
+# (base-apps/logging/grafana-alerting.yaml posts to
+# http://n8n.n8n.svc.cluster.local:5678/webhook/grafana-alerts). Three nodes:
+#   Webhook (POST /webhook/grafana-alerts)
+#     → Code (format Grafana's unified-alerting payload into a Slack message)
+#     → HTTP Request (Slack chat.postMessage to #oncall-alerts).
+# Slack auth deliberately avoids n8n's encrypted credential store (credential
+# objects can't be imported declaratively without sharing the encryption key
+# material in Git): the HTTP node reads {{ $env.SLACK_BOT_TOKEN }}, injected
+# into the n8n Deployment from the n8n-secrets Secret (Vault key n8n,
+# property slack-bot-token).
+#
+# NOTE: n8n registers webhook routes for active workflows at STARTUP. Changing
+# only this ConfigMap re-imports the workflow into the DB but the running pod
+# keeps serving the old version until it restarts — bump the deployment (or
+# delete the pod) after workflow-only changes.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: n8n-workflows
+  namespace: n8n
+data:
+  grafana-alerts.json: |
+    {
+      "id": "grafana-alerts-slack",
+      "name": "Grafana Alerts to Slack",
+      "active": true,
+      "nodes": [
+        {
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "grafana-alerts",
+            "options": {}
+          },
+          "id": "b1f6c1e0-4a6e-4a01-8000-000000000001",
+          "name": "Grafana Webhook",
+          "type": "n8n-nodes-base.webhook",
+          "typeVersion": 2,
+          "position": [0, 0],
+          "webhookId": "b1f6c1e0-4a6e-4a01-8000-00000000000a"
+        },
+        {
+          "parameters": {
+            "jsCode": "const p = $json.body ?? $json;\nconst status = (p.status || 'unknown').toUpperCase();\nconst emoji = p.status === 'resolved' ? ':white_check_mark:' : ':rotating_light:';\nconst lines = (p.alerts || []).map((a) => {\n  const name = (a.labels && a.labels.alertname) || 'unknown-alert';\n  const sev = a.labels && a.labels.severity ? ' [' + a.labels.severity + ']' : '';\n  const summary = (a.annotations && (a.annotations.summary || a.annotations.description)) || '';\n  return emoji + ' *' + name + '*' + sev + ' (' + a.status + ') ' + summary;\n});\nconst text = ['*Grafana: ' + (p.title || status) + '*', ...lines].join('\\n');\nreturn [{ json: { slack: { channel: '#oncall-alerts', text: text, unfurl_links: false } } }];"
+          },
+          "id": "b1f6c1e0-4a6e-4a01-8000-000000000002",
+          "name": "Format Alert",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [220, 0]
+        },
+        {
+          "parameters": {
+            "method": "POST",
+            "url": "https://slack.com/api/chat.postMessage",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $env.SLACK_BOT_TOKEN }}"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            },
+            "sendBody": true,
+            "specifyBody": "json",
+            "jsonBody": "={{ JSON.stringify($json.slack) }}",
+            "options": {}
+          },
+          "id": "b1f6c1e0-4a6e-4a01-8000-000000000003",
+          "name": "Post to Slack",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.2,
+          "position": [440, 0]
+        }
+      ],
+      "connections": {
+        "Grafana Webhook": {
+          "main": [[{ "node": "Format Alert", "type": "main", "index": 0 }]]
+        },
+        "Format Alert": {
+          "main": [[{ "node": "Post to Slack", "type": "main", "index": 0 }]]
+        }
+      },
+      "settings": { "executionOrder": "v1" }
+    }

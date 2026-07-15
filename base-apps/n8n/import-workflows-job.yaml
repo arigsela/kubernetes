@@ -1,0 +1,100 @@
+# Imports the GitOps-managed workflows (workflows-configmap.yaml) into n8n's
+# database and activates them, using the n8n CLI against the same Postgres the
+# Deployment uses.
+#
+# PreSync, not PostSync: n8n only registers webhook routes for active workflows
+# at pod startup. Running the import BEFORE the main sync means that when a
+# Deployment change in the same sync rolls the pod, the new pod starts with the
+# workflow already in the database and registers its webhook immediately —
+# no ordering race. On syncs that don't roll the pod, the import is still a
+# safe upsert (fixed workflow id); see the ConfigMap header for the restart
+# caveat on workflow-only changes.
+#
+# BeforeHookCreation delete policy keeps the last run's logs around for
+# debugging until the next sync recreates the Job.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: n8n-import-workflows
+  namespace: n8n
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: n8n-import-workflows
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+      - name: import
+        image: n8nio/n8n:latest
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          set -e
+          n8n import:workflow --input=/workflows/grafana-alerts.json
+          n8n update:workflow --id=grafana-alerts-slack --active=true
+        env:
+        # Same database wiring as the n8n Deployment — the CLI talks straight
+        # to the DB, no running n8n server involved.
+        - name: DB_TYPE
+          value: "postgresdb"
+        - name: DB_POSTGRESDB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: db-host
+        - name: DB_POSTGRESDB_PORT
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: db-port
+        - name: DB_POSTGRESDB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: db-name
+        - name: DB_POSTGRESDB_USER
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: db-user
+        - name: DB_POSTGRESDB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: db-password
+        - name: N8N_ENCRYPTION_KEY
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: encryption-key
+        # The CLI wants a writable settings dir; keep it off the Deployment's
+        # PVC so the Job never contends with the running pod.
+        - name: N8N_USER_FOLDER
+          value: /tmp/n8n
+        volumeMounts:
+        - name: workflows
+          mountPath: /workflows
+          readOnly: true
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: workflows
+        configMap:
+          name: n8n-workflows
