@@ -51,16 +51,28 @@ spec:
           ports:
             - containerPort: 11434
               name: http
+          env:
+            # Keep the embedding model resident instead of unloading it after the
+            # default 5m idle. On CPU-only Ollama the cold reload of nomic-embed-text
+            # took ~2m43s (measured), and was the dominant latency source for kagent
+            # agents (e.g. homelab-knowledge) whenever they were used after a quiet
+            # period. The model is ~274MB, so pinning it fits within the limit below.
+            - name: OLLAMA_KEEP_ALIVE
+              value: "-1"
           volumeMounts:
             - name: ollama-storage
               mountPath: /root/.ollama
           resources:
             requests:
-              cpu: 100m
-              memory: 512Mi
-            limits:
-              cpu: 1000m
+              cpu: 250m
               memory: 1Gi
+            limits:
+              # CPU-only embedding is CPU-bound and the node has ample headroom;
+              # more cores cut warm-embed latency (was ~1-7s/call) and the one-time
+              # model load on pod restart. Memory raised so the always-resident
+              # model can't OOM the pod.
+              cpu: "3"
+              memory: 2Gi
           readinessProbe:
             httpGet:
               path: /
