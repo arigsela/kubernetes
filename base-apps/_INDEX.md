@@ -18,7 +18,6 @@ Pilot apps carry the full agent-docs contract; others are stubs pending backfill
 | atlantis | Terraform/OpenTofu PR automation (Atlantis, GitHub + AWS auth via Vault, Infracost) | atlantis | docs.md | runbook.md | catalog-info.yaml |
 | backstage | Internal developer portal / software catalog (Backstage, shared PostgreSQL, Vault, kubernetes-ingestor) | backstage | docs.md | runbook.md | catalog-info.yaml |
 | chores-tracker-frontend | HTMX/nginx web frontend for Chores Tracker | chores-tracker-frontend | docs.md | runbook.md | catalog-info.yaml |
-| cluster-scanner | | | | | |
 | coroot | eBPF-based observability/APM (Coroot operator + instance, node/cluster agents, ClickHouse) | coroot | docs.md | runbook.md | catalog-info.yaml |
 | crossplane-aws-provider | | | | | |
 | crossplane-compositions | | | | | |
