@@ -12,10 +12,18 @@ metadata:
     # Backend Protocol
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 
-    # Rate Limiting (prevent brute force attacks on admin UI)
-    # Increased from 10 to 100 to allow n8n's many JS assets to load on initial page load
-    nginx.ingress.kubernetes.io/limit-rps: "100"
-    nginx.ingress.kubernetes.io/limit-connections: "50"
+    # No per-request/connection rate limit on the admin UI.
+    #
+    # This ingress is already restricted to a handful of operator IPs by the
+    # whitelist-source-range below — that is the real access control, and n8n
+    # has its own login throttling on top. An nginx rate limit here only throttles
+    # already-trusted traffic, and it repeatedly broke the SPA: n8n's cold page
+    # load fires hundreds of parallel JS-chunk + /rest/* requests, which trip
+    # limit-rps/limit-connections and return 503. /rest/settings getting 503'd
+    # blanks the whole UI. The limit was already raised 10 -> 100 once for this
+    # reason; the n8n v2.30.5 upgrade (more, finer-grained chunks) blew past 100.
+    # Removing it ends the whack-a-mole. The public webhook ingress keeps its
+    # rate limits, since that one is not IP-restricted.
 
     # 🔒 IP WHITELIST - Admin UI Only
     # Only these IPs can access the n8n admin interface
