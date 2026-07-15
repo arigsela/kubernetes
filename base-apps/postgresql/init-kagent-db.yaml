@@ -3,6 +3,14 @@ kind: Job
 metadata:
   name: init-kagent-db
   namespace: postgresql
+  annotations:
+    # Sync hook, not a desired-state resource: with ttlSecondsAfterFinished the
+    # completed Job deletes itself, which left the app permanently
+    # OutOfSync/Missing between syncs. As a hook it re-runs on every sync
+    # (idempotent by design) and is cleaned up on success without registering
+    # as drift.
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   ttlSecondsAfterFinished: 300
   backoffLimit: 5
