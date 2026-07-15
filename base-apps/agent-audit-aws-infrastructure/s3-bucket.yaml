@@ -21,7 +21,10 @@ spec:
   forProvider:
     region: us-east-1
     tags:
-      Name: "Agent Action Record (durable, redacted)"
+      # S3 tag VALUES allow only letters, digits, spaces and + - = . _ : / @ —
+      # NOT parentheses or commas. "Agent Action Record (durable, redacted)" was
+      # rejected by AWS with `InvalidTag`, leaving the bucket stuck Ready=False.
+      Name: "Agent Action Record durable redacted"
       Environment: "homelab"
       ManagedBy: "Crossplane"
       Purpose: "L03 Observability audit trail"
