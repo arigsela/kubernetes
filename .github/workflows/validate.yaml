@@ -176,6 +176,13 @@ jobs:
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run agent-audit redaction tests
         run: python -m pytest tests/agent-audit/ -q
+      - name: Run eval-corpus tests
+        run: python -m pytest tests/eval-corpus/ -q
+      # The golden corpus is committed and will be fed to an LLM judge. Validate its
+      # schema and — critically — that no secret was checked in (refusal entries ask
+      # for secrets by design, so a careless golden could paste one).
+      - name: Validate the eval corpus
+        run: python scripts/validate-eval-corpus.py --repo-root .
       # The CronJob ships agent-audit.py inside a ConfigMap. If that copy drifts
       # from scripts/agent-audit.py, the code we AUDIT WITH stops being the code we
       # TESTED — and the redaction logic is exactly what you cannot have two of.
