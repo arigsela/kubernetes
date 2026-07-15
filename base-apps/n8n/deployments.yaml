@@ -37,7 +37,7 @@ spec:
       # unrelated app syncs and left the webhook active-in-DB but unregistered
       # whenever the pod didn't happen to restart — a real 404 we hit in prod.)
       - name: import-workflows
-        image: n8nio/n8n:latest
+        image: n8nio/n8n:2.30.5
         command: ["/bin/sh", "-c"]
         args:
         - |
@@ -93,7 +93,7 @@ spec:
             cpu: "500m"
       containers:
       - name: n8n
-        image: n8nio/n8n:latest
+        image: n8nio/n8n:2.30.5
         env:
         # Database Configuration
         - name: DB_TYPE

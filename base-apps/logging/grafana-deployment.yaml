@@ -81,10 +81,18 @@ spec:
           name: http
           protocol: TCP
         env:
+        # Sourced from Vault (k8s-secrets/grafana) via the grafana-admin
+        # ExternalSecret — no longer hardcoded. See grafana-admin-external-secret.yaml.
         - name: GF_SECURITY_ADMIN_USER
-          value: admin
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin
+              key: admin-user
         - name: GF_SECURITY_ADMIN_PASSWORD
-          value: admin
+          valueFrom:
+            secretKeyRef:
+              name: grafana-admin
+              key: admin-password
         - name: GF_USERS_ALLOW_SIGN_UP
           value: "false"
         - name: GF_SERVER_ROOT_URL
