@@ -1,0 +1,40 @@
+# HTTPS ingress for the Vault UI at vault.arigsela.com.
+#
+# nginx terminates TLS (letsencrypt-prod) and proxies to Vault's HTTP listener
+# on :8200 (the listener itself is still tls_disable — that's a separate change,
+# audit finding #2). So browser->nginx is encrypted; the nginx->Vault hop stays
+# in-cluster plaintext. IP-allowlisted like the other admin surfaces.
+#
+# This is a SEPARATE ingress from `vault-internal` (the .local hosts), and
+# deliberately does NOT set rewrite-target: the Vault UI/API needs its real
+# paths (/ui, /v1, /ui/vault/auth/oidc/oidc/callback) intact.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vault-ui
+  namespace: vault
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/whitelist-source-range: "73.7.190.154/32,170.85.56.189/32,170.85.130.202/32,104.28.177.82/32,10.0.0.0/8"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - vault.arigsela.com
+      secretName: vault-arigsela-tls
+  rules:
+    - host: vault.arigsela.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vault
+                port:
+                  number: 8200

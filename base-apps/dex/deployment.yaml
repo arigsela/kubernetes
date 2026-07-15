@@ -16,7 +16,7 @@ spec:
         app: dex
       annotations:
         # Roll when the config changes so Dex reloads it.
-        checksum/config: "c8490e95d6e05a03"
+        checksum/config: "5326419fe0a7dc38"
     spec:
       serviceAccountName: dex
       nodeSelector:

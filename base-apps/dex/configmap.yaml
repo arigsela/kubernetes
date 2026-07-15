@@ -36,6 +36,7 @@ data:
           - http://localhost:8250/oidc/callback
           - https://vault.local/ui/vault/auth/oidc/oidc/callback
           - https://vault.10.0.1.110/ui/vault/auth/oidc/oidc/callback
+          - https://vault.arigsela.com/ui/vault/auth/oidc/oidc/callback
 
     connectors:
       - type: github
