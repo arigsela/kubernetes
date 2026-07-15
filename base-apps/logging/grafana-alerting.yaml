@@ -18,14 +18,14 @@
 # DELIVERY
 #
 # Grafana POSTs to an n8n webhook, and n8n fans out to wherever you want — Slack,
-# email, phone push — changeable later without touching the cluster. There was no
-# Slack credential anywhere in Vault, and n8n is already running with a webhook
-# ingress, so this needs no new secret and no new component either.
+# email, phone push — changeable later without touching the cluster.
 #
-#   ⚠ YOU MUST CREATE THE n8n WORKFLOW. Add a Webhook node listening on the path
-#     `grafana-alerts` (POST). Until it exists, Grafana's notifications will 404 —
-#     the alert rules still evaluate and are visible in Grafana's UI, but nothing
-#     will reach you.
+#   The receiving workflow is GitOps-managed since 2026-07-15:
+#   base-apps/n8n/workflows-configmap.yaml defines it (Webhook node on path
+#   `grafana-alerts` → Slack #oncall-alerts) and base-apps/n8n/import-workflows-job.yaml
+#   imports and activates it on every n8n app sync. If the workflow is ever
+#   missing or inactive, Grafana's notifications 404 — the alert rules still
+#   evaluate and are visible in Grafana's UI, but nothing will reach you.
 #
 # WHAT IS DELIBERATELY NOT SENT
 #
