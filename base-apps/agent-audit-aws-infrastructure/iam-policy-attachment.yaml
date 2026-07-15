@@ -1,0 +1,18 @@
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: UserPolicyAttachment
+metadata:
+  name: agent-audit-s3-user-policy
+  labels:
+    app: agent-audit
+    component: iam-policy-attachment
+    managed-by: crossplane
+spec:
+  forProvider:
+    policyArnSelector:
+      matchLabels:
+        app: agent-audit
+        component: iam-policy
+    userRef:
+      name: agent-audit-s3-user
+  providerConfigRef:
+    name: default

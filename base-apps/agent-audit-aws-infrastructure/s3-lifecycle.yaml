@@ -1,0 +1,35 @@
+# Retention for the durable agent action record.
+#
+# The operational DB keeps whatever kagent keeps (no TTL today). THIS is the
+# long-term audit copy, so it is retained on an audit horizon, not an ops one:
+# cheap storage after 90 days, expired after 2 years. Old non-current versions
+# (from the versioning above) are cleaned up sooner — they exist for tamper-
+# evidence, not archival.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketLifecycleConfiguration
+metadata:
+  name: asela-agent-audit-record-lifecycle
+  labels:
+    app: agent-audit
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-1
+    bucketSelector:
+      matchLabels:
+        app: agent-audit
+        component: storage
+    rule:
+      - id: audit-retention
+        status: Enabled
+        filter:
+          - prefix: ""
+        transition:
+          - days: 90
+            storageClass: STANDARD_IA
+        expiration:
+          - days: 730
+        noncurrentVersionExpiration:
+          - noncurrentDays: 30
+  providerConfigRef:
+    name: default

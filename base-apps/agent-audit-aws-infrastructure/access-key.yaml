@@ -1,0 +1,27 @@
+# Crossplane mints the access key and writes it to a k8s Secret directly — no
+# manual key creation, no Vault round-trip. The CronJob consumes this Secret.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: AccessKey
+metadata:
+  name: agent-audit-s3-key
+  labels:
+    app: agent-audit
+    component: access-key
+    managed-by: crossplane
+spec:
+  forProvider:
+    userSelector:
+      matchLabels:
+        app: agent-audit
+        component: iam-user
+  # Provider-aws-iam writes the connection secret with these keys (confirmed
+  # against the live argo-workflows-s3-creds secret):
+  #   username          -> the AWS access key ID (AKIA...)
+  #   attribute.secret  -> the AWS secret access key
+  # There is NO attribute.id key. Written into the postgresql namespace where the
+  # export CronJob runs, alongside the SELECT-only DB credential.
+  writeConnectionSecretToRef:
+    name: agent-audit-s3-creds
+    namespace: postgresql
+  providerConfigRef:
+    name: default
