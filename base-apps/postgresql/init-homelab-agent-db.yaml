@@ -48,13 +48,29 @@ spec:
           echo "homelab_agent database initialized successfully with pgvector extension"
         env:
         - name: POSTGRES_USER
-          valueFrom: { secretKeyRef: { name: postgresql-credentials, key: n8n-user } }
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-credentials
+              key: n8n-user
         - name: POSTGRES_PASSWORD
-          valueFrom: { secretKeyRef: { name: postgresql-credentials, key: n8n-password } }
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-credentials
+              key: n8n-password
         - name: POSTGRES_DB
-          valueFrom: { secretKeyRef: { name: postgresql-credentials, key: database-name } }
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-credentials
+              key: database-name
         - name: HOMELAB_PASSWORD
-          valueFrom: { secretKeyRef: { name: homelab-agent-db-credentials, key: password } }
+          valueFrom:
+            secretKeyRef:
+              name: homelab-agent-db-credentials
+              key: password
         resources:
-          requests: { memory: "64Mi", cpu: "50m" }
-          limits: { memory: "128Mi", cpu: "100m" }
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"

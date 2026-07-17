@@ -27,16 +27,29 @@ spec:
       ports:
         - containerPort: 8080
       resources:
-        requests: { cpu: 100m, memory: 256Mi }
-        limits: { cpu: 1000m, memory: 1Gi }
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
       env:
         # --- secrets (from Task 2 ESO) ---
         - name: ANTHROPIC_API_KEY
-          valueFrom: { secretKeyRef: { name: homelab-agent-secrets, key: anthropic-api-key } }
+          valueFrom:
+            secretKeyRef:
+              name: homelab-agent-secrets
+              key: anthropic-api-key
         - name: BACKSTAGE_MCP_TOKEN
-          valueFrom: { secretKeyRef: { name: homelab-agent-secrets, key: backstage-token } }
+          valueFrom:
+            secretKeyRef:
+              name: homelab-agent-secrets
+              key: backstage-token
         - name: MEMORY_DB_URL
-          valueFrom: { secretKeyRef: { name: homelab-agent-db, key: MEMORY_DB_URL } }
+          valueFrom:
+            secretKeyRef:
+              name: homelab-agent-db
+              key: MEMORY_DB_URL
         # --- model + endpoints (literals) ---
         - name: MODEL_NAME
           value: claude-sonnet-4-6
