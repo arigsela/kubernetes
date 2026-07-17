@@ -68,7 +68,7 @@ For each of the two Vault paths, a dedicated ESO ServiceAccount + SecretStore, t
 ### D. Vault provisioning (operator-run — I provide the commands)
 
 A copy-pasteable block the user runs once against Vault (root token):
-- `vault kv put k8s-secrets/homelab-agent-db password="$(openssl rand -base64 32)"` (random, never printed).
+- `vault kv put k8s-secrets/homelab-agent-db password="$(openssl rand -hex 32)"` (random, URL-safe hex so the DSN needs no escaping; never printed).
 - `vault kv put k8s-secrets/homelab-agent anthropic-api-key=<value> backstage-token=<value>` (user supplies their real values).
 - Two `vault policy write` (each reads only its one path).
 - Three `vault write auth/kubernetes/role/…` — `homelab-agent` (bound to `eso-homelab-agent` in `kagent`), `homelab-agent-db` (bound to `eso-homelab-agent-db` in `kagent`), and `homelab-agent-db` again bound to `eso-homelab-agent-db` in `postgresql` — or one role with both SA/namespace bounds, whichever the Vault k8s-auth role schema allows (resolve in the plan).
