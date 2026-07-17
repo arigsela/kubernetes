@@ -26,7 +26,7 @@ spec:
   # /.well-known/agent.json; kagent introspects that card.
   byo:
     deployment:
-      image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/homelab-agent:v0.2.0
+      image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/homelab-agent:v0.3.0
       serviceAccountName: homelab-agent
       # No `ports` field — the kagent 0.9.11 BYO contract assumes the container
       # serves A2A on :8080 (kagent wires the Service itself).
