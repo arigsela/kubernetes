@@ -149,13 +149,12 @@ spec:
           set -e
           PG_HOST="postgresql.postgresql.svc.cluster.local"
           PG_PORT="5432"
-          ESCAPED_PASSWORD=$(echo "$HOMELAB_PASSWORD" | sed "s/'/''/g")
           until pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$POSTGRES_USER"; do
             echo "Waiting for PostgreSQL..."; sleep 2
           done
           PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
             -v homelab_user="homelab_agent" \
-            -v homelab_password="$ESCAPED_PASSWORD" \
+            -v homelab_password="$HOMELAB_PASSWORD" \
             -v homelab_db="homelab_agent" <<'EOSQL'
             SELECT format('CREATE ROLE %I WITH LOGIN PASSWORD %L', :'homelab_user', :'homelab_password')
             WHERE NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = :'homelab_user')\gexec
