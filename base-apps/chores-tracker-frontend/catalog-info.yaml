@@ -13,5 +13,7 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: default/chores-tracker
+  consumesApis:
+    - default/chores-tracker-backend-api
   dependsOn:
     - component:chores-tracker/chores-tracker-backend

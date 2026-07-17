@@ -1,0 +1,48 @@
+# Backstage-only API entities for the platform's HTTP/OIDC APIs. NOT Kubernetes
+# manifests and NOT under base-apps/, so Argo CD never syncs them. Ingested via a
+# url catalog Location (arigsela/backstage app-config). spec.definition uses the
+# $text placeholder to live-fetch each spec from the app's in-cluster service, so
+# the Backstage backend (running in-cluster) resolves it; the hosts are allow-
+# listed via backend.reading.allow. All in the default namespace so the pilots'
+# fully-qualified refs (default/<name>) resolve.
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: chores-tracker-backend-api
+  description: Chores Tracker FastAPI backend (OpenAPI).
+  tags: [openapi, fastapi]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: default/chores-tracker
+  definition:
+    $text: http://chores-tracker-backend.chores-tracker.svc.cluster.local/openapi.json
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: weather-kitchen-backend-api
+  description: Weather Kitchen FastAPI backend (OpenAPI).
+  tags: [openapi, fastapi]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: default/weather-kitchen
+  definition:
+    $text: http://weather-kitchen-backend.weather-kitchen.svc.cluster.local/openapi.json
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: dex-oidc-api
+  description: Dex OpenID Connect provider (discovery document).
+  tags: [oidc, openid-connect]
+spec:
+  type: openid-connect
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-automation
+  definition:
+    $text: http://dex.dex.svc.cluster.local:5556/.well-known/openid-configuration

@@ -13,5 +13,7 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: default/weather-kitchen
+  consumesApis:
+    - default/weather-kitchen-backend-api
   dependsOn:
     - component:weather-kitchen/weather-kitchen-backend
