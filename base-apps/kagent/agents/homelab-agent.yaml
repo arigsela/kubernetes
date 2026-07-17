@@ -1,0 +1,83 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: homelab-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/managed-by: kagent
+    app.kubernetes.io/name: homelab-agent
+    app: kagent
+    arigsela.com/idp-managed: "true"
+    # Read-only, capability-transitive: own tools are reads; delegates only to
+    # k8s-reader (itself read-only). Carried from homelab-knowledge.
+    capability.homelab/class: read
+  annotations:
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: kagent-agent
+    backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/homelab-agent.yaml
+    backstage.io/owner: group:default/platform-engineering
+spec:
+  description: LangGraph BYO agent — answers homelab GitOps/architecture and live-cluster questions (parity with homelab-knowledge), with conversation memory.
+  type: BYO
+  byo:
+    deployment:
+      image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/homelab-agent:v0.2.0
+      serviceAccountName: homelab-agent
+      ports:
+        - containerPort: 8080
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits: { cpu: 1000m, memory: 1Gi }
+      env:
+        # --- secrets (from Task 2 ESO) ---
+        - name: ANTHROPIC_API_KEY
+          valueFrom: { secretKeyRef: { name: homelab-agent-secrets, key: anthropic-api-key } }
+        - name: BACKSTAGE_MCP_TOKEN
+          valueFrom: { secretKeyRef: { name: homelab-agent-secrets, key: backstage-token } }
+        - name: MEMORY_DB_URL
+          valueFrom: { secretKeyRef: { name: homelab-agent-db, key: MEMORY_DB_URL } }
+        # --- model + endpoints (literals) ---
+        - name: MODEL_NAME
+          value: claude-sonnet-4-6
+        - name: AGENT_DOCS_MCP_URL
+          value: http://agent-docs-mcp.kagent:3000/mcp
+        - name: BACKSTAGE_MCP_URL
+          value: http://backstage.backstage.svc.cluster.local/api/mcp-actions/v1/catalog
+        - name: K8S_READER_A2A_URL
+          value: http://k8s-reader.kagent.svc.cluster.local:8080
+        - name: OLLAMA_BASE_URL
+          value: http://ollama.ollama.svc.cluster.local:11434
+        - name: EMBEDDING_MODEL
+          value: nomic-embed-text
+        - name: MEMORY_NAMESPACE
+          value: homelab-agent
+        - name: AGENT_URL
+          value: http://homelab-agent.kagent.svc.cluster.local:8080
+        - name: LOG_LEVEL
+          value: INFO
+  a2aConfig:
+    skills:
+      - id: repo-knowledge
+        name: Repo & Architecture Knowledge
+        description: Explain what's deployed, where it lives in the GitOps repo, and how components are wired together.
+        examples:
+          - What is cert-manager and how does it issue certs here?
+          - Who owns chores-tracker-backend and what does it depend on?
+          - Where does vault store its config and how is it unsealed?
+        tags: [gitops, documentation, architecture]
+      - id: cluster-troubleshooting
+        name: Cluster State Troubleshooting
+        description: Diagnose issues by checking live pod/deployment/event state and correlating with the GitOps manifests.
+        examples:
+          - cert-manager Certificates are stuck pending — walk me through the runbook.
+          - chores-tracker-backend is CrashLooping — what does its runbook say to check?
+          - Is the argo-cd control plane healthy?
+        tags: [troubleshooting, kubernetes, argocd]
+      - id: deployment-guidance
+        name: Deployment & Onboarding Guidance
+        description: Recommend how to onboard a new app following the established base-apps patterns (Crossplane composition, SecretStore, ingress, ECR auth).
+        examples:
+          - I want to deploy a new service called billing-api. What's the right pattern?
+          - How do I add Vault secrets for a new namespace?
+        tags: [onboarding, crossplane, idp]
