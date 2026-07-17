@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-homelab-agent-db
+  namespace: postgresql
+  annotations:
+    # Sync hook (idempotent, self-cleaning) — same rationale as init-kagent-db.
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app: init-homelab-agent-db
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      restartPolicy: OnFailure
+      containers:
+      - name: init-homelab-agent-db
+        image: pgvector/pgvector:0.8.2-pg18
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          PG_HOST="postgresql.postgresql.svc.cluster.local"
+          PG_PORT="5432"
+          ESCAPED_PASSWORD=$(echo "$HOMELAB_PASSWORD" | sed "s/'/''/g")
+          until pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$POSTGRES_USER"; do
+            echo "Waiting for PostgreSQL..."; sleep 2
+          done
+          PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+            -v homelab_user="homelab_agent" \
+            -v homelab_password="$ESCAPED_PASSWORD" \
+            -v homelab_db="homelab_agent" <<'EOSQL'
+            SELECT format('CREATE ROLE %I WITH LOGIN PASSWORD %L', :'homelab_user', :'homelab_password')
+            WHERE NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = :'homelab_user')\gexec
+            SELECT format('ALTER ROLE %I WITH PASSWORD %L', :'homelab_user', :'homelab_password')
+            WHERE EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = :'homelab_user')\gexec
+            SELECT format('CREATE DATABASE %I OWNER %I', :'homelab_db', :'homelab_user')
+            WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'homelab_db')\gexec
+          EOSQL
+          PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" -U "$POSTGRES_USER" -d "homelab_agent" <<'EOSQL'
+            CREATE EXTENSION IF NOT EXISTS vector;
+          EOSQL
+          echo "homelab_agent database initialized successfully with pgvector extension"
+        env:
+        - name: POSTGRES_USER
+          valueFrom: { secretKeyRef: { name: postgresql-credentials, key: n8n-user } }
+        - name: POSTGRES_PASSWORD
+          valueFrom: { secretKeyRef: { name: postgresql-credentials, key: n8n-password } }
+        - name: POSTGRES_DB
+          valueFrom: { secretKeyRef: { name: postgresql-credentials, key: database-name } }
+        - name: HOMELAB_PASSWORD
+          valueFrom: { secretKeyRef: { name: homelab-agent-db-credentials, key: password } }
+        resources:
+          requests: { memory: "64Mi", cpu: "50m" }
+          limits: { memory: "128Mi", cpu: "100m" }
