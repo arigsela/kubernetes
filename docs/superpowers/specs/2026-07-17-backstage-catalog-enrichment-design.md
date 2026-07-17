@@ -108,9 +108,16 @@ the live catalog via the read-only MCP catalog server (`ask hk`: "does the
 **Goal:** catalog the platform's APIs and wire provider/consumer relations so the
 API Explorer and dependency graph populate.
 
-**Changes (`arigsela/kubernetes`)** — add `kind: API` entities as additional YAML
-documents inside the relevant `catalog-info.yaml` (discovery already ingests
-these files; global rules already allow `API`):
+**Changes (`arigsela/kubernetes`)** — define `kind: API` entities in a new
+`catalog/api-entities.yaml`, ingested via a dedicated url location (mirroring the
+existing `platform-entities.yaml` pattern). They are **not** added as extra
+documents inside `base-apps/*/catalog-info.yaml`: `scripts/validate-agent-docs.py`
+reads those files with single-document `yaml.safe_load`, and the discovery
+provider only scans `base-apps/*/catalog-info.yaml` (a sibling `api.yaml` would be
+both un-ingested and Argo-CD-applied). API entities live in `namespace: default`
+and are referenced fully-qualified as `default/<name>` (consistent with the
+taxonomy). Only the `providesApis`/`consumesApis` fields are added to the existing
+Component entities (single-document edits):
 
 - `chores-tracker-backend-api` — `spec.type: openapi`, `spec.lifecycle: production`,
   `spec.owner: group:default/platform`, `spec.system: default/chores-tracker`,
@@ -124,10 +131,17 @@ these files; global rules already allow `API`):
 - On the frontends: `spec.consumesApis:` (chores-tracker-frontend → chores API;
   weather-kitchen-frontend → weather API).
 
-**Change (`arigsela/backstage`):** add `backend.reading.allow` host entries (the
-three internal service hosts) to `app-config.yaml` and `app-config.production.yaml`.
-Backstage's URL reader rejects non-allow-listed hosts, so `$text` fails without
-this. Internal svc URLs avoid public-ingress auth gating.
+**Changes (`arigsela/backstage`):**
+
+- Register `catalog/api-entities.yaml` as a url location in `catalog.locations`
+  (`rules: allow: [API]`), in **both** `app-config.yaml` and
+  `app-config.production.yaml` (arrays replace across layers).
+- Add `backend.reading.allow` host entries (the three internal service hosts) to
+  `app-config.yaml` only — production inherits it (the `backend` object
+  deep-merges and prod does not override `reading`; unlike `catalog.locations`,
+  an array that must be restated). Backstage's URL reader rejects non-allow-listed
+  hosts, so `$text` fails without this. Internal svc URLs avoid public-ingress
+  auth gating.
 
 **Verify:** API entities appear under `/api-docs`; each backend page shows a
 "Provided APIs" section; `$text` resolves (no catalog processing error).
@@ -220,11 +234,13 @@ and the `argocd/app-name` / `grafana/tag-selector` annotations. Phase 3 pre-seed
 **Validation:**
 
 - `yamllint` on all new/edited catalog YAML (repo already uses it).
-- A "dangling-ref" check: a small script that collects every referenced
-  `owner:`, `system:`, `dependsOn:`, `providesApis:`, `consumesApis:` and asserts
-  each target is defined (in `catalog/platform-entities.yaml`, a `base-apps/*`
-  entity, or an in-repo API entity). Run in CI / pre-commit to keep the catalog
-  clean as coverage grows.
+- A "dangling-ref" check — `scripts/validate-catalog-refs.py` + `tests/catalog-refs/`
+  + a `catalog-refs-validate` CI job (following the repo's existing
+  `validate-*.py` validator pattern). It collects every referenced `owner:`,
+  `system:`, `dependsOn:`, `providesApis:`, `consumesApis:` and asserts each
+  target is defined in git (in `catalog/*.yaml` or a `base-apps/*` entity). Built
+  in this first plan; extended as coverage grows. (Refs to live-ingested
+  kagent/Crossplane entities are out of git scope — allowlisted if they appear.)
 - After each deploy, spot-check the live catalog for processing errors via the
   read-only MCP catalog server (`ask hk`).
 
