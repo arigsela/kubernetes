@@ -20,12 +20,16 @@ metadata:
 spec:
   description: LangGraph BYO agent — answers homelab GitOps/architecture and live-cluster questions (parity with homelab-knowledge), with conversation memory.
   type: BYO
+  # No a2aConfig: it is Declarative-only in the kagent 0.9.11 CRD. This BYO
+  # agent advertises its skills (repo-knowledge, cluster-troubleshooting,
+  # deployment-guidance) via the A2A agent card the container serves at
+  # /.well-known/agent.json; kagent introspects that card.
   byo:
     deployment:
       image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/homelab-agent:v0.2.0
       serviceAccountName: homelab-agent
-      ports:
-        - containerPort: 8080
+      # No `ports` field — the kagent 0.9.11 BYO contract assumes the container
+      # serves A2A on :8080 (kagent wires the Service itself).
       resources:
         requests:
           cpu: 100m
@@ -69,28 +73,3 @@ spec:
           value: http://homelab-agent.kagent.svc.cluster.local:8080
         - name: LOG_LEVEL
           value: INFO
-  a2aConfig:
-    skills:
-      - id: repo-knowledge
-        name: Repo & Architecture Knowledge
-        description: Explain what's deployed, where it lives in the GitOps repo, and how components are wired together.
-        examples:
-          - What is cert-manager and how does it issue certs here?
-          - Who owns chores-tracker-backend and what does it depend on?
-          - Where does vault store its config and how is it unsealed?
-        tags: [gitops, documentation, architecture]
-      - id: cluster-troubleshooting
-        name: Cluster State Troubleshooting
-        description: Diagnose issues by checking live pod/deployment/event state and correlating with the GitOps manifests.
-        examples:
-          - cert-manager Certificates are stuck pending — walk me through the runbook.
-          - chores-tracker-backend is CrashLooping — what does its runbook say to check?
-          - Is the argo-cd control plane healthy?
-        tags: [troubleshooting, kubernetes, argocd]
-      - id: deployment-guidance
-        name: Deployment & Onboarding Guidance
-        description: Recommend how to onboard a new app following the established base-apps patterns (Crossplane composition, SecretStore, ingress, ECR auth).
-        examples:
-          - I want to deploy a new service called billing-api. What's the right pattern?
-          - How do I add Vault secrets for a new namespace?
-        tags: [onboarding, crossplane, idp]
