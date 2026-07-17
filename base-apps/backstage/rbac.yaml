@@ -41,6 +41,15 @@ rules:
       - jobs
       - cronjobs
     verbs: ["get", "list", "watch"]
+  # Pod/node metrics (metrics-server, v1beta1.metrics.k8s.io). The Kubernetes
+  # plugin queries PodMetrics to fill the CPU/Memory columns on the entity's
+  # Kubernetes tab; without this the SA gets 403 and the UI shows "unknown".
+  # get/list only — the metrics API does not support watch.
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - pods
+      - nodes
+    verbs: ["get", "list"]
 
 ---
 
