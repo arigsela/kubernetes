@@ -4,6 +4,27 @@ One-time operator actions (run with a Vault root/admin token) to back the
 ESO manifests in `base-apps/postgresql/` and `base-apps/kagent/`. Nothing here
 is committed with real values; the DB password is generated inline.
 
+## 0. Recommended: the provisioning script
+
+`scripts/provision-homelab-agent-vault.sh` does everything in sections 1–3
+idempotently (generates the DB password once and preserves it on re-run;
+reads the app tokens from env vars so they never hit shell history):
+
+```sh
+kubectl -n vault cp scripts/provision-homelab-agent-vault.sh vault-0:/tmp/prov.sh
+kubectl -n vault exec -it vault-0 -- sh
+export VAULT_TOKEN=<root-or-admin-token>
+export ANTHROPIC_API_KEY=<key>          # first run only (or to rotate)
+export BACKSTAGE_MCP_TOKEN=<token>       # first run only (or to rotate)
+sh /tmp/prov.sh
+unset ANTHROPIC_API_KEY BACKSTAGE_MCP_TOKEN VAULT_TOKEN
+rm /tmp/prov.sh
+exit
+```
+
+Then jump to section 4 to roll out and verify. The manual commands below
+(sections 1–3) are the equivalent reference if you'd rather run them by hand.
+
 ## 1. Vault secrets
 
 ```bash
