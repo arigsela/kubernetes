@@ -13,5 +13,7 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: default/chores-tracker
+  providesApis:
+    - default/chores-tracker-backend-api
   dependsOn:
     - resource:vault/vault
