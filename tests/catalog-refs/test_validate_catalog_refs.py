@@ -138,3 +138,16 @@ spec:
     )
     _defined, unresolved = mod.scan(str(tmp_path))
     assert any(ref == "default/ghost-api" for _p, field, ref in unresolved if field == "consumesApis")
+
+
+def test_malformed_yaml_does_not_crash(tmp_path):
+    _taxonomy(tmp_path)
+    _write(
+        tmp_path,
+        "catalog/broken.yaml",
+        """
+":
+  - [unclosed
+""".lstrip(),
+    )
+    mod.scan(str(tmp_path))

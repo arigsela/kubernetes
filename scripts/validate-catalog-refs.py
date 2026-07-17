@@ -56,7 +56,12 @@ def _iter_entities(repo_root):
     paths = sorted((root / "catalog").glob("*.yaml"))
     paths += sorted((root / "base-apps").glob("*/catalog-info.yaml"))
     for path in paths:
-        for doc in yaml.safe_load_all(path.read_text()):
+        try:
+            docs = list(yaml.safe_load_all(path.read_text()))
+        except yaml.YAMLError as e:
+            print(f"WARNING: skipping {path}: malformed YAML ({e})", file=sys.stderr)
+            continue
+        for doc in docs:
             if isinstance(doc, dict) and doc.get("kind") and isinstance(doc.get("metadata"), dict):
                 yield path, doc
 
