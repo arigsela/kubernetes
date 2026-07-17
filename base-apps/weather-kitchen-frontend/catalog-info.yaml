@@ -5,6 +5,8 @@ metadata:
   namespace: weather-kitchen-frontend
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app=weather-kitchen-frontend'
+    backstage.io/kubernetes-namespace: weather-kitchen-frontend
   tags: [nginx, node, frontend]
 spec:
   type: website

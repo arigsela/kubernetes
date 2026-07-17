@@ -5,6 +5,8 @@ metadata:
   namespace: coroot
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app.kubernetes.io/part-of=coroot'
+    backstage.io/kubernetes-namespace: coroot
   tags: [observability, ebpf, apm, clickhouse]
 spec:
   type: service

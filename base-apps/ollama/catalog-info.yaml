@@ -5,6 +5,8 @@ metadata:
   namespace: ollama
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app=ollama'
+    backstage.io/kubernetes-namespace: ollama
   tags: [llm, embeddings, gpu-optional]
 spec:
   type: service

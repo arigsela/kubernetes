@@ -5,6 +5,8 @@ metadata:
   namespace: ingress-nginx
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app.kubernetes.io/instance=ingress-nginx'
+    backstage.io/kubernetes-namespace: ingress-nginx
   tags: [ingress, daemonset, cloudflare]
 spec:
   type: infrastructure

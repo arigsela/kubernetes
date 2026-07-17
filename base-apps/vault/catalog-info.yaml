@@ -5,6 +5,8 @@ metadata:
   namespace: vault
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app.kubernetes.io/instance=vault'
+    backstage.io/kubernetes-namespace: vault
   tags: [secrets, stateful, kv-v2]
 spec:
   type: infrastructure

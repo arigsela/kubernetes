@@ -5,6 +5,8 @@ metadata:
   namespace: weather-kitchen
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app=weather-kitchen-backend'
+    backstage.io/kubernetes-namespace: weather-kitchen
   tags: [fastapi, jwt, postgresql]
 spec:
   type: service

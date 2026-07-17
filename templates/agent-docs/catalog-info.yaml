@@ -7,6 +7,14 @@ metadata:
   namespace: REPLACE_ME    # Kubernetes namespace the app runs in
   annotations:
     agent-docs/path: docs.md
+    # Links this entity to its live cluster resources in the Backstage
+    # Kubernetes tab. Selector must match the app's real workload/pod labels
+    # (verify with `kubectl -n <ns> get pods -l <selector>`), not a guessed
+    # app=<name>. Use a set-based selector (e.g. 'app in (a,b,c)') for
+    # multi-component apps. Namespace is the Kubernetes namespace, which may
+    # differ from this entity's metadata.namespace above.
+    backstage.io/kubernetes-label-selector: 'app=REPLACE_ME'
+    backstage.io/kubernetes-namespace: REPLACE_ME
   tags: []                 # short lowercase tokens, e.g. [fastapi, mysql]
 spec:
   type: service            # service | database | infrastructure

@@ -5,6 +5,8 @@ metadata:
   namespace: logging
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app in (grafana,loki,prometheus,alloy)'
+    backstage.io/kubernetes-namespace: logging
   tags: [loki, grafana, prometheus, alloy]
 spec:
   type: service
