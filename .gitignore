@@ -35,3 +35,27 @@ recovery/full-cluster-recovery.sh
 # Claude Code local settings (keep skills, ignore local settings)
 .claude/settings.local.json
 **/.claude/settings.local.json
+
+# gstack local tooling artifacts (browse logs, caches — not repo content)
+.gstack/
+
+# git worktrees created by agent tooling (local artifact, never repo content)
+.claude/worktrees/
+
+# Python bytecode from the repo's validators/tests (scripts/, tests/) — generated, never repo content
+__pycache__/
+*.pyc
+
+# Local security audit deliverables — contain credential references and a
+# cluster attack-surface map; keep local, never commit to this public repo.
+docs/cluster-apps-audit-*.md
+
+# Local architecture-research notes — assess the live setup's security posture
+# (auth model, isolation gaps, hardware/CPU weaknesses). Same reasoning as the
+# audit docs above: keep local, never commit to this public repo.
+docs/research/
+
+# Local reference clone of arigsela/claude-agents (nested git repo, consulted
+# read-only for design work) — never tracked here, neither as files nor as a
+# submodule gitlink.
+docs/reference/claude-agents/
