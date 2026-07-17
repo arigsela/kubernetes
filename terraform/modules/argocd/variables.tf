@@ -8,9 +8,13 @@ variable "enabled" {
 variable "helm_services" {
   default = [
     {
-      name          = "argo-cd"
-      release_name  = "argo-cd"
-      chart_version = "9.0.5"
+      name         = "argo-cd"
+      release_name = "argo-cd"
+      # Latest GA argo-helm chart (appVersion v3.4.5). No chart packages Argo CD
+      # 3.5 yet; the 3.5.0-rc2 binaries are pinned via global.image.tag in the
+      # root module (terraform/roots/asela-cluster/argocd.tf). Bump this to the
+      # real 3.5 chart once argo-helm publishes it after 3.5 GA (~2026-08-04).
+      chart_version = "10.1.4"
       settings      = {}
     }
   ]
