@@ -5,6 +5,8 @@ metadata:
   namespace: argo-cd
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app.kubernetes.io/instance=argo-cd'
+    backstage.io/kubernetes-namespace: argo-cd
   tags: [gitops, control-plane]
 spec:
   type: infrastructure

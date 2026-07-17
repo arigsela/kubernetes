@@ -5,6 +5,8 @@ metadata:
   namespace: postgresql
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app=postgresql'
+    backstage.io/kubernetes-namespace: postgresql
   tags: [database, stateful, pgvector]
 spec:
   type: infrastructure

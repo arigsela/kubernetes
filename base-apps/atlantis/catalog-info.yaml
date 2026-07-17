@@ -5,6 +5,8 @@ metadata:
   namespace: atlantis
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app=atlantis'
+    backstage.io/kubernetes-namespace: atlantis
   tags: [terraform, opentofu, gitops, ci-cd]
 spec:
   type: service

@@ -5,6 +5,8 @@ metadata:
   namespace: kagent
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app.kubernetes.io/instance=kagent'
+    backstage.io/kubernetes-namespace: kagent
   tags: [ai-agent, kagent, mcp, anthropic]
 spec:
   type: service

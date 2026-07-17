@@ -5,6 +5,8 @@ metadata:
   namespace: backstage
   annotations:
     agent-docs/path: docs.md
+    backstage.io/kubernetes-label-selector: 'app=backstage'
+    backstage.io/kubernetes-namespace: backstage
   tags: [backstage, developer-portal, catalog, kubernetes-ingestor]
 spec:
   type: website
