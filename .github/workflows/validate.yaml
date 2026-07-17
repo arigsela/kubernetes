@@ -107,6 +107,21 @@ jobs:
       - name: Validate agent-docs contract
         run: python scripts/validate-agent-docs.py --repo-root .
 
+  catalog-refs-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run catalog-refs validator tests
+        run: python -m pytest tests/catalog-refs/ -q
+      - name: Validate catalog references resolve
+        run: python scripts/validate-catalog-refs.py --repo-root .
+
   agent-identity-validate:
     runs-on: ubuntu-latest
     steps:
