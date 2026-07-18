@@ -5,6 +5,7 @@ metadata:
   namespace: chores-tracker-frontend
   annotations:
     agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-label-selector: 'app=chores-tracker-frontend'
     backstage.io/kubernetes-namespace: chores-tracker-frontend
   tags: [nginx, htmx, frontend]

@@ -5,6 +5,7 @@ metadata:
   namespace: dex
   annotations:
     agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-label-selector: 'app=dex'
     backstage.io/kubernetes-namespace: dex
   tags: [oidc, authentication, github, vault]

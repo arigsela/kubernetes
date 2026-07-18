@@ -17,7 +17,7 @@ spec:
       # fail sync. (Also covered globally via resource.exclusions in
       # terraform/roots/asela-cluster/argocd.tf; this per-app exclude makes the
       # merge safe regardless of when that Terraform change is applied.)
-      exclude: catalog-info.yaml
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: argo-cd
