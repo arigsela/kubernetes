@@ -1,0 +1,82 @@
+---
+app: kagent
+catalog_entity: kagent
+kind: docs
+namespace: kagent
+last_reviewed: 2026-07-10
+status: current
+tags: [ai-agent, kagent, mcp, anthropic]
+sources:
+  - base-apps/kagent.yaml
+  - base-apps/kagent-secrets.yaml
+  - base-apps/kagent-crds.yaml
+  - base-apps/kagent/embedding-model-config.yaml
+  - base-apps/kagent/kagent-anthropic-external-secret.yaml
+  - base-apps/kagent/kagent-anthropic-secret-store.yaml
+  - base-apps/kagent/eso-kagent-anthropic-serviceaccount.yaml
+  - base-apps/kagent/external-secrets.yaml
+  - base-apps/kagent/eso-agent-docs-mcp-serviceaccount.yaml
+  - base-apps/kagent/agent-docs-mcp-secret-store.yaml
+  - base-apps/kagent/model-configs/anthropic-claude-sonnet-4-6.yaml
+  - base-apps/kagent/mcp-basic-auth-external-secret.yaml
+  - base-apps/kagent/agents/homelab-knowledge.yaml
+  - base-apps/kagent/agent-docs-mcp.yaml
+  - base-apps/kagent/agent-docs-mcp-remote.yaml
+  - base-apps/kagent/backstage-catalog-mcp.yaml
+  - base-apps/kagent/mcp-ingress.yaml
+  - base-apps/kagent/nginx-ingress.yaml
+---
+
+# kagent
+
+## What it is
+kagent is a Kubernetes-native AI agent platform: a controller (installed via Helm, `base-apps/kagent.yaml`, `chart: kagent`, `repoURL: ghcr.io/kagent-dev/kagent/helm`, `targetRevision: 0.9.4`) that reconciles declarative CRDs — `Agent`, `ModelConfig`, `MCPServer`, `RemoteMCPServer` — into running agent workloads. The CRDs themselves come from a sibling Helm install, `base-apps/kagent-crds.yaml` (`chart: kagent-crds`, same repo/version). Both are deployed into the `kagent` namespace.
+
+## Two Argo CD apps, one namespace
+- **`base-apps/kagent.yaml`** installs the controller/UI/bundled agents via Helm `valuesObject` (no `path: base-apps/kagent`, so it has no directory-exclude concern). Notable values: the LLM provider (`providers.default: anthropic`, model `claude-haiku-4-5-20251001`, key from `apiKeySecretRef: kagent-anthropic`), the database wiring (`database.postgres.bundled.enabled: false`, `urlFile: /etc/kagent/secrets/db-url`, `vectorEnabled: true`, sourced from a mounted `kagent-db-credentials` Secret), per-agent enable switches for the chart's bundled agents (only `observability-agent` is enabled — `k8s-agent` and `istio-agent` are disabled here and owned in Git under `agents/` so their memory + HITL `requireApproval` gates are declarative; the rest are off), OpenTelemetry export to Coroot, and a custom UI image (Node 20 build, ECR) to work around a SIGILL on older host CPUs. Note these agent keys are **top-level** chart keys (Helm subchart aliases), not nested under an `agents:` map — the chart has no such map, and nesting them silently disables the whole block.
+- **`base-apps/kagent-secrets.yaml`** (`path: base-apps/kagent`, `directory: {recurse: true}`) syncs everything in this directory: the declarative `Agent`, `ModelConfig`, `MCPServer`/`RemoteMCPServer` manifests, and the `SecretStore`/`ExternalSecret`s that back them. This is the Application whose `directory.exclude` covers `catalog-info.yaml`.
+
+## Model configs
+- **`default-model-config`** — the chart's default `ModelConfig`, generated from the `providers` block in `kagent.yaml` (Anthropic, `claude-haiku-4-5-20251001`). Used by simple/low-context agents (e.g. `agents/dungeon-crawler-carl-agent.yaml`, `agents/skill-suggester.yaml`, `build-orchestrator.yaml`).
+- **`anthropic-claude-sonnet-4-6`** — a sonnet-tier `ModelConfig` referenced by `agents/homelab-knowledge.yaml` (it needs larger context/more reliable tool-calling for multi-step delegation); its manifest is git-tracked at `model-configs/anthropic-claude-sonnet-4-6.yaml` (adopted into GitOps per the agent-identity contract) and uses its own dedicated `apiKeySecret` (`anthropic-claude-sonnet-4-6`), not the shared `kagent-anthropic` key.
+- **`embedding-model-config`** (`embedding-model-config.yaml`) — points at **Ollama** (`http://ollama.ollama.svc.cluster.local:11434`, model `nomic-embed-text`), used as every declarative agent's `memory.modelConfig` for RAG/embedding recall. This is why the `kagent` component depends on `ollama`.
+
+## Tools via MCP servers
+Agents get tools by referencing `MCPServer`/`RemoteMCPServer` objects in their `spec.declarative.tools`. Two patterns exist side by side:
+- **stdio proxy**: `agent-docs-mcp.yaml` deploys the read-only GitHub MCP server (`ghcr.io/github/github-mcp-server`, `--read-only --toolsets repos`) as a container; `agent-docs-mcp-remote.yaml` is the `RemoteMCPServer` that registers its tools (`get_file_contents`, `search_code`) with kagent — a container-only `MCPServer` does not register tools in this kagent version, only a `RemoteMCPServer` does.
+- **In-cluster remote**: `backstage-catalog-mcp.yaml` points at Backstage's own MCP endpoint (`http://backstage.backstage.svc.cluster.local/api/mcp-actions/v1/catalog`) for resolved-entity/dependency lookups (`get-catalog-entity`), with the `Authorization` header injected from the `backstage-mcp-token` Secret.
+
+Agents only get the `toolNames` they explicitly list (e.g. `agents/homelab-knowledge.yaml` binds `get_file_contents`/`search_code` from `agent-docs` plus `get-catalog-entity` from `backstage-catalog`, and delegates to `k8s-agent` via a `type: Agent` tool entry) — an unlisted tool resolves to nothing and the agent reports "Unknown Tool". A `type: Agent` entry naming an agent that is not deployed resolves to nothing in the same way, so trim delegations when disabling an agent.
+
+## Secrets & database
+All Secrets in `base-apps/kagent/` flow through Vault, and **every one of them is now credential-scoped** per the agent-identity contract (`templates/agent-identity/README.md`): each has its own ESO ServiceAccount, its own `SecretStore`, its own Vault kubernetes-auth role, and its own per-consumer Vault key. No `ExternalSecret` in this namespace reads the monolithic `kagent` key any more, so a token minted for one consumer cannot read another's secrets.
+
+| Secret | SecretStore | ESO ServiceAccount | Vault role | Vault key |
+|---|---|---|---|---|
+| `agent-docs-github-mcp-token` | `vault-agent-docs-mcp` | `eso-agent-docs-mcp` | `kagent-agent-docs-mcp` | `kagent-agent-docs-mcp` |
+| `backstage-mcp-token` | `vault-backstage-mcp` | `eso-backstage-mcp` | `backstage-mcp` | `kagent-backstage-mcp` |
+| `kagent-db-credentials` | `vault-kagent-db` | `eso-kagent-db` | `kagent-db` | `kagent-db` |
+| `kagent-mcp-basic-auth` | `vault-kagent-mcp-basic-auth` | `eso-kagent-mcp-basic-auth` | `kagent-mcp-basic-auth` | `kagent-mcp-basic-auth` |
+| `kagent-anthropic-secrets` | `vault-kagent-anthropic` | `eso-kagent-anthropic` | `kagent-anthropic` | `kagent-anthropic` |
+
+Each Vault policy grants `read` on exactly one path (`k8s-secrets/data/<key>`), so a token minted for one consumer cannot read another's secret.
+
+The broad `vault-backend` `SecretStore` is **gone**. It authenticated as the namespace's `default` ServiceAccount against Vault role `kagent`, which could read the monolithic `k8s-secrets/kagent` key holding every credential at once. Its last consumer was `kagent-anthropic-secrets` — an `ExternalSecret` that existed only in-cluster, tracked by an Argo app (`kagent-config`) that no longer exists, owned by nothing and declared in no repo. That orphan is now adopted here (`kagent-anthropic-external-secret.yaml`) and scoped like everything else, so the broad store, the `kagent` Vault role/policy and the monolithic key have all been removed. There is no shared credential path left in this namespace.
+
+kagent uses the **shared PostgreSQL** instance (`base-apps/postgresql/`) rather than the chart's bundled DB (`database.postgres.bundled.enabled: false` in `kagent.yaml`): `external-secrets.yaml` here syncs `kagent-db-credentials` (`db-url`, `db-user`, `db-password`, `db-name`) from Vault key `kagent-db`, matching the `kagent` role/database that `postgresql`'s `init-kagent-db` Job provisions with the `vector` extension enabled (see `base-apps/postgresql/docs.md`). The controller mounts that Secret's `db-url` at `/etc/kagent/secrets/db-url` (`kagent.yaml`'s `controller.volumes`/`volumeMounts`).
+
+## Exposure
+The UI is at `kagent.arigsela.com` (`nginx-ingress.yaml`, IP-whitelisted). Agents are also invocable over **A2A** at `http://<agent>.kagent.svc.cluster.local:8080` (the kagent default A2A service port). External MCP clients (e.g. Claude Code CLI) reach the controller's `/mcp` endpoint (`invoke_agent`/`list_agents`) at **`kagent-mcp.arigsela.com/mcp`** (`mcp-ingress.yaml`, fronting `kagent-controller:8083`), gated by the same IP whitelist plus HTTP basic auth (`kagent-mcp-basic-auth`, since `/mcp` has no auth of its own).
+
+> The `agents.platform.ai/*` annotation contract was **removed** (2026-07-14). It
+> duplicated data already in the `Agent` spec — `skills` mirrored
+> `a2aConfig.skills`, `delegates` mirrored `tools[type: Agent]`, `a2a-endpoint` was
+> derivable from the name — and it was carried by only 3 of 8 agents, consumed by
+> nothing, enforced by nothing, with a spec doc that never existed. Its `delegates`
+> field never once held a non-empty value, while the two agents that actually
+> delegate did not carry the contract at all. If agent-to-agent discovery is wanted,
+> derive it from the `Agent` CR (which Backstage already ingests) rather than
+> hand-maintaining a parallel copy that drifts. See
+> `docs/superpowers/specs/2026-07-14-adp-remaining-pillars-roadmap.md` (P1).
+
+The MCP endpoint deliberately lives on its **own host**, not on `kagent.arigsela.com`. It used to be served at `kagent.arigsela.com/mcp`, where it shadowed the kagent UI's own "MCP & tools" page (also `/mcp`): the ingress won the path match, so clicking that menu item returned a basic-auth prompt instead of the page, and — because the match was `pathType: Prefix` — every `/mcp/*` UI route was unreachable too. Keep new UI-facing paths on `kagent.arigsela.com` and API/endpoint paths on `kagent-mcp.arigsela.com`. Note DNS for this cluster is created by hand in Route 53 (no external-dns, no wildcard), so a new host needs its A record added before cert-manager can complete the HTTP-01 challenge.

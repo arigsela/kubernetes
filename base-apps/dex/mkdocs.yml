@@ -1,0 +1,7 @@
+site_name: dex
+docs_dir: docs
+nav:
+  - Overview: index.md
+  - Runbook: runbook.md
+plugins:
+  - techdocs-core

@@ -5,6 +5,7 @@ metadata:
   namespace: n8n
   annotations:
     agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-label-selector: 'app=n8n'
     backstage.io/kubernetes-namespace: n8n
   tags: [automation, postgresql, webhooks]

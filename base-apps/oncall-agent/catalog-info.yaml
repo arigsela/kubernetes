@@ -5,6 +5,7 @@ metadata:
   namespace: oncall-agent
   annotations:
     agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-label-selector: 'app=oncall-agent-api'
     backstage.io/kubernetes-namespace: oncall-agent
   tags: [ai-agent, anthropic, incident-response, slack]

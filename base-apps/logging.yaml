@@ -14,7 +14,7 @@ spec:
     directory:
       # catalog-info.yaml is a Backstage entity, not a Kubernetes manifest.
       # Exclude it so Argo CD does not try to apply it and fail sync.
-      exclude: catalog-info.yaml
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: logging

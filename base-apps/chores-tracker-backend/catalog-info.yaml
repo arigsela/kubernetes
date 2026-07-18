@@ -5,6 +5,7 @@ metadata:
   namespace: chores-tracker
   annotations:
     agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-label-selector: 'app=chores-tracker-backend'
     backstage.io/kubernetes-namespace: chores-tracker
   tags: [fastapi, postgresql, jwt]

@@ -5,6 +5,7 @@ metadata:
   namespace: cert-manager
   annotations:
     agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-label-selector: 'app.kubernetes.io/instance=cert-manager'
     backstage.io/kubernetes-namespace: cert-manager
   tags: [tls, certificates, route53]
