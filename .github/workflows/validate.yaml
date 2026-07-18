@@ -65,7 +65,12 @@ jobs:
           sudo mv kubeconform /usr/local/bin/
       - name: Validate changed Kubernetes manifests
         run: |
-          echo "${{ needs.changed-files.outputs.yaml_files }}" | xargs kubeconform \
+          # base-apps/<app>/mkdocs.yml is Backstage TechDocs config, not a
+          # Kubernetes manifest (no kind), so kubeconform would fail it. Drop
+          # those before validating; yamllint still covers them.
+          FILES=$(echo "${{ needs.changed-files.outputs.yaml_files }}" | tr ' ' '\n' | grep -v '/mkdocs\.yml$' || true)
+          if [ -z "$FILES" ]; then echo "No Kubernetes manifests to validate."; exit 0; fi
+          echo "$FILES" | xargs kubeconform \
             -summary \
             -strict \
             -ignore-missing-schemas \
@@ -121,6 +126,21 @@ jobs:
         run: python -m pytest tests/catalog-refs/ -q
       - name: Validate catalog references resolve
         run: python scripts/validate-catalog-refs.py --repo-root .
+
+  techdocs-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pytest==8.3.3
+      - name: Run gen-techdocs tests
+        run: python -m pytest tests/techdocs/ -q
+      - name: Check TechDocs scaffolding is in sync with docs.md/runbook.md
+        run: python scripts/gen-techdocs.py --repo-root . --check
 
   agent-identity-validate:
     runs-on: ubuntu-latest
