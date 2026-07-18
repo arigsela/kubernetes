@@ -61,6 +61,16 @@ def test_write_then_check_is_clean(tmp_path):
     assert "backstage.io/techdocs-ref: dir:." in (d / "catalog-info.yaml").read_text()
 
 
+def test_check_reports_missing_catalog_info_without_crashing(tmp_path):
+    d = tmp_path / "base-apps" / "sample"
+    d.mkdir(parents=True)
+    (d / "docs.md").write_text("# Overview\nbody\n")
+    (d / "runbook.md").write_text("# Runbook\nsteps\n")
+    # no catalog-info.yaml on purpose
+    problems = mod.check(str(tmp_path))  # must not raise FileNotFoundError
+    assert any("catalog-info.yaml" in p for p in problems)
+
+
 def test_check_detects_drift(tmp_path):
     _app(tmp_path)
     mod.write(str(tmp_path))

@@ -84,8 +84,13 @@ def _desired(app_dir):
         "docs/runbook.md": (app_dir / "runbook.md").read_text(),
     }
     catalog = app_dir / "catalog-info.yaml"
-    annotated = _annotated_catalog_info(catalog.read_text())
-    files["catalog-info.yaml"] = annotated  # may be None -> reported as error
+    # None means "cannot produce desired content" (file missing, or present but
+    # lacking the agent-docs/path anchor). Both are reported as problems by
+    # check()/write() rather than crashing.
+    if catalog.is_file():
+        files["catalog-info.yaml"] = _annotated_catalog_info(catalog.read_text())
+    else:
+        files["catalog-info.yaml"] = None
     return files
 
 
@@ -96,7 +101,9 @@ def check(repo_root):
         for rel, want in _desired(app_dir).items():
             path = app_dir / rel
             if want is None:
-                problems.append(f"{path}: no '{AGENT_DOCS_KEY}' annotation to anchor techdocs-ref")
+                problems.append(
+                    f"{path}: missing, or lacks the '{AGENT_DOCS_KEY}' annotation to anchor techdocs-ref"
+                )
                 continue
             if not path.is_file():
                 problems.append(f"{path}: missing (run gen-techdocs.py to create)")
@@ -112,7 +119,7 @@ def write(repo_root):
         for rel, want in _desired(app_dir).items():
             if want is None:
                 raise SystemExit(
-                    f"ERROR: {app_dir/rel}: no '{AGENT_DOCS_KEY}' annotation to anchor techdocs-ref"
+                    f"ERROR: {app_dir/rel}: missing, or lacks the '{AGENT_DOCS_KEY}' annotation to anchor techdocs-ref"
                 )
             path = app_dir / rel
             path.parent.mkdir(parents=True, exist_ok=True)
