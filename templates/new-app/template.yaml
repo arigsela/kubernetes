@@ -38,35 +38,66 @@ spec:
         tags:
           title: Tags
           type: array
-          items: { type: string }
+          items:
+            type: string
     - title: Workload
       required: [image, containerPort]
       properties:
-        image: { title: Container image, type: string }
-        containerPort: { title: Container port, type: integer, default: 8080 }
-        replicas: { title: Replicas, type: integer, default: 1 }
+        image:
+          title: Container image
+          type: string
+        containerPort:
+          title: Container port
+          type: integer
+          default: 8080
+        replicas:
+          title: Replicas
+          type: integer
+          default: 1
         namespace:
           title: Namespace
           type: string
           description: defaults to the app name
     - title: Networking & Config
       properties:
-        exposeIngress: { title: Expose via nginx Ingress, type: boolean, default: false }
+        exposeIngress:
+          title: Expose via nginx Ingress
+          type: boolean
+          default: false
         host:
           title: Ingress host label (<host>.arigsela.com)
           type: string
-        needsConfig: { title: Add a ConfigMap (envFrom), type: boolean, default: false }
-        needsSecrets: { title: Add Vault SecretStore + ExternalSecret, type: boolean, default: false }
+        needsConfig:
+          title: Add a ConfigMap (envFrom)
+          type: boolean
+          default: false
+        needsSecrets:
+          title: Add Vault SecretStore + ExternalSecret
+          type: boolean
+          default: false
         configData:
           title: ConfigMap data
           type: object
-          additionalProperties: { type: string }
+          additionalProperties:
+            type: string
     - title: Resources
       properties:
-        cpuRequest: { title: CPU request, type: string, default: 100m }
-        cpuLimit: { title: CPU limit, type: string, default: 500m }
-        memRequest: { title: Memory request, type: string, default: 128Mi }
-        memLimit: { title: Memory limit, type: string, default: 256Mi }
+        cpuRequest:
+          title: CPU request
+          type: string
+          default: 100m
+        cpuLimit:
+          title: CPU limit
+          type: string
+          default: 500m
+        memRequest:
+          title: Memory request
+          type: string
+          default: 128Mi
+        memLimit:
+          title: Memory limit
+          type: string
+          default: 256Mi
   steps:
     - id: fetch-core
       name: Render core
@@ -96,17 +127,23 @@ spec:
       name: Render ingress
       if: ${{ parameters.exposeIngress }}
       action: fetch:template
-      input: { url: ./skeleton-ingress, values: *vals }
+      input:
+        url: ./skeleton-ingress
+        values: *vals
     - id: fetch-secrets
       name: Render secrets
       if: ${{ parameters.needsSecrets }}
       action: fetch:template
-      input: { url: ./skeleton-secrets, values: *vals }
+      input:
+        url: ./skeleton-secrets
+        values: *vals
     - id: fetch-config
       name: Render config
       if: ${{ parameters.needsConfig }}
       action: fetch:template
-      input: { url: ./skeleton-config, values: *vals }
+      input:
+        url: ./skeleton-config
+        values: *vals
     - id: publish
       name: Open PR
       action: publish:github:pull-request

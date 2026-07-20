@@ -1,0 +1,40 @@
+name: OKF Auto-Sync
+on:
+  pull_request:
+    branches: [main]
+    paths: ['base-apps/**']
+permissions:
+  contents: write
+jobs:
+  autosync:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml==6.0.2
+      - name: Regenerate base-apps/index.md + sync scope
+        run: |
+          python scripts/gen-okf.py --repo-root .
+          for d in base-apps/*/; do
+            app=$(basename "$d")
+            if [ -f "$d/docs.md" ] && [ -f "$d/runbook.md" ] && [ -f "$d/catalog-info.yaml" ]; then
+              grep -qxF "$app" scripts/agent-docs-scope.txt || echo "$app" >> scripts/agent-docs-scope.txt
+            fi
+          done
+      - name: Commit + push if changed
+        run: |
+          if [ -n "$(git status --porcelain base-apps/index.md scripts/agent-docs-scope.txt)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add base-apps/index.md scripts/agent-docs-scope.txt
+            git commit -m "chore(okf): auto-sync index + scope for base-apps change"
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          else
+            echo "nothing to sync"
+          fi
