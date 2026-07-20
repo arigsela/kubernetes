@@ -117,6 +117,10 @@ spec:
         description: |
           Scaffolded via the New Application template.
           System: ${{ parameters.system }} · Owner: ${{ parameters.owner }}
+
+          Before merging: review `docs.md` / `runbook.md` and bump `last_reviewed`
+          to today's date — the scaffolder bakes in its render date, which is
+          almost certainly not your merge date.
   output:
     links:
       - title: Pull request

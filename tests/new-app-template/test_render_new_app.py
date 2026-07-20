@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +31,33 @@ SAMPLE = {
     "cpuRequest": "100m", "cpuLimit": "500m",
     "memRequest": "128Mi", "memLimit": "256Mi",
 }
+
+
+def _copy_tracked_repo(dest: Path) -> Path:
+    """Copy every git-tracked file in REPO into dest, preserving relative
+    paths, so the real repo validators can run against a disposable copy.
+
+    Deliberately NOT a shutil.copytree over the live working tree: this repo
+    carries large local-only artifacts that are never committed --
+    terraform/roots/*/.terraform (a gitignored provider cache, ~1.7GB on a
+    machine that has run `terraform init`) and docs/reference/claude-agents
+    (a gitignored ~60MB reference clone) chief among them. `git ls-files`
+    gives exactly what CI's checkout would see (~5MB, 600ish files): .git,
+    node_modules, and .superpowers are excluded for free because none of
+    them are tracked.
+    """
+    files = subprocess.run(
+        ["git", "-C", str(REPO), "ls-files"],
+        capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    for rel in files:
+        src = REPO / rel
+        if not src.is_file():
+            continue
+        dst = dest / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+    return dest
 
 
 def _render(tmp: Path, values: dict, ingress: bool, secrets: bool, config: bool) -> Path:
@@ -63,33 +91,44 @@ def test_render_produces_expected_files(tmp_path):
 
 
 def test_rendered_output_passes_repo_validators(tmp_path):
-    # Render into a throwaway COPY of the repo so the real validators run against it.
-    import shutil
+    # Render into a throwaway COPY of the FULL repo (every existing base-apps/
+    # app included) so the real validators see exactly what they'd see in CI:
+    # validate-agent-docs.py's index-coverage check requires a row for every
+    # base-apps/<app> dir, not just a stub subset.
     work = tmp_path / "repo"
-    shutil.copytree(REPO, work, ignore=shutil.ignore_patterns(
-        ".git", "node_modules", ".superpowers", "base-apps"), dirs_exist_ok=False)
-    # Bring base-apps but only the taxonomy + a couple deps the sample refs need.
-    (work / "base-apps").mkdir(exist_ok=True)
-    shutil.copytree(REPO / "catalog", work / "catalog", dirs_exist_ok=True)
-    for dep in ["vault"]:
-        shutil.copytree(REPO / "base-apps" / dep, work / "base-apps" / dep, dirs_exist_ok=True)
+    work.mkdir()
+    _copy_tracked_repo(work)
+
     dirs = [SKEL / "skeleton", SKEL / "skeleton-ingress", SKEL / "skeleton-secrets", SKEL / "skeleton-config"]
     mod.render(dirs, SAMPLE, work)
     app = work / "base-apps" / "sample-app"
+
+    # Regenerate base-apps/index.md for the newly-scaffolded app (mirrors the
+    # CI auto-sync workflow added in Task 4) and put sample-app in scope so
+    # the contract validators actually check its generated docs.
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "gen-okf.py"),
+                        "--repo-root", str(work)], capture_output=True, text=True)
+    assert r.returncode == 0, f"gen-okf (write):\n{r.stdout}\n{r.stderr}"
+    scope = work / "scripts" / "agent-docs-scope.txt"
+    scope.write_text(scope.read_text().rstrip("\n") + "\nsample-app\n")
 
     # yamllint (block style)
     r = subprocess.run(["yamllint", "-c", str(REPO / ".yamllint.yaml")] +
                        [str(p) for p in app.rglob("*.yaml")] + [str(work / "base-apps" / "sample-app.yaml")],
                        capture_output=True, text=True)
     assert r.returncode == 0, f"yamllint:\n{r.stdout}\n{r.stderr}"
-    # gen-techdocs --check (docs/ copies in sync)
-    r = subprocess.run([sys.executable, str(REPO / "scripts" / "gen-techdocs.py"),
+    # OKF bundle in sync (base-apps/index.md matches every app's doc frontmatter)
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "gen-okf.py"),
                         "--repo-root", str(work), "--check"], capture_output=True, text=True)
-    assert r.returncode == 0, f"gen-techdocs:\n{r.stdout}"
-    # agent-docs contract
+    assert r.returncode == 0, f"gen-okf --check:\n{r.stdout}\n{r.stderr}"
+    # agent-docs contract (contract files, frontmatter, catalog_entity match, sources resolve)
     r = subprocess.run([sys.executable, str(REPO / "scripts" / "validate-agent-docs.py"),
                         "--repo-root", str(work)], capture_output=True, text=True)
-    assert r.returncode == 0, f"agent-docs:\n{r.stdout}"
+    assert r.returncode == 0, f"agent-docs:\n{r.stdout}\n{r.stderr}"
+    # catalog entity references resolve (system/owner/dependsOn:vault)
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "validate-catalog-refs.py"),
+                        "--repo-root", str(work)], capture_output=True, text=True)
+    assert r.returncode == 0, f"catalog-refs:\n{r.stdout}\n{r.stderr}"
     # ingress whitelist gate
     ing = (app / "nginx-ingress.yaml").read_text()
     assert "whitelist-source-range" in ing
