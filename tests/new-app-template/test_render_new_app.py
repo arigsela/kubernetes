@@ -28,7 +28,7 @@ SAMPLE = {
     "exposeIngress": True,
     "host": "sample-app",
     "needsConfig": True,
-    "configData": {"LOG_LEVEL": "info"},
+    "configData": [{"key": "LOG_LEVEL", "value": "info"}],
     "needsSecrets": True,
     "cpuRequest": "100m", "cpuLimit": "500m",
     "memRequest": "128Mi", "memLimit": "256Mi",

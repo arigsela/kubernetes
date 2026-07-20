@@ -20,6 +20,12 @@ _ENV = Environment(
     undefined=StrictUndefined,
     keep_trailing_newline=True,
 )
+# Nunjucks-faithful `dump` filter (== JSON.stringify, no spaces). Backstage
+# templates render via Nunjucks, not Jinja2; Jinja2's default str() of a list
+# (`['a', 'b']`) is not valid YAML, while Nunjucks' `dump` filter produces
+# `["a","b"]`, which is. Match that exactly so `${{ values.tags | dump }}`
+# renders identically in this harness and in real Backstage.
+_ENV.filters["dump"] = lambda x: json.dumps(x, separators=(",", ":"), ensure_ascii=False)
 
 
 def _render_str(text, values):
