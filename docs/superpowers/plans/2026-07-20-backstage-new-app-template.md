@@ -720,7 +720,54 @@ git commit -m "$(printf 'feat(new-app): conditional ingress/secrets/config skele
 
 ---
 
-## Task 4: CI job + backstage location + delivery
+## Task 4: OKF auto-sync workflow + CI job + backstage location + delivery
+
+- [ ] **Step 0: Add the OKF auto-sync workflow** — create `.github/workflows/okf-autosync.yaml`. On a PR touching `base-apps/**` (same-repo only), regenerate `base-apps/index.md` + sync `agent-docs-scope.txt`, and push back to the PR branch so scaffolded (and hand-added) apps reach green with no manual step:
+
+```yaml
+name: OKF Auto-Sync
+on:
+  pull_request:
+    branches: [main]
+    paths: ['base-apps/**']
+permissions:
+  contents: write
+jobs:
+  autosync:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml==6.0.2
+      - name: Regenerate base-apps/index.md + sync scope
+        run: |
+          python scripts/gen-okf.py --repo-root .
+          for d in base-apps/*/; do
+            app=$(basename "$d")
+            if [ -f "$d/docs.md" ] && [ -f "$d/runbook.md" ] && [ -f "$d/catalog-info.yaml" ]; then
+              grep -qxF "$app" scripts/agent-docs-scope.txt || echo "$app" >> scripts/agent-docs-scope.txt
+            fi
+          done
+      - name: Commit + push if changed
+        run: |
+          if [ -n "$(git status --porcelain base-apps/index.md scripts/agent-docs-scope.txt)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add base-apps/index.md scripts/agent-docs-scope.txt
+            git commit -m "chore(okf): auto-sync index + scope for base-apps change"
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          else
+            echo "nothing to sync"
+          fi
+```
+
+Idempotent (the follow-up `synchronize` event re-runs but changes nothing → no loop). Also convert `templates/new-app/template.yaml` to block-style YAML where it currently uses flow `{ }` (cosmetic; not CI-gated but matches repo convention).
 
 - [ ] **Step 1: Add the `new-app-template-validate` CI job** to `.github/workflows/validate.yaml` (after `techdocs-validate`):
 
