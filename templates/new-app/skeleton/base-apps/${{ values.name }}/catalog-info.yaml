@@ -8,7 +8,7 @@ metadata:
     backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-label-selector: 'app=${{ values.name }}'
     backstage.io/kubernetes-namespace: ${{ values.namespace }}
-  tags: ${{ values.tags }}
+  tags: ${{ values.tags | dump }}
 spec:
   type: service
   lifecycle: experimental
