@@ -12,6 +12,8 @@ Every in-scope `base-apps/<app>/` directory carries three files:
 
 These docs are [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF v0.1) concept documents: markdown + YAML frontmatter, in git, beside the thing they describe. Conformance costs three fields (`type`, `title`, `description`) and buys interoperability — any OKF-speaking tool or agent can read this repo's knowledge without a bespoke parser. The repo root `index.md` is the bundle root (it carries `okf_version`), and each directory `index.md` is OKF's reserved directory listing.
 
+Scope note: it is the *knowledge documents* that are conformant, not the repository as a whole — `README.md`, `CLAUDE.md`, and the specs and plans under `docs/` have no frontmatter. `scripts/gen-okf.py --export` is what emits a strictly conformant bundle.
+
 OKF's `timestamp` (last meaningful change) is deliberately **not** stored in these files — it would go stale on every commit. `scripts/gen-okf.py --export` derives it from `git log` when emitting a standalone bundle. `last_reviewed` stays the separate, human attestation: *someone vouched for this*, not *this changed*.
 
 ## Frontmatter schema (docs.md / runbook.md)
