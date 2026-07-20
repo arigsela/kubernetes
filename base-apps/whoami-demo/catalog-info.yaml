@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: whoami-demo
+  namespace: whoami-demo
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=whoami-demo'
+    backstage.io/kubernetes-namespace: whoami-demo
+  tags: 
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/platform-engineering
+  system: system:default/platform-tooling
