@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "cert-manager"
+description: "TLS via Let's Encrypt (HTTP-01 via nginx; Route 53 DNS-01 issuer)"
 app: cert-manager
 catalog_entity: cert-manager
 kind: docs

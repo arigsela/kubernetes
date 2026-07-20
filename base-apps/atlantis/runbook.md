@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "Atlantis — Runbook"
+description: "Operational runbook for Atlantis: failure modes, checks, and fixes."
 app: atlantis
 catalog_entity: atlantis
 kind: runbook

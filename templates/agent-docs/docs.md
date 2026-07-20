@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "REPLACE_ME"
+description: "One line: what this app is, in the index and to an agent."
 app: REPLACE_ME
 catalog_entity: REPLACE_ME
 kind: docs

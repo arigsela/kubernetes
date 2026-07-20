@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Dex"
+description: "OIDC provider fronting GitHub — issuer for Vault OIDC (human `vault` login via GitHub SSO)"
 app: dex
 catalog_entity: dex
 kind: docs

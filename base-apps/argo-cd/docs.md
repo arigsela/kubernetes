@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Argo CD"
+description: "GitOps control plane"
 app: argo-cd
 catalog_entity: argo-cd
 kind: docs

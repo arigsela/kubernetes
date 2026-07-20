@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "Coroot — Runbook"
+description: "Operational runbook for Coroot: failure modes, checks, and fixes."
 app: coroot
 catalog_entity: coroot
 kind: runbook

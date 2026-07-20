@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "kagent"
+description: "Kubernetes-native AI agent platform (kagent Helm controller, declarative agents, MCP tool servers)"
 app: kagent
 catalog_entity: kagent
 kind: docs

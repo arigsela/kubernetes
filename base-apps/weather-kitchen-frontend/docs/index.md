@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Weather Kitchen Frontend"
+description: "Web frontend for Weather Kitchen (nginx-fronted Node build)"
 app: weather-kitchen-frontend
 catalog_entity: weather-kitchen-frontend
 kind: docs

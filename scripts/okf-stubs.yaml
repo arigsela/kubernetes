@@ -1,0 +1,10 @@
+# Fallback descriptions for base-apps/ directories that do NOT carry the
+# agent-docs contract.
+#
+# In-scope apps take their description and namespace from docs.md frontmatter.
+# This file is the fallback so regenerating base-apps/index.md never silently
+# drops a curated one-liner for a directory that has no docs.md yet. Delete an
+# entry here once the app is onboarded to the full contract.
+agent-audit-aws-infrastructure:
+  description: "S3 bucket + write-only IAM for the durable, redacted agent action record (Crossplane)"
+  namespace: postgresql

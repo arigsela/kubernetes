@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "Argo CD — Runbook"
+description: "Operational runbook for Argo CD: failure modes, checks, and fixes."
 app: argo-cd
 catalog_entity: argo-cd
 kind: runbook

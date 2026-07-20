@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Backstage"
+description: "Internal developer portal / software catalog (Backstage, shared PostgreSQL, Vault, kubernetes-ingestor)"
 app: backstage
 catalog_entity: backstage
 kind: docs

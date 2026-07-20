@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "nginx-ingress"
+description: "Shared `nginx` IngressClass controller (Rancher HelmChart, DaemonSet, Cloudflare-aware)"
 app: nginx-ingress
 catalog_entity: nginx-ingress
 kind: docs

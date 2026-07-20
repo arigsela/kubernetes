@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Chores Tracker Backend"
+description: "FastAPI chores backend (PostgreSQL, Vault, JWT)"
 app: chores-tracker-backend
 catalog_entity: chores-tracker-backend
 kind: docs

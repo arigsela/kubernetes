@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "On-Call Agent — Runbook"
+description: "Operational runbook for On-Call Agent: failure modes, checks, and fixes."
 app: oncall-agent
 catalog_entity: oncall-agent
 kind: runbook

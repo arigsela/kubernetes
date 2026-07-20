@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**Start here:** Read [`INFRASTRUCTURE_ATLAS.md`](INFRASTRUCTURE_ATLAS.md) first — it is the navigation front door (system context, topology, per-app index). For an app, follow `base-apps/_INDEX.md` → the app's `docs.md`/`runbook.md`. The agent-docs contract is documented in [`templates/agent-docs/README.md`](templates/agent-docs/README.md).
+**Start here:** Read [`index.md`](index.md) first — it is the OKF bundle root and navigation front door (system context, topology, per-app index). For an app, follow `base-apps/index.md` → the app's `docs.md`/`runbook.md`. The agent-docs contract is documented in [`templates/agent-docs/README.md`](templates/agent-docs/README.md).
 
 @AGENTS.md
 

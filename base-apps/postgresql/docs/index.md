@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "PostgreSQL"
+description: "Shared PostgreSQL + pgvector instance (root DB, kagent DB) + CNPG cluster for chores-tracker (daily S3 backups)"
 app: postgresql
 catalog_entity: postgresql
 kind: docs

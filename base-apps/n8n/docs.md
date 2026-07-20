@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "n8n"
+description: "Workflow automation platform (shared PostgreSQL, Vault, admin UI + public webhooks)"
 app: n8n
 catalog_entity: n8n
 kind: docs

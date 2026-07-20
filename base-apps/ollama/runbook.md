@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "Ollama — Runbook"
+description: "Operational runbook for Ollama: failure modes, checks, and fixes."
 app: ollama
 catalog_entity: ollama
 kind: runbook

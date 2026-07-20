@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "Weather Kitchen Frontend — Runbook"
+description: "Operational runbook for Weather Kitchen Frontend: failure modes, checks, and fixes."
 app: weather-kitchen-frontend
 catalog_entity: weather-kitchen-frontend
 kind: runbook

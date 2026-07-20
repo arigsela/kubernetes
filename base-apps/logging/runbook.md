@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "Logging — Runbook"
+description: "Operational runbook for Logging: failure modes, checks, and fixes."
 app: logging
 catalog_entity: logging
 kind: runbook

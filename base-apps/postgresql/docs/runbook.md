@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "PostgreSQL — Runbook"
+description: "Operational runbook for PostgreSQL: failure modes, checks, and fixes."
 app: postgresql
 catalog_entity: postgresql
 kind: runbook
