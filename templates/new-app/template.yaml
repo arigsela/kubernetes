@@ -76,10 +76,15 @@ spec:
           type: boolean
           default: false
         configData:
-          title: ConfigMap data
-          type: object
-          additionalProperties:
-            type: string
+          title: Config entries (key/value)
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              value:
+                type: string
     - title: Resources
       properties:
         cpuRequest:
@@ -118,7 +123,7 @@ spec:
           host: ${{ parameters.host }}
           needsConfig: ${{ parameters.needsConfig }}
           needsSecrets: ${{ parameters.needsSecrets }}
-          configData: ${{ parameters.configData if parameters.configData else {} }}
+          configData: ${{ parameters.configData if parameters.configData else [] }}
           cpuRequest: ${{ parameters.cpuRequest }}
           cpuLimit: ${{ parameters.cpuLimit }}
           memRequest: ${{ parameters.memRequest }}

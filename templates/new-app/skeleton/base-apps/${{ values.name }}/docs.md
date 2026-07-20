@@ -8,7 +8,7 @@ kind: docs
 namespace: ${{ values.namespace }}
 last_reviewed: 2026-07-20
 status: current
-tags: ${{ values.tags }}
+tags: ${{ values.tags | dump }}
 sources:
   - base-apps/${{ values.name }}/deployments.yaml
 ---
