@@ -116,6 +116,20 @@ entity after the PR merges; registering from an unmerged branch is undesirable.)
 | `kubernetes-validate` | valid k8s manifests; `mkdocs.yml` skipped by the job's filter |
 | Argo sync | `directory.exclude: '{catalog-info.yaml,mkdocs.yml}'` so Argo never applies them |
 
+## OKF index auto-sync (added after Task-2 review)
+
+A scaffolded PR adds a `base-apps/<app>/` dir, which trips two aggregate gates the
+template cannot satisfy from its workspace: `okf-validate` (`gen-okf.py --check` —
+`base-apps/index.md` needs a new row) and agent-docs index-coverage. Resolution: a
+new **`.github/workflows/okf-autosync.yaml`** runs on `pull_request` touching
+`base-apps/**` (same-repo PRs only), regenerates `base-apps/index.md` via
+`gen-okf.py`, appends contract-complete apps to `scripts/agent-docs-scope.txt`, and
+commits+pushes back to the PR branch (idempotent — no loop). This keeps the
+scaffolded PR "green with no manual fixes" and benefits hand-added apps too.
+
+Known v1 limitation: `last_reviewed` in the generated docs is a baked date (the
+scaffolder cannot compute "today"); the PR body reminds the author to update it.
+
 ## Delivery
 
 1. **kubernetes repo:** add `templates/new-app/` (`template.yaml` + `skeleton*/` dirs).
