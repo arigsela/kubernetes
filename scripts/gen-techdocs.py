@@ -22,6 +22,16 @@ WHY COPIES (not docs_dir: '.' or symlinks):
   So docs.md/runbook.md stay canonical at the app root and are copied into docs/.
   This script keeps the copies in sync; the CI --check gate fails on drift.
 
+NOTE ON THE OKF RESERVED FILENAME:
+  docs/index.md is a *concept document* (a copy of docs.md) sitting on index.md,
+  which the Open Knowledge Format reserves for directory listings. MkDocs needs
+  that name for the nav root, so the collision stays. It is contained: these
+  copies are TechDocs build input only, and scripts/gen-okf.py --export walks
+  base-apps/<app>/docs.md|runbook.md directly and never descends into docs/, so
+  no copy reaches an OKF bundle. A strict OKF consumer crawling the repo in
+  place (rather than consuming an export) would misread these 18 files as
+  directory listings.
+
 Usage:
   python3 scripts/gen-techdocs.py --repo-root .            # write/update
   python3 scripts/gen-techdocs.py --repo-root . --check    # verify, exit 1 on drift

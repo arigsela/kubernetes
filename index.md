@@ -10,7 +10,9 @@ tags: [platform, gitops, kubernetes, okf]
 
 > **For agents:** Start here. Traverse: this bundle root → a directory `index.md` → an app's `docs.md`/`runbook.md` → the `sources:` files listed in that doc. This root is a **navigation/summary layer**; the `sources:` files are authoritative. If a summary here looks wrong, go read the source.
 
-This repository is an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF) bundle: knowledge lives as markdown with YAML frontmatter beside the manifests it describes. Every `docs.md`/`runbook.md` is an OKF concept document (`type`, `title`, `description` plus this repo's own contract fields); every directory `index.md` is the OKF reserved directory listing. See `templates/agent-docs/README.md` for the contract, and `scripts/gen-okf.py --export` to emit a standalone, portable bundle for an agent that should not get the whole infrastructure repo.
+This repository's **knowledge documents** are [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF v0.1) documents: markdown with YAML frontmatter, living beside the manifests they describe. Every `docs.md`/`runbook.md` is an OKF concept document (`type`, `title`, `description` plus this repo's own contract fields), and this file plus each directory `index.md` is OKF's reserved directory listing.
+
+The repository as a whole is **not** a strictly conformant OKF bundle, and does not try to be: `README.md`, `CLAUDE.md`, and the specs and plans under `docs/` carry no frontmatter, which OKF §9 would require of every non-reserved `.md`. For a strictly conformant, portable bundle — navigation and concept documents only, with `timestamp` derived from git — run `scripts/gen-okf.py --export <dir>`. That is what to hand an agent that should not get the whole infrastructure repo. See `templates/agent-docs/README.md` for the authoring contract.
 
 ## 1. System context
 - Kubernetes API: `https://192.168.0.100:6443`
