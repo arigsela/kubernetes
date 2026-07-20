@@ -8,10 +8,19 @@ Every in-scope `base-apps/<app>/` directory carries three files:
 | `docs.md` | Narrative | architecture, config locations, tribal knowledge |
 | `runbook.md` | Operational | failure modes (symptom → check → fix), how-to |
 
+## OKF conformance
+
+These docs are [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF v0.1) concept documents: markdown + YAML frontmatter, in git, beside the thing they describe. Conformance costs three fields (`type`, `title`, `description`) and buys interoperability — any OKF-speaking tool or agent can read this repo's knowledge without a bespoke parser. The repo root `index.md` is the bundle root (it carries `okf_version`), and each directory `index.md` is OKF's reserved directory listing.
+
+OKF's `timestamp` (last meaningful change) is deliberately **not** stored in these files — it would go stale on every commit. `scripts/gen-okf.py --export` derives it from `git log` when emitting a standalone bundle. `last_reviewed` stays the separate, human attestation: *someone vouched for this*, not *this changed*.
+
 ## Frontmatter schema (docs.md / runbook.md)
 
 | Key | Type | Rule |
 |---|---|---|
+| `type` | enum | OKF concept type: `Kubernetes App Guide` (kind `docs`) or `Kubernetes App Runbook` (kind `runbook`) |
+| `title` | string | human display name, e.g. `Chores Tracker Backend` |
+| `description` | string | one line, no newlines; the single source for the generated `base-apps/index.md` |
 | `app` | string | matches the `base-apps/<app>` directory name |
 | `catalog_entity` | string | equals `metadata.name` in the sibling `catalog-info.yaml` |
 | `kind` | enum | `docs` or `runbook` |
@@ -30,5 +39,6 @@ Every in-scope `base-apps/<app>/` directory carries three files:
 
 ## Rules
 - Structured facts live only in `catalog-info.yaml`; prose only in markdown.
-- The atlas and docs are a navigation/summary layer. `sources:` files remain authoritative — when a summary looks wrong, go to the source.
-- Adding an app to the contract: copy the three templates, fill them in, add the app name to `scripts/agent-docs-scope.txt`, add a row to `base-apps/_INDEX.md`, **and add `spec.source.directory.exclude: catalog-info.yaml` to the app's Argo CD `Application`** (the validator requires it).
+- The bundle root and docs are a navigation/summary layer. `sources:` files remain authoritative — when a summary looks wrong, go to the source.
+- `base-apps/index.md` is **generated** from doc frontmatter — never hand-edit it. Change a `description:` and re-run the generator.
+- Adding an app to the contract: copy the three templates, fill them in, add the app name to `scripts/agent-docs-scope.txt`, run `python3 scripts/gen-okf.py --repo-root .` and `python3 scripts/gen-techdocs.py --repo-root .`, **and add `spec.source.directory.exclude: '{catalog-info.yaml,mkdocs.yml}'` to the app's Argo CD `Application`** (the validator requires it).

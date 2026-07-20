@@ -142,6 +142,21 @@ jobs:
       - name: Check TechDocs scaffolding is in sync with docs.md/runbook.md
         run: python scripts/gen-techdocs.py --repo-root . --check
 
+  okf-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run gen-okf tests
+        run: python -m pytest tests/okf/ -q
+      - name: Check OKF bundle is in sync with doc frontmatter
+        run: python scripts/gen-okf.py --repo-root . --check
+
   agent-identity-validate:
     runs-on: ubuntu-latest
     steps:

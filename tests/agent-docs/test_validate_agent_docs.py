@@ -12,6 +12,9 @@ _spec.loader.exec_module(validate_agent_docs)
 
 
 GOOD_FM = """---
+type: "Kubernetes App Guide"
+title: "Demo"
+description: "A demo app used by the validator tests."
 app: demo
 catalog_entity: demo
 kind: docs
@@ -51,6 +54,35 @@ def test_validate_frontmatter_rejects_bad_date():
     assert any("last_reviewed" in e for e in errors)
 
 
+def test_validate_frontmatter_rejects_type_kind_mismatch():
+    fm = validate_agent_docs.parse_frontmatter(GOOD_FM)
+    fm["kind"] = "runbook"  # type still says Guide
+    errors = validate_agent_docs.validate_frontmatter(fm)
+    assert any("type must be" in e for e in errors)
+
+
+def test_validate_frontmatter_rejects_blank_description():
+    fm = validate_agent_docs.parse_frontmatter(GOOD_FM)
+    fm["description"] = "   "
+    errors = validate_agent_docs.validate_frontmatter(fm)
+    assert any("description must be a non-empty string" in e for e in errors)
+
+
+def test_validate_frontmatter_rejects_pipe_in_description():
+    # A pipe would corrupt the generated base-apps/index.md table.
+    fm = validate_agent_docs.parse_frontmatter(GOOD_FM)
+    fm["description"] = "does a | thing"
+    errors = validate_agent_docs.validate_frontmatter(fm)
+    assert any("'|'" in e for e in errors)
+
+
+def test_validate_frontmatter_rejects_missing_title():
+    fm = validate_agent_docs.parse_frontmatter(GOOD_FM)
+    del fm["title"]
+    errors = validate_agent_docs.validate_frontmatter(fm)
+    assert any("title" in e for e in errors)
+
+
 def test_missing_frontmatter_raises():
     import pytest
     with pytest.raises(ValueError):
@@ -72,7 +104,9 @@ def _make_repo(tmp_path: Path) -> Path:
            "metadata:\n  name: demo\n  namespace: demo-ns\n"
            "  annotations:\n    agent-docs/path: docs.md\nspec:\n  owner: platform\n")
     _write(app / "docs.md", GOOD_FM)
-    runbook = GOOD_FM.replace("kind: docs", "kind: runbook")
+    # `type` must track `kind`, so swap both.
+    runbook = GOOD_FM.replace("kind: docs", "kind: runbook").replace(
+        "Kubernetes App Guide", "Kubernetes App Runbook")
     _write(app / "runbook.md", runbook)
     # Argo CD Application for 'demo' that excludes catalog-info.yaml (in-band guard).
     _write(root / "base-apps" / "demo.yaml",
@@ -80,8 +114,8 @@ def _make_repo(tmp_path: Path) -> Path:
            "metadata:\n  name: demo\nspec:\n  source:\n"
            "    path: base-apps/demo\n"
            "    directory:\n      exclude: catalog-info.yaml\n")
-    _write(root / "base-apps" / "_INDEX.md",
-           "| app | purpose | namespace | docs | runbook | catalog |\n"
+    _write(root / "base-apps" / "index.md",
+           "| app | description | namespace | docs | runbook | catalog |\n"
            "|---|---|---|---|---|---|\n"
            "| demo | x | demo-ns | docs.md | runbook.md | catalog-info.yaml |\n")
     _write(root / "scripts" / "agent-docs-scope.txt", "demo\n")

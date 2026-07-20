@@ -16,9 +16,17 @@ from pathlib import Path
 
 import yaml
 
-REQUIRED_KEYS = ["app", "catalog_entity", "kind", "namespace", "last_reviewed", "status", "tags", "sources"]
+REQUIRED_KEYS = [
+    # OKF v0.1 interop fields (see templates/agent-docs/README.md).
+    "type", "title", "description",
+    # This repo's own agent-docs contract.
+    "app", "catalog_entity", "kind", "namespace", "last_reviewed", "status", "tags", "sources",
+]
 KIND_VALUES = {"docs", "runbook"}
 STATUS_VALUES = {"current", "wip", "deprecated"}
+# `kind` stays the single source of truth; `type` is its OKF-facing label and
+# must agree, so external consumers and the validator cannot disagree.
+TYPE_FOR_KIND = {"docs": "Kubernetes App Guide", "runbook": "Kubernetes App Runbook"}
 
 
 def parse_frontmatter(text: str) -> dict:
@@ -38,8 +46,24 @@ def validate_frontmatter(fm: dict) -> list[str]:
     for key in REQUIRED_KEYS:
         if key not in fm:
             errors.append(f"missing required key: {key}")
-    if fm.get("kind") not in KIND_VALUES:
-        errors.append(f"kind must be one of {sorted(KIND_VALUES)}, got {fm.get('kind')!r}")
+    kind = fm.get("kind")
+    if kind not in KIND_VALUES:
+        errors.append(f"kind must be one of {sorted(KIND_VALUES)}, got {kind!r}")
+    elif fm.get("type") != TYPE_FOR_KIND[kind]:
+        errors.append(
+            f"type must be {TYPE_FOR_KIND[kind]!r} for kind {kind!r}, got {fm.get('type')!r}")
+    for key in ("title", "description"):
+        value = fm.get(key)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{key} must be a non-empty string")
+    description = fm.get("description")
+    if isinstance(description, str):
+        # description is rendered into a markdown table cell in base-apps/index.md,
+        # so a newline or an unescaped pipe would corrupt the generated index.
+        if "\n" in description.strip():
+            errors.append("description must be a single line")
+        if "|" in description:
+            errors.append("description must not contain '|' (breaks the generated index table)")
     if fm.get("status") not in STATUS_VALUES:
         errors.append(f"status must be one of {sorted(STATUS_VALUES)}, got {fm.get('status')!r}")
     lr = fm.get("last_reviewed")
@@ -125,16 +149,16 @@ def check_app_contract(repo_root: Path, app: str) -> list[str]:
 
 
 def check_index_coverage(repo_root: Path) -> list[str]:
-    index = repo_root / "base-apps" / "_INDEX.md"
+    index = repo_root / "base-apps" / "index.md"
     if not index.is_file():
-        return ["base-apps/_INDEX.md is missing"]
+        return ["base-apps/index.md is missing"]
     index_text = index.read_text()
     errors = []
     for child in sorted((repo_root / "base-apps").iterdir()):
         if not child.is_dir():
             continue
         if f"| {child.name} " not in index_text and f"|{child.name}|" not in index_text:
-            errors.append(f"base-apps/_INDEX.md has no row for app '{child.name}'")
+            errors.append(f"base-apps/index.md has no row for app '{child.name}'")
     return errors
 
 

@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "REPLACE_ME — Runbook"
+description: "Operational runbook for REPLACE_ME: failure modes, checks, and fixes."
 app: REPLACE_ME
 catalog_entity: REPLACE_ME
 kind: runbook

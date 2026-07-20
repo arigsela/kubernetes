@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Chores Tracker Frontend"
+description: "HTMX/nginx web frontend for Chores Tracker"
 app: chores-tracker-frontend
 catalog_entity: chores-tracker-frontend
 kind: docs

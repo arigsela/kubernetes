@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "Vault — Runbook"
+description: "Operational runbook for Vault: failure modes, checks, and fixes."
 app: vault
 catalog_entity: vault
 kind: runbook

@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "cert-manager — Runbook"
+description: "Operational runbook for cert-manager: failure modes, checks, and fixes."
 app: cert-manager
 catalog_entity: cert-manager
 kind: runbook

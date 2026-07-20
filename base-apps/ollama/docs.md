@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Ollama"
+description: "Local LLM/embedding model server (Ollama, CPU-only, PVC-backed)"
 app: ollama
 catalog_entity: ollama
 kind: docs

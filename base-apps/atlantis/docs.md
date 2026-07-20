@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Atlantis"
+description: "Terraform/OpenTofu PR automation (Atlantis, GitHub + AWS auth via Vault, Infracost)"
 app: atlantis
 catalog_entity: atlantis
 kind: docs

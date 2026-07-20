@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Logging"
+description: "Observability stack (Alloy collector, Loki logs on S3, Prometheus metrics, Grafana)"
 app: logging
 catalog_entity: logging
 kind: docs

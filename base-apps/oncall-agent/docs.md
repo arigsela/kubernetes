@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "On-Call Agent"
+description: "AI on-call/incident-response agent (Anthropic Claude, Slack, GitOps PRs)"
 app: oncall-agent
 catalog_entity: oncall-agent
 kind: docs

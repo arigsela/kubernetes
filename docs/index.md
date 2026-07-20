@@ -1,3 +1,10 @@
+---
+type: "Directory Index"
+title: "Docs"
+description: "Directory listing for design docs, guides, specs, and implementation plans."
+tags: [docs, specs, plans]
+---
+
 # docs Index
 
 Top-level design docs, guides, and plans. Design specs and implementation plans

@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "Chores Tracker Backend — Runbook"
+description: "Operational runbook for Chores Tracker Backend: failure modes, checks, and fixes."
 app: chores-tracker-backend
 catalog_entity: chores-tracker-backend
 kind: runbook

@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "Dex — Runbook"
+description: "Operational runbook for Dex: failure modes, checks, and fixes."
 app: dex
 catalog_entity: dex
 kind: runbook

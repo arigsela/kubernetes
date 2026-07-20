@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "nginx-ingress — Runbook"
+description: "Operational runbook for nginx-ingress: failure modes, checks, and fixes."
 app: nginx-ingress
 catalog_entity: nginx-ingress
 kind: runbook

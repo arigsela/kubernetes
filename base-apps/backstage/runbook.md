@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "Backstage — Runbook"
+description: "Operational runbook for Backstage: failure modes, checks, and fixes."
 app: backstage
 catalog_entity: backstage
 kind: runbook

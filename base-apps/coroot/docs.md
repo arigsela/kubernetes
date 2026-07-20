@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Coroot"
+description: "eBPF-based observability/APM (Coroot operator + instance, node/cluster agents, ClickHouse)"
 app: coroot
 catalog_entity: coroot
 kind: docs

@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Weather Kitchen Backend"
+description: "Backend API for Weather Kitchen (likely FastAPI, JWT, Vault-backed DB)"
 app: weather-kitchen-backend
 catalog_entity: weather-kitchen-backend
 kind: docs

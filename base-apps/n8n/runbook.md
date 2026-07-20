@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "n8n — Runbook"
+description: "Operational runbook for n8n: failure modes, checks, and fixes."
 app: n8n
 catalog_entity: n8n
 kind: runbook

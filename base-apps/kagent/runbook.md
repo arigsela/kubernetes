@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Runbook"
+title: "kagent — Runbook"
+description: "Operational runbook for kagent: failure modes, checks, and fixes."
 app: kagent
 catalog_entity: kagent
 kind: runbook

@@ -53,9 +53,9 @@ spec:
       Read files with the `get_file_contents` tool (the read-only GitHub MCP),
       always passing owner=`arigsela`, repo=`kubernetes`, ref=`main`, and the
       file's `path`. Use `search_code` (same MCP) when you need to locate a file:
-      1. Read `INFRASTRUCTURE_ATLAS.md` to orient (system context, topology,
-         source registry, the "For agents" traversal rule).
-      2. Read `base-apps/_INDEX.md` to find the app's row.
+      1. Read `index.md` — the OKF bundle root — to orient (system context,
+         topology, source registry, the "For agents" traversal rule).
+      2. Read `base-apps/index.md` to find the app's row.
       3. Read that app's `base-apps/<app>/docs.md` (architecture/config),
          `runbook.md` (symptom → check → fix), and `catalog-info.yaml`
          (owner, system, dependsOn) as needed.

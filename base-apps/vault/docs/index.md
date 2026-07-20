@@ -1,4 +1,7 @@
 ---
+type: "Kubernetes App Guide"
+title: "Vault"
+description: "In-cluster secret backend (KV v2)"
 app: vault
 catalog_entity: vault
 kind: docs

@@ -1,3 +1,10 @@
+---
+type: "Directory Index"
+title: "Terraform"
+description: "Directory listing for the Terraform tree: the active cluster root and its reusable modules."
+tags: [terraform, infrastructure]
+---
+
 # terraform Index
 
 | path | purpose |
