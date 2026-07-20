@@ -1,0 +1,123 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: new-application
+  title: New Application
+  description: Scaffold a complete base-apps GitOps app and open a PR.
+  tags: [recommended, gitops, base-apps]
+spec:
+  type: service
+  owner: group:default/platform
+  parameters:
+    - title: Identity
+      required: [name, description, system]
+      properties:
+        name:
+          title: Name
+          type: string
+          description: kebab-case app name (also the dir + namespace default)
+          pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+        description:
+          title: Description
+          type: string
+        system:
+          title: System
+          type: string
+          ui:field: EntityPicker
+          ui:options:
+            catalogFilter:
+              kind: System
+        owner:
+          title: Owner
+          type: string
+          default: group:default/platform
+          ui:field: EntityPicker
+          ui:options:
+            catalogFilter:
+              kind: [Group, User]
+        tags:
+          title: Tags
+          type: array
+          items: { type: string }
+    - title: Workload
+      required: [image, containerPort]
+      properties:
+        image: { title: Container image, type: string }
+        containerPort: { title: Container port, type: integer, default: 8080 }
+        replicas: { title: Replicas, type: integer, default: 1 }
+        namespace:
+          title: Namespace
+          type: string
+          description: defaults to the app name
+    - title: Networking & Config
+      properties:
+        exposeIngress: { title: Expose via nginx Ingress, type: boolean, default: false }
+        host:
+          title: Ingress host label (<host>.arigsela.com)
+          type: string
+        needsConfig: { title: Add a ConfigMap (envFrom), type: boolean, default: false }
+        needsSecrets: { title: Add Vault SecretStore + ExternalSecret, type: boolean, default: false }
+        configData:
+          title: ConfigMap data
+          type: object
+          additionalProperties: { type: string }
+    - title: Resources
+      properties:
+        cpuRequest: { title: CPU request, type: string, default: 100m }
+        cpuLimit: { title: CPU limit, type: string, default: 500m }
+        memRequest: { title: Memory request, type: string, default: 128Mi }
+        memLimit: { title: Memory limit, type: string, default: 256Mi }
+  steps:
+    - id: fetch-core
+      name: Render core
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values: &vals
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          image: ${{ parameters.image }}
+          containerPort: ${{ parameters.containerPort }}
+          replicas: ${{ parameters.replicas }}
+          namespace: ${{ parameters.namespace if parameters.namespace else parameters.name }}
+          system: ${{ parameters.system }}
+          owner: ${{ parameters.owner }}
+          tags: ${{ parameters.tags }}
+          exposeIngress: ${{ parameters.exposeIngress }}
+          host: ${{ parameters.host }}
+          needsConfig: ${{ parameters.needsConfig }}
+          needsSecrets: ${{ parameters.needsSecrets }}
+          configData: ${{ parameters.configData if parameters.configData else {} }}
+          cpuRequest: ${{ parameters.cpuRequest }}
+          cpuLimit: ${{ parameters.cpuLimit }}
+          memRequest: ${{ parameters.memRequest }}
+          memLimit: ${{ parameters.memLimit }}
+    - id: fetch-ingress
+      name: Render ingress
+      if: ${{ parameters.exposeIngress }}
+      action: fetch:template
+      input: { url: ./skeleton-ingress, values: *vals }
+    - id: fetch-secrets
+      name: Render secrets
+      if: ${{ parameters.needsSecrets }}
+      action: fetch:template
+      input: { url: ./skeleton-secrets, values: *vals }
+    - id: fetch-config
+      name: Render config
+      if: ${{ parameters.needsConfig }}
+      action: fetch:template
+      input: { url: ./skeleton-config, values: *vals }
+    - id: publish
+      name: Open PR
+      action: publish:github:pull-request
+      input:
+        repoUrl: github.com?repo=kubernetes&owner=arigsela
+        branchName: new-app/${{ parameters.name }}
+        title: "feat(${{ parameters.name }}): onboard new application"
+        description: |
+          Scaffolded via the New Application template.
+          System: ${{ parameters.system }} · Owner: ${{ parameters.owner }}
+  output:
+    links:
+      - title: Pull request
+        url: ${{ steps.publish.output.remoteUrl }}

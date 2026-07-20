@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.namespace }}
+  labels:
+    app: ${{ values.name }}
+spec:
+  replicas: ${{ values.replicas }}
+  selector:
+    matchLabels:
+      app: ${{ values.name }}
+  template:
+    metadata:
+      labels:
+        app: ${{ values.name }}
+    spec:
+      containers:
+        - name: ${{ values.name }}
+          image: ${{ values.image }}
+          ports:
+            - name: http
+              containerPort: ${{ values.containerPort }}
+{% if values.needsConfig %}          envFrom:
+            - configMapRef:
+                name: ${{ values.name }}-config
+{% endif %}          resources:
+            requests:
+              cpu: ${{ values.cpuRequest }}
+              memory: ${{ values.memRequest }}
+            limits:
+              cpu: ${{ values.cpuLimit }}
+              memory: ${{ values.memLimit }}
+          readinessProbe:
+            tcpSocket:
+              port: ${{ values.containerPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
