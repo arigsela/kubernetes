@@ -142,6 +142,23 @@ jobs:
       - name: Check TechDocs scaffolding is in sync with docs.md/runbook.md
         run: python scripts/gen-techdocs.py --repo-root . --check
 
+  new-app-template-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: |
+          pip install pyyaml==6.0.2 pytest==8.3.3 jinja2==3.1.4
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+          pip install yamllint==1.35.1
+      - name: Render the template and run the repo validators on the output
+        run: python -m pytest tests/new-app-template/ -q
+
   okf-validate:
     runs-on: ubuntu-latest
     steps:
