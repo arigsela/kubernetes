@@ -5,6 +5,9 @@ on:
     paths: ['base-apps/**']
 permissions:
   contents: write
+concurrency:
+  group: okf-autosync-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: false
 jobs:
   autosync:
     if: github.event.pull_request.head.repo.full_name == github.repository

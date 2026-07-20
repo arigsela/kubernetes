@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 _SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "render-new-app.py"
 _spec = importlib.util.spec_from_file_location("render_new_app", _SCRIPT)
 mod = importlib.util.module_from_spec(_spec)
@@ -100,7 +102,7 @@ def test_rendered_output_passes_repo_validators(tmp_path):
     _copy_tracked_repo(work)
 
     dirs = [SKEL / "skeleton", SKEL / "skeleton-ingress", SKEL / "skeleton-secrets", SKEL / "skeleton-config"]
-    mod.render(dirs, SAMPLE, work)
+    written = mod.render(dirs, SAMPLE, work)
     app = work / "base-apps" / "sample-app"
 
     # Regenerate base-apps/index.md for the newly-scaffolded app (mirrors the
@@ -132,3 +134,28 @@ def test_rendered_output_passes_repo_validators(tmp_path):
     # ingress whitelist gate
     ing = (app / "nginx-ingress.yaml").read_text()
     assert "whitelist-source-range" in ing
+
+    # kubeconform (CI's kubernetes-validate job, .github/workflows/validate.yaml).
+    # mkdocs.yml has no 'kind' (Backstage TechDocs config, not a k8s manifest)
+    # and catalog-info.yaml is a Backstage entity, not a k8s manifest -- CI
+    # drops/skips both, so exclude them here too. `written` already includes
+    # base-apps/sample-app.yaml (the Argo CD Application manifest, rendered
+    # from the skeleton's top-level file), so no need to add it separately.
+    if shutil.which("kubeconform") is None:
+        pytest.skip("kubeconform not installed")
+    kc_files = [str(p) for p in written
+                if p.suffix in (".yaml", ".yml")
+                and p.name not in ("mkdocs.yml", "catalog-info.yaml")]
+    assert str(work / "base-apps" / "sample-app.yaml") in kc_files
+    r = subprocess.run(
+        ["kubeconform",
+         "-strict",
+         "-ignore-missing-schemas",
+         "-schema-location", "default",
+         "-schema-location",
+         "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/"
+         "{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json",
+         "-kubernetes-version", "1.33.0"] + kc_files,
+        capture_output=True, text=True,
+    )
+    assert r.returncode == 0, f"kubeconform:\n{r.stdout}\n{r.stderr}"
