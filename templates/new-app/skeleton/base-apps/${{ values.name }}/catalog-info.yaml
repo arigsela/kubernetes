@@ -1,0 +1,19 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  namespace: ${{ values.namespace }}
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=${{ values.name }}'
+    backstage.io/kubernetes-namespace: ${{ values.namespace }}
+  tags: ${{ values.tags }}
+spec:
+  type: service
+  lifecycle: experimental
+  owner: ${{ values.owner }}
+  system: ${{ values.system }}
+{% if values.needsSecrets %}  dependsOn:
+    - resource:vault/vault
+{% endif %}
