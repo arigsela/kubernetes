@@ -11,8 +11,11 @@ spec:
   # Cosmetic: llama.cpp ignores the requested model name and serves whatever GGUF
   # is loaded. The server lives in base-apps/qwen (Qwen3.5-0.8B, CPU, llama.cpp).
   model: Qwen3.5-0.8B
+  # Placeholder key (see qwen-local-secret.yaml). qwen/llama.cpp needs no auth,
+  # but kagent's OpenAI client refuses to start without a non-empty api_key
+  # ("Missing credentials ... set OPENAI_API_KEY"). The value is not a secret.
+  apiKeySecret: qwen-local
+  apiKeySecretKey: OPENAI_API_KEY
   openAI:
-    # Points at the in-cluster qwen service (OpenAI-compatible /v1). No apiKey:
-    # llama.cpp is a no-auth local endpoint and the CRD only requires `model`
-    # (the Ollama embedding-model-config is keyless for the same reason).
+    # Points at the in-cluster qwen service (OpenAI-compatible /v1).
     baseUrl: http://qwen.qwen.svc.cluster.local:8080/v1
