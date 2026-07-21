@@ -8,7 +8,7 @@ kind: runbook
 namespace: ${{ values.namespace }}
 last_reviewed: 2026-07-20
 status: current
-tags: ${{ values.tags | dump }}
+tags: [{% for t in values.tags %}"${{ t }}"{% if not loop.last %}, {% endif %}{% endfor %}]
 sources:
   - base-apps/${{ values.name }}/deployments.yaml
 ---

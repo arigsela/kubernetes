@@ -24,7 +24,7 @@ SAMPLE = {
     "namespace": "sample-app",
     "system": "default/platform-tooling",
     "owner": "group:default/platform",
-    "tags": ["nginx"],
+    "tags": ["nginx", "web"],
     "exposeIngress": True,
     "host": "sample-app",
     "needsConfig": True,
