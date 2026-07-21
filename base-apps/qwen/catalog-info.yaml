@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: qwen
+  namespace: qwen
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=qwen'
+    backstage.io/kubernetes-namespace: qwen
+  tags: [llm, vision, multimodal, gpu-optional]
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/platform
+  system: default/platform-ai

@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: qwen
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/qwen
+    directory:
+      # catalog-info.yaml is a Backstage entity and mkdocs.yml is TechDocs config;
+      # neither is a Kubernetes manifest. Exclude them so Argo CD does not try to
+      # apply them and fail sync. (docs.md/runbook.md/docs/ are .md and ignored.)
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: qwen
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

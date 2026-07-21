@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen
+  namespace: qwen
+  labels:
+    app: qwen
+spec:
+  replicas: 1
+  # Single writer to a ReadWriteOnce PVC; Recreate avoids two pods contending for
+  # the model volume during a rollout (same pattern as the ollama app).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: qwen
+  template:
+    metadata:
+      labels:
+        app: qwen
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      initContainers:
+        # Pre-fetch the GGUF weights + vision projector (mmproj) onto the PVC so the
+        # server starts from local files. Idempotent: the PVC persists across pod
+        # restarts, so re-downloads only happen when a file is missing.
+        - name: download-model
+          image: curlimages/curl:8.11.1
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              BASE="https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main"
+              MODEL="Qwen3.5-0.8B-UD-Q4_K_XL.gguf"
+              MMPROJ="mmproj-F16.gguf"
+              cd /models
+              if [ ! -f "$MODEL" ]; then
+                echo "Downloading $MODEL ..."
+                curl -fSL -o "$MODEL.part" "$BASE/$MODEL" && mv "$MODEL.part" "$MODEL"
+              fi
+              if [ ! -f "$MMPROJ" ]; then
+                echo "Downloading $MMPROJ (vision projector) ..."
+                curl -fSL -o "$MMPROJ.part" "$BASE/$MMPROJ" && mv "$MMPROJ.part" "$MMPROJ"
+              fi
+              echo "Model assets ready:"
+              ls -lh /models
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 512Mi
+      containers:
+        - name: llama-server
+          # CPU-only llama.cpp OpenAI-compatible server (the :server tag is the CPU
+          # build; :server-cuda is the GPU one). This cluster has no GPU.
+          # TODO: pin to an immutable build digest for reproducible GitOps.
+          image: ghcr.io/ggml-org/llama.cpp:server
+          args:
+            - --model
+            - /models/Qwen3.5-0.8B-UD-Q4_K_XL.gguf
+            - --mmproj
+            - /models/mmproj-F16.gguf
+            # No GPU: keep the vision projector on CPU instead of trying to offload it.
+            - --no-mmproj-offload
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8080"
+            # Modest context: the model supports 262K, but a large KV cache is
+            # impractical on CPU. Raise if you need longer prompts.
+            - --ctx-size
+            - "8192"
+            - --threads
+            - "6"
+          ports:
+            - containerPort: 8080
+              name: http
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              # Generation and the CLIP/vision pass are CPU-bound; workers have
+              # ample idle cores. Memory headroom covers the F16 vision projector
+              # plus per-image tensors during multimodal requests.
+              cpu: "6"
+              memory: 8Gi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: qwen-models
