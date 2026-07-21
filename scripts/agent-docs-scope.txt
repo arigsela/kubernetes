@@ -17,4 +17,3 @@ coroot
 logging
 dex
 whoami-test
-whoami-demo
