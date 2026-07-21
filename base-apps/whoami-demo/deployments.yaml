@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whoami-demo
+  namespace: whoami-demo
+  labels:
+    app: whoami-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: whoami-demo
+  template:
+    metadata:
+      labels:
+        app: whoami-demo
+    spec:
+      containers:
+        - name: whoami-demo
+          image: traefik/whoami
+          ports:
+            - name: http
+              containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: whoami-demo-config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
