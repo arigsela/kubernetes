@@ -60,8 +60,10 @@ spec:
         - name: llama-server
           # CPU-only llama.cpp OpenAI-compatible server (the :server tag is the CPU
           # build; :server-cuda is the GPU one). This cluster has no GPU.
-          # TODO: pin to an immutable build digest for reproducible GitOps.
-          image: ghcr.io/ggml-org/llama.cpp:server
+          # Pinned by digest for reproducible GitOps — this is the exact build
+          # verified to load the Qwen3.5 architecture (was :server). To upgrade:
+          # pull the tag, confirm it still loads the model + mmproj, then re-pin.
+          image: ghcr.io/ggml-org/llama.cpp@sha256:e10504c7f5c5bacece7e7e5957760eee53868642d853fe5ecfe8611065929a24
           args:
             - --model
             - /models/Qwen3.5-0.8B-UD-Q4_K_XL.gguf
@@ -79,6 +81,14 @@ spec:
             - "8192"
             - --threads
             - "6"
+            # Default thinking OFF: this GGUF's chat template defaults to reasoning,
+            # which on a 0.8B burns the token budget (and can loop) before answering.
+            # Applies the request-level kwarg we verified, as a server-wide default;
+            # callers can still re-enable per request by sending
+            # chat_template_kwargs {"enable_thinking": true}. (--jinja is on by
+            # default, which this flag requires.)
+            - --chat-template-kwargs
+            - '{"enable_thinking":false}'
           ports:
             - containerPort: 8080
               name: http
