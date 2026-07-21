@@ -16,3 +16,4 @@ atlantis
 coroot
 logging
 dex
+whoami

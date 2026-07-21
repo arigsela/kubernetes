@@ -50,4 +50,5 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | vcluster-sandbox-1 |  |  |  |  |  |
 | weather-kitchen-backend | Backend API for Weather Kitchen (likely FastAPI, JWT, Vault-backed DB) | weather-kitchen | [docs.md](weather-kitchen-backend/docs.md) | [runbook.md](weather-kitchen-backend/runbook.md) | [catalog-info.yaml](weather-kitchen-backend/catalog-info.yaml) |
 | weather-kitchen-frontend | Web frontend for Weather Kitchen (nginx-fronted Node build) | weather-kitchen-frontend | [docs.md](weather-kitchen-frontend/docs.md) | [runbook.md](weather-kitchen-frontend/runbook.md) | [catalog-info.yaml](weather-kitchen-frontend/catalog-info.yaml) |
+| whoami | test | whoami | [docs.md](whoami/docs.md) | [runbook.md](whoami/runbook.md) | [catalog-info.yaml](whoami/catalog-info.yaml) |
 | whoami-test |  |  |  |  |  |
