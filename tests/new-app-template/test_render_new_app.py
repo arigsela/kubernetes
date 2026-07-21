@@ -27,6 +27,7 @@ SAMPLE = {
     "tags": ["nginx", "web"],
     "exposeIngress": True,
     "host": "sample-app",
+    "whitelist": "10.0.0.0/8",
     "needsConfig": True,
     "configData": [{"key": "LOG_LEVEL", "value": "info"}],
     "needsSecrets": True,
