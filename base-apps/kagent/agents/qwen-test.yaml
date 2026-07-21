@@ -1,0 +1,45 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: qwen-test
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/managed-by: kagent
+    app.kubernetes.io/name: qwen-test
+    app: kagent
+    arigsela.com/idp-managed: "true"
+    # Pure LLM, tools: []. Nothing to gate. (agent-capability policy: read class.)
+    capability.homelab/class: read
+  annotations:
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: kagent-agent
+    backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/qwen-test.yaml
+    backstage.io/owner: group:default/platform-engineering
+spec:
+  description: |-
+    Throwaway wiring test for the local Qwen3.5-0.8B model (base-apps/qwen,
+    llama.cpp, CPU). No tools — validates only that kagent can reach the local
+    OpenAI-compatible endpoint. Not for real work: a 0.8B is unreliable at
+    tool-calling and delegation, so keep real agents on the Anthropic model.
+  type: Declarative
+  declarative:
+    modelConfig: qwen-local
+    runtime: python
+    stream: true
+    systemMessage: |
+      You are a small local test model (Qwen3.5-0.8B) served in-cluster via
+      llama.cpp. You exist only to confirm that kagent can reach the local model.
+      Answer briefly and directly. You have no tools and no cluster access. If
+      asked to do anything requiring tools, live cluster state, or multi-step
+      reasoning, say plainly that you are only a wiring test for the local model
+      and cannot do that.
+    tools: []
+    deployment:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: 1000m
+          memory: 1Gi
