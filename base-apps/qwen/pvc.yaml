@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qwen-models
+  namespace: qwen
+  labels:
+    app: qwen
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # NOTE: the only StorageClass (local-path) has allowVolumeExpansion=false, so
+  # this cannot be grown in place — size it up front. ~0.6GB weights + the F16
+  # vision projector + headroom fit comfortably in 5Gi.
+  resources:
+    requests:
+      storage: 5Gi
