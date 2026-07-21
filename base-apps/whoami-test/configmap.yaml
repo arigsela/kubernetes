@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: whoami-test-config
+  namespace: whoami-test
+data:
+  appName: "whoami"

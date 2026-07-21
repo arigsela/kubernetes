@@ -11,6 +11,8 @@ spec:
     repoURL: https://github.com/arigsela/kubernetes
     targetRevision: main
     path: base-apps/whoami-test
+    directory:
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: whoami-test
