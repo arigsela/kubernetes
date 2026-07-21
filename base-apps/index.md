@@ -46,6 +46,7 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | oncall-crewai |  |  |  |  |  |
 | openshell |  |  |  |  |  |
 | postgresql | Shared PostgreSQL + pgvector instance (root DB, kagent DB) + CNPG cluster for chores-tracker (daily S3 backups) | postgresql | [docs.md](postgresql/docs.md) | [runbook.md](postgresql/runbook.md) | [catalog-info.yaml](postgresql/catalog-info.yaml) |
+| qwen | Self-hosted multimodal (text+vision) LLM server via llama.cpp, CPU-only, PVC-backed | qwen | [docs.md](qwen/docs.md) | [runbook.md](qwen/runbook.md) | [catalog-info.yaml](qwen/catalog-info.yaml) |
 | vault | In-cluster secret backend (KV v2) | vault | [docs.md](vault/docs.md) | [runbook.md](vault/runbook.md) | [catalog-info.yaml](vault/catalog-info.yaml) |
 | vcluster-sandbox-1 |  |  |  |  |  |
 | weather-kitchen-backend | Backend API for Weather Kitchen (likely FastAPI, JWT, Vault-backed DB) | weather-kitchen | [docs.md](weather-kitchen-backend/docs.md) | [runbook.md](weather-kitchen-backend/runbook.md) | [catalog-info.yaml](weather-kitchen-backend/catalog-info.yaml) |
