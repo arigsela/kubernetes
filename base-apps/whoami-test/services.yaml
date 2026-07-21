@@ -1,10 +1,15 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: whoami
+  name: whoami-test
+  namespace: whoami-test
+  labels:
+    app: whoami-test
 spec:
+  type: ClusterIP
   selector:
-    app: whoami
+    app: whoami-test
   ports:
-  - port: 80
-    targetPort: 80
+    - name: http
+      port: 80
+      targetPort: 80
