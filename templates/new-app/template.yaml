@@ -163,16 +163,6 @@ spec:
       input:
         url: ./skeleton-config
         values: *vals
-    - id: vault-setup
-      name: Provision Vault role + secrets
-      if: ${{ parameters.needsSecrets }}
-      action: vault:setup
-      input:
-        vaultRole: ${{ parameters.name }}
-        namespace: ${{ parameters.namespace if parameters.namespace else parameters.name }}
-        enableAuth: true
-        enableKnowledge: ${{ parameters.seedOpenaiKey }}
-        serviceAccountNames: default
     - id: publish
       name: Open PR
       action: publish:github:pull-request
@@ -187,6 +177,22 @@ spec:
           Before merging: review `docs.md` / `runbook.md` and bump `last_reviewed`
           to today's date — the scaffolder bakes in its render date, which is
           almost certainly not your merge date.
+    # vault:setup runs AFTER the PR is opened, on purpose: a Vault outage or an
+    # expired VAULT_TOKEN must never cost you the PR. If this step fails, the PR
+    # still exists (find it on GitHub) — only the app's ExternalSecret stays
+    # unsynced until Vault is provisioned (re-run this template once Vault is
+    # healthy, or create the role/policy/KV manually). Provisioning still happens
+    # at scaffold time, so a green run has Vault ready well before you merge.
+    - id: vault-setup
+      name: Provision Vault role + secrets
+      if: ${{ parameters.needsSecrets }}
+      action: vault:setup
+      input:
+        vaultRole: ${{ parameters.name }}
+        namespace: ${{ parameters.namespace if parameters.namespace else parameters.name }}
+        enableAuth: true
+        enableKnowledge: ${{ parameters.seedOpenaiKey }}
+        serviceAccountNames: default
   output:
     links:
       - title: Pull request
