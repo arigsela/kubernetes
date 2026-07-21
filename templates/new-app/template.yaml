@@ -75,6 +75,14 @@ spec:
           title: Add Vault SecretStore + ExternalSecret
           type: boolean
           default: false
+        seedOpenaiKey:
+          title: Also seed an openai-api-key placeholder in Vault
+          type: boolean
+          default: false
+        whitelist:
+          title: Ingress source-IP allowlist (comma-separated CIDRs)
+          type: string
+          default: "73.7.190.154/32,170.85.56.189/32,170.85.130.202/32,104.28.177.82/32,10.0.0.0/8"
         configData:
           title: Config entries (key/value)
           type: array
@@ -104,6 +112,11 @@ spec:
           type: string
           default: 256Mi
   steps:
+    - id: validate-name
+      name: Check the name is available
+      action: newapp:validate-name
+      input:
+        name: ${{ parameters.name }}
     - id: fetch-core
       name: Render core
       action: fetch:template
@@ -121,6 +134,7 @@ spec:
           tags: ${{ parameters.tags }}
           exposeIngress: ${{ parameters.exposeIngress }}
           host: ${{ parameters.host }}
+          whitelist: ${{ parameters.whitelist }}
           needsConfig: ${{ parameters.needsConfig }}
           needsSecrets: ${{ parameters.needsSecrets }}
           configData: ${{ parameters.configData if parameters.configData else [] }}
@@ -149,6 +163,16 @@ spec:
       input:
         url: ./skeleton-config
         values: *vals
+    - id: vault-setup
+      name: Provision Vault role + secrets
+      if: ${{ parameters.needsSecrets }}
+      action: vault:setup
+      input:
+        vaultRole: ${{ parameters.name }}
+        namespace: ${{ parameters.namespace if parameters.namespace else parameters.name }}
+        enableAuth: true
+        enableKnowledge: ${{ parameters.seedOpenaiKey }}
+        serviceAccountNames: default
     - id: publish
       name: Open PR
       action: publish:github:pull-request
