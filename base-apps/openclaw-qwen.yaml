@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: openclaw-qwen
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/openclaw-qwen
+    directory:
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
+  destination:
+    server: https://kubernetes.default.svc
+    # Dedicated namespace — NOT the pre-existing (unrelated, orphaned) `openclaw`
+    # namespace that already owns svc/ingress openclaw.arigsela.com.
+    namespace: openclaw-qwen
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
