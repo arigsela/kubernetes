@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-qwen-home
+  namespace: openclaw-qwen
+  labels:
+    app: openclaw-qwen
+    app.kubernetes.io/name: openclaw-qwen
+spec:
+  # OpenClaw's writable home: config, sessions, workspace. local-path has
+  # allowVolumeExpansion=false, so size up front; 5Gi is ample for agent state.
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

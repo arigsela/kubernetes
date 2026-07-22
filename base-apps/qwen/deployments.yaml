@@ -75,10 +75,11 @@ spec:
             - 0.0.0.0
             - --port
             - "8080"
-            # Modest context: the model supports 262K, but a large KV cache is
-            # impractical on CPU. Raise if you need longer prompts.
+            # 32K context: fits agent frameworks' large system prompts (OpenClaw's
+            # is ~20K tokens). The model supports 262K, but a bigger KV cache is
+            # impractical on CPU; 32K balances headroom vs memory on the 0.8B.
             - --ctx-size
-            - "8192"
+            - "32768"
             - --threads
             - "6"
             # Default thinking OFF: this GGUF's chat template defaults to reasoning,

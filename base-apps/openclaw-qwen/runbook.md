@@ -10,39 +10,46 @@ last_reviewed: 2026-07-22
 status: current
 tags: [llm, agent, coding-agent, local, gpu-optional]
 sources:
-  - base-apps/openclaw-qwen/configmap.yaml
   - base-apps/openclaw-qwen/deployment.yaml
+  - base-apps/openclaw-qwen/configmap.yaml
+  - base-apps/openclaw-qwen/secret.yaml
 ---
 
 # openclaw-qwen runbook
 
 ## Failure modes
 
-### Symptom: `[assistant turn failed before producing content]` / turns never reach qwen
-- **Check:** from inside the pod, `kubectl -n openclaw-qwen exec deploy/openclaw-qwen -- curl -sS -m10 http://qwen.qwen.svc.cluster.local:8080/health` (expect `{"status":"ok"}`), and `kubectl -n qwen logs deploy/qwen -c llama-server --since=2m | grep task` to see if requests land.
-- **Fix:** if the health check fails, qwen is down (see `base-apps/qwen`) or network policy is blocking. If health is OK but no requests land, confirm `HOME=/state` and that `/state/.openclaw/openclaw.json` exists and points at the qwen baseUrl (`exec ... -- cat /state/.openclaw/openclaw.json`). Unlike the openshell harness, this pod has no egress proxy, so proxy interception is not a factor here.
+### Symptom: TUI connects but sending fails with `missing scope: operator.write`
+- **Cause:** the gateway is not using token auth, or the client isn't presenting the token.
+- **Check:** `kubectl -n openclaw-qwen exec deploy/openclaw-qwen -- sh -c 'echo $OPENCLAW_GATEWAY_TOKEN | head -c8'` (should be non-empty) and confirm `configmap.yaml` has `gateway.auth.mode: token`.
+- **Fix:** ensure `secret.yaml` exists and the deployment mounts `OPENCLAW_GATEWAY_TOKEN`. Token (shared-secret) auth auto-approves the client as **operator**; `mode: none` leaves it read-only.
 
-### Symptom: TUI shows model `gpt-5.5` instead of `openai/Qwen3.5-0.8B`
-- **Check:** the config wasn't loaded — `exec ... -- sh -c 'HOME=/state openclaw config validate'` and inspect `/state/.openclaw/openclaw.json`.
-- **Fix:** ensure `HOME=/state` is set (env in `deployment.yaml`) and the init container seeded the config. Delete the pod to re-seed. `gpt-5.5` is OpenClaw's built-in fallback when it can't resolve the configured provider.
+### Symptom: agent turns fail — `exceeds context size` / `[assistant turn failed before producing content]`
+- **Cause:** OpenClaw's agent system prompt (~20K tokens) is larger than qwen's context window.
+- **Check:** `kubectl -n qwen logs deploy/qwen -c llama-server --tail=60 | grep n_ctx_slot` (needs to be ≥ ~24K) and grep for `exceeds the available context size`.
+- **Fix:** qwen must run `--ctx-size` ≥ ~24K (set to 32768 in `base-apps/qwen/deployments.yaml`). If it reverted to 8192, re-sync `base-apps/qwen`.
 
-### Symptom: pod CrashLoop / liveness failing
-- **Check:** `kubectl -n openclaw-qwen logs deploy/openclaw-qwen` and `kubectl -n openclaw-qwen describe pod -l app=openclaw-qwen`. The liveness probe greps `/proc/net/tcp` for the gateway port (18800 = `:4970`); if the gateway never binds, the probe fails.
-- **Fix:** check the gateway startup logs for config errors; verify the pinned image still ships `openclaw`. Raise `initialDelaySeconds` if the gateway is slow to bind on first start.
+### Symptom: `Cannot continue from message role: assistant`
+- **Cause:** a previous turn errored mid-way and left a dangling assistant message in the session.
+- **Fix:** start a fresh session — `/reset` (or `/new`) in the TUI, or clear the session file: `kubectl -n openclaw-qwen exec deploy/openclaw-qwen -- rm -f /home/node/.openclaw/agents/default/sessions/*.jsonl`.
+
+### Symptom: pod CrashLoop / not ready
+- **Check:** `kubectl -n openclaw-qwen logs deploy/openclaw-qwen -c gateway` and `-c init-config`. Readiness hits `127.0.0.1:18789/readyz`.
+- **Fix:** verify the pinned image still exposes `gateway run`; check the init container seeded `/home/node/.openclaw/openclaw.json` (the PVC must be writable, fsGroup 1000).
 
 ## How-to
 
 ### Deploy / update
-Edit manifests here and PR; Argo CD syncs on merge. Config changes require a pod restart (`strategy: Recreate`) so the init container re-seeds `openclaw.json`.
+Edit manifests here and PR; Argo CD syncs on merge. Config changes require a pod restart (`Recreate`) so the init container re-seeds `openclaw.json`.
 
 ### Smoke test (does qwen answer?)
 ```bash
 kubectl -n openclaw-qwen exec deploy/openclaw-qwen -- \
-  openclaw infer model run --model openai/Qwen3.5-0.8B --prompt "Reply with one word: what color is grass?" --local
+  openclaw infer model run --model openai/Qwen3.5-0.8B --prompt "Reply with one word: grass color?" --local
 ```
 
 ### Point at a bigger / different model
-Edit `configmap.yaml`: change `models.providers.openai.baseUrl` + `models[].id` and `agents.defaults.model.primary`, then PR. (A larger model is the real fix for weak agent behavior.)
+Edit `configmap.yaml`: change `models.providers.openai.baseUrl` + `models[].id` and `agents.defaults.model.primary`, then PR. A larger model (ideally on a GPU) is the real fix for slow/weak agent behavior.
 
 ### Note on performance
-Inference runs on the CPU-only qwen pod (Qwen3.5-0.8B). Agent turns are slow and the model is weak at tool-calling — expected, not a bug.
+The agent's ~20K-token prompt runs on the CPU-only qwen pod at ~50 tok/s prompt-eval, so the first turn takes minutes. Expected for a 0.8B on CPU, not a bug.
