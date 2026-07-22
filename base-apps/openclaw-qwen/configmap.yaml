@@ -8,16 +8,21 @@ metadata:
     app.kubernetes.io/name: openclaw-qwen
     app.kubernetes.io/part-of: platform-ai
 data:
-  # OpenClaw config, seeded into the pod's writable HOME by the init container.
-  # Points OpenClaw's "openai" provider straight at the in-cluster qwen service
-  # (base-apps/qwen). Because this runs as a plain Deployment (NOT an openshell
-  # sandbox), there is no egress proxy in the way — OpenClaw reaches qwen
-  # directly. apiKey is a placeholder; llama.cpp ignores it. Gateway binds
-  # loopback with no auth: it is only reachable from inside the pod (via
-  # `kubectl exec`), never on the cluster network.
+  # Follows OpenClaw's official k8s config (docs.openclaw.ai/install/kubernetes):
+  # gateway.auth.mode "token" — shared-secret auth that grants the OPERATOR role,
+  # so the TUI can actually send (unlike "none", which is read-only). The token
+  # comes from the OPENCLAW_GATEWAY_TOKEN env (secret.yaml). The `openai` provider
+  # points at the in-cluster qwen model; a plain Deployment has no egress proxy,
+  # so it reaches qwen directly.
   openclaw.json: |
     {
-      "gateway": { "mode": "local", "bind": "loopback", "auth": { "mode": "none" }, "port": 18800 },
+      "gateway": {
+        "mode": "local",
+        "bind": "loopback",
+        "port": 18789,
+        "auth": { "mode": "token" },
+        "controlUi": { "enabled": true }
+      },
       "models": {
         "mode": "merge",
         "providers": {
@@ -26,9 +31,20 @@ data:
             "apiKey": "not-needed",
             "auth": "api-key",
             "api": "openai-completions",
+            "timeoutSeconds": 1200,
             "models": [ { "id": "Qwen3.5-0.8B", "name": "Qwen3.5-0.8B" } ]
           }
         }
       },
-      "agents": { "defaults": { "model": { "primary": "openai/Qwen3.5-0.8B" } } }
+      "agents": {
+        "defaults": { "workspace": "~/.openclaw/workspace", "model": { "primary": "openai/Qwen3.5-0.8B" }, "timeoutSeconds": 1200 },
+        "list": [ { "id": "default", "name": "OpenClaw Assistant", "workspace": "~/.openclaw/workspace" } ]
+      },
+      "cron": { "enabled": false }
     }
+  AGENTS.md: |
+    # OpenClaw Assistant
+
+    You are a helpful AI assistant running in Kubernetes, backed by a local
+    Qwen3.5-0.8B model. Keep answers short and direct — the model is small and
+    runs on CPU, so brevity matters.
