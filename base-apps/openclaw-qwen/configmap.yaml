@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openclaw-qwen-config
+  namespace: openclaw-qwen
+  labels:
+    app: openclaw-qwen
+    app.kubernetes.io/name: openclaw-qwen
+    app.kubernetes.io/part-of: platform-ai
+data:
+  # OpenClaw config, seeded into the pod's writable HOME by the init container.
+  # Points OpenClaw's "openai" provider straight at the in-cluster qwen service
+  # (base-apps/qwen). Because this runs as a plain Deployment (NOT an openshell
+  # sandbox), there is no egress proxy in the way — OpenClaw reaches qwen
+  # directly. apiKey is a placeholder; llama.cpp ignores it. Gateway binds
+  # loopback with no auth: it is only reachable from inside the pod (via
+  # `kubectl exec`), never on the cluster network.
+  openclaw.json: |
+    {
+      "gateway": { "mode": "local", "bind": "loopback", "auth": { "mode": "none" }, "port": 18800 },
+      "models": {
+        "mode": "merge",
+        "providers": {
+          "openai": {
+            "baseUrl": "http://qwen.qwen.svc.cluster.local:8080/v1",
+            "apiKey": "not-needed",
+            "auth": "api-key",
+            "api": "openai-completions",
+            "models": [ { "id": "Qwen3.5-0.8B", "name": "Qwen3.5-0.8B" } ]
+          }
+        }
+      },
+      "agents": { "defaults": { "model": { "primary": "openai/Qwen3.5-0.8B" } } }
+    }

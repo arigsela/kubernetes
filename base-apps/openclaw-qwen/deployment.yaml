@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openclaw-qwen
+  namespace: openclaw-qwen
+  labels:
+    app: openclaw-qwen
+    app.kubernetes.io/name: openclaw-qwen
+    app.kubernetes.io/part-of: platform-ai
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: openclaw-qwen
+  template:
+    metadata:
+      labels:
+        app: openclaw-qwen
+        app.kubernetes.io/name: openclaw-qwen
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      initContainers:
+        # Seed the config from the ConfigMap into the pod's writable HOME.
+        # OpenClaw needs a writable ~/.openclaw (sessions, state), so the
+        # read-only ConfigMap can't be mounted there directly.
+        - name: seed-config
+          image: ghcr.io/kagent-dev/nemoclaw/sandbox-base@sha256:d52bee415dc4c0dba7164f9eabe727574c056d4f211781f20af249707883a3b4
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              mkdir -p /state/.openclaw
+              cp /config/openclaw.json /state/.openclaw/openclaw.json
+              echo "seeded /state/.openclaw/openclaw.json"
+          volumeMounts:
+            - name: state
+              mountPath: /state
+            - name: config
+              mountPath: /config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      containers:
+        - name: openclaw
+          # Same image the kagent openclaw harness uses; run OpenClaw directly
+          # instead of the openshell sandbox supervisor. Inference happens in the
+          # qwen pod, so this container itself stays light (Node orchestration).
+          image: ghcr.io/kagent-dev/nemoclaw/sandbox-base@sha256:d52bee415dc4c0dba7164f9eabe727574c056d4f211781f20af249707883a3b4
+          command:
+            - sh
+            - -c
+            - exec openclaw gateway run --auth none --bind loopback --port 18800
+          env:
+            - name: HOME
+              value: /state
+          volumeMounts:
+            - name: state
+              mountPath: /state
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          livenessProbe:
+            # Gateway binds loopback, so a normal tcpSocket probe (pod IP) can't
+            # reach it — check the listening socket in /proc instead.
+            # 18800 = 0x4970.
+            exec:
+              command:
+                - sh
+                - -c
+                - grep -qi ':4970 ' /proc/net/tcp
+            initialDelaySeconds: 40
+            periodSeconds: 30
+            failureThreshold: 4
+      volumes:
+        - name: state
+          emptyDir: {}
+        - name: config
+          configMap:
+            name: openclaw-qwen-config
