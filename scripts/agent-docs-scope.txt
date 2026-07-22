@@ -18,3 +18,4 @@ logging
 dex
 whoami-test
 qwen
+openclaw-qwen

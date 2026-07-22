@@ -44,6 +44,7 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | ollama | Local LLM/embedding model server (Ollama, CPU-only, PVC-backed) | ollama | [docs.md](ollama/docs.md) | [runbook.md](ollama/runbook.md) | [catalog-info.yaml](ollama/catalog-info.yaml) |
 | oncall-agent | AI on-call/incident-response agent (Anthropic Claude, Slack, GitOps PRs) | oncall-agent | [docs.md](oncall-agent/docs.md) | [runbook.md](oncall-agent/runbook.md) | [catalog-info.yaml](oncall-agent/catalog-info.yaml) |
 | oncall-crewai |  |  |  |  |  |
+| openclaw-qwen | Standalone OpenClaw coding agent driven by the local Qwen3.5-0.8B model, no openshell sandbox | openclaw-qwen | [docs.md](openclaw-qwen/docs.md) | [runbook.md](openclaw-qwen/runbook.md) | [catalog-info.yaml](openclaw-qwen/catalog-info.yaml) |
 | openshell |  |  |  |  |  |
 | postgresql | Shared PostgreSQL + pgvector instance (root DB, kagent DB) + CNPG cluster for chores-tracker (daily S3 backups) | postgresql | [docs.md](postgresql/docs.md) | [runbook.md](postgresql/runbook.md) | [catalog-info.yaml](postgresql/catalog-info.yaml) |
 | qwen | Self-hosted multimodal (text+vision) LLM server via llama.cpp, CPU-only, PVC-backed | qwen | [docs.md](qwen/docs.md) | [runbook.md](qwen/runbook.md) | [catalog-info.yaml](qwen/catalog-info.yaml) |
