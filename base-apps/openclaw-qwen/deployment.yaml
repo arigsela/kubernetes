@@ -54,6 +54,51 @@ spec:
               mountPath: /home/node/.openclaw
             - name: config
               mountPath: /config
+        # Slack is a channel plugin (@openclaw/slack) NOT bundled in the slim
+        # image; install it from npm into the persistent PVC on first boot.
+        # Idempotent: skipped when already present, so warm restarts stay fast and
+        # only a fresh/lost PVC triggers a re-download. npm cache -> /tmp because
+        # the container rootfs is read-only. openclaw.json (with plugins.entries.
+        # slack.enabled + channels.slack) is seeded by init-config, which runs first.
+        - name: init-slack-plugin
+          image: ghcr.io/openclaw/openclaw:slim
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              if ls -d /home/node/.openclaw/npm/projects/openclaw-slack-* >/dev/null 2>&1; then
+                echo "slack plugin already installed; skipping"
+              else
+                echo "installing @openclaw/slack from npm..."
+                openclaw plugins install @openclaw/slack
+              fi
+          env:
+            - name: HOME
+              value: /home/node
+            - name: npm_config_cache
+              value: /tmp/.npm
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+              cpu: "1"
+          volumeMounts:
+            - name: home
+              mountPath: /home/node/.openclaw
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: gateway
           # Official OpenClaw image + command (docs.openclaw.ai/install/kubernetes).
