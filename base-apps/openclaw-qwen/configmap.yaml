@@ -39,7 +39,7 @@ data:
         }
       },
       "agents": {
-        "defaults": { "workspace": "/workspace", "model": { "primary": "openai/qwen2.5-coder-14b-instruct" }, "timeoutSeconds": 600, "sandbox": { "mode": "off" } },
+        "defaults": { "workspace": "/workspace", "model": { "primary": "openai/qwen2.5-coder-14b-instruct" }, "timeoutSeconds": 600, "sandbox": { "mode": "off" }, "silentReply": { "group": "disallow" } },
         "list": [ { "id": "default", "name": "OpenClaw Assistant", "workspace": "/workspace" } ]
       },
       "cron": { "enabled": false },
