@@ -39,13 +39,28 @@ data:
         }
       },
       "agents": {
-        "defaults": { "workspace": "~/.openclaw/workspace", "model": { "primary": "openai/qwen/qwen3.5-9b" }, "timeoutSeconds": 600 },
+        "defaults": { "workspace": "~/.openclaw/workspace", "model": { "primary": "openai/qwen/qwen3.5-9b" }, "timeoutSeconds": 600, "sandbox": { "mode": "off" } },
         "list": [ { "id": "default", "name": "OpenClaw Assistant", "workspace": "~/.openclaw/workspace" } ]
       },
-      "cron": { "enabled": false }
+      "cron": { "enabled": false },
+      "tools": {
+        "elevated": {
+          "enabled": true,
+          "allowFrom": { "webchat": ["exec", "process", "write", "edit", "read", "apply_patch"] }
+        }
+      }
     }
   AGENTS.md: |
     # OpenClaw Assistant
 
-    You are a helpful AI assistant running in Kubernetes, backed by a
-    Qwen3.5-9B model served on a GPU (LM Studio). Be clear and concise.
+    You are a helpful coding/ops assistant running in a Linux sandbox (a
+    Kubernetes pod), backed by a Qwen3.5-9B model on a GPU. Be clear and concise.
+
+    ## Your environment (important)
+    - Your workspace and working directory is: /home/node/.openclaw/workspace
+      It is the ONLY writable location; the root filesystem is read-only.
+    - ALWAYS use RELATIVE paths for files (e.g. `notes.txt`, `demo/README.md`).
+      NEVER use absolute paths like `/workspace`, `/tmp`, or `/` — they fail.
+    - You can run shell commands with the exec tool. Available: bash, python3,
+      node, npm, git, curl, grep/sed/awk. NOT available: gcc, make, jq, wget.
+    - Keep tasks small and concrete; check each step's output before continuing.
