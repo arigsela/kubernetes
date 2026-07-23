@@ -99,6 +99,65 @@ spec:
               mountPath: /home/node/.openclaw
             - name: tmp
               mountPath: /tmp
+        # GitHub tools via the hosted GitHub MCP server (api.githubcopilot.com/mcp).
+        # OpenClaw can't reference a Secret in MCP headers declaratively (header
+        # values are literal strings, no env interpolation), so we inject the
+        # resolved Authorization header at startup from GITHUB_PERSONAL_ACCESS_TOKEN
+        # (sourced from the openclaw-github Secret). The URL + toolset scope live in
+        # git here; only the token comes from the env and is written into the PVC
+        # config, never into git. Runs after init-config (which re-seeds openclaw.json
+        # from the ConfigMap, dropping this block), so it re-adds the server every
+        # start. Skips gracefully if the Secret/token is absent.
+        - name: init-github-mcp
+          image: ghcr.io/openclaw/openclaw:slim
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              if [ -z "$GITHUB_PERSONAL_ACCESS_TOKEN" ]; then
+                echo "no GITHUB_PERSONAL_ACCESS_TOKEN; skipping GitHub MCP setup"
+                exit 0
+              fi
+              echo "configuring GitHub MCP server (repos, issues, pull_requests)..."
+              openclaw mcp unset github >/dev/null 2>&1 || true
+              openclaw mcp add github \
+                --url https://api.githubcopilot.com/mcp/ \
+                --transport streamable-http \
+                --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN" \
+                --header "X-MCP-Toolsets=repos,issues,pull_requests" \
+                --no-probe
+              echo "GitHub MCP configured."
+          env:
+            - name: HOME
+              value: /home/node
+            - name: GITHUB_PERSONAL_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-github
+                  key: GITHUB_TOKEN
+                  optional: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 50m
+            limits:
+              memory: 256Mi
+              cpu: "500m"
+          volumeMounts:
+            - name: home
+              mountPath: /home/node/.openclaw
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: gateway
           # Official OpenClaw image + command (docs.openclaw.ai/install/kubernetes).
