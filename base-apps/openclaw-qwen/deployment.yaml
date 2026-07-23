@@ -114,7 +114,6 @@ spec:
             - sh
             - -c
             - |
-              set -e
               if [ -z "$GITHUB_PERSONAL_ACCESS_TOKEN" ]; then
                 echo "no GITHUB_PERSONAL_ACCESS_TOKEN; skipping GitHub MCP setup"
                 exit 0
@@ -125,8 +124,14 @@ spec:
               # gateway and would hang here — there is no gateway during init). The
               # gateway reads this on startup. Token comes from the env (Secret);
               # single-line echo avoids heredoc indentation issues in a YAML scalar.
-              echo '{"mcp":{"servers":{"github":{"url":"https://api.githubcopilot.com/mcp/","transport":"streamable-http","headers":{"Authorization":"Bearer '"$GITHUB_PERSONAL_ACCESS_TOKEN"'","X-MCP-Toolsets":"repos,issues,pull_requests"}}}}}}' | openclaw config patch --stdin
-              echo "GitHub MCP configured."
+              # Non-blocking: a GitHub-config failure must not crashloop the pod, so
+              # we log and exit 0 regardless (agent still comes up, sans GitHub).
+              if echo '{"mcp":{"servers":{"github":{"url":"https://api.githubcopilot.com/mcp/","transport":"streamable-http","headers":{"Authorization":"Bearer '"$GITHUB_PERSONAL_ACCESS_TOKEN"'","X-MCP-Toolsets":"repos,issues,pull_requests"}}}}}' | openclaw config patch --stdin; then
+                echo "GitHub MCP configured."
+              else
+                echo "WARN: GitHub MCP config failed; continuing without GitHub tools"
+              fi
+              exit 0
           env:
             - name: HOME
               value: /home/node
