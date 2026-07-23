@@ -18,7 +18,7 @@ sources:
 # openclaw-qwen
 
 ## What it is
-A standalone [OpenClaw](https://docs.openclaw.ai) agent running as a plain `Deployment`, driven by the in-cluster **Qwen3.5-0.8B** model (`base-apps/qwen`). Follows OpenClaw's [official Kubernetes pattern](https://docs.openclaw.ai/install/kubernetes): the `ghcr.io/openclaw/openclaw:slim` image running `gateway run`, hardened securityContext, and **token auth**.
+A standalone [OpenClaw](https://docs.openclaw.ai) agent running as a plain `Deployment`, driven by **Qwen3.5-9B served on a GPU** (LM Studio on the gaming PC at `http://10.0.1.200:1234`). Follows OpenClaw's [official Kubernetes pattern](https://docs.openclaw.ai/install/kubernetes): the `ghcr.io/openclaw/openclaw:slim` image running `gateway run`, hardened securityContext, and **token auth**.
 
 ## Why this shape (two things that matter)
 1. **Token auth, not `--auth none`.** OpenClaw gates `operator.write` (the ability to *send*) behind an operator identity. Shared-secret **token** auth auto-approves the connecting client as **operator**; `none` leaves it read-only. The gateway reads `OPENCLAW_GATEWAY_TOKEN` (from `secret.yaml`); a client that inherits that env authenticates as operator.
@@ -45,8 +45,10 @@ kubectl -n openclaw-qwen exec deploy/openclaw-qwen -- \
 - `secret.yaml` — `OPENCLAW_GATEWAY_TOKEN` (operator token).
 - `pvc.yaml` — 5Gi writable home (sessions/workspace). `service.yaml` — ClusterIP 18789 (for port-forward).
 
-## Caveats (the honest part)
-- **It is slow.** OpenClaw's agent system prompt is ~20K tokens; qwen runs it on **CPU** at ~50 tok/s prompt-eval, so the *first* turn takes minutes. This is the 0.8B/CPU reality, not a bug.
-- Requires **qwen `--ctx-size` ≥ ~24K** (bumped to 32768) so the agent prompt fits — an 8K window overflows.
-- A 0.8B is weak at multi-step tool-calling. Great for learning OpenClaw's mechanics; for real agent work, point the config at a bigger model (ideally on a GPU).
+## Notes
+- **Model runs off-cluster on the gaming PC's GPU** (LM Studio, `10.0.1.200:1234`, same LAN subnet as the nodes). Verified reachable from a cluster pod; a full turn returns in **seconds** (vs. ~8 min on the old CPU 0.8B).
+- **LM Studio must load the model with context length ≥ ~24K** — OpenClaw's agent prompt is ~20K tokens; the default 4K overflows.
+- The model reasons (`reasoning_content`) before answering; OpenClaw handles this, and it's fast on the GPU.
+- To switch models, edit the `openai` provider `baseUrl`/`models[].id` and `agents.defaults.model.primary` here.
+- Earlier history: this app previously pointed at the in-cluster CPU `Qwen3.5-0.8B` (`base-apps/qwen`), which worked but was too slow (~8 min/turn) for interactive use.
 - If a turn errors mid-way (e.g. a timeout), the session can get a dangling message → `Cannot continue from message role: assistant`. Start fresh with `/reset` (or `/new`) in the TUI.

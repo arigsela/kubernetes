@@ -12,8 +12,10 @@ data:
   # gateway.auth.mode "token" — shared-secret auth that grants the OPERATOR role,
   # so the TUI can actually send (unlike "none", which is read-only). The token
   # comes from the OPENCLAW_GATEWAY_TOKEN env (secret.yaml). The `openai` provider
-  # points at the in-cluster qwen model; a plain Deployment has no egress proxy,
-  # so it reaches qwen directly.
+  # points at Qwen3.5-9B served by LM Studio on the gaming PC's GPU
+  # (http://10.0.1.200:1234, same LAN subnet as the nodes) — a GPU 9B answers in
+  # seconds vs. minutes for the CPU 0.8B, and it's the ~20K agent prompt's real
+  # home. Requires LM Studio to load the model with context length >= ~24K.
   openclaw.json: |
     {
       "gateway": {
@@ -27,17 +29,17 @@ data:
         "mode": "merge",
         "providers": {
           "openai": {
-            "baseUrl": "http://qwen.qwen.svc.cluster.local:8080/v1",
+            "baseUrl": "http://10.0.1.200:1234/v1",
             "apiKey": "not-needed",
             "auth": "api-key",
             "api": "openai-completions",
-            "timeoutSeconds": 1200,
-            "models": [ { "id": "Qwen3.5-0.8B", "name": "Qwen3.5-0.8B" } ]
+            "timeoutSeconds": 600,
+            "models": [ { "id": "qwen/qwen3.5-9b", "name": "Qwen3.5-9B (LM Studio, GPU)" } ]
           }
         }
       },
       "agents": {
-        "defaults": { "workspace": "~/.openclaw/workspace", "model": { "primary": "openai/Qwen3.5-0.8B" }, "timeoutSeconds": 1200 },
+        "defaults": { "workspace": "~/.openclaw/workspace", "model": { "primary": "openai/qwen/qwen3.5-9b" }, "timeoutSeconds": 600 },
         "list": [ { "id": "default", "name": "OpenClaw Assistant", "workspace": "~/.openclaw/workspace" } ]
       },
       "cron": { "enabled": false }
@@ -45,6 +47,5 @@ data:
   AGENTS.md: |
     # OpenClaw Assistant
 
-    You are a helpful AI assistant running in Kubernetes, backed by a local
-    Qwen3.5-0.8B model. Keep answers short and direct — the model is small and
-    runs on CPU, so brevity matters.
+    You are a helpful AI assistant running in Kubernetes, backed by a
+    Qwen3.5-9B model served on a GPU (LM Studio). Be clear and concise.
