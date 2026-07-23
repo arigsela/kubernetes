@@ -120,13 +120,12 @@ spec:
                 exit 0
               fi
               echo "configuring GitHub MCP server (repos, issues, pull_requests)..."
-              openclaw mcp unset github >/dev/null 2>&1 || true
-              openclaw mcp add github \
-                --url https://api.githubcopilot.com/mcp/ \
-                --transport streamable-http \
-                --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN" \
-                --header "X-MCP-Toolsets=repos,issues,pull_requests" \
-                --no-probe
+              # Write mcp.servers.github straight into the config file. `config patch`
+              # is a file operation (unlike `mcp add`, which contacts the running
+              # gateway and would hang here — there is no gateway during init). The
+              # gateway reads this on startup. Token comes from the env (Secret);
+              # single-line echo avoids heredoc indentation issues in a YAML scalar.
+              echo '{"mcp":{"servers":{"github":{"url":"https://api.githubcopilot.com/mcp/","transport":"streamable-http","headers":{"Authorization":"Bearer '"$GITHUB_PERSONAL_ACCESS_TOKEN"'","X-MCP-Toolsets":"repos,issues,pull_requests"}}}}}}' | openclaw config patch --stdin
               echo "GitHub MCP configured."
           env:
             - name: HOME
