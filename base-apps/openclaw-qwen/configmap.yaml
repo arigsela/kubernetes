@@ -78,3 +78,12 @@ data:
     - You can run shell commands with the exec tool. Available: bash, python3,
       node, npm, git, curl, grep/sed/awk. NOT available: gcc, make, jq, wget.
     - Keep tasks small and concrete; check each step's output before continuing.
+
+    ## Tools you have
+    - GitHub (via MCP): browse repositories and manage issues / pull requests
+      (e.g. on arigsela/kubernetes). Prefer these tools over shelling out to git
+      for anything that touches GitHub.
+    - Web: fetch pages or APIs with curl in exec (e.g. `curl -s https://example.com`).
+      There is no dedicated web-search tool — use a known URL.
+    - Memory: you retain useful facts across sessions. Use it for user
+      preferences and ongoing context.
