@@ -80,6 +80,19 @@ spec:
                 secretKeyRef:
                   name: openclaw-qwen-secrets
                   key: OPENCLAW_GATEWAY_TOKEN
+            # Slack Socket-Mode tokens (channels.slack SecretRefs point at these).
+            # The openclaw-slack Secret is created out-of-band (not in git) so the
+            # real tokens never touch the repo.
+            - name: SLACK_APP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-slack
+                  key: SLACK_APP_TOKEN
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-slack
+                  key: SLACK_BOT_TOKEN
           resources:
             requests:
               memory: 512Mi

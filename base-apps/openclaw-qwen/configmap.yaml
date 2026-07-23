@@ -43,10 +43,21 @@ data:
         "list": [ { "id": "default", "name": "OpenClaw Assistant", "workspace": "/workspace" } ]
       },
       "cron": { "enabled": false },
+      "channels": {
+        "slack": {
+          "enabled": true,
+          "mode": "socket",
+          "appToken": { "source": "env", "provider": "default", "id": "SLACK_APP_TOKEN" },
+          "botToken": { "source": "env", "provider": "default", "id": "SLACK_BOT_TOKEN" }
+        }
+      },
       "tools": {
         "elevated": {
           "enabled": true,
-          "allowFrom": { "webchat": ["exec", "process", "write", "edit", "read", "apply_patch"] }
+          "allowFrom": {
+            "webchat": ["exec", "process", "write", "edit", "read", "apply_patch"],
+            "slack": ["exec", "process", "write", "edit", "read", "apply_patch"]
+          }
         }
       }
     }
