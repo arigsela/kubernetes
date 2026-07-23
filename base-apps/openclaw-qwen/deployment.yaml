@@ -108,6 +108,12 @@ spec:
           volumeMounts:
             - name: home
               mountPath: /home/node/.openclaw
+            # Also expose the workspace at /workspace — the model hard-assumes
+            # that path for file writes. Same PVC dir as ~/.openclaw/workspace
+            # (subPath), so /workspace and the configured workspace are identical.
+            - name: home
+              mountPath: /workspace
+              subPath: workspace
             - name: tmp
               mountPath: /tmp
           securityContext:
