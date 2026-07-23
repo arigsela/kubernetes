@@ -51,6 +51,10 @@ data:
           "botToken": { "source": "env", "provider": "default", "id": "SLACK_BOT_TOKEN" }
         }
       },
+      "plugins": {
+        "allow": ["slack"],
+        "entries": { "slack": { "enabled": true } }
+      },
       "tools": {
         "elevated": {
           "enabled": true,
