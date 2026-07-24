@@ -12,14 +12,13 @@ data:
   # gateway.auth.mode "token" — shared-secret auth that grants the OPERATOR role,
   # so the TUI can actually send (unlike "none", which is read-only). The token
   # comes from the OPENCLAW_GATEWAY_TOKEN env (secret.yaml). The `openai` provider
-  # points at Devstral Small 2 24B (agentic coding model) served by LM Studio on the
-  # gaming PC's GPU (http://10.0.1.200:1234, same LAN subnet as the nodes). Load it in
-  # LM Studio with Max Concurrent Predictions = 1 (so a single request gets the whole
-  # context window, not context/N) and context length 32768 with K/V cache quantization
-  # (Q8_0, or Q4_0 if VRAM is tight) enabled + Flash Attention on. The agent prompt +
-  # trimmed GitHub toolset runs ~22K tokens, which overflows a 16K window; 32K + a
-  # quantized KV cache keeps it inside the 16GB card. (n_keep 22416 >= n_ctx 16384 was
-  # the overflow error before this.)
+  # points at Qwen2.5-Coder-14B (Q4_K_M) served by LM Studio on the gaming PC's GPU
+  # (http://10.0.1.200:1234, same LAN subnet as the nodes). Load it in LM Studio with
+  # Max Concurrent Predictions = 1 (so a single request gets the whole context window,
+  # not context/N), context length 32768, K/V cache quantization Q8_0, Flash Attention
+  # on. On the 16GB card the 14B (~9GB) + quantized 32K KV (~3GB) stays fully on the
+  # GPU -> fast. A 24B (Devstral) also runs but spills to CPU at 32K on 16GB -> slow,
+  # which is why we're on the 14B.
   openclaw.json: |
     {
       "gateway": {
@@ -38,12 +37,12 @@ data:
             "auth": "api-key",
             "api": "openai-completions",
             "timeoutSeconds": 600,
-            "models": [ { "id": "devstral-small-2-24b-instruct-2512", "name": "Devstral Small 2 24B (LM Studio, GPU)" } ]
+            "models": [ { "id": "qwen2.5-coder-14b-instruct", "name": "Qwen2.5-Coder-14B (LM Studio, GPU)" } ]
           }
         }
       },
       "agents": {
-        "defaults": { "workspace": "/workspace", "model": { "primary": "openai/devstral-small-2-24b-instruct-2512" }, "timeoutSeconds": 600, "sandbox": { "mode": "off" }, "silentReply": { "group": "disallow" } },
+        "defaults": { "workspace": "/workspace", "model": { "primary": "openai/qwen2.5-coder-14b-instruct" }, "timeoutSeconds": 600, "sandbox": { "mode": "off" }, "silentReply": { "group": "disallow" } },
         "list": [ { "id": "default", "name": "OpenClaw Assistant", "workspace": "/workspace" } ]
       },
       "cron": { "enabled": false },
@@ -73,7 +72,7 @@ data:
     # OpenClaw Assistant
 
     You are a helpful coding/ops assistant running in a Linux sandbox (a
-    Kubernetes pod), backed by a Devstral Small 2 24B model on a GPU. Be clear and concise.
+    Kubernetes pod), backed by a Qwen2.5-Coder-14B model on a GPU. Be clear and concise.
 
     ## Your environment (important)
     - Your workspace and working directory is: /workspace
