@@ -126,7 +126,7 @@ spec:
               # single-line echo avoids heredoc indentation issues in a YAML scalar.
               # Non-blocking: a GitHub-config failure must not crashloop the pod, so
               # we log and exit 0 regardless (agent still comes up, sans GitHub).
-              if echo '{"mcp":{"servers":{"github":{"url":"https://api.githubcopilot.com/mcp/","transport":"streamable-http","headers":{"Authorization":"Bearer '"$GITHUB_PERSONAL_ACCESS_TOKEN"'","X-MCP-Toolsets":"repos,issues,pull_requests"}}}}}' | openclaw config patch --stdin; then
+              if echo '{"mcp":{"servers":{"github":{"url":"https://api.githubcopilot.com/mcp/","transport":"streamable-http","headers":{"Authorization":"Bearer '"$GITHUB_PERSONAL_ACCESS_TOKEN"'","X-MCP-Toolsets":"repos,issues,pull_requests"},"toolFilter":{"include":["list_pull_requests","pull_request_read","list_issues","issue_read","get_file_contents","search_code","search_repositories","search_issues","search_pull_requests","list_commits","get_commit"]}}}}}' | openclaw config patch --stdin; then
                 echo "GitHub MCP configured."
               else
                 echo "WARN: GitHub MCP config failed; continuing without GitHub tools"
