@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import requires_docker
+from conftest import requires_docker, sha256_check
 
 REPO = Path(__file__).resolve().parents[2]
 BACKUP = REPO / "scripts" / "vault-backup.sh"
@@ -111,7 +111,7 @@ def test_vault_backup_writes_verifiable_checksum(tmp_path):
     artifact = next(dest.glob("*.tar.gz"))
     checksum = Path(str(artifact) + ".sha256")
     assert checksum.exists(), "no integrity manifest"
-    verify = subprocess.run(["shasum", "-a", "256", "-c", checksum.name],
+    verify = subprocess.run(sha256_check(checksum.name),
                             cwd=dest, capture_output=True, text=True)
     assert verify.returncode == 0, verify.stdout + verify.stderr
 
