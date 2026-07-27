@@ -90,6 +90,9 @@ V35: Vault backup ⊇ KMS key. `alias/vault-auto-unseal` deleted \| AWS acct los
 V36: ⊥ delete PVC w/ reclaim=`Delete` unless restore-proven backup ∃ & verified. deliberate delete = §V.19 hazard by another route. applies §T.36.
 V37: post-§T.36+§T.37 → §V.14 scope MOVES: control-plane hop = API only; `k3s-worker-01` hop = Vault + CNPG outage. ∀ hop task ! re-cite before exec. §T.18 = highest-risk hop post-relocate.
 V38: §T.37 scale-down gate — ! assert `postgresql-cluster-2` = primary BEFORE `instances` 2→1. CNPG drops highest-serial NON-primary & ⊥ targetable ∴ failed switchover → silent revert to control-plane.
+V39: ∀ PVC ∉ Argo prune scope — `Prune=false` annotation \| app `prune: false` where chart ⊥ template annotations. enforced @ `tests/k3s-upgrade/test_prune_scope.py`. 10/21 WERE exposed 2026-07-27 ∴ §V.19 was false since inception.
+V40: §T.36 order ! = commit `nodeSelector` → Argo sync → suspend → scale 0 → delete PVC → helper pod (nodeSelector + §V.34 toleration) provisions & receives restore → delete helper → scale 1 (STS adopts `vault-data-vault-0`). ⊥ start Vault on empty PVC — `WaitForFirstConsumer` ∴ scaling up to create the PV self-initialises Vault before restore.
+V41: §T.39 runbook ! ∃ before §T.17. §V.9 "announced" ⊥ satisfiable w/o it.
 
 ## §T TASKS
 id|status|task|cites
@@ -118,7 +121,7 @@ T22|.|confirm local kubectl v1.36.2 now in-skew|-
 T23|.|update `index.md` + `docs/` topology w/ landed versions|-
 T24|.|follow-on: spec 3-server embedded etcd HA conversion|-
 T25|.|build pause/resume for Argo auto-sync ∀ PVC-bearing app across hop window|V18
-T26|.|audit prune scope: assert ⊥ PVC prunable (Kyverno rule \| `Prune=false` annotation)|V19
+T26|x|prune-scope audit: 10 PVC WERE prunable (§V.19 false since inception). fixed — `Prune=false` ∀ 9 manifest + `prune: false` @ atlantis app (chart 6.1.0 ⊥ template PVC annotations). `tests/k3s-upgrade/test_prune_scope.py` = regression guard. NB `lg-agents/orchestrator-data` orphaned (⊥ app) → §T.40|V19,V39
 T27|x|DECIDED 2026-07-27: RELOCATE both → `k3s-worker-01` (97GB disk, ⊥ pressure). → §T.36 + §T.37. rationale: retires single failure domain, hops become API-only|V14,V29
 T28|.|add `k3s/` + `pg/` + `vault/` prefixes → existing `s3://mysql-backups-asela-cluster/`. ⊥ new bucket (§I.store). + KMS key deletion protection (§V.35)|V21,V35,I.store
 T29|.|verify `kube-system/ingress-nginx` helm-controller reconcile + ingress reachable post-∀-hop|V22
@@ -128,10 +131,11 @@ T32|.|ESO stage 3: → `0.17.0` … ≤`0.19.x` (k8s 1.33 ceiling §R.4). gate `
 T33|.|ESO stage 4: → `0.20.x` → `1.x` → `2.x`. ! k8s ≥1.34 ∴ AFTER §T.18, ⊥ on 1.33 (§R.4, §V.13)|V23,V13,V11
 T34|.|prove barman restore: scratch ns + CNPG Cluster ← `bootstrap.recovery` ← `s3://mysql-backups-asela-cluster/postgresql/`. BEFORE §T.9|V25,V6
 T35|x|write `scripts/vault-backup.sh` + drill: `vault-0` `file` storage → off-cluster, restore ! prove unseal + secret read. ⊥ backup ∃ today ∴ FIRST, before ∀ other `.` task|V28,V21,I.cmd
-T36|.|relocate `vault-0` → `k3s-worker-01`: suspend Argo app (§V.33) → backup (§T.35) → scale 0 → drop PVC(1Gi) → recreate w/ nodeSelector → restore → ! prove unseal + secret read → resume Argo. after §T.35|V28,V29,V33,V36
+T36|.|relocate `vault-0` → `k3s-worker-01`. ORDER (§V.40): commit `nodeSelector` → Argo sync → suspend Argo app (§V.33) → backup (§T.35) → scale 0 → delete PVC `vault-data-vault-0` (§V.36) → helper pod w/ nodeSelector + toleration (§V.34) provisions new PV & receives restore → delete helper → scale 1 (STS adopts PVC) → ! prove unseal + secret read → resume Argo. after §T.35|V28,V29,V33,V34,V36,V40
 T37|.|relocate `postgresql-cluster` → `k3s-worker-01`: CNPG `instances` 1→2 (new pod nodeSelector `k3s-worker-01`, toleration §V.34) → wait streaming → `switchover` → ASSERT `-2` = primary (§V.38) → scale→1 drops old. ⊥ manual PV surgery. needs ~40Gi transient|V6,V29,V34,V38
 T38|.|post-relocate: `k3s-control-01` ⊥ host stateful. amend §C pinning lines + §V.14 scope per §V.37 — control-plane hop now API-only, `k3s-worker-01` hop = Vault+DB outage|V14,V29,V37
 T39|.|write `docs/plans/k3s-1.36-upgrade-plan.md` — runbook + outage comms. §I declares it, ⊥ ∃; §V.9 "announced" depends on it|V9,I.doc
+T40|.|`lg-agents/orchestrator-data` PVC tracked by app `lg-agents` that ⊥ ∃. orphaned ∴ ⊥ prunable, but ∉ GitOps. decide: adopt \| delete \| document|V19
 
 ## §B BUGS
 id|date|cause|fix
