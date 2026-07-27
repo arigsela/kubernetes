@@ -82,6 +82,8 @@ V29: §T.27 = HARD gate. DECIDED 2026-07-27 = RELOCATE both → `k3s-worker-01`.
 V30: §V.18 pause ? be lifted to reach §V.5 green — paused app ⊥ self-heal ∴ ⊥ circular wait. order: pause → hop → MANUAL sync → verify → resume.
 V31: ∀ hop task ! enumerate FULL gate set incl §V.6. ⊥ bare "gate →".
 V32: Istio hop plan ! explicit per-minor & ∀ intermediate ∈ k8s matrix @ CURRENT minor. Istio `1.25` = k8s ≤1.32 ∴ ∉ 1.33 ∴ ⊥ naive 1-minor walk. `1.26`+ ∈ matrix @ 1.33.
+V33: ∀ quiesce of GitOps-managed workload (scale→0 \| pod delete) → ! suspend its Argo app FIRST, resume after. `selfHeal: true` + replicas ∈ git ∴ Argo rescales mid-operation → torn artifact \| silent revert (§B.2). applies §T.35, §T.36, §T.37.
+V34: ∀ pod mounting a node-pinned `local-path` PV → ! carry toleration ∀ taint on that node + explicit resource limits. `k3s-control-01` taint = `node-role.kubernetes.io/control-plane:NoSchedule`; kyverno `require-resource-limits` = Audit (warns, ⊥ blocks). ⊥ toleration → Pending forever, ⊥ 2 workers (∉ PV affinity). applies §T.35, §T.36, §T.37.
 
 ## §T TASKS
 id|status|task|cites
@@ -119,7 +121,7 @@ T31|.|ESO stage 2: ∀ 59 manifest → `v1` (drop `beta1`) THEN rewrite ∀ stor
 T32|.|ESO stage 3: → `0.17.0` … ≤`0.19.x` (k8s 1.33 ceiling §R.4). gate `storedVersions==["v1"]`. after §T.31|V23,V26,V11
 T33|.|ESO stage 4: → `0.20.x` → `1.x` → `2.x`. ! k8s ≥1.34 ∴ AFTER §T.18, ⊥ on 1.33 (§R.4, §V.13)|V23,V13,V11
 T34|.|prove barman restore: scratch ns + CNPG Cluster ← `bootstrap.recovery` ← `s3://mysql-backups-asela-cluster/postgresql/`. BEFORE §T.9|V25,V6
-T35|.|write `scripts/vault-backup.sh` + drill: `vault-0` `file` storage → off-cluster, restore ! prove unseal + secret read. ⊥ backup ∃ today ∴ FIRST, before ∀ other `.` task|V28,V21,I.cmd
+T35|x|write `scripts/vault-backup.sh` + drill: `vault-0` `file` storage → off-cluster, restore ! prove unseal + secret read. ⊥ backup ∃ today ∴ FIRST, before ∀ other `.` task|V28,V21,I.cmd
 T36|.|relocate `vault-0` → `k3s-worker-01`: backup (§T.35) → scale 0 → drop PVC(1Gi) → recreate w/ nodeSelector → restore → ! prove unseal + secret read. after §T.35|V28,V29
 T37|.|relocate `postgresql-cluster` → `k3s-worker-01`: CNPG `instances` 1→2 (new pod nodeSelector `k3s-worker-01`) → wait streaming → `switchover` → scale→1 drop old. ⊥ manual PV surgery. needs ~40Gi transient|V6,V29
 T38|.|post-relocate: `k3s-control-01` ⊥ host stateful. re-verify §C pinning lines + §V.14 scope — control-plane hop now API-only, worker-01 hop = Vault+DB outage|V14,V29
@@ -127,3 +129,5 @@ T38|.|post-relocate: `k3s-control-01` ⊥ host stateful. re-verify §C pinning l
 ## §B BUGS
 id|date|cause|fix
 B1|2026-07-27|`k3s-backup.sh` online mode excluded `state.db` only. kine runs SQLite WAL ∴ live `-wal`/`-shm` shipped beside `.backup` snapshot → SQLite replays foreign WAL over restored db. found by drill, ⊥ by review|V15
+B2|2026-07-27|`vault-backup.sh` cold mode scaled sts→0 to quiesce, but `replicas: 1` ∈ git (`base-apps/vault/statefulsets.yaml:18`) & Argo app `vault` `selfHeal: true` ∴ Argo rescales mid-copy → torn artifact BRANDED CONSISTENT. same class as §B.1. caught pre-exec by inspecting syncPolicy|V33
+B3|2026-07-27|`vault-backup.sh` helper pod ⊥ toleration for `node-role.kubernetes.io/control-plane:NoSchedule` ∴ Pending forever — PV pinned to tainted control-plane & 2 workers ∉ PV affinity. backup aborted; §V.33 trap restored Argo + Vault safely ∴ ⊥ outage|V34
