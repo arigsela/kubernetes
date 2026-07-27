@@ -189,6 +189,27 @@ jobs:
       - name: Validate agent-identity contract
         run: python scripts/validate-agent-identity.py --repo-root .
 
+  # The k3s upgrade safety net (SPEC.md §T.1-§T.4). The cluster's datastore is SQLite
+  # with no embedded etcd, and k3s migrates it one-way on a minor bump with no supported
+  # downgrade — so the artifact scripts/k3s-backup.sh produces is the only rollback that
+  # exists. §V.16 refuses to take that on faith, which is why the restore drill boots a
+  # real k3s container and requires the seeded state back rather than just asserting the
+  # script exited 0. Ubuntu runners have a Docker daemon, so the drills run here.
+  k3s-upgrade-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pytest==8.3.3
+      - name: Install sqlite3
+        run: sudo apt-get update && sudo apt-get install -y sqlite3
+      - name: Run backup/restore/scan tests (includes containerised k3s drill)
+        run: python -m pytest tests/k3s-upgrade/ -q
+
   # The agent-capability contract (L03 Security guardrails). This is the
   # AUTHORITATIVE gate for all four invariants — in particular "delegation does
   # not escalate", which Kyverno cannot check at admission because it needs a
