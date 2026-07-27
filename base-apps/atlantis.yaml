@@ -120,7 +120,18 @@ spec:
     namespace: atlantis
   syncPolicy:
     automated:
-      prune: true
+      # prune is DISABLED for this app specifically (SPEC.md §V.19).
+      #
+      # The chart renders atlantis-data as a standalone PVC on local-path, which
+      # reclaims Delete — so an Argo prune of it destroys the working directory with
+      # it. Everywhere else that risk is closed with a Prune=false annotation on the
+      # PVC manifest, but atlantis 6.1.0's `volumeClaim` values expose only
+      # enabled/dataStorage/storageClassName/accessModes, with no way to template
+      # annotations onto the rendered claim.
+      #
+      # Trade-off: resources removed from the chart will linger here rather than
+      # being cleaned up automatically. That is the cheaper mistake.
+      prune: false
       selfHeal: true
     syncOptions:
       - CreateNamespace=true

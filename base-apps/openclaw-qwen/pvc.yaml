@@ -6,6 +6,11 @@ metadata:
   labels:
     app: openclaw-qwen
     app.kubernetes.io/name: openclaw-qwen
+  annotations:
+    # local-path reclaims Delete, so an Argo prune of this PVC destroys the data
+    # with it (SPEC.md §V.19). Opt out of pruning — removing this volume must be a
+    # deliberate act, not a side effect of a manifest rename or a failed render.
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   # OpenClaw's writable home: config, sessions, workspace. local-path has
   # allowVolumeExpansion=false, so size up front; 5Gi is ample for agent state.

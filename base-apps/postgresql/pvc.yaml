@@ -3,6 +3,11 @@ kind: PersistentVolumeClaim
 metadata:
   name: postgresql-pvc
   namespace: postgresql
+  annotations:
+    # local-path reclaims Delete, so an Argo prune of this PVC destroys the data
+    # with it (SPEC.md §V.19). Opt out of pruning — removing this volume must be a
+    # deliberate act, not a side effect of a manifest rename or a failed render.
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   accessModes:
     - ReadWriteOnce
