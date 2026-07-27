@@ -1,7 +1,7 @@
 # SPEC
 
 ## §G GOAL
-k3s cluster 1.33.5 → v1.36.2+k3s1 (fallback `v1.35.6+k3s1` if §T.20 blockers hold); platform components current & in-matrix first; ⊥ data loss.
+k3s cluster 1.33.5 → v1.36.2+k3s1 (fallback `v1.35.6+k3s1` if §T.20 blockers hold); platform components @ matrix ceiling per minor, INTERLEAVED w/ walk (§V.13); ⊥ data loss.
 
 ## §C CONSTRAINTS
 - GitOps only. ∀ change → git commit → Argo CD sync. ⊥ direct `kubectl apply` (CLAUDE.md).
@@ -20,6 +20,7 @@ k3s cluster 1.33.5 → v1.36.2+k3s1 (fallback `v1.35.6+k3s1` if §T.20 blockers 
 - ∀ Argo app `prune: true` + `selfHeal: true` ∴ prune of PVC → PV Delete → data gone.
 - `kube-system/ingress-nginx` = HelmChart CR (`base-apps/nginx-ingress/`) reconciled by k3s embedded helm-controller ∴ helm-controller upgraded by ∀ hop.
 - Vault in-cluster ∴ ESO break → ∀ app secret resolution stops. ESO ! healthy before ∀ hop.
+- Vault seal = `awskms` (`alias/vault-auto-unseal`, `terraform/roots/asela-cluster/vault-kms.tf`). `/vault/data` bytes = CIPHERTEXT ∴ ∀ fs backup undecryptable w/o KMS key. Shamir recovery keys govern recovery ops, ⊥ storage decryption.
 - Istio = ambient (istiod + `ztunnel` DS + `istio-cni-node` DS) ∴ node-level dataplane, hop risk ≥ sidecar.
 - k8s 1.33 EOL 2026-06-28 ∴ cluster currently unsupported.
 
@@ -28,14 +29,15 @@ k3s cluster 1.33.5 → v1.36.2+k3s1 (fallback `v1.35.6+k3s1` if §T.20 blockers 
 - file: `base-apps/system-upgrade-controller/*.yaml` → SUC deploy + RBAC + CRD
 - file: `base-apps/system-upgrade-controller/plan-agent.yaml` → Plan CR, workers ONLY
 - file: ⊥ `plan-server.yaml`. control-plane hop = manual (§V.17) ∴ SUC ⊥ ever target `k3s-control-01`
-- cmd: `scripts/vault-backup.sh --dest <dir\|s3://>` → `vault-0` `file` storage → sha256 → off-cluster. restore ! prove unseal + secret read
+- cmd: `scripts/vault-backup.sh --dest <dir\|s3://> [--mode cold\|online] [--argo-app NAME]` → `vault-0` `file` storage → sha256 → off-cluster. cold = suspend Argo app (§V.33) → scale sts 0 → helper pod w/ control-plane toleration (§V.34) → scale back → ! verify unseal. online ! `--allow-inconsistent` & brands artifact `INCONSISTENT`
+- cmd: `scripts/vault-restore.sh --artifact <a> --data-dir <d> [--verify-cmd C] [--accept-inconsistent]` → checksum gate → refuse `INCONSISTENT` w/o ack → restore → ! prove unseal + secret read
 - node-label: `k3s-upgrade=true` → gates Plan `nodeSelector`
 - cmd: `scripts/k3s-backup.sh --mode cold\|online --dest <dir\|s3://>` → archives `server/` ONLY (⊥ `storage/` = local-path PV data, ⊥ `agent/`, ⊥ `kine.sock`) → sha256 → off-cluster. cold ! k3s stopped; online = `sqlite3 .backup` + excludes live db file set
 - cmd: `scripts/k3s-restore.sh --artifact <a> --expect-version <v> [--skip-service] [--verify-cmd C]` → checksum gate → prior tree moved aside (⊥ destroy evidence) → promote snapshot → reinstall pinned `INSTALL_K3S_VERSION` → ! prove API @ expected version
 - cmd: `scripts/pg-backup.sh --dest <dir\|s3://> --all \| --database <db>` → `pg_dumpall` (globals+roles) \| `pg_dump` via CNPG primary → sha256 → off-cluster. ⊥ default db name (cluster hosts `n8n`+`chores_tracker`). operator-independent ∴ survives §T.9
 - backup: CNPG barman → `s3://mysql-backups-asela-cluster/postgresql/`, `ScheduledBackup postgresql-daily-backup` 02:00 UTC, 30d retention. healthy & archiving, restore ⊥ proven (§T.34)
 - store: off-cluster artifact target. `s3://mysql-backups-asela-cluster/` ∃ already ∴ add `k3s/` + `pg/` prefixes. ⊥ new bucket needed
-- test: `tests/k3s-upgrade/` = pytest oracle ∀ §V.1,6,10,15,16,21. drills boot real k3s + postgres in docker. CI job `k3s-upgrade-scripts` ∈ `.github/workflows/validate.yaml`
+- test: `tests/k3s-upgrade/` = pytest oracle ∀ §V.1,6,10,15,16,21,28. drills boot real k3s + postgres + vault in docker. CI job `k3s-upgrade-scripts` ∈ `.github/workflows/validate.yaml`
 - doc: `docs/plans/k3s-1.36-upgrade-plan.md` → runbook + outage comms
 - doc: `docs/plans/k3s-1.36-api-scan.md` → §T.4 report. built-in APIs clean 1.34/1.35/1.36; pluto ⊥ see CRD removals ∴ ESO `v1beta1` = real gap
 
@@ -84,6 +86,10 @@ V31: ∀ hop task ! enumerate FULL gate set incl §V.6. ⊥ bare "gate →".
 V32: Istio hop plan ! explicit per-minor & ∀ intermediate ∈ k8s matrix @ CURRENT minor. Istio `1.25` = k8s ≤1.32 ∴ ∉ 1.33 ∴ ⊥ naive 1-minor walk. `1.26`+ ∈ matrix @ 1.33.
 V33: ∀ quiesce of GitOps-managed workload (scale→0 \| pod delete) → ! suspend its Argo app FIRST, resume after. `selfHeal: true` + replicas ∈ git ∴ Argo rescales mid-operation → torn artifact \| silent revert (§B.2). applies §T.35, §T.36, §T.37.
 V34: ∀ pod mounting a node-pinned `local-path` PV → ! carry toleration ∀ taint on that node + explicit resource limits. `k3s-control-01` taint = `node-role.kubernetes.io/control-plane:NoSchedule`; kyverno `require-resource-limits` = Audit (warns, ⊥ blocks). ⊥ toleration → Pending forever, ⊥ 2 workers (∉ PV affinity). applies §T.35, §T.36, §T.37.
+V35: Vault backup ⊇ KMS key. `alias/vault-auto-unseal` deleted \| AWS acct lost → ∀ vault artifact undecryptable ∀ time, however perfect the bytes. ∴ key ! carry deletion protection & its policy backed up ALONGSIDE artifact. ⊥ treat key as adjacent to the backup.
+V36: ⊥ delete PVC w/ reclaim=`Delete` unless restore-proven backup ∃ & verified. deliberate delete = §V.19 hazard by another route. applies §T.36.
+V37: post-§T.36+§T.37 → §V.14 scope MOVES: control-plane hop = API only; `k3s-worker-01` hop = Vault + CNPG outage. ∀ hop task ! re-cite before exec. §T.18 = highest-risk hop post-relocate.
+V38: §T.37 scale-down gate — ! assert `postgresql-cluster-2` = primary BEFORE `instances` 2→1. CNPG drops highest-serial NON-primary & ⊥ targetable ∴ failed switchover → silent revert to control-plane.
 
 ## §T TASKS
 id|status|task|cites
@@ -104,7 +110,7 @@ T14|.|add SUC manifests + RBAC + CRD (sync-wave: CRD before Plan). Plan scope = 
 T15|.|label `k3s-worker-01`,`k3s-worker-02` `k3s-upgrade=true`. ⊥ label `k3s-control-01`|V17,I.node-label
 T16|.|dry-run SUC Plan on `k3s-worker-02` @ current version (no-op hop)|V4,V17
 T17|.|gate §V.1,2,5,6,10,11,14,27,28 → MANUAL hop control-plane → `v1.34.9+k3s1`, console access ∃|V1,V2,V3,V6,V14,V17,V27,V28,V31
-T18|.|SUC hop workers → `v1.34.9+k3s1`, verify §V.5|V4,V5,V17
+T18|.|SUC hop workers → `v1.34.9+k3s1`. gate §V.1,5,6,11,14,28 — post-relocate THIS hop = Vault + CNPG outage (§V.37), ⊥ bare "verify §V.5"|V4,V5,V6,V17,V31,V37
 T19|.|gate §V.1,2,5,6,10,11,14,27,28 → hop → `v1.35.6+k3s1` (control-plane manual, workers SUC)|V3,V5,V6,V17,V27,V28,V31
 T20|.|BLOCKER ×2 → 1.36: CNPG 1.29.x ≤1.35 & ⊥ ESO version supports 1.36 (§R.4; §R.6 `2.8.0` unconfirmed `?`). ! confirm BOTH ship 1.36 support, else hold @ 1.35|V2
 T21|.|gate §T.20 + §V.1,2,5,6,10,11,14,27,28 → hop → `v1.36.2+k3s1` (control-plane manual, workers SUC). ⊥ w/o BOTH blockers cleared|V2,V3,V5,V6,V17,V27,V28,V31
@@ -114,7 +120,7 @@ T24|.|follow-on: spec 3-server embedded etcd HA conversion|-
 T25|.|build pause/resume for Argo auto-sync ∀ PVC-bearing app across hop window|V18
 T26|.|audit prune scope: assert ⊥ PVC prunable (Kyverno rule \| `Prune=false` annotation)|V19
 T27|x|DECIDED 2026-07-27: RELOCATE both → `k3s-worker-01` (97GB disk, ⊥ pressure). → §T.36 + §T.37. rationale: retires single failure domain, hops become API-only|V14,V29
-T28|.|provision off-cluster artifact store for k3s + pg + vault backups|V21,I.store
+T28|.|add `k3s/` + `pg/` + `vault/` prefixes → existing `s3://mysql-backups-asela-cluster/`. ⊥ new bucket (§I.store). + KMS key deletion protection (§V.35)|V21,V35,I.store
 T29|.|verify `kube-system/ingress-nginx` helm-controller reconcile + ingress reachable post-∀-hop|V22
 T30|.|define §V.9 measurement: start = k3s stop, end = ∀ Argo app Synced+Healthy|V9
 T31|.|ESO stage 2: ∀ 59 manifest → `v1` (drop `beta1`) THEN rewrite ∀ stored object as `v1` + prune CRD `status.storedVersions` → `["v1"]`. git ≠ etcd (§R.3). after §T.6|V23,V24,V26
@@ -122,9 +128,10 @@ T32|.|ESO stage 3: → `0.17.0` … ≤`0.19.x` (k8s 1.33 ceiling §R.4). gate `
 T33|.|ESO stage 4: → `0.20.x` → `1.x` → `2.x`. ! k8s ≥1.34 ∴ AFTER §T.18, ⊥ on 1.33 (§R.4, §V.13)|V23,V13,V11
 T34|.|prove barman restore: scratch ns + CNPG Cluster ← `bootstrap.recovery` ← `s3://mysql-backups-asela-cluster/postgresql/`. BEFORE §T.9|V25,V6
 T35|x|write `scripts/vault-backup.sh` + drill: `vault-0` `file` storage → off-cluster, restore ! prove unseal + secret read. ⊥ backup ∃ today ∴ FIRST, before ∀ other `.` task|V28,V21,I.cmd
-T36|.|relocate `vault-0` → `k3s-worker-01`: backup (§T.35) → scale 0 → drop PVC(1Gi) → recreate w/ nodeSelector → restore → ! prove unseal + secret read. after §T.35|V28,V29
-T37|.|relocate `postgresql-cluster` → `k3s-worker-01`: CNPG `instances` 1→2 (new pod nodeSelector `k3s-worker-01`) → wait streaming → `switchover` → scale→1 drop old. ⊥ manual PV surgery. needs ~40Gi transient|V6,V29
-T38|.|post-relocate: `k3s-control-01` ⊥ host stateful. re-verify §C pinning lines + §V.14 scope — control-plane hop now API-only, worker-01 hop = Vault+DB outage|V14,V29
+T36|.|relocate `vault-0` → `k3s-worker-01`: suspend Argo app (§V.33) → backup (§T.35) → scale 0 → drop PVC(1Gi) → recreate w/ nodeSelector → restore → ! prove unseal + secret read → resume Argo. after §T.35|V28,V29,V33,V36
+T37|.|relocate `postgresql-cluster` → `k3s-worker-01`: CNPG `instances` 1→2 (new pod nodeSelector `k3s-worker-01`, toleration §V.34) → wait streaming → `switchover` → ASSERT `-2` = primary (§V.38) → scale→1 drops old. ⊥ manual PV surgery. needs ~40Gi transient|V6,V29,V34,V38
+T38|.|post-relocate: `k3s-control-01` ⊥ host stateful. amend §C pinning lines + §V.14 scope per §V.37 — control-plane hop now API-only, `k3s-worker-01` hop = Vault+DB outage|V14,V29,V37
+T39|.|write `docs/plans/k3s-1.36-upgrade-plan.md` — runbook + outage comms. §I declares it, ⊥ ∃; §V.9 "announced" depends on it|V9,I.doc
 
 ## §B BUGS
 id|date|cause|fix
