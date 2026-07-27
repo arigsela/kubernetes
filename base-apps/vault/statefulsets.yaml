@@ -31,11 +31,23 @@ spec:
         component: server
         helm.sh/chart: vault-0.29.1
     spec:
+      # Pinned to k3s-worker-01, off the control plane (SPEC.md §T.27, §T.36).
+      #
+      # This previously selected `node.kubernetes.io/workload: infrastructure`, a label
+      # only k3s-control-01 carries — so Vault ran on the single control-plane node,
+      # alongside postgresql-cluster-1, on a local-path volume hard-pinned there. Every
+      # control-plane upgrade hop therefore took out the API, every secret in the cluster,
+      # and both application databases together, and neither workload could reschedule.
+      #
+      # Pinned by hostname rather than `workload: application` on purpose: local-path
+      # volumes are node-bound, so a selector matching both workers would only pretend
+      # this is schedulable. worker-01 is the target for its disk headroom.
+      #
+      # The control-plane toleration is gone — worker-01 carries no taints, and keeping it
+      # would imply Vault may still land on the control plane, which is the arrangement
+      # this change exists to end.
       nodeSelector:
-        node.kubernetes.io/workload: infrastructure
-      tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        effect: NoSchedule
+        kubernetes.io/hostname: k3s-worker-01
       containers:
         - args:
             - |
@@ -169,7 +181,7 @@ spec:
   - metadata:
       name: vault-data
     spec:
-      accessModes: [ "ReadWriteOnce" ]
+      accessModes: ["ReadWriteOnce"]
       resources:
         requests:
           storage: 1Gi
