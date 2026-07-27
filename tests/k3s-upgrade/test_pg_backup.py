@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import requires_docker
+from conftest import requires_docker, sha256_check
 
 REPO = Path(__file__).resolve().parents[2]
 PG_BACKUP = REPO / "scripts" / "pg-backup.sh"
@@ -147,7 +147,7 @@ def test_pg_dump_artifact_restores(tmp_path, pg_container):
     checksum = Path(str(artifact) + ".sha256")
     assert checksum.exists(), "§V.1: artifact has no integrity manifest"
     verify = subprocess.run(
-        ["shasum", "-a", "256", "-c", checksum.name],
+        sha256_check(checksum.name),
         cwd=dest, capture_output=True, text=True,
     )
     assert verify.returncode == 0, verify.stdout

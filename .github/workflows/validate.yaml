@@ -204,7 +204,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install deps
-        run: pip install pytest==8.3.3
+        # pyyaml is needed by test_prune_scope.py, which parses the PVC manifests.
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Install sqlite3
         run: sudo apt-get update && sudo apt-get install -y sqlite3
       - name: Run backup/restore/scan tests (includes containerised k3s drill)
