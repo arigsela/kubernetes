@@ -38,6 +38,16 @@ k3s cluster 1.33.5 → v1.36.2+k3s1; platform components current & in-matrix fir
 - doc: `docs/plans/k3s-1.36-upgrade-plan.md` → runbook + outage comms
 - doc: `docs/plans/k3s-1.36-api-scan.md` → §T.4 report. built-in APIs clean 1.34/1.35/1.36; pluto ⊥ see CRD removals ∴ ESO `v1beta1` = real gap
 
+## §R RESEARCH
+id|topic|finding|src
+R1|ESO v1beta1 removal|`v0.17.0` stops serving `v1beta1`. ! migrate manifests → `v1` BEFORE `0.16`→`0.17`. change = drop `beta1` only|github.com/external-secrets/external-secrets/releases/tag/v0.17.0
+R2|ESO last v1beta1 build|`v0.16.2` = last serving `v1beta1` — chartmuseum chart ONLY, ⊥ OCI variant. repo @ `https://charts.external-secrets.io` ∴ correct source already|github.com/external-secrets/external-secrets/issues/5478
+R3|CRD storage version|live `externalsecrets`+`secretstores`+`clustersecretstores` ∀ `status.storedVersions=["v1beta1"]`, conversion=`Webhook`. k8s ⊥ drop version ∈ storedVersions ∴ ! rewrite ∀ stored object as `v1` + prune storedVersions before `0.17.0`. git ≠ etcd|kubectl, local truth 2026-07-27
+R4|ESO ↔ k8s matrix|`≤0.13`:1.19-1.31 / `0.15-0.18`:1.32-1.33 / `0.19`:1.33 / `0.20`:1.34 / `1.0-1.3`:1.34 / `2.0-2.6`:1.34-1.35 / `2.7`:1.35. ⊥ version supports 1.36|external-secrets.io/latest/introduction/stability-support/
+R5|ESO already out-of-matrix|`0.11.x` unsupported upstream, matrix = k8s ≤1.31, cluster @ 1.33 ∴ out-of-matrix now — same posture as Istio `1.24.0`|external-secrets.io/latest/introduction/stability-support/
+R6|ESO latest|`v2.8.0`. k8s 1.36 support ⊥ stated in release notes ? — ! confirm before §T.21|github.com/external-secrets/external-secrets/releases
+R7|Argo drift #5478|`0.16.x` webhook rewrites stored objects `v1beta1`→`v1` → drift vs git. CLOSED 2025-11-23, resolution = migrate manifests, ⊥ a code fix ∴ pause = migration window only|github.com/external-secrets/external-secrets/issues/5478
+
 ## §V INVARIANTS
 V1: ∀ hop → verified fs backup `/var/lib/rancher/k3s/` ∃ & restore drill passed before hop starts.
 V2: ∀ hop → ∀ platform component ∈ its supported k8s matrix @ target minor. ⊥ hop otherwise.
@@ -51,7 +61,7 @@ V9: outage window announced & ≤ 15min per control-plane hop.
 V10: ∀ hop → removed-API scan clean vs target minor.
 V11: ∀ hop → ESO healthy & ∀ ExternalSecret `SecretSynced=True`.
 V12: Istio ambient upgrade → revision/canary. ⊥ in-place istiod replace.
-V13: ⊥ 2 phases concurrent. component remediation fully green before walk starts.
+V13: remediation & walk INTERLEAVE where component matrix demands it — ESO ≥`0.20` ! k8s ≥1.34 (§R.4) ∴ ⊥ reachable before walk starts. ∀ hop → ∀ component @ max version its matrix allows for CURRENT minor first. ⊥ "all components final, then walk".
 V14: ∀ control-plane hop → outage = API + Vault + CNPG. ⊥ model as API-only. all 3 restored & verified before hop declared done.
 V15: k3s backup ! quiesced — stop k3s \| `sqlite3 .backup` before copy. ⊥ archive live datastore file SET: `state.db` + `state.db-wal` + `state.db-shm`. kine = WAL mode ∴ stale sidecar replays over snapshot → silent corruption.
 V16: restore drill ! prove API returns @ prior version from artifact. unproven artifact ∉ backup.
@@ -62,7 +72,8 @@ V20: Istio upgrade → new Application per revision, old revision live until `zt
 V21: ∀ backup artifact (k3s, pg_dump, vault) ! stored ∉ cluster. artifact on `local-path` ∉ backup.
 V22: ∀ hop → helm-controller reconcile of `kube-system/ingress-nginx` verified & ingress reachable post-hop.
 V23: ESO upgrade ! staged. ⊥ jump `v0.11.0` → ≥`0.17.0` — `0.17.0` REMOVES `external-secrets.io/v1beta1` & 59 manifest + CRD storage version ∀ @ `v1beta1`. path: `0.16.2` (serves both) → ∀ manifest `v1` → storage migrated → ≥`0.17.0` → `2.x`. ∀ stage own gate. §T row order ≠ exec order ∴ ! follow `after §T.n` cites.
-V24: ∀ ESO stage → Argo auto-sync paused ∀ app w/ ExternalSecret until manifests @ `v1` committed. `0.16.x` webhook auto-converts `v1beta1`→`v1` in-cluster → drift vs git ∴ `selfHeal` fights webhook.
+V24: Argo auto-sync paused ∀ app w/ ExternalSecret during §T.31 migration window ONLY (⊥ ∀ ESO stage). `0.16.x` webhook rewrites stored objects → drift vs git ∴ `selfHeal` fights webhook. resume once manifests @ `v1` committed (§R.7: resolution = migrate, ⊥ code fix).
+V26: ⊥ ESO ≥`0.17.0` until `status.storedVersions == ["v1"]` ∀ of `externalsecrets`+`secretstores`+`clustersecretstores`. manifests @ `v1` ∈ git ≠ objects @ `v1` ∈ etcd (§R.3) ∴ k8s refuses to drop `v1beta1` & existing secrets become unreadable.
 V25: barman restore ! proven (scratch Cluster ← `bootstrap.recovery`) BEFORE §T.9. barman restore ⊥ operator ∴ ⊥ verifiable after operator upgrade breaks.
 
 ## §T TASKS
@@ -86,8 +97,8 @@ T16|.|dry-run SUC Plan on `k3s-worker-02` @ current version (no-op hop)|V4,V17
 T17|.|gate §V.1,2,5,10,11,14 → MANUAL hop control-plane → `v1.34.9+k3s1`, console access ∃|V1,V2,V3,V14,V17
 T18|.|SUC hop workers → `v1.34.9+k3s1`, verify §V.5|V4,V5,V17
 T19|.|gate → hop → `v1.35.6+k3s1` (control-plane manual, workers SUC)|V3,V5,V17
-T20|.|BLOCKER: CNPG 1.29.x supports k8s ≤1.35. ! confirm CNPG 1.30 ships 1.36 support, else hold @ 1.35|V2
-T21|.|gate → hop → `v1.36.2+k3s1` (control-plane manual, workers SUC)|V2,V3,V5,V17
+T20|.|BLOCKER ×2 → 1.36: CNPG 1.29.x ≤1.35 & ⊥ ESO version supports 1.36 (§R.4; §R.6 `2.8.0` unconfirmed `?`). ! confirm BOTH ship 1.36 support, else hold @ 1.35|V2
+T21|.|gate §T.20 → hop → `v1.36.2+k3s1` (control-plane manual, workers SUC). ⊥ w/o BOTH blockers cleared|V2,V3,V5,V17
 T22|.|confirm local kubectl v1.36.2 now in-skew|-
 T23|.|update `index.md` + `docs/` topology w/ landed versions|-
 T24|.|follow-on: spec 3-server embedded etcd HA conversion|-
@@ -97,9 +108,9 @@ T27|.|DECIDE: relocate `vault-0` + `postgresql-cluster-1` → worker before walk
 T28|.|provision off-cluster artifact store for k3s + pg + vault backups|V21,I.store
 T29|.|verify `kube-system/ingress-nginx` helm-controller reconcile + ingress reachable post-∀-hop|V22
 T30|.|define §V.9 measurement: start = k3s stop, end = ∀ Argo app Synced+Healthy|V9
-T31|.|ESO stage 2: ∀ 59 manifest `external-secrets.io/v1beta1` → `v1` + CRD storage version migrated. after §T.6|V23,V24
-T32|.|ESO stage 3: → ≥`0.17.0` (`v1beta1` removed upstream). after §T.31|V23,V11
-T33|.|ESO stage 4: → `2.x`. after §T.32|V23,V11
+T31|.|ESO stage 2: ∀ 59 manifest → `v1` (drop `beta1`) THEN rewrite ∀ stored object as `v1` + prune CRD `status.storedVersions` → `["v1"]`. git ≠ etcd (§R.3). after §T.6|V23,V24,V26
+T32|.|ESO stage 3: → `0.17.0` … ≤`0.19.x` (k8s 1.33 ceiling §R.4). gate `storedVersions==["v1"]`. after §T.31|V23,V26,V11
+T33|.|ESO stage 4: → `0.20.x` → `1.x` → `2.x`. ! k8s ≥1.34 ∴ AFTER §T.18, ⊥ on 1.33 (§R.4, §V.13)|V23,V13,V11
 T34|.|prove barman restore: scratch ns + CNPG Cluster ← `bootstrap.recovery` ← `s3://mysql-backups-asela-cluster/postgresql/`. BEFORE §T.9|V25,V6
 
 ## §B BUGS
