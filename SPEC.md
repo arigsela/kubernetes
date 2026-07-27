@@ -78,7 +78,7 @@ V25: barman restore ! proven (scratch Cluster ← `bootstrap.recovery`) BEFORE �
 V26: ⊥ ESO ≥`0.17.0` until `status.storedVersions == ["v1"]` ∀ of `externalsecrets`+`secretstores`+`clustersecretstores`. manifests @ `v1` ∈ git ≠ objects @ `v1` ∈ etcd (§R.3) ∴ k8s refuses to drop `v1beta1` & existing secrets become unreadable.
 V27: §V.2 exception — component ? out-of-matrix ACROSS a hop boundary iff ALL: (a) in-matrix @ CURRENT minor pre-hop, (b) upgrade → in-matrix @ target ∈ SAME maintenance window, (c) rollback artifact ∃ & drill-proven. ⊥ open-ended skew. ESO `0.19`→`0.20` = the case (§R.4).
 V28: ∀ hop → Vault data backed up off-cluster & restore-proven. `vault-0` storage=`file` @ local-path pinned `k3s-control-01` ∴ node loss = ∀ secret loss ∀ ns. KMS auto-unseal protects SEAL, ⊥ data.
-V29: §T.27 = HARD gate. ⊥ §T.13+ until relocate-vs-accept decided & recorded ∈ spec. relocate = PV migration ∴ ! before walk, ⊥ retrofit mid-walk.
+V29: §T.27 = HARD gate. DECIDED 2026-07-27 = RELOCATE both → `k3s-worker-01`. ⊥ §T.13+ until §T.36 & §T.37 complete. relocate = PV migration ∴ ! before walk, ⊥ retrofit mid-walk.
 V30: §V.18 pause ? be lifted to reach §V.5 green — paused app ⊥ self-heal ∴ ⊥ circular wait. order: pause → hop → MANUAL sync → verify → resume.
 V31: ∀ hop task ! enumerate FULL gate set incl §V.6. ⊥ bare "gate →".
 V32: Istio hop plan ! explicit per-minor & ∀ intermediate ∈ k8s matrix @ CURRENT minor. Istio `1.25` = k8s ≤1.32 ∴ ∉ 1.33 ∴ ⊥ naive 1-minor walk. `1.26`+ ∈ matrix @ 1.33.
@@ -111,7 +111,7 @@ T23|.|update `index.md` + `docs/` topology w/ landed versions|-
 T24|.|follow-on: spec 3-server embedded etcd HA conversion|-
 T25|.|build pause/resume for Argo auto-sync ∀ PVC-bearing app across hop window|V18
 T26|.|audit prune scope: assert ⊥ PVC prunable (Kyverno rule \| `Prune=false` annotation)|V19
-T27|.|DECIDE: relocate `vault-0` + `postgresql-cluster-1` → worker before walk (PV migration) \| accept control-plane outage|V14
+T27|x|DECIDED 2026-07-27: RELOCATE both → `k3s-worker-01` (97GB disk, ⊥ pressure). → §T.36 + §T.37. rationale: retires single failure domain, hops become API-only|V14,V29
 T28|.|provision off-cluster artifact store for k3s + pg + vault backups|V21,I.store
 T29|.|verify `kube-system/ingress-nginx` helm-controller reconcile + ingress reachable post-∀-hop|V22
 T30|.|define §V.9 measurement: start = k3s stop, end = ∀ Argo app Synced+Healthy|V9
@@ -120,6 +120,9 @@ T32|.|ESO stage 3: → `0.17.0` … ≤`0.19.x` (k8s 1.33 ceiling §R.4). gate `
 T33|.|ESO stage 4: → `0.20.x` → `1.x` → `2.x`. ! k8s ≥1.34 ∴ AFTER §T.18, ⊥ on 1.33 (§R.4, §V.13)|V23,V13,V11
 T34|.|prove barman restore: scratch ns + CNPG Cluster ← `bootstrap.recovery` ← `s3://mysql-backups-asela-cluster/postgresql/`. BEFORE §T.9|V25,V6
 T35|.|write `scripts/vault-backup.sh` + drill: `vault-0` `file` storage → off-cluster, restore ! prove unseal + secret read. ⊥ backup ∃ today ∴ FIRST, before ∀ other `.` task|V28,V21,I.cmd
+T36|.|relocate `vault-0` → `k3s-worker-01`: backup (§T.35) → scale 0 → drop PVC(1Gi) → recreate w/ nodeSelector → restore → ! prove unseal + secret read. after §T.35|V28,V29
+T37|.|relocate `postgresql-cluster` → `k3s-worker-01`: CNPG `instances` 1→2 (new pod nodeSelector `k3s-worker-01`) → wait streaming → `switchover` → scale→1 drop old. ⊥ manual PV surgery. needs ~40Gi transient|V6,V29
+T38|.|post-relocate: `k3s-control-01` ⊥ host stateful. re-verify §C pinning lines + §V.14 scope — control-plane hop now API-only, worker-01 hop = Vault+DB outage|V14,V29
 
 ## §B BUGS
 id|date|cause|fix
