@@ -122,7 +122,7 @@ T5|.|Argo CD `v3.5.0-rc2` → ⊥ 3.5 GA ∃ (§R.15). options: DOWNGRADE → `v
 T6|.|ESO stage 1: `v0.11.0` → `v0.16.2` (serves `v1beta1`+`v1`). ⊥ proceed past w/o §T.31|V11,V8,V23,V24
 T7|.|verify ∀ ExternalSecret resync post-ESO, Vault k8s-auth roles intact|V11
 T8|.|Vault `1.18.1` → current stable. NB StatefulSet `updateStrategy: OnDelete` ∴ ! manual `delete pod vault-0` after sync|V8
-T9|.|CNPG `1.24.1` → 1.29.x — CVE-2026-44477 CVSS 9.4 metrics exporter. gate §T.34 first|V6,V8,V25
+T9|.|CNPG `1.24.1` → 1.29.x — CVE-2026-44477 CVSS 9.4 metrics exporter. §T.34 gate CLEARED 2026-07-28|V6,V8,V25
 T10|.|Istio `1.24.0` → `1.30.x` via revisions. ⊥ `1.25` (k8s ≤1.32 ∉ 1.33, §V.32) ∴ skip `1.25` \| defer Istio → post-§T.18. ! /research skip policy first|V12,V20,V32,V8
 T11|.|verify `ztunnel` + `istio-cni-node` DS healthy ∀ node post-Istio, then retire old revision|V12,V20
 T12|x|DONE 2026-07-28 matrix audit → §R.13-§R.18. blockers: ingress-nginx TERMINAL, kyverno ≤1.35, ArgoCD ⊥ 3.5 GA. clear: cert-manager→v1.21, Istio→1.30|V2,V46
@@ -147,7 +147,7 @@ T30|.|define §V.9 measurement: start = k3s stop, end = ∀ Argo app Synced+Heal
 T31|.|ESO stage 2: ∀ 59 manifest → `v1` (drop `beta1`) THEN rewrite ∀ stored object as `v1` + prune CRD `status.storedVersions` → `["v1"]`. git ≠ etcd (§R.3). after §T.6|V23,V24,V26
 T32|.|ESO stage 3: → `0.17.0` … ≤`0.19.x` (k8s 1.33 ceiling §R.4). gate `storedVersions==["v1"]`. after §T.31|V23,V26,V11
 T33|.|ESO stage 4: → `0.20.x` → `1.x` → `2.x`. ! k8s ≥1.34 ∴ AFTER §T.18, ⊥ on 1.33 (§R.4, §V.13)|V23,V13,V11
-T34|.|prove barman restore: scratch ns + CNPG Cluster ← `bootstrap.recovery` ← `s3://mysql-backups-asela-cluster/postgresql/`. BEFORE §T.9|V25,V6
+T34|x|DONE 2026-07-28: barman restore PROVEN. scratch ns + CNPG `bootstrap.recovery` ← `s3://mysql-backups-asela-cluster/postgresql/` (serverName `postgresql-cluster`) → healthy in ~2min. data verified vs source: sizes exact (`n8n` 290MB, `chores_tracker` 8260kB), `chores_tracker` rows 3/1/3/3 MATCH, `n8n.invalid_auth_token` 2/2 MATCH. torn down, PV reclaimed. §V.25 satisfied ∴ §T.9 unblocked|V6,V25
 T35|x|write `scripts/vault-backup.sh` + drill: `vault-0` `file` storage → off-cluster, restore ! prove unseal + secret read. ⊥ backup ∃ today ∴ FIRST, before ∀ other `.` task|V28,V21,I.cmd
 T36|x|DONE 2026-07-28: `vault-0` relocated `k3s-control-01` → `k3s-worker-01`. outage 2m24s (14:39:29-14:41:53Z). new PV `pvc-35030e9f` @ worker-01. unseal via awskms verified + live ESO read `refreshTime` 14:42:12Z `SecretSynced` (§V.28). ROLLBACK: old PV `pvc-0741ca81` = `Released`+`Retain` @ control-01 `/var/lib/rancher/k3s/storage/pvc-0741ca81-..._vault_vault-data-vault-0`; artifact `vault-backup-20260728T143928Z-T36.tar.gz`|V28,V29,V33,V34,V36,V40
 T37|x|DONE 2026-07-28: `postgresql-cluster` relocated → `k3s-worker-01` via §V.43 3-phase. primary now `postgresql-cluster-2` @ worker-01, 1/1 healthy, `n8n` 55 tbl + `chores_tracker` 7 tbl verified. auto-switchover fired as §R.9 predicted. ⊥ outage beyond 2 expected restarts. ROLLBACK: PV `pvc-57ffc455` = `Released`+`Retain` @ control-01; dump `pg-...20260728T152040Z.sql.gz`|V6,V29,V33,V38,V42,V43,V44
