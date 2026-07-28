@@ -102,6 +102,34 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: openshell
+  # The chart omits fields the API server then defaults, and StatefulSet spec is
+  # largely immutable, so Argo can never reconcile them and the app sat permanently
+  # OutOfSync. Evidence: rendering helm-chart 0.0.49 and diffing against live gave
+  # 14 differing paths; the 13 below are all API defaults.
+  # See docs/plans/argocd-drift-diagnosis.md (SPEC.md §V.47).
+  #
+  # NOT included: template.metadata.annotations."checksum/gateway-config". That one
+  # may be a real difference or an artifact of a local helm version rendering
+  # differently from Argo's bundled one — it needs `argocd app diff` to settle.
+  # If this app is still OutOfSync after these rules, the checksum is the cause.
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      name: openshell
+      jqPathExpressions:
+        - .spec.podManagementPolicy
+        - .spec.revisionHistoryLimit
+        - .spec.updateStrategy
+        - .spec.persistentVolumeClaimRetentionPolicy
+        - .spec.volumeClaimTemplates
+        - .spec.template.spec.dnsPolicy
+        - .spec.template.spec.restartPolicy
+        - .spec.template.spec.schedulerName
+        - .spec.template.spec.serviceAccount
+        - .spec.template.spec.volumes[].configMap.defaultMode
+        - .spec.template.spec.volumes[].secret.defaultMode
+        - .spec.template.spec.containers[].terminationMessagePath
+        - .spec.template.spec.containers[].terminationMessagePolicy
   syncPolicy:
     automated:
       prune: true
