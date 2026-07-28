@@ -1,0 +1,44 @@
+# system-upgrade-controller — drives the k3s WORKER hops (SPEC.md §T.13).
+#
+# Gated on §T.27's relocation completing (§V.29): Vault and postgresql-cluster both
+# moved to k3s-worker-01 first, so a node hop no longer takes secrets and databases
+# with it.
+#
+# Scope is agents only (§V.17). The control-plane hop is manual — a single-server k3s
+# cannot safely be upgraded by a Job its own API server schedules.
+#
+# Sync waves: CRD (-2) must exist before the controller (-1), and both before any Plan
+# (0), or the first sync fails on an unknown kind.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: system-upgrade-controller
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/system-upgrade-controller
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: system-upgrade
+  syncPolicy:
+    automated:
+      # prune is ON here. Unlike the apps carrying data volumes, everything in this
+      # directory is disposable controller machinery — no PVCs, nothing that
+      # reclaim=Delete could destroy (§V.19).
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+  ignoreDifferences:
+    # The API server defaults spec.conversion to {strategy: None} on every CRD, and
+    # the upstream manifest omits it — the same permanent diff diagnosed on
+    # argo-rollouts and kyverno. See docs/plans/argocd-drift-diagnosis.md.
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jqPathExpressions:
+        - .spec.conversion

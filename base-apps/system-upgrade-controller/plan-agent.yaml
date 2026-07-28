@@ -1,0 +1,51 @@
+# k3s agent upgrade Plan — workers ONLY (SPEC.md §T.14, §T.16, §V.17).
+#
+# There is deliberately no plan-server.yaml. The control-plane hop is manual: this
+# cluster runs a single server, and SUC drives upgrades as a privileged Job scheduled
+# by the very API server it would be restarting. §V.17 forbids ever pointing this
+# controller at k3s-control-01, and §T.15 forbids labelling it.
+#
+# CURRENTLY A NO-OP DRY RUN (§T.16). `version` is pinned to v1.33.5+k3s1 — the version
+# already running — so this exercises the whole mechanism (node selection, cordon, the
+# privileged upgrade job, uncordon) without changing anything. Only k3s-worker-02
+# carries the k3s-upgrade label for now; worker-01 hosts Vault and postgresql-cluster
+# after §T.36/§T.37 and is deliberately left out until the real hop.
+#
+# drain is INTENTIONALLY UNSET. Per the Plan CRD: "If left unspecified, no drain will
+# be performed." That is required here, not merely convenient — local-path is the only
+# StorageClass and its PVs carry hard node affinity, so a drain cannot reschedule
+# anything with a volume. It would evict pods that can never come back until the node
+# returns (§C, §V.42). Cordon alone gives the safety we want: no new scheduling during
+# the upgrade, existing pods left alone.
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: k3s-agent
+  namespace: system-upgrade
+  labels:
+    k3s-upgrade: agent
+spec:
+  # Pinned, not a channel. A channel resolves to "latest stable" via HTTP redirect,
+  # which would silently retarget this Plan when upstream cuts a release — the walk
+  # must move one deliberate minor at a time (§V.3).
+  version: v1.33.5+k3s1
+
+  # One node at a time. With two workers, concurrency 2 would take both out together.
+  concurrency: 1
+
+  nodeSelector:
+    matchExpressions:
+      - key: k3s-upgrade
+        operator: In
+        values: ["true"]
+      # Belt and braces alongside §T.15: even if the control plane were ever labelled
+      # by mistake, this Plan still refuses to select it.
+      - key: node-role.kubernetes.io/control-plane
+        operator: DoesNotExist
+
+  serviceAccountName: system-upgrade
+
+  cordon: true
+
+  upgrade:
+    image: rancher/k3s-upgrade
