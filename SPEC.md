@@ -126,7 +126,7 @@ T5|x|DECIDED 2026-07-28: KEEP `v3.5.0-rc2`. ⊥ 3.5 GA ∃; downgrade-to-3.4.5 r
 T6|.|DEFERRED past §T.19 (§V.48). ESO stage 1: `v0.11.0` → `v0.16.2` (serves `v1beta1`+`v1`)|V11,V8,V23,V24,V48
 T7|.|verify ∀ ExternalSecret resync post-ESO, Vault k8s-auth roles intact|V11
 T8|.|Vault `1.18.1` → current stable. NB StatefulSet `updateStrategy: OnDelete` ∴ ! manual `delete pod vault-0` after sync|V8
-T9|~|CNPG `1.24.1` → `1.29.1` in 5 SEQUENTIAL steps (§R.22, ⊥ skip minors). CVE-2026-44477 CVSS 9.4 metrics exporter. §T.34 gate CLEARED. chart path `0.22.1`→`0.23.2`→`0.25.0`→`0.26.1`→`0.27.1`→`0.28.3`. ∀ step: own commit + Argo sync + verify healthy & data serving before next (§V.8). `instances=1` ∴ pod restart ⊥ switchover, ~30-60s DB down per step — ACCEPTED|V6,V8,V25,R.22
+T9|x|DONE 2026-07-28: CNPG operator `1.24.1`→`1.29.1` in 5 sequential steps (§R.22, ⊥ skip minors). chart `0.22.1`→`0.23.2`→`0.25.0`→`0.26.1`→`0.27.1`→`0.28.3`. CVE-2026-44477 (CVSS 9.4) FIXED — patched in 1.29.1/1.28.3. ∀ step verified healthy + data unchanged (`n8n` 55 tbl, `chores_tracker` 7 tbl, `chores` 3 rows). restarts ≪ estimate: back healthy inside one 15s poll each. now ∈ matrix @ k8s 1.33-1.35|V2,V6,V8,V25,R.22
 T10|.|Istio `1.24.0` → `1.30.x` via revisions. ⊥ `1.25` (k8s ≤1.32 ∉ 1.33, §V.32) ∴ skip `1.25` \| defer Istio → post-§T.18. ! /research skip policy first|V12,V20,V32,V8
 T11|.|verify `ztunnel` + `istio-cni-node` DS healthy ∀ node post-Istio, then retire old revision|V12,V20
 T12|x|DONE 2026-07-28 matrix audit → §R.13-§R.18. blockers: ingress-nginx TERMINAL, kyverno ≤1.35, ArgoCD ⊥ 3.5 GA. clear: cert-manager→v1.21, Istio→1.30. RE-SCOPED to 1.35 (§R.20): ingress-nginx + cert-manager need NOTHING|V2,V46
