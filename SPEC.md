@@ -126,10 +126,10 @@ T9|.|CNPG `1.24.1` → 1.29.x — CVE-2026-44477 CVSS 9.4 metrics exporter. gate
 T10|.|Istio `1.24.0` → `1.30.x` via revisions. ⊥ `1.25` (k8s ≤1.32 ∉ 1.33, §V.32) ∴ skip `1.25` \| defer Istio → post-§T.18. ! /research skip policy first|V12,V20,V32,V8
 T11|.|verify `ztunnel` + `istio-cni-node` DS healthy ∀ node post-Istio, then retire old revision|V12,V20
 T12|x|DONE 2026-07-28 matrix audit → §R.13-§R.18. blockers: ingress-nginx TERMINAL, kyverno ≤1.35, ArgoCD ⊥ 3.5 GA. clear: cert-manager→v1.21, Istio→1.30|V2,V46
-T13|.|add `base-apps/system-upgrade-controller.yaml` Argo app. HARD gate §T.27 first (§V.29)|V29,I.file
-T14|.|add SUC manifests + RBAC + CRD (sync-wave: CRD before Plan). Plan scope = agents only|V17,I.file
-T15|.|label `k3s-worker-01`,`k3s-worker-02` `k3s-upgrade=true`. ⊥ label `k3s-control-01`|V17,I.node-label
-T16|.|dry-run SUC Plan on `k3s-worker-02` @ current version (no-op hop)|V4,V17
+T13|x|DONE 2026-07-28: `base-apps/system-upgrade-controller.yaml` Argo app. SUC `v0.20.1`, Synced/Healthy|V29,I.file
+T14|x|DONE 2026-07-28: official v0.20.1 manifests + CRD, sync-wave -2/-1/0. `plan-agent.yaml` agents ONLY, ⊥ `plan-server.yaml`. `drain` ABSENT (local-path node-pinned), `cordon: true`, `concurrency: 1`, `version` pinned ⊥ channel. guards @ `tests/k3s-upgrade/test_suc_plan.py`|V3,V17,I.file
+T15|~|`k3s-worker-02` labelled `k3s-upgrade=true` for §T.16. `k3s-worker-01` deliberately UNLABELLED until the real hop (hosts Vault+CNPG). `k3s-control-01` ⊥ labelled ∀ time (§V.17)|V17,I.node-label
+T16|x|DONE 2026-07-28 dry run on `k3s-worker-02`: job created t+0s → cordon t+15s → Complete + uncordon t+31s. ⊥ NotReady ∀ moment. 21 workloads survived, other nodes untouched. NB job logged "Binary already been replaced" & exit 0 ∴ k3s never restarted — mechanism proven, real hop NotReady window still UNMEASURED|V4,V17
 T17|.|gate §V.1,2,5,6,10,11,14,27,28 → MANUAL hop control-plane → `v1.34.9+k3s1`, console access ∃. ⊥ drainable until §T.37 done — PDB blocks it (§R.10, §V.42)|V1,V2,V3,V6,V14,V17,V27,V28,V31
 T18|.|SUC hop workers → `v1.34.9+k3s1`. gate §V.1,5,6,11,14,28 — post-relocate THIS hop = Vault + CNPG outage (§V.37), ⊥ bare "verify §V.5". NB post-§T.37 the CNPG PDB blocks draining `k3s-worker-01` (§V.42) — scale→2 \| disable PDB for the hop|V4,V5,V6,V17,V31,V37,V42
 T19|.|gate §V.1,2,5,6,10,11,14,27,28 → hop → `v1.35.6+k3s1` (control-plane manual, workers SUC)|V3,V5,V6,V17,V27,V28,V31
