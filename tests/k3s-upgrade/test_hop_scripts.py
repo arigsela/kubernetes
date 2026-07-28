@@ -89,6 +89,42 @@ def test_hop_verify_measures_the_v9_window_from_k3s_stop():
     assert "900" in t, "must compare against §V.9's 15 minute bound"
 
 
+def test_hop_verify_detects_orphaned_cni_plugin():
+    """§V.50 / §B.7: a k3s hop rotates data/<hash> and repoints data/current, orphaning the
+    istio-cni binary installed under it. Every new pod sandbox on that node then fails —
+    coredns included, so cluster DNS goes down and takes Argo's repo-server with it.
+
+    The §V.49 DaemonSet-Ready check cannot see this: all three pods stayed Ready 3/3 for the
+    entire 27-minute outage. The gate needs the symptom, not the pod count."""
+    t = HOP_VERIFY.read_text()
+    assert "check_cni_plugin" in t, "gate must check for an orphaned CNI plugin"
+    assert "failed to find plugin" in t, "must match containerd's actual sandbox error"
+    assert "check_cni_plugin" in t.split("case \"$ACTION\"")[1], (
+        "check_cni_plugin must actually be wired into the gate, not merely defined"
+    )
+
+
+def test_hop_verify_cni_check_distinguishes_live_from_stale():
+    """k3s retains events for ~an hour, so matching on events alone keeps failing the gate
+    long after the node is fixed. A gate that fails on a resolved incident is one operators
+    learn to override — which is how a real failure gets waved through."""
+    t = HOP_VERIFY.read_text()
+    assert "ContainerCreating" in t, (
+        "live-vs-history must be decided by pods stuck now, not by event presence"
+    )
+
+
+def test_hop_verify_cni_check_does_not_exec_into_the_pod():
+    """The obvious check — exec into istio-cni-node and test for the binary — PASSES while
+    the node is broken, because that pod's own hostPath mount still resolves to the old
+    data dir. That is the whole reason the DaemonSet never self-heals."""
+    t = HOP_VERIFY.read_text()
+    cni = t.split("check_cni_plugin()")[1].split("\n}")[0]
+    assert "kubectl exec" not in cni, (
+        "an exec-based binary check gives a false PASS — the pod's mount points at the old dir"
+    )
+
+
 # --- §T.28 / §V.35 ------------------------------------------------------------------
 
 def test_kms_key_has_prevent_destroy():
