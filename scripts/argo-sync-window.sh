@@ -71,12 +71,13 @@ case "$ACTION" in
     apps="$(discover_apps)"
     [ -n "$apps" ] || die "discovered no PVC-bearing apps — refusing to record an empty window"
     # master-app first: while it is still syncing it would undo the children (§B.4).
-    ordered="master-app
-$apps"
-    python3 - "$ARGO_NS" "$STATE" <<'PY' <<<"$ordered"
+    # Apps go in argv, not stdin -- stdin is the heredoc carrying this program, and
+    # combining `<<'PY'` with `<<<"$list"` silently feeds the list in as the script.
+    # shellcheck disable=SC2086
+    python3 - "$ARGO_NS" "$STATE" master-app $apps <<'PY'
 import json, subprocess, sys
 ns, state = sys.argv[1], sys.argv[2]
-apps = [a for a in sys.stdin.read().split() if a]
+apps = sys.argv[3:]
 saved = {}
 for a in apps:
     out = subprocess.run(["kubectl","get","app","-n",ns,a,"-o","jsonpath={.spec.syncPolicy.automated}"],
