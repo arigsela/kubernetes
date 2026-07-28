@@ -1,7 +1,7 @@
 # SPEC
 
 ## §G GOAL
-k3s cluster 1.33.5 → **`v1.35.6+k3s1`** (§R.18: 4 components cap @ 1.35, ingress-nginx TERMINAL ∴ 1.36 ⊥ reachable). 1.36 = FOLLOW-ON, gated on replacing ingress-nginx (§T.43). platform components @ matrix ceiling per minor, INTERLEAVED w/ walk (§V.13); ⊥ data loss.
+k3s cluster 1.33.5 → **`v1.35.6+k3s1`** (§R.18: 4 components cap @ 1.35, ingress-nginx TERMINAL ∴ 1.36 ⊥ reachable). 1.36 = FOLLOW-ON, gated on replacing ingress-nginx (§T.43). platform components @ matrix ceiling per minor, INTERLEAVED w/ walk where matrix demands (§V.13); ESO DEFERRED past the walk (§V.48); ⊥ data loss.
 
 ## §C CONSTRAINTS
 - GitOps only. ∀ change → git commit → Argo CD sync. ⊥ direct `kubectl apply` (CLAUDE.md).
@@ -70,13 +70,13 @@ V3: ∀ hop → 1 minor step. ⊥ skip.
 V4: control-plane hops before workers. ∀ worker hop after control-plane Ready.
 V5: ∀ hop → post-gate: ∀ node Ready & ∀ Argo CD app Synced+Healthy before next hop.
 V6: CNPG `postgresql-cluster` → pg_dump verified & restorable before ∀ hop.
-V7: ⊥ rc/pre-release image in cluster. ! GA tag.
+V7: ⊥ rc/pre-release image, EXCEPT Argo CD `v3.5.0-rc2` — ACCEPTED 2026-07-28. ⊥ 3.5 GA ∃ (§R.15); `3.4.5` GA covers k8s ≤1.35 but a downgrade-across-minor carries its own risk, judged > the RC risk for a homelab. running 11d clean. ! REVISIT @ 3.5.0 GA, & if §T.42 kyverno drift traces to it.
 V8: ∀ component upgrade → own commit, own sync, own rollback point. ⊥ batch.
 V9: outage window announced & ≤ 15min per control-plane hop.
 V10: ∀ hop → removed-API scan clean vs target minor.
 V11: ∀ hop → ESO healthy & ∀ ExternalSecret `SecretSynced=True`.
 V12: Istio ambient upgrade → revision/canary. ⊥ in-place istiod replace.
-V13: remediation & walk INTERLEAVE where component matrix demands it — ESO ≥`0.20` ! k8s ≥1.34 (§R.4) ∴ ⊥ reachable before walk starts. ∀ hop → ∀ component @ max version its matrix allows for CURRENT minor first. ⊥ "all components final, then walk".
+V13: remediation & walk interleave WHERE a component matrix demands it. ESO was the only such case (≥`0.20` ! k8s ≥1.34, §R.4) and is DEFERRED past §T.19 (§V.48) ∴ ⊥ forcing case remains: Istio `1.30` & cert-manager `1.21` both ∈ matrix @ 1.33. ∀ hop → ∀ component @ max version its matrix allows for CURRENT minor first.
 V14: ∀ control-plane hop → outage = API + Vault + CNPG. ⊥ model as API-only. all 3 restored & verified before hop declared done.
 V15: k3s backup ! quiesced — stop k3s \| `sqlite3 .backup` before copy. ⊥ archive live datastore file SET: `state.db` + `state.db-wal` + `state.db-shm`. kine = WAL mode ∴ stale sidecar replays over snapshot → silent corruption.
 V16: restore drill ! prove API returns @ prior version from artifact. unproven artifact ∉ backup.
@@ -111,6 +111,7 @@ V44: ∀ live patch of a NESTED MAP (`nodeSelector`, labels, annotations) → `k
 V45: after ANY out-of-band `kubectl patch` on an Argo-managed resource, `kubectl.kubernetes.io/last-applied-configuration` goes STALE ∴ Argo client-side 3-way merge yields UNION of stale + desired, ⊥ replacement. before resuming auto-sync ! BOTH: (a) refresh & CONFIRM `status.sync.revision` == merged commit — Argo ? sync a CACHED older rev, (b) `kubectl apply -f <git manifest>` to repair last-applied \| set `ServerSideApply=true`. ⊥ resume on faith (§B.6).
 V46: ⊥ hop → 1.36 while `ingress-nginx` ∈ cluster. repo archived, `v1.15.1` terminal, supports ≤1.35 (§R.13) ∴ ⊥ future version. 1.36 ! preceded by §T.43 (Gateway API migration). ∀ other 1.35-capped component ? ship 1.36 support later; this one ⊥ can.
 V47: §V.5 ⊥ absolute. controller-mutated fields (webhook `caBundle`, SA tokens, defaulted spec) drift PERMANENTLY vs git ∴ "∀ app Synced" unreachable in a real cluster. REVISED gate: ⊥ UNEXPLAINED drift — ∀ OutOfSync app ! have a documented benign cause + `ignoreDifferences` covering it, else it blocks. ⊥ blanket `ServerSideApply` as the remedy (§R.19).
+V48: ESO `v0.11.0` DEFERRED past §T.19 (decision 2026-07-28) ∴ runs ~4 minors out of matrix @ 1.35 (§R.4: `0.11` = k8s ≤1.31; already 2 out @ 1.33 & resolving 40/43). ACCEPTED: break = secret REFRESH stops, existing `Secret` objects PERSIST ∴ gradual degrade, ⊥ outage. §V.11 check @ ∀ hop = the early-warning signal; §T.18 (→1.34) = first real test. ⊥ proceed to §T.19 if §V.11 fails @ 1.34.
 
 ## §T TASKS
 id|status|task|cites
@@ -118,8 +119,8 @@ T1|x|write `scripts/k3s-backup.sh` — quiesce k3s, `sqlite3 .backup`, tar, chec
 T2|x|write `scripts/k3s-restore.sh` + drill on throwaway VM: artifact → API up @ prior version|V1,V16,I.cmd
 T3|x|`scripts/pg-backup.sh` pg_dump `postgresql-cluster` → off-cluster, verify restore|V6,V21,I.cmd
 T4|x|deprecated/removed-API scan vs 1.34,1.35,1.36 (`pluto` \| `kubent`)|V10
-T5|.|Argo CD `v3.5.0-rc2` → ⊥ 3.5 GA ∃ (§R.15). options: DOWNGRADE → `v3.4.5` stable (§V.7) \| hold for 3.5.0 GA. ! DECIDE — running a pre-release as the GitOps engine|V7,V8
-T6|.|ESO stage 1: `v0.11.0` → `v0.16.2` (serves `v1beta1`+`v1`). ⊥ proceed past w/o §T.31|V11,V8,V23,V24
+T5|x|DECIDED 2026-07-28: KEEP `v3.5.0-rc2`. ⊥ 3.5 GA ∃; downgrade-to-3.4.5 risk judged > RC risk. §V.7 amended to record it. REVISIT @ 3.5.0 GA \| if §T.42 kyverno drift traces to the RC|V7
+T6|.|DEFERRED past §T.19 (§V.48). ESO stage 1: `v0.11.0` → `v0.16.2` (serves `v1beta1`+`v1`)|V11,V8,V23,V24,V48
 T7|.|verify ∀ ExternalSecret resync post-ESO, Vault k8s-auth roles intact|V11
 T8|.|Vault `1.18.1` → current stable. NB StatefulSet `updateStrategy: OnDelete` ∴ ! manual `delete pod vault-0` after sync|V8
 T9|.|CNPG `1.24.1` → 1.29.x — CVE-2026-44477 CVSS 9.4 metrics exporter. §T.34 gate CLEARED 2026-07-28|V6,V8,V25
@@ -144,9 +145,9 @@ T27|x|DECIDED 2026-07-27: RELOCATE both → `k3s-worker-01` (97GB disk, ⊥ pres
 T28|.|add `k3s/` + `pg/` + `vault/` prefixes → existing `s3://mysql-backups-asela-cluster/`. ⊥ new bucket (§I.store). + KMS key deletion protection (§V.35)|V21,V35,I.store
 T29|.|verify `kube-system/ingress-nginx` helm-controller reconcile + ingress reachable post-∀-hop|V22
 T30|.|define §V.9 measurement: start = k3s stop, end = ∀ Argo app Synced+Healthy|V9
-T31|.|ESO stage 2: ∀ 59 manifest → `v1` (drop `beta1`) THEN rewrite ∀ stored object as `v1` + prune CRD `status.storedVersions` → `["v1"]`. git ≠ etcd (§R.3). after §T.6|V23,V24,V26
-T32|.|ESO stage 3: → `0.17.0` … ≤`0.19.x` (k8s 1.33 ceiling §R.4). gate `storedVersions==["v1"]`. after §T.31|V23,V26,V11
-T33|.|ESO stage 4: → `0.20.x` → `1.x` → `2.x`. ! k8s ≥1.34 ∴ AFTER §T.18, ⊥ on 1.33 (§R.4, §V.13)|V23,V13,V11
+T31|.|DEFERRED past §T.19. ESO stage 2: ∀ 56 file → `v1` (drop `beta1`) THEN rewrite ∀ stored object as `v1` + prune CRD `status.storedVersions` → `["v1"]`. git ≠ etcd (§R.3)|V23,V24,V26,V48
+T32|.|DEFERRED past §T.19. ESO stage 3: → `0.17.0`+. gate `storedVersions==["v1"]`|V23,V26,V11,V48
+T33|.|DEFERRED past §T.19. ESO stage 4: → `0.20.x` → `1.x` → `2.x`. ! k8s ≥1.34 (§R.4)|V23,V13,V11,V48
 T34|x|DONE 2026-07-28: barman restore PROVEN. scratch ns + CNPG `bootstrap.recovery` ← `s3://mysql-backups-asela-cluster/postgresql/` (serverName `postgresql-cluster`) → healthy in ~2min. data verified vs source: sizes exact (`n8n` 290MB, `chores_tracker` 8260kB), `chores_tracker` rows 3/1/3/3 MATCH, `n8n.invalid_auth_token` 2/2 MATCH. torn down, PV reclaimed. §V.25 satisfied ∴ §T.9 unblocked|V6,V25
 T35|x|write `scripts/vault-backup.sh` + drill: `vault-0` `file` storage → off-cluster, restore ! prove unseal + secret read. ⊥ backup ∃ today ∴ FIRST, before ∀ other `.` task|V28,V21,I.cmd
 T36|x|DONE 2026-07-28: `vault-0` relocated `k3s-control-01` → `k3s-worker-01`. outage 2m24s (14:39:29-14:41:53Z). new PV `pvc-35030e9f` @ worker-01. unseal via awskms verified + live ESO read `refreshTime` 14:42:12Z `SecretSynced` (§V.28). ROLLBACK: old PV `pvc-0741ca81` = `Released`+`Retain` @ control-01 `/var/lib/rancher/k3s/storage/pvc-0741ca81-..._vault_vault-data-vault-0`; artifact `vault-backup-20260728T143928Z-T36.tar.gz`|V28,V29,V33,V34,V36,V40
