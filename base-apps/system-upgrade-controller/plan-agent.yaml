@@ -5,11 +5,26 @@
 # by the very API server it would be restarting. §V.17 forbids ever pointing this
 # controller at k3s-control-01, and §T.15 forbids labelling it.
 #
-# CURRENTLY A NO-OP DRY RUN (§T.16). `version` is pinned to v1.33.5+k3s1 — the version
-# already running — so this exercises the whole mechanism (node selection, cordon, the
-# privileged upgrade job, uncordon) without changing anything. Only k3s-worker-02
-# carries the k3s-upgrade label for now; worker-01 hosts Vault and postgresql-cluster
-# after §T.36/§T.37 and is deliberately left out until the real hop.
+# LIVE as of §T.18: `version` is v1.34.9+k3s1, matching the control plane hopped manually
+# in §T.17. The §T.16 dry run (pinned to the running v1.33.5+k3s1) already proved the
+# mechanism end to end — node selection, cordon, the privileged upgrade job, uncordon.
+#
+# Only k3s-worker-02 carries the k3s-upgrade label. worker-01 hosts Vault and
+# postgresql-cluster after §T.36/§T.37, so hopping it is a real outage and stays a
+# deliberate, attended step (§T.15).
+#
+# ! §V.50 — THIS PLAN DOES NOT FINISH THE JOB. When k3s restarts on a node it extracts
+# into a new /var/lib/rancher/k3s/data/<hash>/ and repoints data/current, orphaning the
+# istio-cni binary installed under it. The istio-cni DaemonSet cannot heal itself: the
+# kubelet resolved its hostPath at pod-create, so the running pod reinstalls into the
+# OLD directory. containerd then fails every NEW pod sandbox on that node. Existing pods
+# keep running, which is what makes it easy to miss, and the DaemonSet stays Ready 3/3
+# throughout (§B.7). After this Plan completes on a node, run:
+#
+#   kubectl delete pod -n istio-system -l k8s-app=istio-cni-node \
+#     --field-selector spec.nodeName=<node>
+#
+# §T.46 tracks the durable fix (point cniBinDir at the stable data/cni directory).
 #
 # drain is INTENTIONALLY UNSET. Per the Plan CRD: "If left unspecified, no drain will
 # be performed." That is required here, not merely convenient — local-path is the only
@@ -28,7 +43,7 @@ spec:
   # Pinned, not a channel. A channel resolves to "latest stable" via HTTP redirect,
   # which would silently retarget this Plan when upstream cuts a release — the walk
   # must move one deliberate minor at a time (§V.3).
-  version: v1.33.5+k3s1
+  version: v1.34.9+k3s1
 
   # One node at a time. With two workers, concurrency 2 would take both out together.
   concurrency: 1
