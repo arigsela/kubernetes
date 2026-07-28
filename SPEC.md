@@ -50,6 +50,11 @@ R4|ESO ↔ k8s matrix|`≤0.13`:1.19-1.31 / `0.15-0.18`:1.32-1.33 / `0.19`:1.33 
 R5|ESO already out-of-matrix|`0.11.x` unsupported upstream, matrix = k8s ≤1.31, cluster @ 1.33 ∴ out-of-matrix now — same posture as Istio `1.24.0`|external-secrets.io/latest/introduction/stability-support/
 R6|ESO latest|`v2.8.0`. k8s 1.36 support ⊥ stated in release notes ? — ! confirm before §T.21|github.com/external-secrets/external-secrets/releases
 R7|Argo drift #5478|`0.16.x` webhook rewrites stored objects `v1beta1`→`v1` → drift vs git. CLOSED 2025-11-23, resolution = migrate manifests, ⊥ a code fix ∴ pause = migration window only|github.com/external-secrets/external-secrets/issues/5478
+R8|CNPG rollout triggers|`imageName`, image-catalog, pg config needing restart, `spec.resources`, PVC resize (AKS), operator update. `spec.affinity`/`nodeSelector` ⊥ listed ∴ selector edit ⊥ recreate the running pod|cloudnative-pg.io/documentation/1.24/rolling_update/
+R9|CNPG relocate procedure|documented: cordon host node → `instances` 1→2 → operator AUTO-switchover → scale→1 (drops original) → drain old node|cloudnative-pg.io/documentation/1.24/kubernetes_upgrade/
+R10|CNPG PDB blocks drain|`enablePDB=true` live; PDB `postgresql-cluster-primary` ALLOWED DISRUPTIONS=0 ∴ drain of `k3s-control-01` BLOCKED while single instance there. gates §T.17|kubectl, local truth 2026-07-28
+R11|CNPG live affinity|`nodeSelector: workload=infrastructure` + control-plane toleration + `podAntiAffinityType: preferred` ∴ 2 instances ? co-locate on 1 node (preferred ⊥ required)|kubectl, local truth 2026-07-28
+R12|`kubectl cnpg` absent|plugin ⊥ installed ∴ ⊥ `cnpg promote` manual switchover. `primaryUpdateStrategy=unsupervised` ∴ auto-switchover expected. ! install as §T.37 fallback lever|local truth 2026-07-28
 
 ## §V INVARIANTS
 V1: ∀ hop → verified fs backup `/var/lib/rancher/k3s/` ∃ & restore drill passed before hop starts.
@@ -93,6 +98,7 @@ V38: §T.37 scale-down gate — ! assert `postgresql-cluster-2` = primary BEFORE
 V39: ∀ PVC ∉ Argo prune scope — `Prune=false` annotation \| app `prune: false` where chart ⊥ template annotations. enforced @ `tests/k3s-upgrade/test_prune_scope.py`. 10/21 WERE exposed 2026-07-27 ∴ §V.19 was false since inception.
 V40: §T.36 order ! = commit `nodeSelector` → Argo sync → suspend → scale 0 → delete PVC → helper pod (nodeSelector + §V.34 toleration) provisions & receives restore → delete helper → scale 1 (STS adopts `vault-data-vault-0`). ⊥ start Vault on empty PVC — `WaitForFirstConsumer` ∴ scaling up to create the PV self-initialises Vault before restore.
 V41: §T.39 runbook ! ∃ before §T.17. §V.9 "announced" ⊥ satisfiable w/o it.
+V42: ∀ node drain w/ CNPG single-instance on it → BLOCKED by PDB (`enablePDB=true`, ALLOWED DISRUPTIONS=0, §R.10). ∴ §T.37 = PREREQUISITE for §T.17, ⊥ merely blast-radius reduction. same applies ∀ future single-instance cluster.
 
 ## §T TASKS
 id|status|task|cites
@@ -112,7 +118,7 @@ T13|.|add `base-apps/system-upgrade-controller.yaml` Argo app. HARD gate §T.27 
 T14|.|add SUC manifests + RBAC + CRD (sync-wave: CRD before Plan). Plan scope = agents only|V17,I.file
 T15|.|label `k3s-worker-01`,`k3s-worker-02` `k3s-upgrade=true`. ⊥ label `k3s-control-01`|V17,I.node-label
 T16|.|dry-run SUC Plan on `k3s-worker-02` @ current version (no-op hop)|V4,V17
-T17|.|gate §V.1,2,5,6,10,11,14,27,28 → MANUAL hop control-plane → `v1.34.9+k3s1`, console access ∃|V1,V2,V3,V6,V14,V17,V27,V28,V31
+T17|.|gate §V.1,2,5,6,10,11,14,27,28 → MANUAL hop control-plane → `v1.34.9+k3s1`, console access ∃. ⊥ drainable until §T.37 done — PDB blocks it (§R.10, §V.42)|V1,V2,V3,V6,V14,V17,V27,V28,V31
 T18|.|SUC hop workers → `v1.34.9+k3s1`. gate §V.1,5,6,11,14,28 — post-relocate THIS hop = Vault + CNPG outage (§V.37), ⊥ bare "verify §V.5"|V4,V5,V6,V17,V31,V37
 T19|.|gate §V.1,2,5,6,10,11,14,27,28 → hop → `v1.35.6+k3s1` (control-plane manual, workers SUC)|V3,V5,V6,V17,V27,V28,V31
 T20|.|BLOCKER ×2 → 1.36: CNPG 1.29.x ≤1.35 & ⊥ ESO version supports 1.36 (§R.4; §R.6 `2.8.0` unconfirmed `?`). ! confirm BOTH ship 1.36 support, else hold @ 1.35|V2
@@ -132,10 +138,11 @@ T33|.|ESO stage 4: → `0.20.x` → `1.x` → `2.x`. ! k8s ≥1.34 ∴ AFTER §T
 T34|.|prove barman restore: scratch ns + CNPG Cluster ← `bootstrap.recovery` ← `s3://mysql-backups-asela-cluster/postgresql/`. BEFORE §T.9|V25,V6
 T35|x|write `scripts/vault-backup.sh` + drill: `vault-0` `file` storage → off-cluster, restore ! prove unseal + secret read. ⊥ backup ∃ today ∴ FIRST, before ∀ other `.` task|V28,V21,I.cmd
 T36|x|DONE 2026-07-28: `vault-0` relocated `k3s-control-01` → `k3s-worker-01`. outage 2m24s (14:39:29-14:41:53Z). new PV `pvc-35030e9f` @ worker-01. unseal via awskms verified + live ESO read `refreshTime` 14:42:12Z `SecretSynced` (§V.28). ROLLBACK: old PV `pvc-0741ca81` = `Released`+`Retain` @ control-01 `/var/lib/rancher/k3s/storage/pvc-0741ca81-..._vault_vault-data-vault-0`; artifact `vault-backup-20260728T143928Z-T36.tar.gz`|V28,V29,V33,V34,V36,V40
-T37|.|relocate `postgresql-cluster` → `k3s-worker-01`: CNPG `instances` 1→2 (new pod nodeSelector `k3s-worker-01`, toleration §V.34) → wait streaming → `switchover` → ASSERT `-2` = primary (§V.38) → scale→1 drops old. ⊥ manual PV surgery. needs ~40Gi transient. suspend `master-app` TOO (§B.4)|V6,V29,V33,V34,V38
+T37|.|relocate `postgresql-cluster` → `k3s-worker-01` (§R.9): suspend `master-app` + app (§V.33, §B.4) → commit `nodeSelector` hostname pin (⊥ rollout trigger, §R.8) → CORDON `k3s-control-01` → `instances` 1→2 → wait streaming → operator AUTO-switchover → ASSERT `-2` = primary (§V.38) → scale→1 drops original → uncordon → resume Argo. ⊥ manual PV surgery|V6,V29,V33,V34,V38,V42
 T38|.|post-relocate: `k3s-control-01` ⊥ host stateful. amend §C pinning lines + §V.14 scope per §V.37 — control-plane hop now API-only, `k3s-worker-01` hop = Vault+DB outage|V14,V29,V37
 T39|.|write `docs/plans/k3s-1.36-upgrade-plan.md` — runbook + outage comms. §I declares it, ⊥ ∃; §V.9 "announced" depends on it|V9,I.doc
 T40|.|`lg-agents/orchestrator-data` PVC tracked by app `lg-agents` that ⊥ ∃. orphaned ∴ ⊥ prunable, but ∉ GitOps. decide: adopt \| delete \| document|V19
+T41|.|install `kubectl cnpg` plugin — fallback manual switchover lever for §T.37 if auto-switchover ⊥ fire (§R.12). before §T.37|V38,R.12
 
 ## §B BUGS
 id|date|cause|fix
