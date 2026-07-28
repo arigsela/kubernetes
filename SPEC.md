@@ -1,7 +1,7 @@
 # SPEC
 
 ## §G GOAL
-k3s cluster 1.33.5 → v1.36.2+k3s1 (fallback `v1.35.6+k3s1` if §T.20 blockers hold); platform components @ matrix ceiling per minor, INTERLEAVED w/ walk (§V.13); ⊥ data loss.
+k3s cluster 1.33.5 → **`v1.35.6+k3s1`** (§R.18: 4 components cap @ 1.35, ingress-nginx TERMINAL ∴ 1.36 ⊥ reachable). 1.36 = FOLLOW-ON, gated on replacing ingress-nginx (§T.43). platform components @ matrix ceiling per minor, INTERLEAVED w/ walk (§V.13); ⊥ data loss.
 
 ## §C CONSTRAINTS
 - GitOps only. ∀ change → git commit → Argo CD sync. ⊥ direct `kubectl apply` (CLAUDE.md).
@@ -55,6 +55,12 @@ R9|CNPG relocate procedure|documented: cordon host node → `instances` 1→2 �
 R10|CNPG PDB blocks drain|`enablePDB=true` live; PDB `postgresql-cluster-primary` ALLOWED DISRUPTIONS=0 ∴ drain of `k3s-control-01` BLOCKED while single instance there. gates §T.17|kubectl, local truth 2026-07-28
 R11|CNPG live affinity|`nodeSelector: workload=infrastructure` + control-plane toleration + `podAntiAffinityType: preferred` ∴ 2 instances ? co-locate on 1 node (preferred ⊥ required)|kubectl, local truth 2026-07-28
 R12|`kubectl cnpg` absent|plugin ⊥ installed ∴ ⊥ `cnpg promote` manual switchover. `primaryUpdateStrategy=unsupervised` ∴ auto-switchover expected. ! install as §T.37 fallback lever|local truth 2026-07-28
+R13|ingress-nginx TERMINAL|`kubernetes/ingress-nginx` repo ARCHIVED (`archived:true`, last push 2026-03-23). final release `controller-v1.15.1` 2026-03-19 = EXACTLY the version in cluster. supports k8s 1.31-1.35 ∴ ⊥ 1.36 EVER. upstream: adopt Gateway API|github.com/kubernetes/ingress-nginx via gh api
+R14|Gateway API ∃ already|4 GatewayClass live & Accepted: `istio`, `gloo-gateway-v2`, `agentgateway-enterprise`(+waypoint). `istio-waypoint` Gateways serving `chores-tracker`+frontend 217d ∴ migration path ∃, ⊥ greenfield|kubectl, local truth 2026-07-28
+R15|Argo CD ⊥ 3.5 GA|`v3.5.0` = rc1/rc2/rc3 ONLY (rc3 2026-07-28). latest STABLE = `v3.4.5` 2026-07-09 ∴ §V.7 satisfiable only by DOWNGRADE → 3.4 line \| wait for 3.5.0 GA|github.com/argoproj/argo-cd/releases
+R16|kyverno matrix|`v1.18` = k8s 1.33-1.35 ∴ ⊥ 1.36. cluster @ `v1.17.1`, older still. kyverno = admission webhook ∴ incompat blocks ∀ pod create|kyverno.io/docs/installation/releases/
+R17|cert-manager matrix|`v1.20` = k8s 1.32-1.35; `v1.21` = 1.33-1.36 ∴ REACHES 1.36 via upgrade. ⊥ blocker|cert-manager.io/docs/releases/
+R18|1.36 CEILING VERDICT|4 components cap @ 1.35: CNPG(§R.4-adjacent), ESO(§R.4), ingress-nginx(§R.13, TERMINAL), kyverno(§R.16). ∴ **1.35 = the real target**. 1.36 ⊥ reachable w/o replacing ingress-nginx entirely|synthesis §R.4,13,16
 
 ## §V INVARIANTS
 V1: ∀ hop → verified fs backup `/var/lib/rancher/k3s/` ∃ & restore drill passed before hop starts.
@@ -102,6 +108,7 @@ V42: ∀ node drain w/ CNPG single-instance on it → BLOCKED by PDB (`enablePDB
 V43: relocate CNPG across nodes = 3 PHASE. (a) BROADEN selector so CURRENT node still matches (nodeAffinity `In [old,new]` \| drop selector + cordon every node except target) → restart = no-op. (b) cordon old → `instances`+1 → auto-switchover → assert primary (§V.38) → scale back → uncordon. (c) NARROW to target host. ⊥ narrow before relocate — restarted primary ⊥ schedulable off its own PV (§B.5).
 V44: ∀ live patch of a NESTED MAP (`nodeSelector`, labels, annotations) → `kubectl patch --type json` REPLACE. `--type merge` MERGES maps ∴ old keys survive → impossible conjunction (§B.5). ! verify the resulting object before proceeding.
 V45: after ANY out-of-band `kubectl patch` on an Argo-managed resource, `kubectl.kubernetes.io/last-applied-configuration` goes STALE ∴ Argo client-side 3-way merge yields UNION of stale + desired, ⊥ replacement. before resuming auto-sync ! BOTH: (a) refresh & CONFIRM `status.sync.revision` == merged commit — Argo ? sync a CACHED older rev, (b) `kubectl apply -f <git manifest>` to repair last-applied \| set `ServerSideApply=true`. ⊥ resume on faith (§B.6).
+V46: ⊥ hop → 1.36 while `ingress-nginx` ∈ cluster. repo archived, `v1.15.1` terminal, supports ≤1.35 (§R.13) ∴ ⊥ future version. 1.36 ! preceded by §T.43 (Gateway API migration). ∀ other 1.35-capped component ? ship 1.36 support later; this one ⊥ can.
 
 ## §T TASKS
 id|status|task|cites
@@ -109,14 +116,14 @@ T1|x|write `scripts/k3s-backup.sh` — quiesce k3s, `sqlite3 .backup`, tar, chec
 T2|x|write `scripts/k3s-restore.sh` + drill on throwaway VM: artifact → API up @ prior version|V1,V16,I.cmd
 T3|x|`scripts/pg-backup.sh` pg_dump `postgresql-cluster` → off-cluster, verify restore|V6,V21,I.cmd
 T4|x|deprecated/removed-API scan vs 1.34,1.35,1.36 (`pluto` \| `kubent`)|V10
-T5|.|Argo CD `v3.5.0-rc2` → v3.5.x GA. ? GA shipped — confirm ∃ else §V.7 unsatisfiable & pick prior GA line|V7,V8
+T5|.|Argo CD `v3.5.0-rc2` → ⊥ 3.5 GA ∃ (§R.15). options: DOWNGRADE → `v3.4.5` stable (§V.7) \| hold for 3.5.0 GA. ! DECIDE — running a pre-release as the GitOps engine|V7,V8
 T6|.|ESO stage 1: `v0.11.0` → `v0.16.2` (serves `v1beta1`+`v1`). ⊥ proceed past w/o §T.31|V11,V8,V23,V24
 T7|.|verify ∀ ExternalSecret resync post-ESO, Vault k8s-auth roles intact|V11
 T8|.|Vault `1.18.1` → current stable. NB StatefulSet `updateStrategy: OnDelete` ∴ ! manual `delete pod vault-0` after sync|V8
 T9|.|CNPG `1.24.1` → 1.29.x — CVE-2026-44477 CVSS 9.4 metrics exporter. gate §T.34 first|V6,V8,V25
 T10|.|Istio `1.24.0` → `1.30.x` via revisions. ⊥ `1.25` (k8s ≤1.32 ∉ 1.33, §V.32) ∴ skip `1.25` \| defer Istio → post-§T.18. ! /research skip policy first|V12,V20,V32,V8
 T11|.|verify `ztunnel` + `istio-cni-node` DS healthy ∀ node post-Istio, then retire old revision|V12,V20
-T12|.|matrix-audit rest vs 1.36: kyverno 1.17.1, argo-rollouts 1.8.3, argo-workflows 3.6.10, cert-manager 1.20.2, crossplane 2.2.1, ingress-nginx, falco, gloo|V2
+T12|x|DONE 2026-07-28 matrix audit → §R.13-§R.18. blockers: ingress-nginx TERMINAL, kyverno ≤1.35, ArgoCD ⊥ 3.5 GA. clear: cert-manager→v1.21, Istio→1.30|V2,V46
 T13|.|add `base-apps/system-upgrade-controller.yaml` Argo app. HARD gate §T.27 first (§V.29)|V29,I.file
 T14|.|add SUC manifests + RBAC + CRD (sync-wave: CRD before Plan). Plan scope = agents only|V17,I.file
 T15|.|label `k3s-worker-01`,`k3s-worker-02` `k3s-upgrade=true`. ⊥ label `k3s-control-01`|V17,I.node-label
@@ -124,8 +131,8 @@ T16|.|dry-run SUC Plan on `k3s-worker-02` @ current version (no-op hop)|V4,V17
 T17|.|gate §V.1,2,5,6,10,11,14,27,28 → MANUAL hop control-plane → `v1.34.9+k3s1`, console access ∃. ⊥ drainable until §T.37 done — PDB blocks it (§R.10, §V.42)|V1,V2,V3,V6,V14,V17,V27,V28,V31
 T18|.|SUC hop workers → `v1.34.9+k3s1`. gate §V.1,5,6,11,14,28 — post-relocate THIS hop = Vault + CNPG outage (§V.37), ⊥ bare "verify §V.5". NB post-§T.37 the CNPG PDB blocks draining `k3s-worker-01` (§V.42) — scale→2 \| disable PDB for the hop|V4,V5,V6,V17,V31,V37,V42
 T19|.|gate §V.1,2,5,6,10,11,14,27,28 → hop → `v1.35.6+k3s1` (control-plane manual, workers SUC)|V3,V5,V6,V17,V27,V28,V31
-T20|.|BLOCKER ×2 → 1.36: CNPG 1.29.x ≤1.35 & ⊥ ESO version supports 1.36 (§R.4; §R.6 `2.8.0` unconfirmed `?`). ! confirm BOTH ship 1.36 support, else hold @ 1.35|V2
-T21|.|gate §T.20 + §V.1,2,5,6,10,11,14,27,28 → hop → `v1.36.2+k3s1` (control-plane manual, workers SUC). ⊥ w/o BOTH blockers cleared|V2,V3,V5,V6,V17,V27,V28,V31
+T20|x|RESOLVED 2026-07-28 (§R.18): 1.36 blocked by 4 components; `ingress-nginx` TERMINAL ∴ permanent. → target = `v1.35.6+k3s1`, §G retargeted|V2,V46
+T21|.|FOLLOW-ON (⊥ this spec's target): hop → `v1.36.2+k3s1`. gated §T.43 + CNPG/ESO/kyverno shipping 1.36 support|V2,V3,V46
 T22|.|confirm local kubectl v1.36.2 now in-skew|-
 T23|.|update `index.md` + `docs/` topology w/ landed versions|-
 T24|.|follow-on: spec 3-server embedded etcd HA conversion|-
@@ -143,10 +150,11 @@ T35|x|write `scripts/vault-backup.sh` + drill: `vault-0` `file` storage → off-
 T36|x|DONE 2026-07-28: `vault-0` relocated `k3s-control-01` → `k3s-worker-01`. outage 2m24s (14:39:29-14:41:53Z). new PV `pvc-35030e9f` @ worker-01. unseal via awskms verified + live ESO read `refreshTime` 14:42:12Z `SecretSynced` (§V.28). ROLLBACK: old PV `pvc-0741ca81` = `Released`+`Retain` @ control-01 `/var/lib/rancher/k3s/storage/pvc-0741ca81-..._vault_vault-data-vault-0`; artifact `vault-backup-20260728T143928Z-T36.tar.gz`|V28,V29,V33,V34,V36,V40
 T37|x|DONE 2026-07-28: `postgresql-cluster` relocated → `k3s-worker-01` via §V.43 3-phase. primary now `postgresql-cluster-2` @ worker-01, 1/1 healthy, `n8n` 55 tbl + `chores_tracker` 7 tbl verified. auto-switchover fired as §R.9 predicted. ⊥ outage beyond 2 expected restarts. ROLLBACK: PV `pvc-57ffc455` = `Released`+`Retain` @ control-01; dump `pg-...20260728T152040Z.sql.gz`|V6,V29,V33,V38,V42,V43,V44
 T38|.|post-relocate: `k3s-control-01` ⊥ host stateful. amend §C pinning lines + §V.14 scope per §V.37 — control-plane hop now API-only, `k3s-worker-01` hop = Vault+DB outage|V14,V29,V37
-T39|.|write `docs/plans/k3s-1.36-upgrade-plan.md` — runbook + outage comms. §I declares it, ⊥ ∃; §V.9 "announced" depends on it|V9,I.doc
+T39|x|DONE 2026-07-28: `docs/plans/k3s-1.36-upgrade-plan.md` — runbook, outage comms table, per-hop gate + rollback, §B.1-§B.6 hard-won specifics. §V.9 "announced" now satisfiable|V9,V41,I.doc
 T40|.|`lg-agents/orchestrator-data` PVC tracked by app `lg-agents` that ⊥ ∃. orphaned ∴ ⊥ prunable, but ∉ GitOps. decide: adopt \| delete \| document|V19
 T41|.|install `kubectl cnpg` plugin — fallback manual switchover lever for §T.37 if auto-switchover ⊥ fire (§R.12). before §T.37|V38,R.12
 T42|.|set `ServerSideApply=true` ∀ app w/ chronic drift (8 apps: kyverno, istio-base, istio-istiod, argo-rollouts, openshell, openshell-secrets, kagent-secrets + `postgresql`). fixes large-CRD perpetual drift AND last-applied staleness (§V.45). §V.5 ⊥ satisfiable until done ∴ gates §T.17|V5,V45
+T43|.|FOLLOW-ON: migrate ingress off `ingress-nginx` → Gateway API. infra ∃ already (§R.14: istio/gloo/agentgateway GatewayClasses live). prerequisite for 1.36 (§V.46), ⊥ for 1.35|V46,R.13,R.14
 
 ## §B BUGS
 id|date|cause|fix
