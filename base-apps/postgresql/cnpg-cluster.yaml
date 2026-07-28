@@ -26,12 +26,23 @@ metadata:
 spec:
   instances: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+  # Pinned to k3s-worker-01, off the control plane (SPEC.md §T.27, §T.37).
+  #
+  # Previously `node.kubernetes.io/workload: infrastructure` — a label only k3s-control-01
+  # carries — so the only PostgreSQL instance ran on the single control-plane node, on a
+  # node-bound local-path volume with no replica.
+  #
+  # That blocked the upgrade outright rather than merely widening its blast radius:
+  # enablePDB is true, so the operator's PDB reports ALLOWED DISRUPTIONS 0 for a
+  # single-instance cluster and draining its host node can never complete (§R.10, §V.42).
+  #
+  # Relocated 2026-07-28 via §V.43's three phases — broaden, relocate by cordon and
+  # scale-to-2 with switchover, then narrow. Changing this selector DOES restart the
+  # primary (§R.8, §B.5), and a restarted primary cannot schedule away from its own PV, so
+  # narrowing this value before the data has moved will take the database down.
   affinity:
     nodeSelector:
-      node.kubernetes.io/workload: infrastructure
-    tolerations:
-      - effect: NoSchedule
-        key: node-role.kubernetes.io/control-plane
+      kubernetes.io/hostname: k3s-worker-01
   backup:
     barmanObjectStore:
       destinationPath: s3://mysql-backups-asela-cluster/postgresql/
