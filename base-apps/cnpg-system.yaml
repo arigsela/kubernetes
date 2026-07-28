@@ -25,12 +25,12 @@ spec:
     # must not be skipped, so 1.24.1 -> 1.29.1 is a sequence, not a jump:
     #   0.23.2 -> 1.25.1  (done)
     #   0.25.0 -> 1.26.1  (done)
-    #   0.26.1 -> 1.27.1  <- here
-    #   0.27.1 -> 1.28.1
+    #   0.26.1 -> 1.27.1  (done)
+    #   0.27.1 -> 1.28.1  <- here
     #   0.28.3 -> 1.29.1  (target: covers k8s 1.33-1.35, fixes CVE-2026-44477)
     # Each step restarts the single Postgres pod -- instances=1 leaves no replica to
     # switch over to -- so expect ~30-60s of database downtime per step.
-    targetRevision: 0.26.1
+    targetRevision: 0.27.1
     helm:
       releaseName: cnpg
       values: |
