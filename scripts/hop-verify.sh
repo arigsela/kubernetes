@@ -93,6 +93,53 @@ check_istio() {                                 # §V.49 — deferred Istio need
                    || bad "§V.49 no namespaces enrolled in ambient — was that intended?"
 }
 
+# §V.50 — a k3s hop rotates data/<hash> and repoints data/current, orphaning any CNI
+# binary installed under it. The istio-cni DS keeps writing into the OLD directory because
+# the kubelet resolved its hostPath at pod-create, so it never self-heals.
+#
+# Note what this does NOT do: exec into the pod and test for the binary. That check would
+# PASS while the node is broken, because the pod's own mount still points at the old dir.
+# The only honest signal available from the API is the symptom — sandboxes that cannot be
+# created because containerd cannot find the plugin. §B.7: the DS was Ready 3/3 throughout.
+check_cni_plugin() {
+  # Events outlive the incident (k3s keeps them ~1h), so matching on events alone would
+  # keep failing the gate long after a fix. Only pods that are stuck RIGHT NOW count as a
+  # failure; matching events with nothing stuck are reported as history.
+  local stuck
+  stuck=$(kubectl get pods -A --no-headers 2>/dev/null | awk '$4=="ContainerCreating"{print $1"/"$2}')
+  local report
+  # shellcheck disable=SC2086
+  report=$(kubectl get events -A -o json 2>/dev/null | python3 -c '
+import sys, json
+stuck = set(sys.argv[1:])
+try: items = json.load(sys.stdin)["items"]
+except Exception: items = []
+marker = "failed to find plugin "
+live, hist = set(), set()
+for e in items:
+    m = e.get("message", "")
+    i = m.find(marker)
+    if i < 0: continue
+    rest = m[i + len(marker):].replace(chr(92), "")     # messages arrive with escaped quotes
+    parts = rest.split(chr(34))
+    plug = parts[1] if len(parts) > 1 else rest.split()[0]
+    o = e.get("involvedObject", {})
+    key = str(o.get("namespace", "")) + "/" + str(o.get("name", ""))
+    (live if key in stuck else hist).add(plug)
+print("LIVE " + " ".join(sorted(live)))
+print("HIST " + " ".join(sorted(hist)))' $stuck 2>/dev/null)
+  local live hist
+  live=$(printf "%s\n" "$report" | sed -n 's/^LIVE //p')
+  hist=$(printf "%s\n" "$report" | sed -n 's/^HIST //p')
+  if [ -n "$live" ]; then
+    bad "§V.50 CNI plugin(s) MISSING and pods are wedged now: $live"
+    bad "§V.50 → restart the istio-cni-node pod on each affected node (§B.7), then re-gate"
+  else
+    ok "§V.50 no live missing-CNI-plugin sandbox failures"
+    [ -n "$hist" ] && note "§V.50 resolved earlier this hour: $hist (events not yet expired)"
+  fi
+}
+
 check_ingress() {                               # §V.22 / §T.29
   local phase
   phase=$(kubectl get helmchart -n kube-system ingress-nginx -o jsonpath='{.status.jobName}' 2>/dev/null || true)
@@ -158,6 +205,7 @@ case "$ACTION" in
     check_vault
     check_eso
     check_istio
+    check_cni_plugin
     check_ingress
     note "§V.2/§V.27 component matrix — operator judgement, see docs/plans/k3s-1.36-upgrade-plan.md"
     note "§V.10 removed-API scan — run: pytest tests/k3s-upgrade/test_api_scan.py"
