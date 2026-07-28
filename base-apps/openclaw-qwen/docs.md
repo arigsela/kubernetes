@@ -51,3 +51,4 @@ kubectl -n openclaw-qwen exec deploy/openclaw-qwen -- \
 - The model reasons (`reasoning_content`) before answering; OpenClaw handles this, and it's fast on the GPU.
 - To switch models, edit the `openai` provider `baseUrl`/`models[].id` and `agents.defaults.model.primary` here.
 - Earlier history: this app previously pointed at the in-cluster CPU `Qwen3.5-0.8B` (`base-apps/qwen`), which worked but was too slow (~8 min/turn) for interactive use.
+- If a turn errors mid-way (e.g. a timeout), the session can get a dangling message → `Cannot continue from message role: assistant`. Start fresh with `/reset` (or `/new`) in the TUI.
