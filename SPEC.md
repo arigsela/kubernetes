@@ -62,6 +62,8 @@ R16|kyverno matrix|`v1.18` = k8s 1.33-1.35 ∴ ⊥ 1.36. cluster @ `v1.17.1`, ol
 R17|cert-manager matrix|`v1.20` = k8s 1.32-1.35; `v1.21` = 1.33-1.36 ∴ REACHES 1.36 via upgrade. ⊥ blocker|cert-manager.io/docs/releases/
 R18|1.36 CEILING VERDICT|4 components cap @ 1.35: CNPG(§R.4-adjacent), ESO(§R.4), ingress-nginx(§R.13, TERMINAL), kyverno(§R.16). ∴ **1.35 = the real target**. 1.36 ⊥ reachable w/o replacing ingress-nginx entirely|synthesis §R.4,13,16
 R19|SSA ⊥ the drift fix|5 of 8 drifting apps ALREADY have `ServerSideApply=true` (istio-base, kagent-secrets, kyverno, openshell, openshell-secrets) & drift regardless ∴ §T.42 premise FALSE. drift causes heterogeneous: istio = `caBundle` (1460B) injected by istiod ∉ git; others = SA, Job, StatefulSet, ExternalSecret, CRD. Argo docs: SSA "has the potential to be destructive and might lead to resources having to be recreated, which could cause an outage"|argo-cd.readthedocs.io/en/stable/user-guide/sync-options/ + kubectl 2026-07-28
+R20|1.35 audit ≠ 1.36 audit|retarget → 1.35 REMOVES work. `ingress-nginx v1.15.1` (1.31-1.35) & `cert-manager v1.20.2` (1.32-1.35) ALREADY cover the target ∴ ⊥ upgrade needed. only CNPG + Istio + kyverno remain|synthesis §R.13,17 vs §G target
+R21|chart `kubeVersion` ≠ published matrix|kyverno chart `3.7.1`(v1.17.1) declares `kubeVersion: '>=1.25.0-0'` — NO upper bound; crossplane & istio charts declare none. ∴ published matrices = TESTED-version statements, ⊥ install-time blocks. nothing refuses to install @ 1.35|helm show chart, local truth 2026-07-28
 
 ## §V INVARIANTS
 V1: ∀ hop → verified fs backup `/var/lib/rancher/k3s/` ∃ & restore drill passed before hop starts.
@@ -126,7 +128,7 @@ T8|.|Vault `1.18.1` → current stable. NB StatefulSet `updateStrategy: OnDelete
 T9|.|CNPG `1.24.1` → 1.29.x — CVE-2026-44477 CVSS 9.4 metrics exporter. §T.34 gate CLEARED 2026-07-28|V6,V8,V25
 T10|.|Istio `1.24.0` → `1.30.x` via revisions. ⊥ `1.25` (k8s ≤1.32 ∉ 1.33, §V.32) ∴ skip `1.25` \| defer Istio → post-§T.18. ! /research skip policy first|V12,V20,V32,V8
 T11|.|verify `ztunnel` + `istio-cni-node` DS healthy ∀ node post-Istio, then retire old revision|V12,V20
-T12|x|DONE 2026-07-28 matrix audit → §R.13-§R.18. blockers: ingress-nginx TERMINAL, kyverno ≤1.35, ArgoCD ⊥ 3.5 GA. clear: cert-manager→v1.21, Istio→1.30|V2,V46
+T12|x|DONE 2026-07-28 matrix audit → §R.13-§R.18. blockers: ingress-nginx TERMINAL, kyverno ≤1.35, ArgoCD ⊥ 3.5 GA. clear: cert-manager→v1.21, Istio→1.30. RE-SCOPED to 1.35 (§R.20): ingress-nginx + cert-manager need NOTHING|V2,V46
 T13|x|DONE 2026-07-28: `base-apps/system-upgrade-controller.yaml` Argo app. SUC `v0.20.1`, Synced/Healthy|V29,I.file
 T14|x|DONE 2026-07-28: official v0.20.1 manifests + CRD, sync-wave -2/-1/0. `plan-agent.yaml` agents ONLY, ⊥ `plan-server.yaml`. `drain` ABSENT (local-path node-pinned), `cordon: true`, `concurrency: 1`, `version` pinned ⊥ channel. guards @ `tests/k3s-upgrade/test_suc_plan.py`|V3,V17,I.file
 T15|~|`k3s-worker-02` labelled `k3s-upgrade=true` for §T.16. `k3s-worker-01` deliberately UNLABELLED until the real hop (hosts Vault+CNPG). `k3s-control-01` ⊥ labelled ∀ time (§V.17)|V17,I.node-label
@@ -158,6 +160,7 @@ T40|.|`lg-agents/orchestrator-data` PVC tracked by app `lg-agents` that ⊥ ∃.
 T41|.|install `kubectl cnpg` plugin — fallback manual switchover lever for §T.37 if auto-switchover ⊥ fire (§R.12). before §T.37|V38,R.12
 T42|~|drift 8→2. FIXED: master-app (`recurse: false`), openshell-secrets (ESO webhook defaults), istio-base+istio-istiod (8 fields: istiod `caBundle`+`failurePolicy`, 6 API defaults), openshell (13 API defaults), argo-rollouts (`preserveUnknownFields`+`conversion`). REMAINING: `kagent-secrets` = operator copies Argo `tracking-id` onto a generated SA ∴ needs kagent fix ⊥ ignore rule; `kyverno` = chart renders `metadata.labels: {}` on 11/22 CRD (upstream bug) — rule applied & stable CLI shows ⊥ diff, but `v3.5.0-rc2` controller still flags. retest after §T.5|V5,V47
 T43|.|FOLLOW-ON: migrate ingress off `ingress-nginx` → Gateway API. infra ∃ already (§R.14: istio/gloo/agentgateway GatewayClasses live). prerequisite for 1.36 (§V.46), ⊥ for 1.35|V46,R.13,R.14
+T44|.|kyverno `v1.17.1` → `v1.18.x` (chart `3.8.2`). ADVISED ⊥ required: chart allows ≥1.25 (§R.21) but `v1.18` = the version TESTED @ 1.33-1.35 (§R.16). kyverno = admission webhook ∴ break blocks ∀ pod create|V2,V8
 
 ## §B BUGS
 id|date|cause|fix
