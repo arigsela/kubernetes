@@ -155,7 +155,7 @@ T38|.|post-relocate: `k3s-control-01` ⊥ host stateful. amend §C pinning lines
 T39|x|DONE 2026-07-28: `docs/plans/k3s-1.36-upgrade-plan.md` — runbook, outage comms table, per-hop gate + rollback, §B.1-§B.6 hard-won specifics. §V.9 "announced" now satisfiable|V9,V41,I.doc
 T40|.|`lg-agents/orchestrator-data` PVC tracked by app `lg-agents` that ⊥ ∃. orphaned ∴ ⊥ prunable, but ∉ GitOps. decide: adopt \| delete \| document|V19
 T41|.|install `kubectl cnpg` plugin — fallback manual switchover lever for §T.37 if auto-switchover ⊥ fire (§R.12). before §T.37|V38,R.12
-T42|.|per-app drift diagnosis + targeted `ignoreDifferences` (⊥ blanket SSA, §R.19). known: istio-base/istiod = webhook `caBundle` injected by istiod; argo-rollouts = 5 CRD (⊥ SSA yet); kyverno = 11 CRD + Job w/ SSA ON; kagent-secrets = SA; openshell = StatefulSet; openshell-secrets = ExternalSecret; master-app = child Application. ∀ cause ! documented before §T.17 (§V.47)|V5,V45,V47
+T42|~|per-app drift diagnosis DONE 2026-07-28 → `docs/plans/argocd-drift-diagnosis.md`. 1 genuine bug FIXED (`recurse: false` @ `openshell-secrets.yaml` — Argo normalises explicit false ∴ perpetual diff). 5 = controller-injected (istio `caBundle`, ESO webhook defaults, Argo's OWN finalizers, helm-vs-API defaulting) → need `ignoreDifferences`. 1 = kagent operator copies Argo `tracking-id` onto generated SA ∴ Argo tracks what it never applied. REMAINING: argo-rollouts 5 CRD + kyverno 11 CRD/Job need field-level diff (⊥ `argocd` CLI)|V5,V45,V47
 T43|.|FOLLOW-ON: migrate ingress off `ingress-nginx` → Gateway API. infra ∃ already (§R.14: istio/gloo/agentgateway GatewayClasses live). prerequisite for 1.36 (§V.46), ⊥ for 1.35|V46,R.13,R.14
 
 ## §B BUGS
