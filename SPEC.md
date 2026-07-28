@@ -101,6 +101,7 @@ V41: §T.39 runbook ! ∃ before §T.17. §V.9 "announced" ⊥ satisfiable w/o i
 V42: ∀ node drain w/ CNPG single-instance on it → BLOCKED by PDB (`enablePDB=true`, disruptionsAllowed=0, §R.10). PDB selects `instanceRole=primary` ∴ constraint FOLLOWS the primary, ⊥ eliminated by relocation. §T.37 unblocked §T.17 but MOVED the block to `k3s-worker-01` ∴ §T.18. mitigation @ hop time: scale→2 \| `enablePDB: false` \| `nodeMaintenanceWindow`.
 V43: relocate CNPG across nodes = 3 PHASE. (a) BROADEN selector so CURRENT node still matches (nodeAffinity `In [old,new]` \| drop selector + cordon every node except target) → restart = no-op. (b) cordon old → `instances`+1 → auto-switchover → assert primary (§V.38) → scale back → uncordon. (c) NARROW to target host. ⊥ narrow before relocate — restarted primary ⊥ schedulable off its own PV (§B.5).
 V44: ∀ live patch of a NESTED MAP (`nodeSelector`, labels, annotations) → `kubectl patch --type json` REPLACE. `--type merge` MERGES maps ∴ old keys survive → impossible conjunction (§B.5). ! verify the resulting object before proceeding.
+V45: after ANY out-of-band `kubectl patch` on an Argo-managed resource, `kubectl.kubernetes.io/last-applied-configuration` goes STALE ∴ Argo client-side 3-way merge yields UNION of stale + desired, ⊥ replacement. before resuming auto-sync ! BOTH: (a) refresh & CONFIRM `status.sync.revision` == merged commit — Argo ? sync a CACHED older rev, (b) `kubectl apply -f <git manifest>` to repair last-applied \| set `ServerSideApply=true`. ⊥ resume on faith (§B.6).
 
 ## §T TASKS
 id|status|task|cites
@@ -145,6 +146,7 @@ T38|.|post-relocate: `k3s-control-01` ⊥ host stateful. amend §C pinning lines
 T39|.|write `docs/plans/k3s-1.36-upgrade-plan.md` — runbook + outage comms. §I declares it, ⊥ ∃; §V.9 "announced" depends on it|V9,I.doc
 T40|.|`lg-agents/orchestrator-data` PVC tracked by app `lg-agents` that ⊥ ∃. orphaned ∴ ⊥ prunable, but ∉ GitOps. decide: adopt \| delete \| document|V19
 T41|.|install `kubectl cnpg` plugin — fallback manual switchover lever for §T.37 if auto-switchover ⊥ fire (§R.12). before §T.37|V38,R.12
+T42|.|set `ServerSideApply=true` ∀ app w/ chronic drift (8 apps: kyverno, istio-base, istio-istiod, argo-rollouts, openshell, openshell-secrets, kagent-secrets + `postgresql`). fixes large-CRD perpetual drift AND last-applied staleness (§V.45). §V.5 ⊥ satisfiable until done ∴ gates §T.17|V5,V45
 
 ## §B BUGS
 id|date|cause|fix
@@ -153,3 +155,4 @@ B2|2026-07-27|`vault-backup.sh` cold mode scaled sts→0 to quiesce, but `replic
 B3|2026-07-27|`vault-backup.sh` helper pod ⊥ toleration for `node-role.kubernetes.io/control-plane:NoSchedule` ∴ Pending forever — PV pinned to tainted control-plane & 2 workers ∉ PV affinity. backup aborted; §V.33 trap restored Argo + Vault safely ∴ ⊥ outage|V34
 B4|2026-07-28|§V.33 suspend patched the CHILD Argo app only. `vault` app tracked by `master-app` & its `syncPolicy` ∈ git ∴ master-app re-synced @14:41:09Z MID-§T.36 & restored `automated` — suspension silently undone while the restore helper still held the volume. ⊥ harm (manual scale-up won the race) but `selfHeal` could have started Vault on half-restored data|V33
 B5|2026-07-28|§T.37 patched `spec.affinity` on the live single-instance CNPG. §R.8 claimed affinity ⊥ rollout trigger — doc OMISSION read as absence, wrong: CNPG restarted the primary at once, its PVC pinned `k3s-control-01` ∴ Pending. compounded by `--type merge` MERGING the `nodeSelector` map → impossible `{hostname:worker-01, workload:infrastructure}`. ~5min outage `n8n`+`chores_tracker`, ⊥ data loss. NB a CORRECT patch fails identically — restarted primary ⊥ schedulable off its PV|V43,V44
+B6|2026-07-28|resumed Argo post-§T.37 w/o confirming observed revision. Argo synced CACHED `d6f8ddd` (pre-T37, selector=`workload:infrastructure`); client-side apply merged it w/ live `hostname` → impossible union AGAIN → Postgres down ~4min. then FLAPPED ~60s cycles from stale `last-applied-configuration` until repaired by `kubectl apply` of the git manifest. 2nd outage of the day, same shape as §B.5, different actor|V45
