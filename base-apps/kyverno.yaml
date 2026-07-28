@@ -73,6 +73,12 @@ spec:
       kind: CustomResourceDefinition
       jqPathExpressions:
         - .spec.conversion
+        # The real cause, per `argocd app diff`: kyverno 3.7.1 renders
+        # `metadata.labels: {}` on exactly 11 of its 22 CRDs — an empty map the
+        # API server drops, so Argo diffs {} against absent forever. Those 11 are
+        # precisely the CRDs that were OutOfSync. An upstream chart bug; nothing
+        # here can reconcile it.
+        - .metadata.labels
   syncPolicy:
     automated:
       prune: true
