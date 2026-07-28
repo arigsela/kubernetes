@@ -19,6 +19,16 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system
+  # istiod injects a ~1460-byte caBundle into this webhook at runtime; the chart
+  # ships it empty because the CA is generated in-cluster. Nothing can reconcile
+  # that, so the app sat permanently OutOfSync (SPEC.md §V.47, and
+  # docs/plans/argocd-drift-diagnosis.md for the evidence).
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      name: istiod-default-validator
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
   syncPolicy:
     automated:
       prune: true
