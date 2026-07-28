@@ -61,6 +61,7 @@ R15|Argo CD ⊥ 3.5 GA|`v3.5.0` = rc1/rc2/rc3 ONLY (rc3 2026-07-28). latest STAB
 R16|kyverno matrix|`v1.18` = k8s 1.33-1.35 ∴ ⊥ 1.36. cluster @ `v1.17.1`, older still. kyverno = admission webhook ∴ incompat blocks ∀ pod create|kyverno.io/docs/installation/releases/
 R17|cert-manager matrix|`v1.20` = k8s 1.32-1.35; `v1.21` = 1.33-1.36 ∴ REACHES 1.36 via upgrade. ⊥ blocker|cert-manager.io/docs/releases/
 R18|1.36 CEILING VERDICT|4 components cap @ 1.35: CNPG(§R.4-adjacent), ESO(§R.4), ingress-nginx(§R.13, TERMINAL), kyverno(§R.16). ∴ **1.35 = the real target**. 1.36 ⊥ reachable w/o replacing ingress-nginx entirely|synthesis §R.4,13,16
+R19|SSA ⊥ the drift fix|5 of 8 drifting apps ALREADY have `ServerSideApply=true` (istio-base, kagent-secrets, kyverno, openshell, openshell-secrets) & drift regardless ∴ §T.42 premise FALSE. drift causes heterogeneous: istio = `caBundle` (1460B) injected by istiod ∉ git; others = SA, Job, StatefulSet, ExternalSecret, CRD. Argo docs: SSA "has the potential to be destructive and might lead to resources having to be recreated, which could cause an outage"|argo-cd.readthedocs.io/en/stable/user-guide/sync-options/ + kubectl 2026-07-28
 
 ## §V INVARIANTS
 V1: ∀ hop → verified fs backup `/var/lib/rancher/k3s/` ∃ & restore drill passed before hop starts.
@@ -109,6 +110,7 @@ V43: relocate CNPG across nodes = 3 PHASE. (a) BROADEN selector so CURRENT node 
 V44: ∀ live patch of a NESTED MAP (`nodeSelector`, labels, annotations) → `kubectl patch --type json` REPLACE. `--type merge` MERGES maps ∴ old keys survive → impossible conjunction (§B.5). ! verify the resulting object before proceeding.
 V45: after ANY out-of-band `kubectl patch` on an Argo-managed resource, `kubectl.kubernetes.io/last-applied-configuration` goes STALE ∴ Argo client-side 3-way merge yields UNION of stale + desired, ⊥ replacement. before resuming auto-sync ! BOTH: (a) refresh & CONFIRM `status.sync.revision` == merged commit — Argo ? sync a CACHED older rev, (b) `kubectl apply -f <git manifest>` to repair last-applied \| set `ServerSideApply=true`. ⊥ resume on faith (§B.6).
 V46: ⊥ hop → 1.36 while `ingress-nginx` ∈ cluster. repo archived, `v1.15.1` terminal, supports ≤1.35 (§R.13) ∴ ⊥ future version. 1.36 ! preceded by §T.43 (Gateway API migration). ∀ other 1.35-capped component ? ship 1.36 support later; this one ⊥ can.
+V47: §V.5 ⊥ absolute. controller-mutated fields (webhook `caBundle`, SA tokens, defaulted spec) drift PERMANENTLY vs git ∴ "∀ app Synced" unreachable in a real cluster. REVISED gate: ⊥ UNEXPLAINED drift — ∀ OutOfSync app ! have a documented benign cause + `ignoreDifferences` covering it, else it blocks. ⊥ blanket `ServerSideApply` as the remedy (§R.19).
 
 ## §T TASKS
 id|status|task|cites
@@ -153,7 +155,7 @@ T38|.|post-relocate: `k3s-control-01` ⊥ host stateful. amend §C pinning lines
 T39|x|DONE 2026-07-28: `docs/plans/k3s-1.36-upgrade-plan.md` — runbook, outage comms table, per-hop gate + rollback, §B.1-§B.6 hard-won specifics. §V.9 "announced" now satisfiable|V9,V41,I.doc
 T40|.|`lg-agents/orchestrator-data` PVC tracked by app `lg-agents` that ⊥ ∃. orphaned ∴ ⊥ prunable, but ∉ GitOps. decide: adopt \| delete \| document|V19
 T41|.|install `kubectl cnpg` plugin — fallback manual switchover lever for §T.37 if auto-switchover ⊥ fire (§R.12). before §T.37|V38,R.12
-T42|.|set `ServerSideApply=true` ∀ app w/ chronic drift (8 apps: kyverno, istio-base, istio-istiod, argo-rollouts, openshell, openshell-secrets, kagent-secrets + `postgresql`). fixes large-CRD perpetual drift AND last-applied staleness (§V.45). §V.5 ⊥ satisfiable until done ∴ gates §T.17|V5,V45
+T42|.|per-app drift diagnosis + targeted `ignoreDifferences` (⊥ blanket SSA, §R.19). known: istio-base/istiod = webhook `caBundle` injected by istiod; argo-rollouts = 5 CRD (⊥ SSA yet); kyverno = 11 CRD + Job w/ SSA ON; kagent-secrets = SA; openshell = StatefulSet; openshell-secrets = ExternalSecret; master-app = child Application. ∀ cause ! documented before §T.17 (§V.47)|V5,V45,V47
 T43|.|FOLLOW-ON: migrate ingress off `ingress-nginx` → Gateway API. infra ∃ already (§R.14: istio/gloo/agentgateway GatewayClasses live). prerequisite for 1.36 (§V.46), ⊥ for 1.35|V46,R.13,R.14
 
 ## §B BUGS
