@@ -64,6 +64,7 @@ R18|1.36 CEILING VERDICT|4 components cap @ 1.35: CNPG(§R.4-adjacent), ESO(§R.
 R19|SSA ⊥ the drift fix|5 of 8 drifting apps ALREADY have `ServerSideApply=true` (istio-base, kagent-secrets, kyverno, openshell, openshell-secrets) & drift regardless ∴ §T.42 premise FALSE. drift causes heterogeneous: istio = `caBundle` (1460B) injected by istiod ∉ git; others = SA, Job, StatefulSet, ExternalSecret, CRD. Argo docs: SSA "has the potential to be destructive and might lead to resources having to be recreated, which could cause an outage"|argo-cd.readthedocs.io/en/stable/user-guide/sync-options/ + kubectl 2026-07-28
 R20|1.35 audit ≠ 1.36 audit|retarget → 1.35 REMOVES work. `ingress-nginx v1.15.1` (1.31-1.35) & `cert-manager v1.20.2` (1.32-1.35) ALREADY cover the target ∴ ⊥ upgrade needed. only CNPG + Istio + kyverno remain|synthesis §R.13,17 vs §G target
 R21|chart `kubeVersion` ≠ published matrix|kyverno chart `3.7.1`(v1.17.1) declares `kubeVersion: '>=1.25.0-0'` — NO upper bound; crossplane & istio charts declare none. ∴ published matrices = TESTED-version statements, ⊥ install-time blocks. nothing refuses to install @ 1.35|helm show chart, local truth 2026-07-28
+R22|CNPG ⊥ skip minors|docs: "upgrading through each version in sequential order... not skipping versions". ∴ §T.9 = 5 STEPS ⊥ 1: chart `0.23.2`→1.25.1, `0.25.0`→1.26.1, `0.26.1`→1.27.1, `0.27.1`→1.28.1, `0.28.3`→1.29.1. operator upgrade → instance rollout; `instances=1` ∴ ⊥ switchover possible, pod RESTARTS each step (~30-60s DB down ×5). `ENABLE_INSTANCE_MANAGER_INPLACE_UPDATES` would avoid it but breaks pod immutability ∴ ⊥ used|cloudnative-pg.io/docs/1.29/installation_upgrade/ + charts index.yaml
 
 ## §V INVARIANTS
 V1: ∀ hop → verified fs backup `/var/lib/rancher/k3s/` ∃ & restore drill passed before hop starts.
@@ -125,7 +126,7 @@ T5|x|DECIDED 2026-07-28: KEEP `v3.5.0-rc2`. ⊥ 3.5 GA ∃; downgrade-to-3.4.5 r
 T6|.|DEFERRED past §T.19 (§V.48). ESO stage 1: `v0.11.0` → `v0.16.2` (serves `v1beta1`+`v1`)|V11,V8,V23,V24,V48
 T7|.|verify ∀ ExternalSecret resync post-ESO, Vault k8s-auth roles intact|V11
 T8|.|Vault `1.18.1` → current stable. NB StatefulSet `updateStrategy: OnDelete` ∴ ! manual `delete pod vault-0` after sync|V8
-T9|.|CNPG `1.24.1` → 1.29.x — CVE-2026-44477 CVSS 9.4 metrics exporter. §T.34 gate CLEARED 2026-07-28|V6,V8,V25
+T9|~|CNPG `1.24.1` → `1.29.1` in 5 SEQUENTIAL steps (§R.22, ⊥ skip minors). CVE-2026-44477 CVSS 9.4 metrics exporter. §T.34 gate CLEARED. chart path `0.22.1`→`0.23.2`→`0.25.0`→`0.26.1`→`0.27.1`→`0.28.3`. ∀ step: own commit + Argo sync + verify healthy & data serving before next (§V.8). `instances=1` ∴ pod restart ⊥ switchover, ~30-60s DB down per step — ACCEPTED|V6,V8,V25,R.22
 T10|.|Istio `1.24.0` → `1.30.x` via revisions. ⊥ `1.25` (k8s ≤1.32 ∉ 1.33, §V.32) ∴ skip `1.25` \| defer Istio → post-§T.18. ! /research skip policy first|V12,V20,V32,V8
 T11|.|verify `ztunnel` + `istio-cni-node` DS healthy ∀ node post-Istio, then retire old revision|V12,V20
 T12|x|DONE 2026-07-28 matrix audit → §R.13-§R.18. blockers: ingress-nginx TERMINAL, kyverno ≤1.35, ArgoCD ⊥ 3.5 GA. clear: cert-manager→v1.21, Istio→1.30. RE-SCOPED to 1.35 (§R.20): ingress-nginx + cert-manager need NOTHING|V2,V46
