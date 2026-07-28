@@ -11,6 +11,11 @@ This is that documentation, from evidence rather than theory. Diagnosed 2026-07-
 regardless (§R.19), and Argo's docs warn it *"has the potential to be destructive and might
 lead to resources having to be recreated."*
 
+> **Status 2026-07-28:** 8 drifting apps reduced to 2. Fixed: master-app,
+> openshell-secrets, istio-base, istio-istiod, openshell, argo-rollouts.
+> Remaining: kagent-secrets (needs an operator fix, not an ignore rule) and
+> kyverno (cause identified, rule applied, controller still disagrees — see below).
+
 ## Summary
 
 | App | Resource | Cause | Fix |
@@ -105,3 +110,58 @@ wrong rather than the cluster.
 
 With §V.47, the gate becomes: this document plus `ignoreDifferences` covering each cause. The
 two CRD cases are the only ones still genuinely unexplained.
+
+
+## Corrections to this document
+
+Two of my earlier conclusions here were wrong and are worth recording, because the
+mistakes were methodological rather than incidental.
+
+**The istio rule ignored one field out of eight.** I diagnosed by observing that a
+`caBundle` was present in the cluster and assumed it was the differing field.
+Rendering the chart and diffing showed eight differences — `caBundle` and
+`failurePolicy` written by istiod at runtime, plus six API-server defaults. The
+first rule changed nothing.
+
+**I reported kyverno's cause as `conversion`. It is `metadata.labels`.** My
+comparison script normalised "absent" to `{}` before comparing, so a chart that
+renders `labels: {}` against a cluster that has no labels key compared *equal* and
+the real difference was invisible. The tool written to stop me guessing was itself
+guessing.
+
+`argocd app diff` answered it in one step. It needs no install:
+
+```bash
+kubectl config view --raw --minify > /tmp/kc      # then set contexts[].context.namespace
+docker run --rm --network host -v /tmp/kcdir:/home/argocd/.kube:ro \
+  -e KUBECONFIG=/home/argocd/.kube/config quay.io/argoproj/argocd:v3.4.5 \
+  argocd app diff <app> --core
+```
+
+Reach for that before hand-rolling a diff.
+
+## kyverno: cause known, resolution incomplete
+
+kyverno 3.7.1 renders `metadata.labels: {}` on exactly 11 of its 22 CRDs. The API
+server drops empty maps, so Argo compares `{}` against absent forever. Those 11 are
+precisely the CRDs reported `OutOfSync`. argo-rollouts, whose chart gives its CRDs
+real labels, needed no such rule and is `Synced`. This is an upstream chart bug.
+
+The rule is applied and the **stable v3.4.5 CLI computes no diff at all**. The
+controller — running **v3.5.0-rc2**, a release candidate — still reports the 11
+`OutOfSync`.
+
+It is not a blanket controller bug: argo-rollouts carries a CRD-scoped
+`ignoreDifferences` on the same controller and is `Synced`. The untested variables
+are that kyverno has `ServerSideApply=true` and that its rule targets
+`.metadata.labels` rather than a `.spec` path. Next steps, cheapest first:
+
+1. Swap `.metadata.labels` for a `jsonPointers: ["/metadata/labels"]` entry — a
+   different code path in Argo.
+2. Try the app without `ServerSideApply=true`.
+3. Re-test after §T.5 moves Argo CD off the release candidate — worth doing before
+   chasing this further, since a pre-release GitOps engine is a plausible cause and
+   is a problem in its own right.
+
+kyverno is `Healthy` throughout and admission is serving; this blocks §V.5's
+literal reading, not the cluster.
