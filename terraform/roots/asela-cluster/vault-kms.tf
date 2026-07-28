@@ -14,6 +14,20 @@ resource "aws_kms_key" "vault_auto_unseal" {
   enable_key_rotation      = true
   deletion_window_in_days  = 30
 
+  # SPEC.md §V.35: this key IS the Vault backup, not something beside it.
+  #
+  # Vault's storage is ciphertext sealed with this key, so every artifact
+  # scripts/vault-backup.sh produces is undecryptable without it. The Shamir recovery
+  # keys govern recovery operations, not storage decryption — they will not save you here.
+  # Losing this key means losing every secret in the cluster, however good the backups are.
+  #
+  # deletion_window_in_days = 30 above already forces a 30-day wait on ScheduleKeyDeletion.
+  # This blocks the likelier accident: a terraform destroy or a change that forces
+  # replacement of the key resource.
+  lifecycle {
+    prevent_destroy = true
+  }
+
   tags = {
     Name        = "vault-auto-unseal"
     Purpose     = "Vault-Auto-Unseal"

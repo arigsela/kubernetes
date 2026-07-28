@@ -145,12 +145,12 @@ T21|.|FOLLOW-ON (⊥ this spec's target): hop → `v1.36.2+k3s1`. gated §T.43 +
 T22|.|confirm local kubectl v1.36.2 now in-skew|-
 T23|.|update `index.md` + `docs/` topology w/ landed versions|-
 T24|.|follow-on: spec 3-server embedded etcd HA conversion|-
-T25|.|build pause/resume for Argo auto-sync ∀ PVC-bearing app across hop window|V18
+T25|x|DONE 2026-07-28: `scripts/argo-sync-window.sh scope\|pause\|resume`. suspends `master-app` FIRST (§B.4) then ∀ PVC app; scope = UNION of tracked-PVC apps + `volumeClaimTemplates` STS (the latter alone caught `vault`+`openshell`). records prior policy → exact restore. resume ⊥ gated on Synced (§V.30)|V18,V30,V33
 T26|x|prune-scope audit: 10 PVC WERE prunable (§V.19 false since inception). fixed — `Prune=false` ∀ 9 manifest + `prune: false` @ atlantis app (chart 6.1.0 ⊥ template PVC annotations). `tests/k3s-upgrade/test_prune_scope.py` = regression guard. NB `lg-agents/orchestrator-data` orphaned (⊥ app) → §T.40|V19,V39
 T27|x|DECIDED 2026-07-27: RELOCATE both → `k3s-worker-01` (97GB disk, ⊥ pressure). → §T.36 + §T.37. rationale: retires single failure domain, hops become API-only|V14,V29
-T28|.|add `k3s/` + `pg/` + `vault/` prefixes → existing `s3://mysql-backups-asela-cluster/`. ⊥ new bucket (§I.store). + KMS key deletion protection (§V.35)|V21,V35,I.store
-T29|.|verify `kube-system/ingress-nginx` helm-controller reconcile + ingress reachable post-∀-hop|V22
-T30|.|define §V.9 measurement: start = k3s stop, end = ∀ Argo app Synced+Healthy|V9
+T28|x|DONE 2026-07-28: artifacts shipped → `s3://mysql-backups-asela-cluster/{pg,vault}/` w/ checksums, round-trip download+verify PASSED. `k3s/` prefix awaits the first on-node backup (§T.17). KMS `alias/vault-auto-unseal` given `lifecycle.prevent_destroy` — 30d deletion window already ∃; this blocks the likelier accident (terraform destroy/replace)|V21,V35,I.store
+T29|x|DONE 2026-07-28: `scripts/hop-verify.sh gate` checks helm-controller `HelmChart kube-system/ingress-nginx` + controller Ready. NB controller = DaemonSet ⊥ Deployment — first version of the check queried Deployments, found none & called a healthy ingress broken|V22
+T30|x|DONE 2026-07-28: §V.9 window = `hop-verify.sh watch --since <epoch of k3s stop>` → green when ∀ node Ready & ⊥ unexplained drift. compares vs the 15min bound. measuring from later, or ending @ API-up, would flatter the number|V9
 T31|.|DEFERRED past §T.19. ESO stage 2: ∀ 56 file → `v1` (drop `beta1`) THEN rewrite ∀ stored object as `v1` + prune CRD `status.storedVersions` → `["v1"]`. git ≠ etcd (§R.3)|V23,V24,V26,V48
 T32|.|DEFERRED past §T.19. ESO stage 3: → `0.17.0`+. gate `storedVersions==["v1"]`|V23,V26,V11,V48
 T33|.|DEFERRED past §T.19. ESO stage 4: → `0.20.x` → `1.x` → `2.x`. ! k8s ≥1.34 (§R.4)|V23,V13,V11,V48
@@ -165,6 +165,7 @@ T41|.|install `kubectl cnpg` plugin — fallback manual switchover lever for §T
 T42|~|drift 8→2. FIXED: master-app (`recurse: false`), openshell-secrets (ESO webhook defaults), istio-base+istio-istiod (8 fields: istiod `caBundle`+`failurePolicy`, 6 API defaults), openshell (13 API defaults), argo-rollouts (`preserveUnknownFields`+`conversion`). REMAINING: `kagent-secrets` = operator copies Argo `tracking-id` onto a generated SA ∴ needs kagent fix ⊥ ignore rule; `kyverno` = chart renders `metadata.labels: {}` on 11/22 CRD (upstream bug) — rule applied & stable CLI shows ⊥ diff, but `v3.5.0-rc2` controller still flags. retest after §T.5|V5,V47
 T43|.|FOLLOW-ON: migrate ingress off `ingress-nginx` → Gateway API. infra ∃ already (§R.14: istio/gloo/agentgateway GatewayClasses live). prerequisite for 1.36 (§V.46), ⊥ for 1.35|V46,R.13,R.14
 T44|.|kyverno `v1.17.1` → `v1.18.x` (chart `3.8.2`). ADVISED ⊥ required: chart allows ≥1.25 (§R.21) but `v1.18` = the version TESTED @ 1.33-1.35 (§R.16). kyverno = admission webhook ∴ break blocks ∀ pod create|V2,V8
+T45|.|diagnose `atlantis` (Progressing) + `whoami-test` (Degraded). both workloads 1/1 Running for 19d/7d ∴ stale health ⊥ real failure, but cause UNDIAGNOSED ∴ `hop-verify.sh` tolerates them & warns every run. §V.47 wants a documented cause, ⊥ an allow-list entry|V47,V5
 
 ## §B BUGS
 id|date|cause|fix
