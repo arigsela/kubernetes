@@ -28,7 +28,18 @@ spec:
       kind: ValidatingWebhookConfiguration
       name: istiod-default-validator
       jqPathExpressions:
+        # istiod writes these two at runtime. caBundle is the in-cluster CA the
+        # chart cannot know; failurePolicy is flipped Ignore -> Fail once istiod
+        # is ready, so Argo can never win this one.
         - .webhooks[].clientConfig.caBundle
+        - .webhooks[].failurePolicy
+        # The remainder are API-server defaults absent from the rendered chart.
+        - .webhooks[].clientConfig.service.port
+        - .webhooks[].matchPolicy
+        - .webhooks[].namespaceSelector
+        - .webhooks[].objectSelector
+        - .webhooks[].timeoutSeconds
+        - .webhooks[].rules[].scope
   syncPolicy:
     automated:
       prune: true
