@@ -61,6 +61,18 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: kyverno
+  # The API server defaults spec.conversion to {strategy: None} on every CRD the
+  # chart ships, which the chart itself omits — Argo can never converge on it.
+  # Verified across all 11 drifting CRDs against kyverno 3.7.1.
+  #
+  # Note: preserveUnknownFields is NOT listed. Unlike argo-rollouts, this chart
+  # does not set it, so there is nothing to ignore. Only evidenced fields here.
+  # See docs/plans/argocd-drift-diagnosis.md (SPEC.md §V.47).
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jqPathExpressions:
+        - .spec.conversion
   syncPolicy:
     automated:
       prune: true
