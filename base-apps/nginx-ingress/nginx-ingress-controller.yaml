@@ -26,7 +26,7 @@ spec:
       config:
         # Timeout configurations equivalent to our ServersTransport fixes
         proxy-read-timeout: "30"      # responseHeaderTimeout equivalent
-        proxy-connect-timeout: "30"   # dialTimeout equivalent  
+        proxy-connect-timeout: "30"   # dialTimeout equivalent
         proxy-send-timeout: "30"      # writeTimeout equivalent
         keep-alive-requests: "100"    # maxIdleConnsPerHost equivalent
         upstream-keepalive-connections: "100"
