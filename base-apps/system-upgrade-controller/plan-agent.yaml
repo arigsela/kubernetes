@@ -5,13 +5,13 @@
 # by the very API server it would be restarting. §V.17 forbids ever pointing this
 # controller at k3s-control-01, and §T.15 forbids labelling it.
 #
-# LIVE as of §T.18: `version` is v1.34.9+k3s1, matching the control plane hopped manually
-# in §T.17. The §T.16 dry run (pinned to the running v1.33.5+k3s1) already proved the
+# LIVE as of §T.19: `version` is v1.35.6+k3s1, matching the control plane hopped manually
+# in §T.19. The §T.16 dry run (pinned to the then-running version) already proved the
 # mechanism end to end — node selection, cordon, the privileged upgrade job, uncordon.
 #
-# Only k3s-worker-02 carries the k3s-upgrade label. worker-01 hosts Vault and
-# postgresql-cluster after §T.36/§T.37, so hopping it is a real outage and stays a
-# deliberate, attended step (§T.15).
+# BOTH workers now carry the k3s-upgrade label — §T.18 proved a worker hop does not
+# disturb Vault or CNPG (pods survive a k3s agent restart; the containerd shims outlive
+# it). concurrency 1 still takes them one at a time.
 #
 # ! §V.50 — THIS PLAN DOES NOT FINISH THE JOB. When k3s restarts on a node it extracts
 # into a new /var/lib/rancher/k3s/data/<hash>/ and repoints data/current, orphaning the
@@ -43,7 +43,7 @@ spec:
   # Pinned, not a channel. A channel resolves to "latest stable" via HTTP redirect,
   # which would silently retarget this Plan when upstream cuts a release — the walk
   # must move one deliberate minor at a time (§V.3).
-  version: v1.34.9+k3s1
+  version: v1.35.6+k3s1
 
   # One node at a time. With two workers, concurrency 2 would take both out together.
   concurrency: 1
