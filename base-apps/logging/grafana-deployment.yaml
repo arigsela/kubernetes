@@ -100,10 +100,52 @@ spec:
               key: admin-password
         - name: GF_USERS_ALLOW_SIGN_UP
           value: "false"
+        # Must be the public URL: Grafana derives the OAuth redirect_uri from
+        # this. Left at localhost:3000 the GitHub round-trip breaks before it
+        # starts. See SPEC.md §T.59.
         - name: GF_SERVER_ROOT_URL
-          value: "http://localhost:3000"
+          value: "https://grafana.arigsela.com"
         - name: GF_INSTALL_PLUGINS
           value: ""
+        # GitHub OAuth. Direct to github.com rather than via dex: dex's
+        # staticClients do not filter identities, so that route needs this same
+        # role_attribute_path anyway AND would require making dex.arigsela.com
+        # publicly reachable. See SPEC.md §V.68.
+        #
+        # TWO fail-closed gates, both required — SPEC.md §V.69:
+        #   ROLE_ATTRIBUTE_STRICT=true  -> a login matching no role is DENIED.
+        #     Without it the default is false and non-matching users are let in
+        #     with the default org role. This host has no IP allow-list, so that
+        #     would expose dashboards to every GitHub account in existence.
+        #   ALLOW_SIGN_UP=false         -> only users already in grafana.db may
+        #     log in, independent of the JMESPath being correct.
+        # Replace both with allowed_organizations once a GitHub org exists (§T.61).
+        - name: GF_AUTH_GITHUB_ENABLED
+          value: "true"
+        - name: GF_AUTH_GITHUB_ALLOW_SIGN_UP
+          value: "false"
+        - name: GF_AUTH_GITHUB_SCOPES
+          value: "user:email,read:org"
+        - name: GF_AUTH_GITHUB_AUTH_URL
+          value: "https://github.com/login/oauth/authorize"
+        - name: GF_AUTH_GITHUB_TOKEN_URL
+          value: "https://github.com/login/oauth/access_token"
+        - name: GF_AUTH_GITHUB_API_URL
+          value: "https://api.github.com/user"
+        - name: GF_AUTH_GITHUB_ROLE_ATTRIBUTE_PATH
+          value: "login == 'arigsela' && 'Admin' || ''"
+        - name: GF_AUTH_GITHUB_ROLE_ATTRIBUTE_STRICT
+          value: "true"
+        - name: GF_AUTH_GITHUB_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: grafana-github-oauth
+              key: client-id
+        - name: GF_AUTH_GITHUB_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: grafana-github-oauth
+              key: client-secret
         volumeMounts:
         - name: storage
           mountPath: /var/lib/grafana
