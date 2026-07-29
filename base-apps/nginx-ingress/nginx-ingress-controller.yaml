@@ -35,11 +35,19 @@ spec:
         # SSL and connection optimizations
         ssl-protocols: "TLSv1.2 TLSv1.3"
         use-http2: "true"
-        # Cloudflare tunnel optimization
-        use-forwarded-headers: "true"
-        compute-full-forwarded-for: "true"
-        forwarded-for-header: "X-Forwarded-For"
-        real-ip-header: "X-Forwarded-For"
-        trusted-proxies: "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+        # NO X-Forwarded-For handling on purpose.
+        #
+        # Nothing proxies this cluster any more — the controller is hostNetwork and binds
+        # :80/:443 directly, so the socket's source address IS the client address. Access
+        # logs confirm it: real public IPs arrive, not an edge network's.
+        #
+        # The previous config set use-forwarded-headers + real-ip-header: X-Forwarded-For
+        # with a trusted-proxies list. That list included 10.0.0.0/8, and the pod network
+        # (10.42.0.0/16) sits inside it — so any pod able to reach the ingress could send
+        # its own X-Forwarded-For and have nginx believe it, defeating the
+        # whitelist-source-range allow-lists that guard most of the Ingresses here.
+        #
+        # Do not reintroduce these keys unless a real proxy is put in front, and if one is,
+        # set trusted-proxies to that proxy's addresses ONLY — never a broad private range.
     tcp: {}
     udp: {}

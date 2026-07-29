@@ -44,7 +44,7 @@ getent hosts sandbox-1.vcluster.arigsela.com  # Linux
 grep vcluster.arigsela.com /etc/hosts          # macOS
 ```
 
-> **Why `/etc/hosts` and not real DNS?** External `*.arigsela.com` traffic goes through Cloudflare Tunnel which terminates TLS. We need direct LAN access to the cluster's nginx-ingress for these test workloads. Long-term, add a wildcard A record at your LAN DNS resolver (Pi-hole, AdGuard, router) for `*.vcluster.arigsela.com → 10.0.1.50`.
+> **Why `/etc/hosts` and not real DNS?** There is no LAN DNS record for `*.vcluster.arigsela.com`, so it will not resolve on your machine. These test workloads need to reach the cluster's nginx-ingress directly by node IP. Long-term, add a wildcard A record at your LAN DNS resolver (Pi-hole, AdGuard, router) for `*.vcluster.arigsela.com → 10.0.1.50`.
 
 ---
 

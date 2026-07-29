@@ -70,7 +70,7 @@ Ephemeral dev/test sandboxes. Optimized for fast create/destroy, not long-lived 
 | One namespace per vcluster | Yes | vcluster convention; gives Kyverno + cert-manager natural scoping |
 | API access | nginx-ingress with `ssl-passthrough` | Stable hostnames; kubectl talks to real K8s API with proper TLS |
 | TLS | Per-vcluster cert-manager Certificate | Cleanest GitOps story; no secret replication across namespaces |
-| DNS | LAN-resolved `*.vcluster.arigsela.com` → node IP | Cloudflare Tunnel terminates TLS — cannot be used for passthrough |
+| DNS | LAN-resolved `*.vcluster.arigsela.com` → node IP | needs TLS passthrough to the vcluster, so it must hit a node directly |
 | Istio ambient | Vcluster namespaces NOT enrolled | Keeps API server traffic out of ztunnel for simpler debugging |
 | Kyverno | Existing policies apply unchanged | Synced pods are real pods on the host; ECR pull-secret injection works for free |
 | ArgoCD Application shape | Multi-source (Helm + git path) | One Application per vcluster; requires ArgoCD ≥ 2.6 |
@@ -80,7 +80,7 @@ Ephemeral dev/test sandboxes. Optimized for fast create/destroy, not long-lived 
 
 1. **Enable SSL passthrough in nginx-ingress.** Edit `base-apps/nginx-ingress/nginx-ingress-controller.yaml` to add `enable-ssl-passthrough: "true"` under `controller.extraArgs` in the Helm `valuesContent`. Cluster-wide change; nominal CPU cost.
 
-2. **Confirm LAN DNS for `*.vcluster.arigsela.com`.** Must resolve to a host-cluster node IP, bypassing Cloudflare Tunnel (which would terminate TLS and break passthrough). Pi-hole/router/`/etc/hosts` — outside the repo. Implementation plan will include a verification step.
+2. **Confirm LAN DNS for `*.vcluster.arigsela.com`.** Must resolve to a host-cluster node IP — anything that terminates TLS in front would break passthrough. Pi-hole/router/`/etc/hosts` — outside the repo. Implementation plan will include a verification step.
 
 3. **Confirm ArgoCD ≥ 2.6** for multi-source Application support. If not, fall back to two Applications per vcluster (chart Application + extras Application).
 

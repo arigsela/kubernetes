@@ -217,7 +217,7 @@ Every run logs to stdout (visible in Cowork transcript): `POST status`, `http_co
 
 ## 10. Open Questions / Decisions Needed
 
-1. **n8n network reachability.** Is the n8n instance already internet-accessible over HTTPS, or behind VPN only? If internal-only, we need a public URL (Cloudflare Tunnel / existing reverse proxy) before the skill sandbox can reach it.
+1. **n8n network reachability.** Is the n8n instance already internet-accessible over HTTPS, or behind VPN only? If internal-only, we need a public URL (the existing nginx ingress) before the skill sandbox can reach it.
 2. **Gmail node vs. SMTP node in n8n.** Gmail node is simpler but requires OAuth; SMTP is provider-agnostic. Preference?
 3. **Where to store the bearer token on the skill side?** Options: session env var set at Cowork startup, a file in the skill's directory that the skill reads at run time, or passed as a skill argument. Recommendation: session env var — no secret on disk, and the skill already runs in the session context.
 4. **Retry policy on transient failures.** v1 proposal: no retry in the skill itself (single POST; fall back to draft on any failure). Acceptable, or do you want one retry with backoff before falling back?

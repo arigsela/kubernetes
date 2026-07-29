@@ -433,7 +433,7 @@ Not cuttable: the XAgent + Composition + "Try it" button. Without those three, t
 |---|---|
 | agentregistry pre-1.0 instability | Pin a specific version; fallback path is hand-written kagent ToolServer CRs that inline MCP server image refs (skipping the registry for that agent). |
 | kagent OTLP → Langfuse format mismatch | Verify during Phase 0; if mismatch, drop a small OTel collector in between. |
-| GitHub webhook delivery to homelab cluster | Cloudflare Tunnel or smee.io for the demo. Test in Phase 2. |
+| GitHub webhook delivery to homelab cluster | smee.io for the demo, or the existing public ingress. Test in Phase 2. |
 | Slack Events API setup | Standard pattern but requires public-facing endpoint; reuse existing nginx-ingress + cert-manager. |
 | Composition function-python protobuf edge cases (the float-vs-int issue your existing XApplication script flagged) | Copy the casting pattern from your existing compose function. |
 | Demo flakiness | Cluster Health pre-baked for >=1 week; curl fallback for every surface; backup recorded video. |
