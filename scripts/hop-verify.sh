@@ -138,6 +138,40 @@ print("HIST " + " ".join(sorted(hist)))' $stuck 2>/dev/null)
     ok "§V.50 no live missing-CNI-plugin sandbox failures"
     [ -n "$hist" ] && note "§V.50 resolved earlier this hour: $hist (events not yet expired)"
   fi
+
+  # §V.51 — the delayed half of §B.7. Every sandbox attempt that failed at the istio-cni
+  # step had ALREADY been given an IP by flannel, and that reservation was never released.
+  # Eighteen minutes of retries leaked 219 of control-01's 254 addresses; the node then
+  # could not create ANY pod for fourteen hours, and nothing here noticed, because a stuck
+  # CronJob pod is invisible to an Argo-app-level check.
+  # Same live-vs-history discipline as above: the events outlive the fix by an hour, and a
+  # gate that keeps failing on a resolved incident is one people learn to override.
+  local xreport
+  # shellcheck disable=SC2086
+  xreport=$(kubectl get events -A -o json 2>/dev/null | python3 -c '
+import sys, json
+stuck = set(sys.argv[1:])
+try: items = json.load(sys.stdin)["items"]
+except Exception: items = []
+live, hist = set(), set()
+for e in items:
+    if "no IP addresses available" not in e.get("message", ""): continue
+    host = str(e.get("source", {}).get("host") or e.get("reportingInstance") or "?")
+    o = e.get("involvedObject", {})
+    key = str(o.get("namespace", "")) + "/" + str(o.get("name", ""))
+    (live if key in stuck else hist).add(host)
+print("LIVE " + " ".join(sorted(live)))
+print("HIST " + " ".join(sorted(hist)))' $stuck 2>/dev/null)
+  local xlive xhist
+  xlive=$(printf "%s\n" "$xreport" | sed -n 's/^LIVE //p')
+  xhist=$(printf "%s\n" "$xreport" | sed -n 's/^HIST //p')
+  if [ -n "$xlive" ]; then
+    bad "§V.51 pod CIDR EXHAUSTED on: $xlive — leaked host-local reservations (§B.8)"
+    bad "§V.51 → compare /var/lib/cni/networks/cbr0 against live sandboxes and prune the orphans"
+  else
+    ok "§V.51 no live pod-CIDR exhaustion"
+    [ -n "$xhist" ] && note "§V.51 resolved earlier this hour on: $xhist (events not yet expired)"
+  fi
 }
 
 check_ingress() {                               # §V.22 / §T.29
@@ -167,12 +201,36 @@ import sys, json
 d = json.load(sys.stdin)["items"]
 print(" ".join(sorted(a["metadata"]["name"] for a in d
       if a["status"]["sync"]["status"] != "Synced" or a["status"]["health"]["status"] != "Healthy")))')
-  local unexpected="" tolerated=""
+  local unexpected="" tolerated="" cascade=""
   for a in $drift; do
     case " $KNOWN_DRIFT_DIAGNOSED " in *" $a "*) continue;; esac
     case " $KNOWN_DRIFT_TOLERATED " in *" $a "*) tolerated="$tolerated $a"; continue;; esac
+    # master-app is an app-of-apps: Argo propagates each child Application's sync status
+    # into the parent's resource tree, so the parent reads OutOfSync whenever ANY child
+    # does. That is a cascade of an already-diagnosed cause, not independent drift.
+    # Tolerate it ONLY when every resource it flags is itself allow-listed — otherwise the
+    # parent would become a blanket excuse and hide real drift underneath itself.
+    if [ "$a" = "master-app" ]; then
+      local children
+      children=$(kubectl get app -n "$ARGO_NS" master-app -o json 2>/dev/null | python3 -c '
+import sys, json
+try: rs = json.load(sys.stdin)["status"].get("resources", [])
+except Exception: rs = []
+print(" ".join(sorted(r.get("name","") for r in rs if r.get("status") != "Synced")))')
+      local leftover=""
+      for c in $children; do
+        case " $KNOWN_DRIFT_DIAGNOSED $KNOWN_DRIFT_TOLERATED " in *" $c "*) continue;; esac
+        leftover="$leftover $c"
+      done
+      if [ -z "$leftover" ] && [ -n "$children" ]; then
+        cascade="$children"; continue
+      fi
+      unexpected="$unexpected master-app($( [ -n "$leftover" ] && echo "$leftover" || echo "no children flagged" ))"
+      continue
+    fi
     unexpected="$unexpected $a"
   done
+  [ -n "$cascade" ] && note "§V.47 master-app OutOfSync is a CASCADE of allow-listed children:$cascade — not independent drift"
   if [ -z "$unexpected" ]; then ok "§V.5/§V.47 no unexplained drift (diagnosed: ${KNOWN_DRIFT_DIAGNOSED})"
   else bad "§V.5/§V.47 UNEXPLAINED drift:$unexpected"; fi
   [ -n "$tolerated" ] && note "§T.45 tolerated but UNDIAGNOSED:$tolerated — workloads Running; diagnose before this becomes permanent"
