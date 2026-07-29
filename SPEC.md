@@ -1,6 +1,8 @@
 # SPEC
 
 ## §G GOAL
+**REACHED 2026-07-29** — ∀ 3 node @ `v1.35.6+k3s1`, ⊥ data loss. walk 1.33.5 → 1.34.9 → 1.35.6 complete (§T.17, §T.18, §T.19). remaining ∈ this spec = follow-ons + §T.42/§T.45 drift + §T.46/§T.47.
+
 k3s cluster 1.33.5 → **`v1.35.6+k3s1`** (§R.18: 4 components cap @ 1.35, ingress-nginx TERMINAL ∴ 1.36 ⊥ reachable). 1.36 = FOLLOW-ON, gated on replacing ingress-nginx (§T.43). platform components @ matrix ceiling per minor, INTERLEAVED w/ walk where matrix demands (§V.13); ESO DEFERRED past the walk (§V.48); ⊥ data loss.
 
 ## §C CONSTRAINTS
@@ -141,7 +143,7 @@ T15|~|`k3s-worker-02` labelled `k3s-upgrade=true` for §T.16. `k3s-worker-01` de
 T16|x|DONE 2026-07-28 dry run on `k3s-worker-02`: job created t+0s → cordon t+15s → Complete + uncordon t+31s. ⊥ NotReady ∀ moment. 21 workloads survived, other nodes untouched. NB job logged "Binary already been replaced" & exit 0 ∴ k3s never restarted — mechanism proven, real hop NotReady window still UNMEASURED|V4,V17
 T17|x|DONE 2026-07-28 20:12-20:45Z. cold backup 49MB verified × 3 copies (node+laptop+S3) → `INSTALL_K3S_VERSION=v1.34.9+k3s1 INSTALL_K3S_EXEC="server --write-kubeconfig-mode=644"`. installer REGENERATES the unit ∴ args ! be re-supplied; `disable: traefik` ∈ `/etc/rancher/k3s/config.yaml` ∴ survives. API back <1min, unit diff IDENTICAL. HIT §B.7 (istio-cni orphaned) ∴ §V.9 = 27m27s > 15m bound. data path INTACT: CNPG primary pod ⊥ restart (58min uptime across hop), Vault unsealed, ESO 40/43. post-hop drift = the known 4, ⊥ new|V1,V2,V3,V6,V14,V17,V27,V28,V31,V50
 T18|x|DONE. `k3s-worker-02` 2026-07-28 21:02-21:05Z (§V.50 confirmed absent-binary BEFORE damage, restart fixed it in ~10s vs §B.7's 27min = the value of the diagnosis). `k3s-worker-01` 2026-07-29 11:29-11:31Z, 60s to hop. §V.50 applied AUTOMATICALLY the instant the node reported the new version ∴ ⊥ gap. RESULT: CNPG primary pod `postgresql-cluster-2` age 15h ACROSS the hop = ⊥ restart AT ALL; `vault-0` restart was from the pre-hop cold backup, ⊥ the hop. ∴ predicted Vault+CNPG outage (§V.37) DID NOT MATERIALISE — pods survive a k3s agent restart (containerd shims outlive it), confirmed on ∀ 3 node. ALL 3 NODES @ `v1.34.9+k3s1`. NB label left ON worker-01 ∴ §T.19 ? hop both workers via SUC. HISTORIC ↓|V4,V5,V6,V17,V31,V37,V42,V50
-T19|.|gate §V.1,2,5,6,10,11,14,27,28 → hop → `v1.35.6+k3s1` (control-plane manual, workers SUC) + §V.49 istio-cni/ztunnel check + §V.50 istio-cni restart ∀ hopped node|V3,V5,V6,V17,V27,V28,V31,V50
+T19|x|DONE 2026-07-29 11:49-12:04Z. §G TARGET REACHED — ∀ 3 node @ `v1.35.6+k3s1`. control-plane manual 11:49-11:52, workers SUC sequential 11:56-11:59. §V.50 applied WITHIN ~10-15s ∀ node ∴ §B.7 + §B.8 PREVENTED, ⊥ recovered-from: IPAM steady 34/36/43 (⊥ leak), ⊥ pod wedged, repo-server 0 restart, coredns ⊥ even recreated. CONTRAST §T.17: 18min orphan → 219/254 IP leaked → DNS down → 27min. §V.9 = 15m9s BUT that = elapsed for the WHOLE 3-node sequence incl. settle polling, ⊥ an outage — real disruption = the API restart alone (~1min), ⊥ workload impact. §V.11 = 40/43 UNCHANGED @ 1.35 ∴ §V.48's ESO deferral still holds|V3,V5,V6,V17,V27,V28,V31,V50,V51
 T20|x|RESOLVED 2026-07-28 (§R.18): 1.36 blocked by 4 components; `ingress-nginx` TERMINAL ∴ permanent. → target = `v1.35.6+k3s1`, §G retargeted|V2,V46
 T21|.|FOLLOW-ON (⊥ this spec's target): hop → `v1.36.2+k3s1`. gated §T.43 + CNPG/ESO/kyverno shipping 1.36 support|V2,V3,V46
 T22|.|confirm local kubectl v1.36.2 now in-skew|-
