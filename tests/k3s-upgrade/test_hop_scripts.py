@@ -125,6 +125,35 @@ def test_hop_verify_cni_check_does_not_exec_into_the_pod():
     )
 
 
+def test_hop_verify_detects_leaked_ipam_reservations():
+    """§V.51 / §B.8: every sandbox that failed during §B.7 had already been given an IP by
+    flannel, and that reservation was never released. 219 of control-01's 254 addresses
+    leaked and the node could not create a pod for fourteen hours — silently, because the
+    only visible casualty was a CronJob pod that belongs to no Argo app."""
+    t = HOP_VERIFY.read_text()
+    assert "no IP addresses available" in t, "gate must detect pod-CIDR exhaustion"
+    assert "V.51" in t
+
+
+def test_hop_verify_ipam_check_distinguishes_live_from_stale():
+    """Same discipline as the §V.50 check — events outlive the fix by an hour."""
+    t = HOP_VERIFY.read_text()
+    seg = t.split("Same live-vs-history discipline")[1]
+    assert "LIVE " in seg and "HIST " in seg, "exhaustion check must split live from history"
+
+
+def test_hop_verify_master_app_cascade_is_not_a_blanket_excuse():
+    """master-app is an app-of-apps: Argo propagates each child's sync status into the
+    parent, so the parent reads OutOfSync whenever any child does. Tolerating that
+    unconditionally would let the parent hide real drift underneath itself — it is only
+    excused when every resource it flags is itself allow-listed."""
+    t = HOP_VERIFY.read_text()
+    assert "cascade" in t.lower(), "master-app cascade must be handled explicitly"
+    assert "leftover" in t, (
+        "the cascade must be excused only when no non-allow-listed child is flagged"
+    )
+
+
 # --- §T.28 / §V.35 ------------------------------------------------------------------
 
 def test_kms_key_has_prevent_destroy():
