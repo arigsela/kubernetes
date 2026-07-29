@@ -25,7 +25,7 @@ The following are deliberately out of scope. Each is a credible v1.1 follow-up.
 - **Vault/ESO inside the smoke-test vcluster.** No secret injection.
 - **Backstage catalog entries for smoke tests.** Smoke tests don't get a `catalog-info.yaml`.
 - **Status-reflected-in-Backstage UI.** The XR `status.phase` is set, but Backstage doesn't surface it without further plugin work.
-- **Public access via Cloudflare Tunnel.** LAN-only via `/etc/hosts` (or LAN DNS) pattern, same as `*.vcluster.arigsela.com`.
+- **Public access.** LAN-only via `/etc/hosts` (or LAN DNS) pattern, same as `*.vcluster.arigsela.com`.
 
 ## Design decisions (locked during brainstorming)
 

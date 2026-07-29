@@ -8,7 +8,7 @@ kind: runbook
 namespace: ingress-nginx
 last_reviewed: 2026-07-10
 status: current
-tags: [ingress, daemonset, cloudflare]
+tags: [ingress, daemonset]
 sources:
   - base-apps/nginx-ingress.yaml
   - base-apps/nginx-ingress/nginx-ingress-controller.yaml
@@ -27,13 +27,13 @@ sources:
 - **Fix:** if no nodes carry the `infrastructure` workload label, that's a cluster/node-labeling issue outside this app's manifests, not something to fix by editing `nginx-ingress-controller.yaml`'s scheduling constraints without confirming intent first — raise a PR only if the `nodeSelector`/toleration itself needs to change.
 
 ### Symptom: apps behind the ingress see wrong client IPs, or IP-based rate limiting/allow-lists misbehave
-- **Check:** `kubectl -n ingress-nginx get configmap ingress-nginx-controller -o yaml` and confirm the `trusted-proxies` entries still match Cloudflare's current published IP ranges (the values in `nginx-ingress-controller.yaml` are a point-in-time list of Cloudflare CIDRs plus the cluster's private ranges). Traffic arrives via a Cloudflare tunnel, so `use-forwarded-headers`/`real-ip-header: X-Forwarded-For` only produce correct client IPs when `trusted-proxies` covers Cloudflare's current edge ranges.
-- **Fix:** recommend a PR updating the `trusted-proxies` value in `base-apps/nginx-ingress/nginx-ingress-controller.yaml` to Cloudflare's current IP list (https://www.cloudflare.com/ips/); do not edit the live ConfigMap, since Argo CD/helm-controller will revert it.
+- **Check:** the controller does **no** `X-Forwarded-For` processing by design. It is `hostNetwork`, so the client address is the socket source address — `kubectl -n ingress-nginx logs -l app.kubernetes.io/component=controller | tail` should show real public IPs in the first field. If apps see `10.42.x.x` or a single repeated address instead, something is proxying that should not be, or the header keys were reintroduced.
+- **Fix:** do not "fix" this by enabling `use-forwarded-headers`/`real-ip-header`. Those were removed because the old `trusted-proxies` list included `10.0.0.0/8`, which contains the pod network, letting any pod spoof its source IP past the `whitelist-source-range` allow-lists. If a real reverse proxy is introduced, add the keys back with `trusted-proxies` scoped to that proxy's addresses only, via a PR to `nginx-ingress-controller.yaml` — never edit the live ConfigMap, since Argo CD/helm-controller reverts it.
 
 ## How-to
 
 ### Route a new app through this ingress
 Set `ingressClassName: nginx` on the app's `Ingress` (see `base-apps/vault/ingress.yaml` or `base-apps/argo-cd/ingress.yaml` for the pattern). For TLS, pair it with cert-manager's `letsencrypt-prod`/`letsencrypt-staging` `ClusterIssuer` (HTTP-01, routes through this same controller) as documented in `base-apps/cert-manager/docs.md`.
 
-### Change controller config (timeouts, TLS, Cloudflare ranges, scheduling)
+### Change controller config (timeouts, TLS, scheduling)
 Edit `valuesContent` in `base-apps/nginx-ingress/nginx-ingress-controller.yaml` and open a PR; Argo CD syncs the `HelmChart` object, and k3s's helm-controller re-runs the Helm upgrade job in `kube-system` against the release in `ingress-nginx`.

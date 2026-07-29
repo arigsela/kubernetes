@@ -8,7 +8,7 @@ metadata:
     backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-label-selector: 'app.kubernetes.io/instance=ingress-nginx'
     backstage.io/kubernetes-namespace: ingress-nginx
-  tags: [ingress, daemonset, cloudflare]
+  tags: [ingress, daemonset]
 spec:
   type: infrastructure
   lifecycle: production

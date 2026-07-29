@@ -1237,7 +1237,7 @@ curl -fsS -X POST https://github-webhook.<base-domain>/webhook \
 # Expected: HTTP 401 (signature missing) — proves the endpoint is reachable.
 ```
 
-If the URL isn't reachable from the public internet (homelab NAT issues), set up a Cloudflare Tunnel or smee.io proxy now. The GitHub App's webhook URL must be publicly reachable.
+If the URL isn't reachable from the public internet (homelab NAT issues), set up an smee.io proxy now. The GitHub App's webhook URL must be publicly reachable.
 
 ---
 

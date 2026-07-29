@@ -35,7 +35,7 @@ vcluster runs as a Helm chart in its own namespace per virtual cluster (k3s cont
 ## Risks & Open Questions (must resolve during implementation)
 
 1. **ArgoCD multi-source support** — verified in Phase 0 (Task 0.3). If < 2.6, fall back to two-Application pattern (see Task 2.1 fallback).
-2. **LAN DNS for `*.vcluster.arigsela.com`** — must resolve to a node IP, not Cloudflare Tunnel. Verified in Phase 0 (Task 0.4).
+2. **LAN DNS for `*.vcluster.arigsela.com`** — must resolve to a node IP. Verified in Phase 0 (Task 0.4).
 3. **nginx-ingress restart blip** — Phase 1 includes a ~30s ingress unavailability when the controller restarts.
 4. **vcluster cert SAN propagation** — `controlPlane.proxy.extraSANs` must end up in the vcluster's internal cert. Verified in Task 2.5; rollout restart is the documented fix if it doesn't propagate on first deploy.
 
