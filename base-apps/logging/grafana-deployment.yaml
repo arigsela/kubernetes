@@ -122,8 +122,14 @@ spec:
         # Replace both with allowed_organizations once a GitHub org exists (§T.61).
         - name: GF_AUTH_GITHUB_ENABLED
           value: "true"
+        # TEMPORARILY true to bootstrap the account link, then back to false.
+        # Grafana 11 links an OAuth identity to a user only by auth_module+auth_id,
+        # and that link is created BY signup. oauth_allow_insecure_email_lookup is
+        # false by default, so pre-creating a user by email cannot link either --
+        # which makes allow_sign_up=false unreachable from a cold start. See
+        # SPEC.md §B.10. role_attribute_strict below remains the active gate.
         - name: GF_AUTH_GITHUB_ALLOW_SIGN_UP
-          value: "false"
+          value: "true"
         - name: GF_AUTH_GITHUB_SCOPES
           value: "user:email,read:org"
         - name: GF_AUTH_GITHUB_AUTH_URL
