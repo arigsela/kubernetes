@@ -11,7 +11,13 @@ spec:
   project: default
   source:
     repoURL: https://github.com/kubernetes-sigs/gateway-api
-    targetRevision: v1.2.0
+    # Istio 1.30 REQUIRES Gateway API v1.5.x. Without it, TLSRoute and
+    # ReferenceGrant become INVISIBLE to istiod - silently. V63 makes
+    # ReferenceGrant load-bearing for the Gateway's cross-namespace
+    # certificateRefs in T55, so this must land before T10 reaches 1.30.
+    # v1.5.1, not v1.6.1: v1.5.x is what Istio 1.30 requires and is tested
+    # against. v1.6 additionally GAs TCPRoute/UDPRoute, which nothing needs.
+    targetRevision: v1.5.1
     path: config/crd/standard
   destination:
     server: https://kubernetes.default.svc
