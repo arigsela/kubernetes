@@ -142,15 +142,13 @@ spec:
           value: "https://github.com/login/oauth/access_token"
         - name: GF_AUTH_GITHUB_API_URL
           value: "https://api.github.com/user"
-        # TEMPORARY -- SPEC.md §T.62. Deliberately matches no one, to prove that
-        # role_attribute_strict=true actually DENIES a login resolving to no role.
-        # Reverted to "login == 'arigsela' && 'Admin' || ''" immediately after.
-        #
-        # arigsela is already linked, so signup is not consulted and
-        # allow_sign_up=false is bypassed -- this isolates gate 1.
-        # Expected: arigsela is REFUSED. Local admin login remains available.
+        # Gate 1 PROVEN 2026-07-30 (SPEC.md §T.62). With this expression inverted
+        # to a login that cannot match, a GitHub login was refused with
+        # [oauth.role_attribute_strict_violation] and zero Successful Login
+        # events -- role_attribute_strict=true genuinely denies a login that
+        # resolves to no role. Do not weaken either of these two lines.
         - name: GF_AUTH_GITHUB_ROLE_ATTRIBUTE_PATH
-          value: "login == 'zzz-no-such-github-login' && 'Admin' || ''"
+          value: "login == 'arigsela' && 'Admin' || ''"
         - name: GF_AUTH_GITHUB_ROLE_ATTRIBUTE_STRICT
           value: "true"
         - name: GF_AUTH_GITHUB_CLIENT_ID
