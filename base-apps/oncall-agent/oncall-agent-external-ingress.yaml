@@ -12,7 +12,7 @@ metadata:
     # absence of SLACK_APP_TOKEN -- this is not Socket Mode, so inbound
     # reachability is required, not optional.
     arigsela.com/public-by-design: "slack-events-api"
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: letsencrypt-route53
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
