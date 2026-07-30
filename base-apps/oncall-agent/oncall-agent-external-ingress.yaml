@@ -6,6 +6,12 @@ metadata:
   name: oncall-agent-api
   namespace: oncall-agent
   annotations:
+    # Slack posts Events API / Interactivity callbacks here from Slack-owned
+    # addresses, which are not a stable allow-listable set. Authenticated at
+    # the app layer: SLACK_SIGNING_SECRET (HMAC) plus API_KEYS. Note the
+    # absence of SLACK_APP_TOKEN -- this is not Socket Mode, so inbound
+    # reachability is required, not optional.
+    arigsela.com/public-by-design: "slack-events-api"
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"

@@ -4,6 +4,9 @@ metadata:
   name: n8n-webhook
   namespace: n8n
   annotations:
+    # n8n receives webhooks from arbitrary external services, so it cannot be
+    # IP-restricted. Each workflow authenticates its own webhook.
+    arigsela.com/public-by-design: "webhook-receiver"
     # TLS/SSL Configuration
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
