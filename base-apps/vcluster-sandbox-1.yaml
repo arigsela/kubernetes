@@ -46,9 +46,6 @@ spec:
             fromHost:
               storageClasses:
                 enabled: true
-    - repoURL: https://github.com/arigsela/kubernetes
-      targetRevision: main
-      path: base-apps/vcluster-sandbox-1
   syncPolicy:
     automated:
       prune: true
