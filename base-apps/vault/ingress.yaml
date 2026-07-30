@@ -4,6 +4,10 @@ metadata:
   name: vault-internal
   namespace: vault
   annotations:
+    # vault.local / vault.10.0.1.110 are LAN-only names with no public DNS and no
+    # TLS. Not reachable from outside the network, so an IP allow-list would
+    # be theatre rather than control.
+    arigsela.com/public-by-design: "internal-hostname-not-routable"
     nginx.ingress.kubernetes.io/rewrite-target: /
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:

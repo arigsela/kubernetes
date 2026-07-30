@@ -4,6 +4,9 @@ metadata:
   name: chores-tracker-frontend-nginx
   namespace: chores-tracker-frontend
   annotations:
+    # Family-facing application, intended to be reachable without a VPN or an
+    # IP allow-list. Authentication is the app's own JWT login.
+    arigsela.com/public-by-design: "public-app"
     # TLS/SSL Configuration
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
