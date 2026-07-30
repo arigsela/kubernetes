@@ -9,7 +9,7 @@ metadata:
     # two fail-closed gates, both verified by observation 2026-07-30:
     # role_attribute_strict=true and allow_sign_up=false. SPEC.md V69 / T62.
     arigsela.com/public-by-design: "github-oauth"
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: letsencrypt-route53
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"

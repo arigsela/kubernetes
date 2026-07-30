@@ -8,7 +8,7 @@ metadata:
     # IP allow-list. Authentication is the app's own JWT login.
     arigsela.com/public-by-design: "public-app"
     # TLS/SSL Configuration
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/cluster-issuer: letsencrypt-route53
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 
