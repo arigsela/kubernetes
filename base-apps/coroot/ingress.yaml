@@ -5,7 +5,10 @@ metadata:
   namespace: coroot
   annotations:
     # TLS/SSL Configuration
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # DNS-01 via Route 53, not HTTP-01 via nginx. HTTP-01 solves through
+    # ingress.class: nginx, so it breaks the moment ingress-nginx is retired --
+    # and it breaks silently, ~30 days later at renewal. SPEC.md §V.52 / §T.49.
+    cert-manager.io/cluster-issuer: letsencrypt-route53
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
