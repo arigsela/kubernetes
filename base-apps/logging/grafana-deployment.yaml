@@ -142,8 +142,15 @@ spec:
           value: "https://github.com/login/oauth/access_token"
         - name: GF_AUTH_GITHUB_API_URL
           value: "https://api.github.com/user"
+        # TEMPORARY -- SPEC.md §T.62. Deliberately matches no one, to prove that
+        # role_attribute_strict=true actually DENIES a login resolving to no role.
+        # Reverted to "login == 'arigsela' && 'Admin' || ''" immediately after.
+        #
+        # arigsela is already linked, so signup is not consulted and
+        # allow_sign_up=false is bypassed -- this isolates gate 1.
+        # Expected: arigsela is REFUSED. Local admin login remains available.
         - name: GF_AUTH_GITHUB_ROLE_ATTRIBUTE_PATH
-          value: "login == 'arigsela' && 'Admin' || ''"
+          value: "login == 'zzz-no-such-github-login' && 'Admin' || ''"
         - name: GF_AUTH_GITHUB_ROLE_ATTRIBUTE_STRICT
           value: "true"
         - name: GF_AUTH_GITHUB_CLIENT_ID
