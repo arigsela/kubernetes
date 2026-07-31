@@ -1,8 +1,6 @@
 # Every plain-HTTP request redirects to HTTPS, replacing the
 # force-ssl-redirect annotation carried by 21 Ingress manifests (R30).
-# port is set EXPLICITLY: without it the filter preserved the request port,
-# observed redirecting to https://coroot.arigsela.com:18080/ during staging.
-# Attaches only to the HTTP listener; HTTPS traffic is untouched.
+# Attaches only to the :8080 listener; HTTPS traffic is untouched.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -17,5 +15,4 @@ spec:
         - type: RequestRedirect
           requestRedirect:
             scheme: https
-            port: 443
             statusCode: 301

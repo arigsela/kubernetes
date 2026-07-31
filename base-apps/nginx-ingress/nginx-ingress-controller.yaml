@@ -1,0 +1,53 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: ingress-nginx
+  namespace: kube-system
+spec:
+  chart: ingress-nginx
+  repo: https://kubernetes.github.io/ingress-nginx
+  targetNamespace: ingress-nginx
+  createNamespace: true
+  version: v4.15.1
+  valuesContent: |-
+    controller:
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+      kind: DaemonSet
+      hostNetwork: true
+      service:
+        type: ClusterIP
+        ports:
+          http: 80
+          https: 443
+      config:
+        # Timeout configurations equivalent to our ServersTransport fixes
+        proxy-read-timeout: "30"      # responseHeaderTimeout equivalent
+        proxy-connect-timeout: "30"   # dialTimeout equivalent
+        proxy-send-timeout: "30"      # writeTimeout equivalent
+        keep-alive-requests: "100"    # maxIdleConnsPerHost equivalent
+        upstream-keepalive-connections: "100"
+        upstream-keepalive-requests: "100"
+        upstream-keepalive-timeout: "60"
+        # SSL and connection optimizations
+        ssl-protocols: "TLSv1.2 TLSv1.3"
+        use-http2: "true"
+        # NO X-Forwarded-For handling on purpose.
+        #
+        # Nothing proxies this cluster any more — the controller is hostNetwork and binds
+        # :80/:443 directly, so the socket's source address IS the client address. Access
+        # logs confirm it: real public IPs arrive, not an edge network's.
+        #
+        # The previous config set use-forwarded-headers + real-ip-header: X-Forwarded-For
+        # with a trusted-proxies list. That list included 10.0.0.0/8, and the pod network
+        # (10.42.0.0/16) sits inside it — so any pod able to reach the ingress could send
+        # its own X-Forwarded-For and have nginx believe it, defeating the
+        # whitelist-source-range allow-lists that guard most of the Ingresses here.
+        #
+        # Do not reintroduce these keys unless a real proxy is put in front, and if one is,
+        # set trusted-proxies to that proxy's addresses ONLY — never a broad private range.
+    tcp: {}
+    udp: {}
