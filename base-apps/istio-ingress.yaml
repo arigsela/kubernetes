@@ -26,6 +26,27 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-ingress
+  # V47: OutOfSync is only acceptable with a DOCUMENTED benign cause plus an
+  # ignoreDifferences covering it. The cause here is API-server defaulting on
+  # Gateway API types - group/kind/weight fields the schema fills in when
+  # omitted. They are not settable-and-ignored; they simply have defaults.
+  #
+  # Scoped deliberately narrowly: only the defaulted identity fields. Real
+  # changes to hostnames, paths, backends, ports or certificateRefs still show
+  # as drift, which is the point.
+  ignoreDifferences:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      jqPathExpressions:
+        - '.spec.listeners[]?.tls.certificateRefs[]?.group'
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      jqPathExpressions:
+        - '.spec.parentRefs[]?.group'
+        - '.spec.parentRefs[]?.kind'
+        - '.spec.rules[]?.backendRefs[]?.group'
+        - '.spec.rules[]?.backendRefs[]?.kind'
+        - '.spec.rules[]?.backendRefs[]?.weight'
   syncPolicy:
     automated:
       prune: true

@@ -11,7 +11,13 @@ spec:
     - name: main
       sectionName: http
   rules:
-    - filters:
+      # matches is stated explicitly even though "/" is the default: omitting it
+      # lets the API server default it, which then reads as drift against git.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      filters:
         - type: RequestRedirect
           requestRedirect:
             scheme: https
