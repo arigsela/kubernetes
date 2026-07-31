@@ -26,6 +26,10 @@ spec:
     - name: http
       protocol: HTTP
       port: 18080
+      # Scoped to *.arigsela.com so the internal vault hostnames can have their
+      # own HTTP listeners. Those are plaintext by design and must NOT be caught
+      # by the https-redirect route attached to this listener.
+      hostname: "*.arigsela.com"
       allowedRoutes:
         namespaces:
           from: All
@@ -221,6 +225,36 @@ spec:
           - kind: Secret
             name: n8n-tls
             namespace: n8n
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-kagent-mcp
+      protocol: HTTPS
+      port: 18443
+      hostname: kagent-mcp.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: kagent-mcp-tls
+            namespace: kagent
+      allowedRoutes:
+        namespaces:
+          from: All
+    # vault.local / vault.10.0.1.110 are LAN-only names with no public DNS and no
+    # TLS - the Vault listener itself runs plaintext (tls_disable: 1). Separate
+    # HTTP listeners so the https-redirect route does not apply to them.
+    - name: http-vault-local
+      protocol: HTTP
+      port: 18080
+      hostname: vault.local
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: http-vault-ip
+      protocol: HTTP
+      port: 18080
+      hostname: vault.10.0.1.110
       allowedRoutes:
         namespaces:
           from: All
