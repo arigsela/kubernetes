@@ -1,6 +1,7 @@
-# Staging ports are 18080/18443, NOT 8080/8443: ingress-nginx already binds
-# hostPort 8443 on k3s-control-01 alongside 80 and 443, so the obvious choice
-# collided with the very thing this replaces. Verified free before picking.
+# Production ports. ingress-nginx has been removed, so :80/:443 on
+# k3s-control-01 are free and this Gateway is now the only thing serving them.
+# Binding them as uid 1337 under hostNetwork needs NET_BIND_SERVICE - see
+# gateway-options.yaml.
 #
 # One HTTPS listener per hostname, each with its own certificateRef, because
 # these are per-host certificates rather than a wildcard.
@@ -25,13 +26,13 @@ spec:
     # Catches every host on plain HTTP; the redirect HTTPRoute attaches here.
     - name: http
       protocol: HTTP
-      port: 18080
+      port: 80
       allowedRoutes:
         namespaces:
           from: All
     - name: https-coroot
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: coroot.arigsela.com
       tls:
         mode: Terminate
