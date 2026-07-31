@@ -120,6 +120,27 @@ spec:
         #   ALLOW_SIGN_UP=false         -> only users already in grafana.db may
         #     log in, independent of the JMESPath being correct.
         # Replace both with allowed_organizations once a GitHub org exists (§T.61).
+        # GitHub OAuth is now the ONLY way in. Both of these are required:
+        # disable_login_form alone merely HIDES the UI form, while auth.basic
+        # keeps /api/* accepting username and password - so the credential
+        # surface would remain fully reachable from the internet and the change
+        # would look complete while changing nothing.
+        #
+        # Held back until T62 proved role_attribute_strict actually denies:
+        # inverting role_attribute_path produced a refused login with
+        # [oauth.role_attribute_strict_violation] and zero Successful Login
+        # events. Removing break-glass before that was verified would have risked
+        # locking everyone out of an internet-facing host.
+        #
+        # Recovery if OAuth breaks: revert this commit, Argo re-syncs in ~2min.
+        # kubectl works throughout regardless.
+        #
+        # NB this ends admin API access by username/password. Anything scripted
+        # against Grafana's API needs a service account token instead.
+        - name: GF_AUTH_DISABLE_LOGIN_FORM
+          value: "true"
+        - name: GF_AUTH_BASIC_ENABLED
+          value: "false"
         - name: GF_AUTH_GITHUB_ENABLED
           value: "true"
         # Bootstrap complete -- user arigsela is linked (isExternal=true,
