@@ -1,0 +1,48 @@
+# Access control for the ingress Gateway. THIS IS THE SECURITY BOUNDARY.
+#
+# Istio ALLOW policies are deny-by-default for the workloads they select: any
+# request not matching a rule below is refused. So this single object is both the
+# default-deny and the allow-list, and every host added to the Gateway is denied
+# until it is named here deliberately.
+#
+# Deliberately introduced BEFORE the remaining 18 hosts rather than after. The
+# Gateway currently has no protection but is only reachable on :18443, which the
+# router does not forward. At cutover it moves to :443, which IS forwarded - so
+# the allow-lists have to exist before that moment, not be retrofitted at it.
+#
+# 10.0.0.0/8 is DELIBERATELY NOT CARRIED OVER from the nginx allow-lists (V66).
+# It contains the pod network 10.42.0.0/16 and the node network, so under any
+# SNAT it would make arbitrary internet traffic look allow-listed - failing OPEN
+# and silently (B9). It also turns out to be unnecessary: the router hairpin-NATs
+# LAN traffic to the public address, verified in nginx's own access log, where
+# requests from LAN host 10.0.1.182 arrive as 73.7.190.154. Nothing is lost.
+#
+# ipBlocks, not remoteIpBlocks: the Gateway runs hostNetwork so the packet source
+# IS the client (R35). remoteIpBlocks would need XFF trust, which is V56's hazard
+# and pointless with no proxy in front.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: gateway-allow
+  namespace: istio-ingress
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: main
+  action: ALLOW
+  rules:
+    # coroot - restricted, mirroring its nginx whitelist-source-range minus the
+    # 10.0.0.0/8 entry.
+    - to:
+        - operation:
+            hosts:
+              - coroot.arigsela.com
+              - coroot.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
