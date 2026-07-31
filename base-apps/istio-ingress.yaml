@@ -32,4 +32,13 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true
+      # ServerSideApply deliberately NOT set. With SSA, Argo compares the full
+      # live object, so every field the API server defaults on Gateway API types
+      # shows as drift and the app sits permanently OutOfSync:
+      #   HTTPRoute  parentRefs[].group/kind, rules[].matches,
+      #              backendRefs[].group/kind/weight
+      #   Gateway    listeners[].tls.certificateRefs[].group
+      # With client-side apply Argo compares against last-applied-configuration
+      # and never sees them. The correlation was exact - every route-hosting app
+      # without SSA was Synced, both apps with it were OutOfSync. See V47: the
+      # remedy for defaulted-field drift is not blanket SSA (R19).
