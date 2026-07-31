@@ -1,0 +1,40 @@
+# One HTTPS listener per hostname, each with its own certificateRef, because
+# these are per-host certificates rather than a wildcard.
+#
+# The certificates stay in their app namespaces and are reached by
+# ReferenceGrant (V63). The alternative - reissuing all 20 into this namespace -
+# would mean another ~20 ACME issuances in the same week T49 already spent ~20,
+# against a 50/week limit per registered domain.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: main
+  namespace: istio-ingress
+spec:
+  gatewayClassName: istio
+  infrastructure:
+    parametersRef:
+      group: ""
+      kind: ConfigMap
+      name: gateway-options
+  listeners:
+    # Catches every host on plain HTTP; the redirect HTTPRoute attaches here.
+    - name: http
+      protocol: HTTP
+      port: 8080
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-coroot
+      protocol: HTTPS
+      port: 8443
+      hostname: coroot.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: coroot-tls
+            namespace: coroot
+      allowedRoutes:
+        namespaces:
+          from: All

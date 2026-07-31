@@ -1,0 +1,29 @@
+# Customisation for the Deployment/Service Istio generates for the Gateway.
+# Referenced from the Gateway via spec.infrastructure.parametersRef.
+#
+# hostNetwork is the point of this file. ingress-nginx gets the real client IP
+# for free because it runs hostNetwork, and V61 makes that a precondition of
+# every AuthorizationPolicy ipBlocks rule in T51: behind a SNAT'ing Service every
+# client would appear as the node address, and because 10.0.0.0/8 is already in
+# all 15 allow-lists (B9) the result would be silently OPEN rather than a loud
+# lockout. hostNetwork avoids the question entirely.
+#
+# Pinned to k3s-control-01 for the same reason nginx is: public DNS resolves to
+# this node, so the Gateway has to answer there.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-options
+  namespace: istio-ingress
+data:
+  deployment: |
+    spec:
+      template:
+        spec:
+          hostNetwork: true
+          dnsPolicy: ClusterFirstWithHostNet
+          nodeSelector:
+            node.kubernetes.io/workload: infrastructure
+          tolerations:
+            - key: node-role.kubernetes.io/control-plane
+              effect: NoSchedule
