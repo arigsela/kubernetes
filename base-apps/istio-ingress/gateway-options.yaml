@@ -38,6 +38,21 @@ data:
           # need NET_BIND_SERVICE instead - see SPEC.md T53.
           securityContext:
             sysctls: []
+          containers:
+            # NET_BIND_SERVICE is what lets Envoy bind :80/:443 as uid 1337.
+            # Normally Istio achieves this with the
+            # net.ipv4.ip_unprivileged_port_start sysctl, but Kubernetes forbids
+            # that sysctl under hostNetwork - so the capability replaces it.
+            # drop: [ALL] is restated because a strategic merge patch REPLACES
+            # list fields rather than merging them; omitting it would silently
+            # hand this container every capability.
+            - name: istio-proxy
+              securityContext:
+                capabilities:
+                  drop:
+                    - ALL
+                  add:
+                    - NET_BIND_SERVICE
           nodeSelector:
             node.kubernetes.io/workload: infrastructure
           tolerations:

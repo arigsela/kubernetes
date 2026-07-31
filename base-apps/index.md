@@ -41,7 +41,6 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | logging | Observability stack (Alloy collector, Loki logs on S3, Prometheus metrics, Grafana) | logging | [docs.md](logging/docs.md) | [runbook.md](logging/runbook.md) | [catalog-info.yaml](logging/catalog-info.yaml) |
 | loki-aws-infrastructure |  |  |  |  |  |
 | n8n | Workflow automation platform (shared PostgreSQL, Vault, admin UI + public webhooks) | n8n | [docs.md](n8n/docs.md) | [runbook.md](n8n/runbook.md) | [catalog-info.yaml](n8n/catalog-info.yaml) |
-| nginx-ingress | Shared `nginx` IngressClass controller (Rancher HelmChart, hostNetwork DaemonSet, directly internet-facing) | ingress-nginx | [docs.md](nginx-ingress/docs.md) | [runbook.md](nginx-ingress/runbook.md) | [catalog-info.yaml](nginx-ingress/catalog-info.yaml) |
 | ollama | Local LLM/embedding model server (Ollama, CPU-only, PVC-backed) | ollama | [docs.md](ollama/docs.md) | [runbook.md](ollama/runbook.md) | [catalog-info.yaml](ollama/catalog-info.yaml) |
 | oncall-agent | AI on-call/incident-response agent (Anthropic Claude, Slack, GitOps PRs) | oncall-agent | [docs.md](oncall-agent/docs.md) | [runbook.md](oncall-agent/runbook.md) | [catalog-info.yaml](oncall-agent/catalog-info.yaml) |
 | oncall-crewai |  |  |  |  |  |
