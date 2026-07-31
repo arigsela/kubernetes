@@ -1,3 +1,7 @@
+# Staging ports are 18080/18443, NOT 8080/8443: ingress-nginx already binds
+# hostPort 8443 on k3s-control-01 alongside 80 and 443, so the obvious choice
+# collided with the very thing this replaces. Verified free before picking.
+#
 # One HTTPS listener per hostname, each with its own certificateRef, because
 # these are per-host certificates rather than a wildcard.
 #
@@ -21,13 +25,13 @@ spec:
     # Catches every host on plain HTTP; the redirect HTTPRoute attaches here.
     - name: http
       protocol: HTTP
-      port: 8080
+      port: 18080
       allowedRoutes:
         namespaces:
           from: All
     - name: https-coroot
       protocol: HTTPS
-      port: 8443
+      port: 18443
       hostname: coroot.arigsela.com
       tls:
         mode: Terminate

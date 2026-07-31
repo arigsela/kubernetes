@@ -13,6 +13,11 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  # ClusterIP, not the default LoadBalancer. Under hostNetwork the pod binds
+  # the node directly and the Service is not the data path - but a
+  # LoadBalancer makes k3s klipper spawn svclb DaemonSets that squat the same
+  # hostPorts on EVERY node, which both wastes ports and invites collisions.
+  # Istio still needs the Service to exist to resolve the Gateway address.
   name: gateway-options
   namespace: istio-ingress
 data:
@@ -38,3 +43,6 @@ data:
           tolerations:
             - key: node-role.kubernetes.io/control-plane
               effect: NoSchedule
+  service: |
+    spec:
+      type: ClusterIP
