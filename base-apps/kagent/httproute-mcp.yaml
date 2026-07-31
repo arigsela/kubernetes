@@ -1,0 +1,27 @@
+# kagent MCP endpoint (T56).
+#
+# HTTP basic auth is NOT carried over - Istio has no equivalent and T52's options
+# were ext_authz, dex OIDC, or dropping it. Decision 2026-07-31: keep the host,
+# drop the credential, retain the IP allow-list. Weaker than today, but this
+# endpoint backs a live MCP client (~/.claude.json points at
+# https://kagent-mcp.arigsela.com/mcp) so removing the host would have broken it.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kagent-mcp
+  namespace: kagent
+spec:
+  parentRefs:
+    - name: main
+      namespace: istio-ingress
+      sectionName: https-kagent-mcp
+  hostnames:
+    - kagent-mcp.arigsela.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mcp
+      backendRefs:
+        - name: kagent-controller
+          port: 8083

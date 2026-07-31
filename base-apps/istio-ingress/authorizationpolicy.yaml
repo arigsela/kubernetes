@@ -226,3 +226,27 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
+    # kagent-mcp - restricted. Basic auth dropped (T52); the allow-list is now the
+      # only control, which is why it must be right.
+    - to:
+        - operation:
+            hosts:
+              - kagent-mcp.arigsela.com
+              - kagent-mcp.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
+    # vault.local / vault.10.0.1.110 - LAN-only names, no public DNS, no TLS.
+      # Not reachable from outside the network, so an IP rule here would be
+      # theatre rather than control.
+    - to:
+        - operation:
+            hosts:
+              - vault.local
+              - vault.local:*
+              - vault.10.0.1.110
+              - vault.10.0.1.110:*

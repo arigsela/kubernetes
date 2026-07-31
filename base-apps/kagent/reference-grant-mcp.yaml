@@ -1,0 +1,15 @@
+# Grant for the kagent-mcp TLS secret (V63).
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: gateway-to-kagent-mcp-tls
+  namespace: kagent
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: istio-ingress
+  to:
+    - group: ""
+      kind: Secret
+      name: kagent-mcp-tls
