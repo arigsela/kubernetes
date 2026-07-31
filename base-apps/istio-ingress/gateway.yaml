@@ -25,7 +25,7 @@ spec:
     # Catches every host on plain HTTP; the redirect HTTPRoute attaches here.
     - name: http
       protocol: HTTP
-      port: 18080
+      port: 80
       # Scoped to *.arigsela.com so the internal vault hostnames can have their
       # own HTTP listeners. Those are plaintext by design and must NOT be caught
       # by the https-redirect route attached to this listener.
@@ -35,7 +35,7 @@ spec:
           from: All
     - name: https-coroot
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: coroot.arigsela.com
       tls:
         mode: Terminate
@@ -48,7 +48,7 @@ spec:
           from: All
     - name: https-argocd
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: argocd.arigsela.com
       tls:
         mode: Terminate
@@ -61,7 +61,7 @@ spec:
           from: All
     - name: https-rollouts
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: rollouts.arigsela.com
       tls:
         mode: Terminate
@@ -74,7 +74,7 @@ spec:
           from: All
     - name: https-argo-workflows
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: argo-workflows.arigsela.com
       tls:
         mode: Terminate
@@ -87,7 +87,7 @@ spec:
           from: All
     - name: https-atlantis
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: atlantis.arigsela.com
       tls:
         mode: Terminate
@@ -100,7 +100,7 @@ spec:
           from: All
     - name: https-backstage
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: backstage.arigsela.com
       tls:
         mode: Terminate
@@ -113,7 +113,7 @@ spec:
           from: All
     - name: https-dex
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: dex.arigsela.com
       tls:
         mode: Terminate
@@ -126,7 +126,7 @@ spec:
           from: All
     - name: https-kagent
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: kagent.arigsela.com
       tls:
         mode: Terminate
@@ -139,7 +139,7 @@ spec:
           from: All
     - name: https-oncall-crewai
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: oncall-crewai.arigsela.com
       tls:
         mode: Terminate
@@ -152,7 +152,7 @@ spec:
           from: All
     - name: https-vault
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: vault.arigsela.com
       tls:
         mode: Terminate
@@ -165,7 +165,7 @@ spec:
           from: All
     - name: https-grafana
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: grafana.arigsela.com
       tls:
         mode: Terminate
@@ -178,7 +178,7 @@ spec:
           from: All
     - name: https-oncall
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: oncall.arigsela.com
       tls:
         mode: Terminate
@@ -191,7 +191,7 @@ spec:
           from: All
     - name: https-chores
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: chores.arigsela.com
       tls:
         mode: Terminate
@@ -204,7 +204,7 @@ spec:
           from: All
     - name: https-weather-kitchen
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: weather-kitchen.arigsela.com
       tls:
         mode: Terminate
@@ -217,7 +217,7 @@ spec:
           from: All
     - name: https-n8n
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: n8n.arigsela.com
       tls:
         mode: Terminate
@@ -230,7 +230,7 @@ spec:
           from: All
     - name: https-kagent-mcp
       protocol: HTTPS
-      port: 18443
+      port: 443
       hostname: kagent-mcp.arigsela.com
       tls:
         mode: Terminate
@@ -246,14 +246,14 @@ spec:
     # HTTP listeners so the https-redirect route does not apply to them.
     - name: http-vault-local
       protocol: HTTP
-      port: 18080
+      port: 80
       hostname: vault.local
       allowedRoutes:
         namespaces:
           from: All
     - name: http-vault-ip
       protocol: HTTP
-      port: 18080
+      port: 80
       hostname: vault.10.0.1.110
       allowedRoutes:
         namespaces:
