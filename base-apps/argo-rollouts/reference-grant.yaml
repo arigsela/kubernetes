@@ -1,0 +1,17 @@
+# Lets the ingress Gateway in istio-ingress read this namespace's TLS secret.
+# Gateway API requires an explicit grant for any cross-namespace certificateRef;
+# without it the listener comes up SILENTLY certless rather than erroring (V63).
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: gateway-to-argo-rollouts-tls
+  namespace: argo-rollouts
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: istio-ingress
+  to:
+    - group: ""
+      kind: Secret
+      name: argo-rollouts-tls

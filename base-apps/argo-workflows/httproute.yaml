@@ -1,0 +1,23 @@
+# Gateway API replacement for this app's nginx Ingress (T56).
+# Lives in the app namespace so the backendRef is same-namespace and needs no
+# second ReferenceGrant. Backend read from the LIVE Ingress, not inferred.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argo-workflows
+  namespace: argo-workflows
+spec:
+  parentRefs:
+    - name: main
+      namespace: istio-ingress
+      sectionName: https-argo-workflows
+  hostnames:
+    - argo-workflows.arigsela.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: argo-workflows-server
+          port: 2746
