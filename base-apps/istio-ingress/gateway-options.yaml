@@ -23,6 +23,13 @@ metadata:
 data:
   deployment: |
     spec:
+      # Recreate, not RollingUpdate. Under hostNetwork on a single pinned node the
+      # new pod cannot start while the old one holds Istio's admin ports (15021,
+      # 15090), so a rolling update deadlocks: new pod Pending on "didn't have
+      # free ports", old pod never removed. Observed at cutover.
+      strategy:
+        type: Recreate
+        rollingUpdate: null
       template:
         spec:
           hostNetwork: true
@@ -48,6 +55,16 @@ data:
             # hand this container every capability.
             - name: istio-proxy
               securityContext:
+                # allowPrivilegeEscalation MUST be true for NET_BIND_SERVICE to
+                # take effect. Envoy runs as uid 1337, and for a non-root process
+                # an added capability only reaches the PERMITTED set - it becomes
+                # EFFECTIVE via ambient capabilities, which the kernel refuses to
+                # raise while no_new_privs is set. allowPrivilegeEscalation: false
+                # sets exactly that bit, so the capability was present and inert:
+                #   cannot bind '0.0.0.0:80': Permission denied
+                # Posture is still tight: every capability dropped except this
+                # one, non-root, read-only root filesystem.
+                allowPrivilegeEscalation: true
                 capabilities:
                   drop:
                     - ALL
