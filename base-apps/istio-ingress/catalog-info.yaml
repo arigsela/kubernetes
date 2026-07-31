@@ -1,0 +1,18 @@
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: istio-ingress
+  namespace: istio-ingress
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'gateway.networking.k8s.io/gateway-name=main'
+    backstage.io/kubernetes-namespace: istio-ingress
+  tags: [ingress, gateway-api, istio]
+spec:
+  type: infrastructure
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-networking
+  dependsOn:
+    - resource:cert-manager/cert-manager
