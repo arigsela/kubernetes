@@ -1,0 +1,16 @@
+# Lets the ingress Gateway in istio-ingress read this namespace's TLS secret.
+# Without an explicit grant the listener comes up SILENTLY certless (V63).
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: gateway-to-oncall-agent-tls
+  namespace: oncall-agent
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: istio-ingress
+  to:
+    - group: ""
+      kind: Secret
+      name: oncall-agent-tls

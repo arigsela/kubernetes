@@ -159,3 +159,29 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    - name: https-grafana
+      protocol: HTTPS
+      port: 18443
+      hostname: grafana.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: grafana-tls
+            namespace: logging
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-oncall
+      protocol: HTTPS
+      port: 18443
+      hostname: oncall.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: oncall-agent-tls
+            namespace: oncall-agent
+      allowedRoutes:
+        namespaces:
+          from: All

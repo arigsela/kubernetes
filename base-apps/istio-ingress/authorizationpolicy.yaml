@@ -161,3 +161,21 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
+    # grafana.arigsela.com - PUBLIC BY DESIGN (github-oauth). No `from` clause, so any
+      # source is permitted. Reachable from anywhere by design - dashboards are read from mobile and carrier
+      # IPs cannot be allow-listed. Access control is GitHub OAuth with two
+      # fail-closed gates, both verified by observation (V69/T62).
+    - to:
+        - operation:
+            hosts:
+              - grafana.arigsela.com
+              - grafana.arigsela.com:*
+    # oncall.arigsela.com - PUBLIC BY DESIGN (slack-events-api). No `from` clause, so any
+      # source is permitted. Slack posts Events API callbacks from addresses that are not a stable
+      # allow-listable set. Authenticated at the app layer: SLACK_SIGNING_SECRET
+      # (HMAC) plus API_KEYS. Restricting by IP would break the integration.
+    - to:
+        - operation:
+            hosts:
+              - oncall.arigsela.com
+              - oncall.arigsela.com:*
