@@ -1,0 +1,21 @@
+# Lets the ingress Gateway in istio-ingress read this namespace's TLS secret.
+#
+# Gateway API requires an explicit grant for any cross-namespace certificateRef;
+# without it the listener comes up SILENTLY certless rather than erroring
+# (SPEC.md V63). The grant lives here, in the namespace that owns the secret, so
+# the app grants access to its own material rather than the Gateway helping
+# itself.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: gateway-to-coroot-tls
+  namespace: coroot
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: istio-ingress
+  to:
+    - group: ""
+      kind: Secret
+      name: coroot-tls

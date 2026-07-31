@@ -1,0 +1,31 @@
+# The north-south ingress Gateway that replaces ingress-nginx (SPEC.md T43/T55).
+#
+# Staged on :8080/:8443 deliberately. ingress-nginx holds :80/:443 on
+# k3s-control-01 via hostNetwork and the two cannot share those ports (V55), so
+# every host is validated on the alternate ports first and the swap to :80/:443
+# happens inside the maintenance window T54 authorised.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: istio-ingress
+  namespace: argo-cd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/istio-ingress
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-ingress
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
