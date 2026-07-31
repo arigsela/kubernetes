@@ -46,3 +46,118 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
+    - to:
+        - operation:
+            hosts:
+              - argocd.arigsela.com
+              - argocd.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
+    - to:
+        - operation:
+            hosts:
+              - rollouts.arigsela.com
+              - rollouts.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
+    - to:
+        - operation:
+            hosts:
+              - argo-workflows.arigsela.com
+              - argo-workflows.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
+  # atlantis additionally allows GitHub webhook ranges (IPv4 + IPv6).
+    - to:
+        - operation:
+            hosts:
+              - atlantis.arigsela.com
+              - atlantis.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
+              - 192.30.252.0/22
+              - 185.199.108.0/22
+              - 140.82.112.0/20
+              - 143.55.64.0/20
+              - 2a0a:a440::/29
+              - 2606:50c0::/32
+    - to:
+        - operation:
+            hosts:
+              - backstage.arigsela.com
+              - backstage.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
+    - to:
+        - operation:
+            hosts:
+              - dex.arigsela.com
+              - dex.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
+    - to:
+        - operation:
+            hosts:
+              - kagent.arigsela.com
+              - kagent.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
+    - to:
+        - operation:
+            hosts:
+              - oncall-crewai.arigsela.com
+              - oncall-crewai.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
+    - to:
+        - operation:
+            hosts:
+              - vault.arigsela.com
+              - vault.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32

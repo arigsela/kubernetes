@@ -42,3 +42,120 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    - name: https-argocd
+      protocol: HTTPS
+      port: 18443
+      hostname: argocd.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: argocd-tls
+            namespace: argo-cd
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-rollouts
+      protocol: HTTPS
+      port: 18443
+      hostname: rollouts.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: argo-rollouts-tls
+            namespace: argo-rollouts
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-argo-workflows
+      protocol: HTTPS
+      port: 18443
+      hostname: argo-workflows.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: argo-workflows-tls
+            namespace: argo-workflows
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-atlantis
+      protocol: HTTPS
+      port: 18443
+      hostname: atlantis.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: atlantis-tls
+            namespace: atlantis
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-backstage
+      protocol: HTTPS
+      port: 18443
+      hostname: backstage.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: backstage-tls
+            namespace: backstage
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-dex
+      protocol: HTTPS
+      port: 18443
+      hostname: dex.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: dex-tls
+            namespace: dex
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-kagent
+      protocol: HTTPS
+      port: 18443
+      hostname: kagent.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: kagent-tls
+            namespace: kagent
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-oncall-crewai
+      protocol: HTTPS
+      port: 18443
+      hostname: oncall-crewai.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: oncall-crewai-frontend-tls
+            namespace: oncall-crewai
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-vault
+      protocol: HTTPS
+      port: 18443
+      hostname: vault.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: vault-arigsela-tls
+            namespace: vault
+      allowedRoutes:
+        namespaces:
+          from: All
