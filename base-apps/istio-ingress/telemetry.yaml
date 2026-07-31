@@ -1,0 +1,20 @@
+# Access logging for the ingress Gateway.
+#
+# Istio gateways log nothing by default. ingress-nginx logged every request, and
+# that log has already earned its keep twice today: it identified the real client
+# addresses reaching the cluster (R25), and it proved the router hairpin-NATs LAN
+# traffic to the public address - which is what made dropping 10.0.0.0/8 from the
+# allow-lists a free change rather than a guess (V66).
+#
+# An internet-facing edge with no request log is not operable. It is also the
+# only direct way to observe what source address arrives, which V61 requires
+# knowing rather than assuming.
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: gateway-access-logs
+  namespace: istio-ingress
+spec:
+  accessLogging:
+    - providers:
+        - name: envoy
