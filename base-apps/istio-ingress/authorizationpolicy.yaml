@@ -179,3 +179,50 @@ spec:
             hosts:
               - oncall.arigsela.com
               - oncall.arigsela.com:*
+    # chores - public-by-design (family app, app-level JWT auth).
+    - to:
+        - operation:
+            hosts:
+              - chores.arigsela.com
+              - chores.arigsela.com:*
+    # weather-kitchen - restricted.
+    - to:
+        - operation:
+            hosts:
+              - weather-kitchen.arigsela.com
+              - weather-kitchen.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
+    # n8n WEBHOOK paths - public by design. Webhooks arrive from arbitrary
+      # external services and cannot be allow-listed; each workflow authenticates
+      # its own. Scoped to the webhook paths ONLY, so the admin UI is untouched.
+    - to:
+        - operation:
+            hosts:
+              - n8n.arigsela.com
+              - n8n.arigsela.com:*
+            paths:
+              - /webhook
+              - /webhook/*
+              - /webhook-test
+              - /webhook-test/*
+              - /mcp-server
+              - /mcp-server/*
+    # n8n everything else (the admin UI) - restricted.
+    - to:
+        - operation:
+            hosts:
+              - n8n.arigsela.com
+              - n8n.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32

@@ -185,3 +185,42 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    - name: https-chores
+      protocol: HTTPS
+      port: 18443
+      hostname: chores.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: chores-tracker-tls
+            namespace: chores-tracker
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-weather-kitchen
+      protocol: HTTPS
+      port: 18443
+      hostname: weather-kitchen.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: weather-kitchen-tls
+            namespace: weather-kitchen
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https-n8n
+      protocol: HTTPS
+      port: 18443
+      hostname: n8n.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: n8n-tls
+            namespace: n8n
+      allowedRoutes:
+        namespaces:
+          from: All
