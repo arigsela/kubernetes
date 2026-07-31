@@ -2,6 +2,7 @@ chores-tracker-backend
 vault
 argo-cd
 cert-manager
+nginx-ingress
 postgresql
 chores-tracker-frontend
 oncall-agent

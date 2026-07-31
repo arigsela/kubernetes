@@ -174,29 +174,21 @@ print("HIST " + " ".join(sorted(hist)))' $stuck 2>/dev/null)
   fi
 }
 
-check_ingress() {                               # §V.22 / §T.29 / §T.53
-  # ingress-nginx was retired 2026-07-31 (§T.53). This used to assert the
-  # helm-controller HelmChart CR and the nginx DaemonSet; both are gone, and a
-  # gate that still looked for them would report every future hop as failed.
-  # §V.58 requires this to move in the same change that removes the controller.
-  local prog
-  prog=$(kubectl -n istio-ingress get gateway main \
-           -o jsonpath='{.status.conditions[?(@.type=="Programmed")].status}' 2>/dev/null || true)
-  [ "$prog" = "True" ] && ok "§V.22 ingress Gateway istio-ingress/main Programmed" \
-                       || bad "§V.22 ingress Gateway istio-ingress/main not Programmed (got: ${prog:-missing})"
-
-  # Ready pods, not just a Programmed Gateway: §B.7 is the standing reminder that
-  # a controller can report healthy while serving nothing.
-  local rd
-  rd=$(kubectl -n istio-ingress get deploy main-istio -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
-  [ "${rd:-0}" -ge 1 ] && ok "§V.22 gateway data plane ready ($rd)" \
-                       || bad "§V.22 gateway deployment main-istio has no ready replicas"
-
-  # The allow-list is the security boundary (§R.31). An ingress that serves but
-  # enforces nothing is a worse outcome than one that is down.
-  kubectl -n istio-ingress get authorizationpolicy gateway-allow >/dev/null 2>&1 \
-    && ok "§V.61 gateway AuthorizationPolicy present" \
-    || bad "§V.61 gateway-allow AuthorizationPolicy MISSING — gateway is unprotected"
+check_ingress() {                               # §V.22 / §T.29
+  local phase
+  phase=$(kubectl get helmchart -n kube-system ingress-nginx -o jsonpath='{.status.jobName}' 2>/dev/null || true)
+  if kubectl get helmchart -n kube-system ingress-nginx >/dev/null 2>&1; then
+    ok "§V.22 helm-controller HelmChart ingress-nginx present (job=${phase:-none})"
+  else
+    bad "§V.22 HelmChart kube-system/ingress-nginx missing — helm-controller upgraded with the hop"
+  fi
+  # The controller here is a DaemonSet, not a Deployment — an earlier version of this
+  # check queried Deployments, found none, and reported a healthy ingress as broken.
+  local rd=0
+  rd=$(kubectl get ds -n ingress-nginx -o jsonpath='{.items[0].status.numberReady}' 2>/dev/null || echo 0)
+  [ "${rd:-0}" -eq 0 ] && rd=$(kubectl get deploy -n ingress-nginx -o jsonpath='{.items[0].status.readyReplicas}' 2>/dev/null || echo 0)
+  [ "${rd:-0}" -ge 1 ] && ok "§V.22 ingress-nginx controller ready ($rd)" \
+                       || bad "§V.22 ingress-nginx controller has no ready replicas"
 }
 
 check_nodes_and_apps() {                        # §V.5 with §V.47's exception
