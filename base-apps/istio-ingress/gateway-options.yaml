@@ -1,75 +1,39 @@
 # Customisation for the Deployment/Service Istio generates for the Gateway.
 # Referenced from the Gateway via spec.infrastructure.parametersRef.
 #
-# hostNetwork is the point of this file. ingress-nginx gets the real client IP
-# for free because it runs hostNetwork, and V61 makes that a precondition of
-# every AuthorizationPolicy ipBlocks rule in T51: behind a SNAT'ing Service every
-# client would appear as the node address, and because 10.0.0.0/8 is already in
-# all 15 allow-lists (B9) the result would be silently OPEN rather than a loud
-# lockout. hostNetwork avoids the question entirely.
+# NO hostNetwork. That was the wrong choice and it cost an outage.
 #
-# Pinned to k3s-control-01 for the same reason nginx is: public DNS resolves to
-# this node, so the Gateway has to answer there.
+# The reasoning was sound but the conclusion was not: ingress-nginx gets the real
+# client IP for free by running hostNetwork, and V61 makes real client IP a
+# precondition for every AuthorizationPolicy ipBlocks rule. So the Gateway was
+# given hostNetwork too. But Envoy could not then bind :80/:443:
+#
+#   cannot bind '0.0.0.0:443': Permission denied
+#
+# nginx manages it because ITS image carries cap_net_bind_service as a FILE
+# capability, so a non-root process can raise it. Istio's Envoy image does not -
+# Istio instead relies on the net.ipv4.ip_unprivileged_port_start sysctl, and
+# Kubernetes FORBIDS that sysctl under hostNetwork. hostNetwork and Istio's
+# gateway are mutually exclusive on privileged ports, whatever securityContext
+# is applied.
+#
+# So: no hostNetwork. Istio sets its own sysctl inside the pod netns and Envoy
+# binds normally. k3s klipper performs the privileged bind on the host, and
+# externalTrafficPolicy: Local preserves the client IP - which is what V61
+# actually needs. Everything stops fighting.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  # ClusterIP, not the default LoadBalancer. Under hostNetwork the pod binds
-  # the node directly and the Service is not the data path - but a
-  # LoadBalancer makes k3s klipper spawn svclb DaemonSets that squat the same
-  # hostPorts on EVERY node, which both wastes ports and invites collisions.
-  # Istio still needs the Service to exist to resolve the Gateway address.
   name: gateway-options
   namespace: istio-ingress
 data:
   deployment: |
     spec:
-      # Recreate, not RollingUpdate. Under hostNetwork on a single pinned node the
-      # new pod cannot start while the old one holds Istio's admin ports (15021,
-      # 15090), so a rolling update deadlocks: new pod Pending on "didn't have
-      # free ports", old pod never removed. Observed at cutover.
-      strategy:
-        type: Recreate
-        rollingUpdate: null
       template:
         spec:
-          hostNetwork: true
-          dnsPolicy: ClusterFirstWithHostNet
-          # Istio's generated gateway sets net.ipv4.ip_unprivileged_port_start so
-          # Envoy can bind low ports as non-root. Kubernetes REJECTS that sysctl
-          # when hostNetwork is true:
-          #   spec.template.spec.securityContext.sysctls[0].name: Invalid value:
-          #   "net.ipv4.ip_unprivileged_port_start": may not be specified when
-          #   'hostNetwork' is true
-          # Cleared here. Harmless while staging on :8080/:8443, which are above
-          # 1024 and need no privilege. AT CUTOVER to :80/:443 the container will
-          # need NET_BIND_SERVICE instead - see SPEC.md T53.
-          securityContext:
-            sysctls: []
-          containers:
-            # NET_BIND_SERVICE is what lets Envoy bind :80/:443 as uid 1337.
-            # Normally Istio achieves this with the
-            # net.ipv4.ip_unprivileged_port_start sysctl, but Kubernetes forbids
-            # that sysctl under hostNetwork - so the capability replaces it.
-            # drop: [ALL] is restated because a strategic merge patch REPLACES
-            # list fields rather than merging them; omitting it would silently
-            # hand this container every capability.
-            - name: istio-proxy
-              securityContext:
-                # allowPrivilegeEscalation MUST be true for NET_BIND_SERVICE to
-                # take effect. Envoy runs as uid 1337, and for a non-root process
-                # an added capability only reaches the PERMITTED set - it becomes
-                # EFFECTIVE via ambient capabilities, which the kernel refuses to
-                # raise while no_new_privs is set. allowPrivilegeEscalation: false
-                # sets exactly that bit, so the capability was present and inert:
-                #   cannot bind '0.0.0.0:80': Permission denied
-                # Posture is still tight: every capability dropped except this
-                # one, non-root, read-only root filesystem.
-                allowPrivilegeEscalation: true
-                capabilities:
-                  drop:
-                    - ALL
-                  add:
-                    - NET_BIND_SERVICE
+          # Pinned to k3s-control-01: public DNS resolves to that node, and
+          # externalTrafficPolicy: Local only serves traffic on nodes actually
+          # running a gateway pod.
           nodeSelector:
             node.kubernetes.io/workload: infrastructure
           tolerations:
@@ -77,4 +41,9 @@ data:
               effect: NoSchedule
   service: |
     spec:
-      type: ClusterIP
+      # Local, not Cluster. Cluster SNATs to the node address, which would make
+      # every client look like 10.0.1.50 - and because 10.0.0.0/8 sits in all 15
+      # nginx allow-lists (B9), a naive translation would then fail OPEN rather
+      # than loudly. Local keeps the source address intact so ipBlocks means what
+      # it says (R35).
+      externalTrafficPolicy: Local
