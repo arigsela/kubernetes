@@ -1,9 +1,7 @@
-chores-tracker-backend
 vault
 argo-cd
 cert-manager
 postgresql
-chores-tracker-frontend
 oncall-agent
 weather-kitchen-backend
 weather-kitchen-frontend
