@@ -189,19 +189,6 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
-    - name: https-chores
-      protocol: HTTPS
-      port: 443
-      hostname: chores.arigsela.com
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - kind: Secret
-            name: chores-tracker-tls
-            namespace: chores-tracker
-      allowedRoutes:
-        namespaces:
-          from: All
     - name: https-weather-kitchen
       protocol: HTTPS
       port: 443

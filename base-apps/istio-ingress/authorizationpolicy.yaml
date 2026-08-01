@@ -179,12 +179,6 @@ spec:
             hosts:
               - oncall.arigsela.com
               - oncall.arigsela.com:*
-    # chores - public-by-design (family app, app-level JWT auth).
-    - to:
-        - operation:
-            hosts:
-              - chores.arigsela.com
-              - chores.arigsela.com:*
     # weather-kitchen - restricted.
     - to:
         - operation:
