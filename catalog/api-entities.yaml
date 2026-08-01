@@ -8,20 +8,6 @@
 apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
-  name: chores-tracker-backend-api
-  description: Chores Tracker FastAPI backend (OpenAPI).
-  tags: [openapi, fastapi]
-spec:
-  type: openapi
-  lifecycle: production
-  owner: group:default/platform
-  system: default/chores-tracker
-  definition:
-    $text: http://chores-tracker-backend.chores-tracker.svc.cluster.local/openapi.json
----
-apiVersion: backstage.io/v1alpha1
-kind: API
-metadata:
   name: weather-kitchen-backend-api
   description: Weather Kitchen FastAPI backend (OpenAPI).
   tags: [openapi, fastapi]

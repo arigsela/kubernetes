@@ -115,15 +115,6 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: System
 metadata:
-  name: chores-tracker
-  description: Chores Tracker application system.
-spec:
-  owner: platform
-  domain: products
----
-apiVersion: backstage.io/v1alpha1
-kind: System
-metadata:
   name: weather-kitchen
   description: Weather Kitchen application system.
 spec:
