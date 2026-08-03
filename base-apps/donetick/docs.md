@@ -41,9 +41,11 @@ A single stateless `Deployment`, one replica, one container. The binary serves
 both the JSON API and the compiled React frontend on port 2021; there is no
 separate frontend workload and no sidecar.
 
-Request path: `donetick.arigsela.com` → the shared `main` Gateway in
-`istio-ingress` (listener `https-donetick`) → `HTTPRoute` → `Service/donetick`
-→ pod. TLS terminates at the Gateway using `donetick-tls`, a Secret in this
+Request path: `chores.arigsela.com` → the shared `main` Gateway in
+`istio-ingress` (listener `https-chores`) → `HTTPRoute` → `Service/donetick`
+→ pod. The hostname is the one chores-tracker already owned; donetick took it
+over on 2026-08-03, which is why the TLS Secret is named `donetick-tls` while the
+listener and certificate are named for `chores`. TLS terminates at the Gateway using `donetick-tls`, a Secret in this
 namespace reached across namespaces by `reference-grant.yaml`.
 
 All state is in Postgres — the `donetick` database inside the CloudNativePG

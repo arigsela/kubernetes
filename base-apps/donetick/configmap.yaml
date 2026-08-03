@@ -33,7 +33,7 @@ data:
       rate_period: 60s
       rate_limit: 300
       cors_allow_origins:
-        - "https://donetick.arigsela.com"
+        - "https://chores.arigsela.com"
         # What the Android/iOS Capacitor shell sends as its Origin.
         - "https://localhost"
         - "http://localhost"
@@ -41,7 +41,7 @@ data:
       serve_frontend: true
       # Upstream defaults this on; the Swagger UI is unauthenticated.
       serve_swagger: false
-      public_host: "https://donetick.arigsela.com"
+      public_host: "https://chores.arigsela.com"
 
     logging:
       level: "info"
@@ -70,4 +70,4 @@ data:
       stale_threshold: 5m
       enable_compression: true
       allowed_origins:
-        - "https://donetick.arigsela.com"
+        - "https://chores.arigsela.com"

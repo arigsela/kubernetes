@@ -35,8 +35,10 @@ The manifests do not create Vault material. Before the first sync can succeed:
    unset VAULT_TOKEN; rm /tmp/prov.sh; exit
    ```
 
-2. Add `donetick.arigsela.com` to Route 53 pointing at the ingress address, the
-   same record shape as the other hosts.
+2. Ensure `chores.arigsela.com` resolves to the ingress address in Route 53
+   (A record, TTL 300, same shape as the other hosts). It predates this app —
+   it was chores-tracker's hostname — so on the original deploy it already
+   existed and needed no change.
 
 Order matters only in that the Certificate cannot issue until DNS resolves, and
 the Deployment will crash-loop until both ExternalSecrets have synced. Both

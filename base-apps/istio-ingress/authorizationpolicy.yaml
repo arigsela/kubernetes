@@ -192,13 +192,13 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
-    # donetick - restricted. Note this makes a phone-first chore tracker
+    # chores (donetick) - restricted. Note this makes a phone-first chore tracker
       # unreachable from mobile data; carrier NAT is not allow-listable.
     - to:
         - operation:
             hosts:
-              - donetick.arigsela.com
-              - donetick.arigsela.com:*
+              - chores.arigsela.com
+              - chores.arigsela.com:*
       from:
         - source:
             ipBlocks:
