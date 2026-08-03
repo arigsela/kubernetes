@@ -30,7 +30,7 @@ ARGO_NS="${ARGO_NAMESPACE:-argo-cd}"
 #   TOLERATED : workload verified running, cause NOT yet diagnosed (§T.45). Warned about
 #               on every run so it stays visible rather than becoming permanent.
 KNOWN_DRIFT_DIAGNOSED="${KNOWN_DRIFT_DIAGNOSED:-kagent-secrets kyverno}"
-KNOWN_DRIFT_TOLERATED="${KNOWN_DRIFT_TOLERATED:-atlantis whoami-test}"
+KNOWN_DRIFT_TOLERATED="${KNOWN_DRIFT_TOLERATED:-atlantis}"
 TIMEOUT=1800
 SINCE=""
 ACTION="${1:-}"; shift || true
