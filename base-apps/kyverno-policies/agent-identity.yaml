@@ -33,7 +33,7 @@ spec:
         any:
           - resources:
               kinds:
-                - external-secrets.io/v1beta1/ExternalSecret
+                - external-secrets.io/v1/ExternalSecret
               namespaces:
                 - kagent
       validate:
@@ -67,7 +67,7 @@ spec:
         any:
           - resources:
               kinds:
-                - external-secrets.io/v1beta1/ExternalSecret
+                - external-secrets.io/v1/ExternalSecret
       validate:
         message: >-
           ExternalSecret '{{ request.object.metadata.name }}' must not read the monolithic

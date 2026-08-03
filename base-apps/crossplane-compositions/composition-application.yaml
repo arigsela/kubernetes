@@ -61,7 +61,7 @@ spec:
 
           def make_secret_store(name, namespace, annotations):
               return {
-                  "apiVersion": "external-secrets.io/v1beta1",
+                  "apiVersion": "external-secrets.io/v1",
                   "kind": "SecretStore",
                   "metadata": {
                       "name": "vault-backend",
@@ -123,7 +123,7 @@ spec:
 
           def make_external_secret(name, namespace, annotations):
               return {
-                  "apiVersion": "external-secrets.io/v1beta1",
+                  "apiVersion": "external-secrets.io/v1",
                   "kind": "ExternalSecret",
                   "metadata": {
                       "name": f"{name}-db",
@@ -202,7 +202,7 @@ spec:
           def make_aws_external_secret(name, namespace, annotations):
               """Reads from Vault → projects to K8s Secret <name>-aws with AWS SDK-named keys."""
               return {
-                  "apiVersion": "external-secrets.io/v1beta1",
+                  "apiVersion": "external-secrets.io/v1",
                   "kind": "ExternalSecret",
                   "metadata": {
                       "name": f"{name}-aws",
