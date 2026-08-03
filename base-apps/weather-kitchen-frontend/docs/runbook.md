@@ -11,7 +11,7 @@ status: current
 tags: [nginx, node, frontend]
 sources:
   - base-apps/weather-kitchen-frontend/deployments.yaml
-  - base-apps/weather-kitchen-frontend/nginx-ingress.yaml
+  - base-apps/weather-kitchen-frontend/httproute.yaml
   - base-apps/weather-kitchen-frontend/services.yaml
 ---
 

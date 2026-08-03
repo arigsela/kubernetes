@@ -14,7 +14,7 @@ sources:
   - base-apps/dex/configmap.yaml
   - base-apps/dex/external-secret.yaml
   - base-apps/dex/secret-store.yaml
-  - base-apps/dex/ingress.yaml
+  - base-apps/dex/httproute.yaml
 ---
 
 # dex — runbook

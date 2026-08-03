@@ -11,7 +11,7 @@ status: current
 tags: [gitops, control-plane]
 sources:
   - base-apps/argo-cd.yaml
-  - base-apps/argo-cd/ingress.yaml
+  - base-apps/argo-cd/httproute.yaml
   - terraform/modules/argocd
   - terraform/modules/application-sets
   - terraform/roots/asela-cluster/argocd.tf

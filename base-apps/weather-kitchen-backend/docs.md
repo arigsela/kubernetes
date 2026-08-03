@@ -14,7 +14,7 @@ sources:
   - base-apps/weather-kitchen-backend/configmaps.yaml
   - base-apps/weather-kitchen-backend/external_secrets.yaml
   - base-apps/weather-kitchen-backend/secret-store.yaml
-  - base-apps/weather-kitchen-backend/nginx-ingress.yaml
+  - base-apps/weather-kitchen-backend/httproute.yaml
   - base-apps/weather-kitchen-backend/services.yaml
 ---
 

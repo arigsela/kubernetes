@@ -12,7 +12,7 @@ tags: [observability, ebpf, apm, clickhouse]
 sources:
   - base-apps/coroot/coroot-operator.yaml
   - base-apps/coroot/coroot-instance.yaml
-  - base-apps/coroot/ingress.yaml
+  - base-apps/coroot/httproute.yaml
   - base-apps/coroot/namespace-config.yaml
 ---
 

@@ -26,8 +26,7 @@ sources:
   - base-apps/kagent/agent-docs-mcp.yaml
   - base-apps/kagent/agent-docs-mcp-remote.yaml
   - base-apps/kagent/backstage-catalog-mcp.yaml
-  - base-apps/kagent/mcp-ingress.yaml
-  - base-apps/kagent/nginx-ingress.yaml
+  - base-apps/kagent/httproute.yaml
 ---
 
 # kagent

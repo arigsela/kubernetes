@@ -78,47 +78,6 @@ jobs:
             -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
             -kubernetes-version 1.33.0
 
-  ingress-policy:
-    needs: changed-files
-    if: needs.changed-files.outputs.yaml_any_changed == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check ingress access control on changed files
-        run: |
-          # Every Ingress must DECLARE its access-control posture, one of:
-          #   nginx.ingress.kubernetes.io/whitelist-source-range  (IP allow-list)
-          #   arigsela.com/public-by-design: "<reason>"           (intentionally open)
-          #
-          # The annotation is not a bypass. Some hosts must be reachable by
-          # arbitrary external callers and are authenticated at the application
-          # layer instead - n8n's webhook receiver, oncall-agent's Slack Events
-          # API callbacks (HMAC-signed). Requiring a reason makes that a recorded
-          # decision rather than an omission that looks identical to a mistake.
-          #
-          # SPEC.md T63 / T51: translating these to Gateway API AuthorizationPolicy
-          # needs this intent. Blanket-applying rules breaks the webhook receivers;
-          # blanket-omitting them exposes the admin UIs. There is no safe default,
-          # so the intent has to live in the manifest.
-          FAILED=0
-          for f in ${{ needs.changed-files.outputs.yaml_files }}; do
-            grep -Pq "kind:\s*Ingress\s*$" "$f" || continue
-            if grep -q 'whitelist-source-range' "$f"; then
-              echo "ok:   $f (IP allow-list)"
-              continue
-            fi
-            reason=$(grep -oP 'arigsela\.com/public-by-design:\s*"?\K[^"]+' "$f" | head -1)
-            if [ -n "$reason" ]; then
-              echo "ok:   $f (public by design: $reason)"
-              continue
-            fi
-            echo "FAIL: $f declares no access-control posture."
-            echo "      Add whitelist-source-range, or if it must be publicly"
-            echo "      reachable: arigsela.com/public-by-design: \"<reason>\""
-            FAILED=1
-          done
-          exit $FAILED
-
   agent-docs-validate:
     runs-on: ubuntu-latest
     steps:

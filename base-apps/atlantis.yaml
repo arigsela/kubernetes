@@ -84,6 +84,18 @@ spec:
               - approved
               - mergeable
 
+        # The chart renders a class-less, host-less Ingress that nothing routes -
+
+        # ingress-nginx is gone and atlantis.arigsela.com is served by the Istio
+
+        # Gateway. Left enabled it sits with an empty status.loadBalancer forever,
+
+        # which Argo's built-in Ingress health check reads as Progressing.
+
+        ingress:
+
+          enabled: false
+
         service:
           type: ClusterIP
           port: 4141

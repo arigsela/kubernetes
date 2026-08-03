@@ -15,8 +15,7 @@ sources:
   - base-apps/n8n/secret-store.yaml
   - base-apps/n8n/pvc.yaml
   - base-apps/n8n/services.yaml
-  - base-apps/n8n/nginx-ingress-admin.yaml
-  - base-apps/n8n/nginx-ingress-webhook.yaml
+  - base-apps/n8n/httproute.yaml
   - base-apps/n8n/workflows-configmap.yaml
 ---
 
