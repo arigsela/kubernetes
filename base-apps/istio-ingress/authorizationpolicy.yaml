@@ -192,6 +192,20 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
+    # donetick - restricted. Note this makes a phone-first chore tracker
+      # unreachable from mobile data; carrier NAT is not allow-listable.
+    - to:
+        - operation:
+            hosts:
+              - donetick.arigsela.com
+              - donetick.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
     # n8n WEBHOOK paths - public by design. Webhooks arrive from arbitrary
       # external services and cannot be allow-listed; each workflow authenticates
       # its own. Scoped to the webhook paths ONLY, so the admin UI is untouched.

@@ -1,0 +1,15 @@
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: donetick
+  namespace: postgresql
+spec:
+  cluster:
+    name: postgresql-cluster
+  name: donetick
+  owner: donetick
+  ensure: present
+  # CRD default, stated because the alternative drops the database when this
+  # manifest is pruned.
+  databaseReclaimPolicy: retain

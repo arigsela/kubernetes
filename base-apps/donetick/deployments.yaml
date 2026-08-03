@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: donetick
+  namespace: donetick
+  labels:
+    app: donetick
+    app.kubernetes.io/name: donetick
+spec:
+  replicas: 1
+  # Recreate: donetick runs GORM AutoMigrate at startup, so a rolling update
+  # would migrate the schema under the old pod still serving from it.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: donetick
+  template:
+    metadata:
+      labels:
+        app: donetick
+        app.kubernetes.io/name: donetick
+      annotations:
+        # donetick reads its config once, at startup. If you edit configmap.yaml,
+        # recompute this or the change syncs and does nothing:
+        #   shasum -a 256 base-apps/donetick/configmap.yaml | cut -c1-16
+        checksum/config: "470cc17187a98a27"
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: donetick
+          image: donetick/donetick:v0.1.76
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DT_ENV
+              value: "selfhosted"
+            # Governs every chore due time. CONFIRM THIS IS THE HOUSEHOLD'S ZONE
+            # — unset falls back to UTC.
+            - name: TZ
+              value: "America/New_York"
+            - name: DT_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: donetick-secrets
+                  key: jwt-secret
+            - name: DT_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: donetick-db-credentials
+                  key: password
+          ports:
+            - containerPort: 2021
+              name: http
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          # /api/v1/health is the only health route the binary registers. The
+          # image's own HEALTHCHECK probes /health, which 404s — inert under
+          # Docker, but it would hard-fail a Kubernetes probe.
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 2021
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 2021
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 2021
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: donetick-config

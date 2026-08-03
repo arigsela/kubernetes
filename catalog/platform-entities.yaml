@@ -120,3 +120,12 @@ metadata:
 spec:
   owner: platform
   domain: products
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: chores-tracker
+  description: Household chore tracking (donetick; supersedes the chores-tracker app).
+spec:
+  owner: platform
+  domain: products

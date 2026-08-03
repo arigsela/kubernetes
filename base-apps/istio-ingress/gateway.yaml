@@ -215,6 +215,21 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    # donetick-tls is the one cert here issued from a Certificate tracked in Git
+    # (base-apps/donetick/certificate.yaml), not an ingress-shim leftover.
+    - name: https-donetick
+      protocol: HTTPS
+      port: 443
+      hostname: donetick.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: donetick-tls
+            namespace: donetick
+      allowedRoutes:
+        namespaces:
+          from: All
     - name: https-kagent-mcp
       protocol: HTTPS
       port: 443

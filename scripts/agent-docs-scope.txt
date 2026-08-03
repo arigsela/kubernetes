@@ -16,3 +16,4 @@ dex
 qwen
 openclaw-qwen
 istio-ingress
+donetick

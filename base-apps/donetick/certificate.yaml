@@ -1,0 +1,14 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: donetick-tls
+  namespace: donetick
+spec:
+  secretName: donetick-tls
+  dnsNames:
+    - donetick.arigsela.com
+  issuerRef:
+    # Not letsencrypt-prod: its only solver is http01.ingress.class=nginx, which
+    # nothing satisfies since the Istio cutover.
+    name: letsencrypt-route53
+    kind: ClusterIssuer

@@ -78,6 +78,14 @@ spec:
         login: true
         passwordSecret:
           name: postgresql-credentials
+      # Owns the `donetick` database (donetick-database.yaml). Its passwordSecret
+      # is kubernetes.io/basic-auth, which CNPG requires and the n8n entry above
+      # does not satisfy — see external-secrets-donetick.yaml.
+      - name: donetick
+        ensure: present
+        login: true
+        passwordSecret:
+          name: donetick-db-credentials
   monitoring:
     enablePodMonitor: false
   postgresql:
