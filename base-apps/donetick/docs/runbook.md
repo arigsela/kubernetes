@@ -132,11 +132,33 @@ on-demand backup before a risky change, create a `Backup` resource against
 vault kv put k8s-secrets/donetick-db db-password="$(openssl rand -base64 32 | tr -d '\n' | cut -c1-32)"
 ```
 
-Then force-sync both ExternalSecrets (`donetick` and `postgresql` namespaces).
-CNPG applies `ALTER ROLE` from the postgresql-side secret; the app picks up the
-new value on its next pod restart. There is a window where the role has the new
-password and the running pod still holds the old one — restart the Deployment
-after the ExternalSecret shows `SecretSynced`.
+**This does not work as written today.** CNPG is supposed to apply `ALTER ROLE`
+from the postgresql-side secret, but its managed-role reconciler is inert on this
+cluster — the `donetick` role was created by hand on 2026-08-03 and the operator
+does not manage it. Rotating in Vault alone therefore changes the app's password
+and NOT the database's, and donetick fails authentication on its next restart.
+
+Until `docs/troubleshooting/cnpg-managed-roles-inert.md` is resolved, rotation is
+a two-step manual operation:
+
+```bash
+# 1. new value into Vault
+vault kv put k8s-secrets/donetick-db db-password="$(openssl rand -hex 32)"
+
+# 2. force-sync both ExternalSecrets, then apply it to Postgres YOURSELF
+kubectl -n postgresql annotate externalsecret donetick-db-credentials force-sync=$(date +%s) --overwrite
+kubectl -n donetick   annotate externalsecret donetick-db-credentials force-sync=$(date +%s) --overwrite
+
+P=$(kubectl -n postgresql get secret donetick-db-credentials -o jsonpath='{.data.password}' | base64 -d)
+kubectl -n postgresql exec -i postgresql-cluster-2 -c postgres -- \
+  psql -U postgres -c "ALTER ROLE donetick WITH PASSWORD '$P'"
+
+# 3. restart the app so it picks up the new secret
+kubectl -n donetick rollout restart deploy/donetick
+```
+
+Order matters: change Postgres before restarting the app, or the pod comes up
+holding a password the database has not accepted yet.
 
 ### Rotate the JWT secret
 
@@ -144,11 +166,18 @@ Rewrite `k8s-secrets/donetick` `jwt-secret`, force-sync, restart the Deployment.
 Every session and refresh token is invalidated; everyone is logged out. Do it
 deliberately, not as a reflex.
 
-### Close signup after the first account
+### Add a user (signup is closed)
 
-Set `is_user_creation_disabled: true` in `configmap.yaml`, bump `checksum/config`
-in `deployments.yaml`, merge. Verify at least one account exists first — there is
-no bootstrap admin and no CLI to create one.
+`is_user_creation_disabled: true` since 2026-08-03. donetick has no admin-invite
+flow, so adding someone means reopening signup, having them register, then
+closing it again: set the flag to `false` in `configmap.yaml`, bump
+`checksum/config` in `deployments.yaml`, merge, wait for the rollout, register,
+then revert both. Confirm the new row before closing:
+
+```bash
+kubectl -n postgresql exec postgresql-cluster-2 -c postgres -- \
+  psql -U postgres -d donetick -tAc "select id, username from users order by id;"
+```
 
 ### Recover a password with no email configured
 

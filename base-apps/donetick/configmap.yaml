@@ -10,9 +10,9 @@ data:
     name: "selfhosted"
     is_done_tick_dot_com: false
 
-    # Left false for the FIRST boot so the initial account can be created, then
-    # flipped to true. There is no bootstrap admin and no CLI to make one.
-    is_user_creation_disabled: false
+    # Closed 2026-08-03 once the first account existed. Turning this back on is
+    # the ONLY way to add a user — there is no bootstrap admin and no CLI.
+    is_user_creation_disabled: true
 
     database:
       type: "postgres"

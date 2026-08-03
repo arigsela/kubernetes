@@ -81,6 +81,12 @@ spec:
       # Owns the `donetick` database (donetick-database.yaml). Its passwordSecret
       # is kubernetes.io/basic-auth, which CNPG requires and the n8n entry above
       # does not satisfy — see external-secrets-donetick.yaml.
+      #
+      # DECLARED BUT NOT ENFORCED. The operator never reconciled this entry, so
+      # the role was created by hand on 2026-08-03 to unblock the deploy. The
+      # declaration is kept so a working reconciler adopts the role instead of
+      # conflicting with it. Until then a Vault rotation does NOT reach Postgres:
+      # docs/troubleshooting/cnpg-managed-roles-inert.md
       - name: donetick
         ensure: present
         login: true
