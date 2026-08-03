@@ -19,7 +19,6 @@ This directory contains ArgoCD Application manifests and their corresponding Kub
 - **loki-aws-infrastructure** - Loki S3 bucket and IAM setup
 - **logging** - Loki/Prometheus/Grafana observability stack
 - **ecr-auth** - ECR credential synchronization CronJob
-- **whoami-test** - Ingress testing application
 
 ### Terraform CI/CD
 - **atlantis** - PR-based Terraform plan/apply with Infracost cost estimation

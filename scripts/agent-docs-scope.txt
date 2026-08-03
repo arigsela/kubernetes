@@ -13,7 +13,6 @@ atlantis
 coroot
 logging
 dex
-whoami-test
 qwen
 openclaw-qwen
 istio-ingress
