@@ -10,9 +10,11 @@ data:
     name: "selfhosted"
     is_done_tick_dot_com: false
 
-    # Closed 2026-08-03 once the first account existed. Turning this back on is
-    # the ONLY way to add a user — there is no bootstrap admin and no CLI.
-    is_user_creation_disabled: true
+    # TEMPORARILY OPEN — reopened 2026-08-03 to add a second full account.
+    # Close this again as soon as that account exists; while it is false, anyone
+    # who can reach the host can register. Procedure and verification query:
+    # runbook.md, "Add a user (signup is closed)".
+    is_user_creation_disabled: false
 
     database:
       type: "postgres"
