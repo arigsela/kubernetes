@@ -24,7 +24,7 @@ spec:
         # donetick reads its config once, at startup. If you edit configmap.yaml,
         # recompute this or the change syncs and does nothing:
         #   shasum -a 256 base-apps/donetick/configmap.yaml | cut -c1-16
-        checksum/config: "3089ee379b814412"
+        checksum/config: "14560e23412d7bcd"
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application

@@ -215,12 +215,14 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    # chores.arigsela.com is served by donetick, which replaces the old
+    # chores-tracker app on the hostname it already owned. Hence the secret name:
     # donetick-tls is the one cert here issued from a Certificate tracked in Git
     # (base-apps/donetick/certificate.yaml), not an ingress-shim leftover.
-    - name: https-donetick
+    - name: https-chores
       protocol: HTTPS
       port: 443
-      hostname: donetick.arigsela.com
+      hostname: chores.arigsela.com
       tls:
         mode: Terminate
         certificateRefs:

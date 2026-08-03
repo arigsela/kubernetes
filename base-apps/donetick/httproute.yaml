@@ -7,9 +7,9 @@ spec:
   parentRefs:
     - name: main
       namespace: istio-ingress
-      sectionName: https-donetick
+      sectionName: https-chores
   hostnames:
-    - donetick.arigsela.com
+    - chores.arigsela.com
   rules:
     - matches:
         - path:
