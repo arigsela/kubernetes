@@ -1,0 +1,19 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: donetick
+  namespace: donetick
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=donetick'
+    backstage.io/kubernetes-namespace: donetick
+  tags: [go, postgres, chores, self-hosted]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/chores-tracker
+  dependsOn:
+    - resource:vault/vault
+    - resource:postgresql/postgresql
