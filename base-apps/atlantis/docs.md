@@ -15,7 +15,7 @@ sources:
   - base-apps/atlantis/external-secrets.yaml
   - base-apps/atlantis/secret-store.yaml
   - base-apps/atlantis/network-policy.yaml
-  - base-apps/atlantis/nginx-ingress.yaml
+  - base-apps/atlantis/httproute.yaml
 ---
 
 # atlantis

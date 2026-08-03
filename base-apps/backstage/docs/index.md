@@ -15,7 +15,7 @@ sources:
   - base-apps/backstage/external-secrets.yaml
   - base-apps/backstage/secret-store.yaml
   - base-apps/backstage/rbac.yaml
-  - base-apps/backstage/nginx-ingress.yaml
+  - base-apps/backstage/httproute.yaml
   - base-apps/backstage/services.yaml
 ---
 

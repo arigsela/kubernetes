@@ -12,8 +12,7 @@ tags: [automation, postgresql, webhooks]
 sources:
   - base-apps/n8n/deployments.yaml
   - base-apps/n8n/external-secrets.yaml
-  - base-apps/n8n/nginx-ingress-admin.yaml
-  - base-apps/n8n/nginx-ingress-webhook.yaml
+  - base-apps/n8n/httproute.yaml
   - base-apps/n8n/pvc.yaml
 ---
 

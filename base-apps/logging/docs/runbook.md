@@ -16,7 +16,7 @@ sources:
   - base-apps/logging/loki-s3-external-secret.yaml
   - base-apps/logging/secret-store.yaml
   - base-apps/logging/grafana-deployment.yaml
-  - base-apps/logging/grafana-ingress.yaml
+  - base-apps/logging/httproute.yaml
 ---
 
 # logging runbook

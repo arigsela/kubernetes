@@ -13,7 +13,7 @@ sources:
   - base-apps/weather-kitchen-backend/deployments.yaml
   - base-apps/weather-kitchen-backend/external_secrets.yaml
   - base-apps/weather-kitchen-backend/secret-store.yaml
-  - base-apps/weather-kitchen-backend/nginx-ingress.yaml
+  - base-apps/weather-kitchen-backend/httproute.yaml
 ---
 
 # weather-kitchen-backend runbook

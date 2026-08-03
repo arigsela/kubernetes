@@ -15,7 +15,7 @@ sources:
   - base-apps/dex/external-secret.yaml
   - base-apps/dex/secret-store.yaml
   - base-apps/dex/service.yaml
-  - base-apps/dex/ingress.yaml
+  - base-apps/dex/httproute.yaml
   - base-apps/dex/rbac.yaml
 ---
 

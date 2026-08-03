@@ -14,7 +14,7 @@ sources:
   - base-apps/oncall-agent/external-secret.yaml
   - base-apps/oncall-agent/secret-store.yaml
   - base-apps/oncall-agent/incident-memory-pvc.yaml
-  - base-apps/oncall-agent/oncall-agent-external-ingress.yaml
+  - base-apps/oncall-agent/httproute.yaml
 ---
 
 # oncall-agent runbook
