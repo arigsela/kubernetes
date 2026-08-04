@@ -3,7 +3,7 @@
 #
 # Creates the scoped Vault secret, policy, and kubernetes-auth role backing the
 # ESO manifests in base-apps/homepage/:
-#   - k8s-secrets/homepage  (props: plex-token, grafana-user, grafana-password)
+#   - k8s-secrets/homepage  (props: plex-token, grafana-token)
 #   - policy homepage       (reads only that one path)
 #   - role   homepage       (default SA @ homepage namespace)
 #
@@ -15,20 +15,21 @@
 #
 #   kubectl -n vault cp scripts/provision-homepage-vault.sh vault-0:/tmp/prov.sh
 #   kubectl -n vault exec -it vault-0 -- sh
-#   PLEX_TOKEN=... GRAFANA_USER=homepage GRAFANA_PASSWORD=... sh /tmp/prov.sh
+#   export VAULT_TOKEN=<root token>
+#   PLEX_TOKEN=... GRAFANA_TOKEN=glsa_... sh /tmp/prov.sh
 set -eu
 
 : "${PLEX_TOKEN:?set PLEX_TOKEN}"
-: "${GRAFANA_USER:?set GRAFANA_USER}"
-: "${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD}"
+: "${GRAFANA_TOKEN:?set GRAFANA_TOKEN}"
+# Fail loudly here rather than 403-ing on the first vault call.
+: "${VAULT_TOKEN:?set VAULT_TOKEN — run this inside vault-0 with a token that can write policies and auth roles}"
 
 if vault kv get k8s-secrets/homepage >/dev/null 2>&1; then
   echo "k8s-secrets/homepage already exists — leaving values untouched."
 else
   vault kv put k8s-secrets/homepage \
     plex-token="$PLEX_TOKEN" \
-    grafana-user="$GRAFANA_USER" \
-    grafana-password="$GRAFANA_PASSWORD"
+    grafana-token="$GRAFANA_TOKEN"
   echo "wrote k8s-secrets/homepage"
 fi
 
