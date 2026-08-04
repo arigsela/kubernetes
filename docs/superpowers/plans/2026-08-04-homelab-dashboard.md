@@ -248,24 +248,34 @@ No commit — nothing in this repo changed.
 
 **Interfaces:**
 - Consumes: nothing
-- Produces: Vault path `k8s-secrets/homepage` with properties `plex-token`, `grafana-user`, `grafana-password`; a `homepage` policy; a `homepage` kubernetes-auth role bound to the `default` ServiceAccount in namespace `homepage`. Task 4's `secret-store.yaml` and Task 6's `external-secrets.yaml` depend on these exact names.
+- Produces: Vault path `k8s-secrets/homepage` with properties `plex-token`, `grafana-token`; a `homepage` policy; a `homepage` kubernetes-auth role bound to the `default` ServiceAccount in namespace `homepage`. Task 4's `secret-store.yaml` and Task 6's `external-secrets.yaml` depend on these exact names.
 
-- [ ] **Step 1: Create the Grafana Viewer user**
+- [ ] **Step 1: Create a Grafana service account token**
 
-Grafana provisions datasources, dashboards, and alerting from config, but **not users** — this is a manual one-time step.
+**NOT a user with a password.** `base-apps/logging/grafana-deployment.yaml` sets
+`GF_AUTH_BASIC_ENABLED=false` and `GF_AUTH_DISABLE_LOGIN_FORM=true` deliberately —
+GitHub OAuth is the only way in, and that file's own comment says: *"this ends admin
+API access by username/password. Anything scripted against Grafana's API needs a
+service account token instead."*
 
-Log in to `https://grafana.arigsela.com` as admin, then **Administration → Users → New user**. Create:
-- Username: `homepage`
-- Password: generate a strong one and keep it for Step 3
-- Then **Administration → Users → homepage → Organisations**: set the role to **Viewer**
+This is why the tile uses Homepage's `customapi` widget with a Bearer header rather
+than the built-in `grafana` widget, which speaks only basic auth and therefore cannot
+authenticate against this Grafana at all.
 
-Do not reuse the existing admin credentials. Homepage has no authentication of its own, so admin credentials would sit in the environment of an unauthenticated pod purely to render a dashboard count.
+In Grafana: **Administration → Users and access → Service accounts → Add service
+account**. Name `homepage`, role **Viewer**, then **Add service account token** and
+copy the `glsa_...` value.
 
-Verify the account works and is read-only:
+Verify it (Bearer, not `-u`):
 
 ```bash
-curl -sS -u 'homepage:<PASSWORD>' https://grafana.arigsela.com/api/search | head -c 200
+curl -sS -H "Authorization: Bearer <glsa_TOKEN>" \
+  'https://grafana.arigsela.com/api/alertmanager/grafana/api/v2/alerts' \
+  | python3 -c 'import json,sys; print("firing:",len(json.load(sys.stdin)))'
 ```
+
+Expected: a number. A `401` means the token is wrong; a `403` means the service
+account lacks Viewer.
 
 Expected: a JSON array of dashboards.
 
@@ -291,7 +301,7 @@ Create `scripts/provision-homepage-vault.sh`, mirroring `scripts/provision-donet
 #
 # Creates the scoped Vault secret, policy, and kubernetes-auth role backing the
 # ESO manifests in base-apps/homepage/:
-#   - k8s-secrets/homepage  (props: plex-token, grafana-user, grafana-password)
+#   - k8s-secrets/homepage  (props: plex-token, grafana-token)
 #   - policy homepage       (reads only that one path)
 #   - role   homepage       (default SA @ homepage namespace)
 #
@@ -303,20 +313,21 @@ Create `scripts/provision-homepage-vault.sh`, mirroring `scripts/provision-donet
 #
 #   kubectl -n vault cp scripts/provision-homepage-vault.sh vault-0:/tmp/prov.sh
 #   kubectl -n vault exec -it vault-0 -- sh
-#   PLEX_TOKEN=... GRAFANA_USER=homepage GRAFANA_PASSWORD=... sh /tmp/prov.sh
+#   export VAULT_TOKEN=<root token>
+#   PLEX_TOKEN=... GRAFANA_TOKEN=glsa_... sh /tmp/prov.sh
 set -eu
 
 : "${PLEX_TOKEN:?set PLEX_TOKEN}"
-: "${GRAFANA_USER:?set GRAFANA_USER}"
-: "${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD}"
+: "${GRAFANA_TOKEN:?set GRAFANA_TOKEN}"
+# Fail loudly here rather than 403-ing on the first vault call.
+: "${VAULT_TOKEN:?set VAULT_TOKEN — run this inside vault-0 with a token that can write policies and auth roles}"
 
 if vault kv get k8s-secrets/homepage >/dev/null 2>&1; then
   echo "k8s-secrets/homepage already exists — leaving values untouched."
 else
   vault kv put k8s-secrets/homepage \
     plex-token="$PLEX_TOKEN" \
-    grafana-user="$GRAFANA_USER" \
-    grafana-password="$GRAFANA_PASSWORD"
+    grafana-token="$GRAFANA_TOKEN"
   echo "wrote k8s-secrets/homepage"
 fi
 
@@ -345,7 +356,8 @@ chmod +x scripts/provision-homepage-vault.sh
 kubectl -n vault cp scripts/provision-homepage-vault.sh vault-0:/tmp/prov.sh
 kubectl -n vault exec -it vault-0 -- sh
 # then, inside the pod:
-PLEX_TOKEN='<TOKEN>' GRAFANA_USER='homepage' GRAFANA_PASSWORD='<PASSWORD>' sh /tmp/prov.sh
+export VAULT_TOKEN='<root token>'
+PLEX_TOKEN='<TOKEN>' GRAFANA_TOKEN='glsa_...' sh /tmp/prov.sh
 ```
 
 - [ ] **Step 5: Verify**
@@ -998,17 +1010,15 @@ spec:
       remoteRef:
         key: homepage
         property: plex-token
-    # A dedicated Grafana Viewer account, NOT the admin credentials in
-    # base-apps/logging/grafana-admin-external-secret.yaml. Homepage is
-    # unauthenticated; admin creds must not sit in its environment.
-    - secretKey: grafana-user
+    # A dedicated Grafana SERVICE ACCOUNT token (Viewer), NOT the admin
+    # credentials in base-apps/logging/grafana-admin-external-secret.yaml.
+    # Homepage is unauthenticated; admin creds must not sit in its environment.
+    # A token rather than a username/password because that Grafana runs with
+    # GF_AUTH_BASIC_ENABLED=false — see grafana-deployment.yaml.
+    - secretKey: grafana-token
       remoteRef:
         key: homepage
-        property: grafana-user
-    - secretKey: grafana-password
-      remoteRef:
-        key: homepage
-        property: grafana-password
+        property: grafana-token
 ```
 
 - [ ] **Step 2: Commit it separately, and record the deferred sync check**
@@ -1030,7 +1040,7 @@ kubectl -n homepage get externalsecret homepage-secrets -w
 ```
 
 What you CAN verify now: that the three `remoteRef.property` values here
-(`plex-token`, `grafana-user`, `grafana-password`) exactly match the keys written by
+(`plex-token`, `grafana-token`) exactly match the keys written by
 `scripts/provision-homepage-vault.sh`, and that `secretStoreRef.name` matches the
 `SecretStore` created in Task 4 (`vault-backend`). A typo in either is the most
 likely cause of the deferred check failing later.
@@ -1048,16 +1058,11 @@ In `base-apps/homepage/deployments.yaml`, add to the container's `env` list, aft
                 secretKeyRef:
                   name: homepage-secrets
                   key: plex-token
-            - name: HOMEPAGE_VAR_GRAFANA_USER
+            - name: HOMEPAGE_VAR_GRAFANA_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: homepage-secrets
-                  key: grafana-user
-            - name: HOMEPAGE_VAR_GRAFANA_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: homepage-secrets
-                  key: grafana-password
+                  key: grafana-token
 ```
 
 - [ ] **Step 4: Populate `services.yaml` in the ConfigMap**
@@ -1098,11 +1103,17 @@ In `base-apps/homepage/configmap.yaml`, replace `services.yaml: ""` with the blo
             description: Dashboards and alerting
             icon: grafana.png
             widget:
-              type: grafana
-              version: 2
-              url: http://grafana.logging.svc.cluster.local:3000
-              username: "{{HOMEPAGE_VAR_GRAFANA_USER}}"
-              password: "{{HOMEPAGE_VAR_GRAFANA_PASSWORD}}"
+              # customapi + Bearer, NOT the built-in `grafana` widget: that one
+              # speaks only basic auth, and this Grafana runs with
+              # GF_AUTH_BASIC_ENABLED=false (GitHub OAuth is the only way in).
+              # `format: size` returns the length of the root JSON array.
+              type: customapi
+              url: http://grafana.logging.svc.cluster.local:3000/api/alertmanager/grafana/api/v2/alerts
+              headers:
+                Authorization: "Bearer {{HOMEPAGE_VAR_GRAFANA_TOKEN}}"
+              mappings:
+                - label: Firing
+                  format: size
 
     - Home:
         - Plex:

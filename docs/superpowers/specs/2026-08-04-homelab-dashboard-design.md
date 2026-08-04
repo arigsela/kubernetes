@@ -27,7 +27,7 @@ resources that already define every public hostname, so that **adding an app to
 | Widgets in v1 | Plex, Argo CD, Grafana, Kubernetes resources | Chosen by the user. |
 | Exposure | `home.arigsela.com`, restricted to the existing 4-IP allow-list | Homepage ships **no authentication at all** and upstream states none is planned. Public exposure would require adding oauth2-proxy to guard a page that lists every service in the homelab. |
 | Argo CD widget auth | Enable controller metrics → `prometheusmetric` widget | Avoids the `argocd-cm` landmine (below) and makes Argo CD metrics available in Grafana generally. |
-| Grafana widget auth | A dedicated Grafana **Viewer** user, not the existing admin creds | Homepage is unauthenticated; admin credentials should not sit in its env to render a dashboard count. |
+| Grafana widget auth | A **Viewer service-account token**, sent as a Bearer header by a `customapi` tile | Basic auth is disabled on that Grafana by design, so the built-in `grafana` widget cannot authenticate at all. Admin creds must not sit in an unauthenticated pod's env either. |
 
 ### Rejected alternatives
 
@@ -74,7 +74,7 @@ New, in `base-apps/homepage/`:
 | `services.yaml` | ClusterIP :3000 |
 | `serviceaccount.yaml` | ServiceAccount + ClusterRole + ClusterRoleBinding |
 | `secret-store.yaml` | Vault SecretStore, role `homepage` |
-| `external-secrets.yaml` | Plex token, Grafana viewer creds |
+| `external-secrets.yaml` | Plex token, Grafana service-account token |
 | `httproute.yaml` | `home.arigsela.com` → :3000 |
 | `certificate.yaml` | `homepage-tls` via `letsencrypt-route53` |
 | `reference-grant.yaml` | Gateway in `istio-ingress` may read `homepage-tls` |
@@ -218,12 +218,22 @@ run via `kubectl cp` into `vault-0`.
 | Vault key | Env var | Consumer |
 |---|---|---|
 | `plex-token` | `HOMEPAGE_VAR_PLEX_TOKEN` | Plex widget |
-| `grafana-user` | `HOMEPAGE_VAR_GRAFANA_USER` | Grafana widget |
-| `grafana-password` | `HOMEPAGE_VAR_GRAFANA_PASSWORD` | Grafana widget |
+| `grafana-token` | `HOMEPAGE_VAR_GRAFANA_TOKEN` | Grafana tile (`customapi`) |
 
-The Grafana widget uses **basic auth**, not an API token. The Viewer user must be
-created manually once — Grafana provisions datasources, dashboards and alerting from
-config, but not users.
+**Grafana uses a service-account token via `customapi`, not the built-in `grafana`
+widget.** *(Revised during implementation — see below.)* Homepage's `grafana` widget
+speaks only basic auth, and `base-apps/logging/grafana-deployment.yaml` sets
+`GF_AUTH_BASIC_ENABLED=false` and `GF_AUTH_DISABLE_LOGIN_FORM=true` deliberately, so
+GitHub OAuth is the only interactive path in. That file's own comment states the
+consequence: *"this ends admin API access by username/password. Anything scripted
+against Grafana's API needs a service account token instead."* Verified empirically:
+basic auth with a `glsa_` token returns 401; the same token as a Bearer header
+returns 200.
+
+The tile therefore uses `customapi` against
+`/api/alertmanager/grafana/api/v2/alerts` with `format: size`, showing the count of
+**currently firing alerts** — the actionable number, rather than a dashboard count
+that never changes.
 
 Argo CD needs no credential under this design.
 
