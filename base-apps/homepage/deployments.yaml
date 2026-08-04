@@ -24,7 +24,7 @@ spec:
         # you edit configmap.yaml without bumping this, the change deploys and
         # does nothing. Recompute with:
         #   shasum -a 256 base-apps/homepage/configmap.yaml | cut -c1-16
-        checksum/config: "910dd3cd79b4a78e"
+        checksum/config: "be8c91e2c613ec12"
     spec:
       serviceAccountName: homepage
       nodeSelector:

@@ -16,6 +16,8 @@ metadata:
     gethomepage.dev/group: AI & Agents
     gethomepage.dev/icon: mdi-connection
     gethomepage.dev/description: Kagent MCP endpoint
+    # This route backends kagent-controller, a different pod from the UI above.
+    gethomepage.dev/pod-selector: app.kubernetes.io/component=controller
 spec:
   parentRefs:
     - name: main

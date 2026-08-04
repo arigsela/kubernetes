@@ -1,4 +1,5 @@
-# ALL EIGHT FILES MUST EXIST, even empty ones: Homepage expects the full set.
+# ALL NINE FILES MUST EXIST, even empty ones: Homepage expects the full set
+# and cannot create a missing one (see the proxmox.yaml note at the bottom).
 #
 # These are mounted as individual subPath files (see deployments.yaml), and
 # Kubernetes NEVER propagates ConfigMap updates into subPath mounts. Editing
@@ -14,23 +15,37 @@ data:
   settings.yaml: |
     title: Homelab
     headerStyle: boxed
+    # dot = a coloured indicator instead of the default response-time text.
+    statusStyle: dot
+    # EVERY group below must carry a `tab:`. Homepage shows any group WITHOUT
+    # one on ALL tabs — so a single missing `tab:` silently duplicates that
+    # group across every tab rather than erroring.
+    # Tab order follows the order groups appear here.
     layout:
       GitOps & Delivery:
+        tab: Infra
         style: row
         columns: 3
       Automation:
+        tab: Infra
         style: row
         columns: 2
       Observability:
+        tab: Infra
         style: row
         columns: 2
       Platform:
+        tab: Infra
         style: row
         columns: 3
+      Cloud & Code:
+        tab: Infra
       AI & Agents:
+        tab: Home
         style: row
         columns: 4
       Home:
+        tab: Home
         style: row
         columns: 3
 
@@ -120,7 +135,22 @@ data:
           memory: true
           showLabel: true
 
-  bookmarks.yaml: ""
+  # Bookmark groups sit in the same `layout:` block as service groups and need
+  # a `tab:` there too (see settings.yaml above), or they render on every tab.
+  bookmarks.yaml: |
+    - Cloud & Code:
+        - GitHub:
+            - abbr: GH
+              href: https://github.com/arigsela/kubernetes
+        - Actions:
+            - abbr: CI
+              href: https://github.com/arigsela/kubernetes/actions
+        - AWS:
+            - abbr: AW
+              href: https://console.aws.amazon.com/
+        - Route 53:
+            - abbr: 53
+              href: https://console.aws.amazon.com/route53/v2/hostedzones
   docker.yaml: ""
   custom.css: ""
   custom.js: ""
