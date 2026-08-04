@@ -47,6 +47,10 @@ data:
       Home:
         tab: Home
         style: row
+        columns: 2
+      Media:
+        tab: Home
+        style: row
         columns: 3
 
   kubernetes.yaml: |
@@ -108,11 +112,13 @@ data:
                 - label: Firing
                   format: size
 
-    - Home:
+    # Everything here runs on the Windows/WSL2 box at 10.0.1.200, NOT in the
+    # cluster. It is reachable from pods only because WSL2 mirrored networking
+    # is enabled — see runbook.md. The host needs a DHCP reservation: these IPs
+    # are hardcoded, so a lease change blanks every widget in this group while
+    # the links keep working.
+    - Media:
         - Plex:
-            # Runs on the Windows/WSL2 box, not in the cluster. Reachable only
-            # because of the WSL2 mirrored-networking change documented in
-            # runbook.md. A DHCP lease change here silently blanks the widget.
             href: http://10.0.1.200:32401/web
             description: Media server
             icon: plex.png
@@ -120,6 +126,45 @@ data:
               type: plex
               url: http://10.0.1.200:32401
               key: "{{HOMEPAGE_VAR_PLEX_TOKEN}}"
+        - qBittorrent:
+            href: http://10.0.1.200:8080
+            description: Torrent client
+            icon: qbittorrent.png
+            widget:
+              # qBittorrent has no API key — it authenticates with the WebUI
+              # username and password. "Bypass authentication for clients on
+              # localhost" does not help: the pod is not localhost.
+              type: qbittorrent
+              url: http://10.0.1.200:8080
+              username: "{{HOMEPAGE_VAR_QBIT_USERNAME}}"
+              password: "{{HOMEPAGE_VAR_QBIT_PASSWORD}}"
+        - Sonarr:
+            href: http://10.0.1.200:8989
+            description: TV library manager
+            icon: sonarr.png
+            widget:
+              type: sonarr
+              url: http://10.0.1.200:8989
+              key: "{{HOMEPAGE_VAR_SONARR_KEY}}"
+        - Radarr:
+            href: http://10.0.1.200:7878
+            description: Movie library manager
+            icon: radarr.png
+            widget:
+              type: radarr
+              url: http://10.0.1.200:7878
+              key: "{{HOMEPAGE_VAR_RADARR_KEY}}"
+        - Jellyseerr:
+            href: http://10.0.1.200:5055
+            description: Media requests
+            icon: jellyseerr.png
+            widget:
+              # `seerr`, not `jellyseerr`: Jellyseerr and Overseerr merged into
+              # Seerr upstream. `jellyseerr` still works as an alias today but
+              # is legacy, so prefer the canonical type.
+              type: seerr
+              url: http://10.0.1.200:5055
+              key: "{{HOMEPAGE_VAR_SEERR_KEY}}"
 
   widgets.yaml: |
     - kubernetes:

@@ -24,7 +24,7 @@ spec:
         # you edit configmap.yaml without bumping this, the change deploys and
         # does nothing. Recompute with:
         #   shasum -a 256 base-apps/homepage/configmap.yaml | cut -c1-16
-        checksum/config: "be8c91e2c613ec12"
+        checksum/config: "b050dea01b99dbef"
     spec:
       serviceAccountName: homepage
       nodeSelector:
@@ -66,6 +66,31 @@ spec:
                 secretKeyRef:
                   name: homepage-secrets
                   key: grafana-token
+            - name: HOMEPAGE_VAR_QBIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: homepage-secrets
+                  key: qbittorrent-username
+            - name: HOMEPAGE_VAR_QBIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: homepage-secrets
+                  key: qbittorrent-password
+            - name: HOMEPAGE_VAR_SONARR_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: homepage-secrets
+                  key: sonarr-key
+            - name: HOMEPAGE_VAR_RADARR_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: homepage-secrets
+                  key: radarr-key
+            - name: HOMEPAGE_VAR_SEERR_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: homepage-secrets
+                  key: seerr-key
           ports:
             - containerPort: 3000
               name: http
