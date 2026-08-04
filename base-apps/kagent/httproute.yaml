@@ -6,6 +6,12 @@ kind: HTTPRoute
 metadata:
   name: kagent
   namespace: kagent
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Kagent
+    gethomepage.dev/group: AI & Agents
+    gethomepage.dev/icon: mdi-robot
+    gethomepage.dev/description: Agent platform UI
 spec:
   parentRefs:
     - name: main

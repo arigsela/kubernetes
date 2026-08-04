@@ -3,6 +3,18 @@ kind: HTTPRoute
 metadata:
   name: donetick
   namespace: donetick
+  annotations:
+    # Dashboard tile, discovered by homepage via gateway-api. href is derived
+    # from the hostnames below, so the tile follows the host automatically.
+    # NEVER add a credential here — annotations are plaintext and get no
+    # {{HOMEPAGE_VAR_*}} substitution. Widget tiles live in
+    # base-apps/homepage/configmap.yaml instead.
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Donetick
+    gethomepage.dev/group: Home
+    gethomepage.dev/icon: mdi-checkbox-marked-circle-outline
+    gethomepage.dev/description: Household chore tracker
+    gethomepage.dev/pod-selector: app=donetick
 spec:
   parentRefs:
     - name: main

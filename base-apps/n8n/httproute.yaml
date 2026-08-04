@@ -6,6 +6,13 @@ kind: HTTPRoute
 metadata:
   name: n8n
   namespace: n8n
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: n8n
+    gethomepage.dev/group: Automation
+    gethomepage.dev/icon: n8n.png
+    gethomepage.dev/description: Workflow automation
+    gethomepage.dev/pod-selector: app=n8n
 spec:
   parentRefs:
     - name: main

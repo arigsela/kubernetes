@@ -9,6 +9,12 @@ kind: HTTPRoute
 metadata:
   name: coroot
   namespace: coroot
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Coroot
+    gethomepage.dev/group: Observability
+    gethomepage.dev/icon: mdi-radar
+    gethomepage.dev/description: eBPF observability
 spec:
   parentRefs:
     - name: main
