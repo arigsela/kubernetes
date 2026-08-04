@@ -24,7 +24,7 @@ spec:
         # you edit configmap.yaml without bumping this, the change deploys and
         # does nothing. Recompute with:
         #   shasum -a 256 base-apps/homepage/configmap.yaml | cut -c1-16
-        checksum/config: "243d51a75a0b41e9"
+        checksum/config: "d094a7e545976433"
     spec:
       serviceAccountName: homepage
       nodeSelector:
@@ -71,13 +71,13 @@ spec:
               name: http
           livenessProbe:
             httpGet:
-              path: /
+              path: /api/healthcheck
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 30
           readinessProbe:
             httpGet:
-              path: /
+              path: /api/healthcheck
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
@@ -91,6 +91,14 @@ spec:
               # container missing either limit as a PolicyReport violation.
               cpu: 500m
               memory: 512Mi
+          # This pod is the cluster's only unauthenticated web surface, and it
+          # holds a Grafana API token plus cluster-wide read RBAC — it drops
+          # every capability it does not need. No NET_BIND_SERVICE: Homepage
+          # binds port 3000, not a privileged (<1024) port.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           volumeMounts:
             - name: config
               mountPath: /app/config/settings.yaml

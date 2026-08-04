@@ -59,15 +59,21 @@ data:
               # the chart ignores. See templates/agent-docs/README.md.
               type: prometheusmetric
               url: http://prometheus.logging.svc.cluster.local:9090
+              # count() over a selector that matches NO series returns an empty
+              # vector, not 0 — and Homepage's prometheusmetric widget renders an
+              # empty result as "-", identically to a broken/misspelled label.
+              # `or vector(0)` forces the filtered queries to resolve to a real
+              # 0 in the healthy state, so "-" stays reserved for "the query
+              # itself is broken." Do not simplify this away.
               metrics:
                 - label: Apps
                   query: count(argocd_app_info)
                 - label: Synced
-                  query: count(argocd_app_info{sync_status="Synced"})
+                  query: count(argocd_app_info{sync_status="Synced"}) or vector(0)
                 - label: OutOfSync
-                  query: count(argocd_app_info{sync_status="OutOfSync"})
+                  query: count(argocd_app_info{sync_status="OutOfSync"}) or vector(0)
                 - label: Degraded
-                  query: count(argocd_app_info{health_status="Degraded"})
+                  query: count(argocd_app_info{health_status="Degraded"}) or vector(0)
 
     - Observability:
         - Grafana:
