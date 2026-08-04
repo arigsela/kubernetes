@@ -206,6 +206,21 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
+    # homepage — restricted. The dashboard enumerates every service in the
+    # homelab and Homepage itself ships no authentication (upstream states none
+    # is planned), so the allow-list is the ONLY control here.
+    - to:
+        - operation:
+            hosts:
+              - home.arigsela.com
+              - home.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
     # n8n WEBHOOK paths - public by design. Webhooks arrive from arbitrary
       # external services and cannot be allow-listed; each workflow authenticates
       # its own. Scoped to the webhook paths ONLY, so the admin UI is untouched.
