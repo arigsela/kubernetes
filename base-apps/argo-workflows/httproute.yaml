@@ -6,6 +6,13 @@ kind: HTTPRoute
 metadata:
   name: argo-workflows
   namespace: argo-workflows
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Argo Workflows
+    gethomepage.dev/group: Automation
+    gethomepage.dev/icon: mdi-sitemap
+    gethomepage.dev/description: Workflow orchestration
+    gethomepage.dev/pod-selector: app=server
 spec:
   parentRefs:
     - name: main

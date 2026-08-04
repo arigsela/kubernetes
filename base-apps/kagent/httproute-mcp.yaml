@@ -10,6 +10,12 @@ kind: HTTPRoute
 metadata:
   name: kagent-mcp
   namespace: kagent
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Kagent MCP
+    gethomepage.dev/group: AI & Agents
+    gethomepage.dev/icon: mdi-connection
+    gethomepage.dev/description: Kagent MCP endpoint
 spec:
   parentRefs:
     - name: main
