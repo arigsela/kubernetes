@@ -12,7 +12,21 @@
 
 ## Global Constraints
 
-- **Branch:** work directly on `main`. Argo CD syncs `main`, so each task's commit deploys and becomes verifiable. This matches the repo's actual history (`git log` shows sequential commits on `main`).
+- **Branch:** work in the isolated worktree at
+  `/Users/arisela/git/kubernetes/.claude/worktrees/homelab-dashboard`, branch
+  `worktree-homelab-dashboard`. **Commit, never push.**
+- **LIVE VERIFICATION IS DEFERRED TO POST-MERGE.** Argo CD syncs `main` only, so
+  nothing in this branch reaches the cluster until it is merged. Any step that
+  needs a running Homepage — `kubectl -n homepage ...`, loading
+  `https://home.arigsela.com`, checking tiles or widgets — **cannot be run during
+  implementation.** Where a step says so, do the local validation, then record the
+  live check as deferred in your report rather than attempting it or claiming it
+  passed. Steps that touch infrastructure outside this branch (Prometheus queries,
+  Vault reads, `curl` to the Plex host) are unaffected and DO run — those systems
+  are live regardless of branch.
+- **Local validation always runs and always gates a commit:** `yamllint`,
+  `kubeconform`, and the Python validator suites work entirely offline. A task is
+  not done until they pass.
 - **Image:** `ghcr.io/gethomepage/homepage:v1.13.2`, pinned. Never `:latest`.
 - **Hostname:** `home.arigsela.com`. Namespace: `homepage`. Vault role name must equal the namespace.
 - **`HOMEPAGE_ALLOWED_HOSTS` is mandatory** (Homepage ≥ v1.0) and must contain both `$(MY_POD_IP):3000` (for the kubelet probe) and `home.arigsela.com`.
@@ -705,7 +719,7 @@ kubeconform -ignore-missing-schemas -summary base-apps/homepage/*.yaml base-apps
 
 Expected: no yamllint errors; kubeconform reports 0 invalid. Fix anything reported before committing — CI runs both.
 
-- [ ] **Step 9: Commit and let Argo CD sync**
+- [ ] **Step 9: Commit (do not push)**
 
 ```bash
 git add base-apps/homepage.yaml base-apps/homepage/
@@ -714,29 +728,32 @@ git commit -m "homepage: deploy dashboard core (no exposure, no widgets yet)
 Deployment, Service, ConfigMap, SecretStore, and a read-only ClusterRole
 scoped to Gateway API rather than upstream's ingress/traefik rules.
 Renders zero tiles until HTTPRoutes are annotated."
-git push
 ```
 
-Then watch it land:
+- [ ] **Step 10: Record the deferred live checks**
+
+**DEFERRED — do not attempt.** Argo CD syncs `main`; this branch deploys nothing.
+Record these in your report as deferred, to be run after merge:
 
 ```bash
+# post-merge only
 kubectl -n homepage get pods -w
-```
+# expect one pod reaching 1/1 Running. On CrashLoopBackOff check
+#   kubectl -n homepage logs deploy/homepage
+# — a non-root UID mismatch or a missing config file are the likely causes.
 
-Expected: one pod reaching `1/1 Running`. If it CrashLoopBackOffs, check `kubectl -n homepage logs deploy/homepage` — a non-root UID mismatch or a missing config file are the likely causes.
-
-- [ ] **Step 10: Verify by port-forward**
-
-```bash
 kubectl -n homepage port-forward deploy/homepage 3000:3000 >/dev/null 2>&1 &
 sleep 3
 curl -sS -o /dev/null -w '%{http_code}\n' -H 'Host: home.arigsela.com' http://localhost:3000/
 kill %1
+# expect 200. A 403 or empty response means HOMEPAGE_ALLOWED_HOSTS is wrong.
+# In a browser the page should show the "Homelab" title and the cluster/node
+# resource widget with NO service tiles — correct at this stage.
 ```
 
-Expected: `200`. A `403` or empty response means `HOMEPAGE_ALLOWED_HOSTS` is wrong.
-
-Optionally open `http://localhost:3000` in a browser while the port-forward runs: you should see the "Homelab" title and the cluster/node resource widget, with **no service tiles**. That is correct at this stage.
+What you CAN verify now, and must: that `yamllint` and `kubeconform` pass (Step 8),
+that the ConfigMap contains all eight keys, and that the `checksum/config` value in
+`deployments.yaml` matches `shasum -a 256 base-apps/homepage/configmap.yaml | cut -c1-16`.
 
 ---
 
@@ -906,26 +923,38 @@ git commit -m "homepage: expose at home.arigsela.com
 Certificate, ReferenceGrant, HTTPRoute, plus the Gateway listener and the
 AuthorizationPolicy allow rule — the last two together, since the policy is
 deny-by-default and a listener without a rule fails closed."
-git push
 ```
 
-- [ ] **Step 9: Wait for the certificate**
+Do not push.
+
+- [ ] **Step 9: Record the deferred certificate and end-to-end checks**
+
+**DEFERRED — do not attempt.** Both need the branch merged and synced. Record in
+your report:
 
 ```bash
+# post-merge only
 kubectl -n homepage get certificate homepage-tls -w
-```
+# expect READY=True within a few minutes. The listener sits unprogrammed until
+# then; expected and self-healing. If it stalls:
+#   kubectl -n homepage describe certificaterequest
+# — stale Route 53 credentials in the ESO-managed secret are the known failure.
 
-Expected: `READY=True` within a few minutes. The listener sits unprogrammed until then; that is expected and self-heals. If it stalls, check `kubectl -n homepage describe certificaterequest` — stale Route 53 credentials in the ESO-managed secret are the known failure here.
-
-- [ ] **Step 10: Verify end to end**
-
-```bash
 curl -sS -o /dev/null -w '%{http_code}\n' https://home.arigsela.com/
+# expect 200 from an allow-listed address, and 403 from anywhere else.
 ```
 
-Expected: `200` from an allow-listed address.
+The allow-list denial check is the one that matters most and is easiest to skip —
+carry it into your report explicitly so it is not lost.
 
-Then confirm the allow-list actually denies. From a non-allow-listed network (phone on cellular, or any VPN exit):
+What you CAN verify now, and must: that the Gateway listener's `certificateRefs`
+name and namespace match the Certificate's `secretName` and namespace exactly, that
+the HTTPRoute's `sectionName` matches the new listener's `name`, and that the
+AuthorizationPolicy rule was added in the same commit as the listener.
+
+- [ ] **Step 10: Note the post-merge allow-list test**
+
+**DEFERRED.** From a non-allow-listed network (phone on cellular, or any VPN exit):
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' https://home.arigsela.com/
@@ -982,18 +1011,29 @@ spec:
         property: grafana-password
 ```
 
-- [ ] **Step 2: Verify the secret syncs**
+- [ ] **Step 2: Commit it separately, and record the deferred sync check**
 
-Commit just this file first, so a Vault problem surfaces on its own rather than mixed into a config change:
+Commit just this file first, so that after merge a Vault problem surfaces on its own rather than mixed into a config change:
 
 ```bash
 git add base-apps/homepage/external-secrets.yaml
 git commit -m "homepage: sync widget credentials from Vault"
-git push
-kubectl -n homepage get externalsecret homepage-secrets -w
 ```
 
-Expected: `STATUS=SecretSynced`. If it reports `SecretSyncedError`, the Vault role or policy from Task 3 is wrong — fix that before continuing.
+**DEFERRED — do not attempt.** Record in your report:
+
+```bash
+# post-merge only
+kubectl -n homepage get externalsecret homepage-secrets -w
+# expect STATUS=SecretSynced. SecretSyncedError means the Vault role or policy
+# from Task 3 is wrong — fix that before trusting any widget.
+```
+
+What you CAN verify now: that the three `remoteRef.property` values here
+(`plex-token`, `grafana-user`, `grafana-password`) exactly match the keys written by
+`scripts/provision-homepage-vault.sh`, and that `secretStoreRef.name` matches the
+`SecretStore` created in Task 4 (`vault-backend`). A typo in either is the most
+likely cause of the deferred check failing later.
 
 - [ ] **Step 3: Add the widget env vars to the Deployment**
 
@@ -1106,16 +1146,40 @@ git commit -m "homepage: add Plex, Grafana, and Argo CD widgets
 
 Argo CD reads Prometheus instead of the Argo CD API, so it needs no token.
 Grafana uses a dedicated Viewer account. Plex points at the WSL2 host."
-git push
 ```
 
-- [ ] **Step 8: Verify each widget renders real data**
+Do not push.
+
+- [ ] **Step 8: Verify the widget backends now, defer the rendering check**
+
+Two of the three widget backends are live systems reachable from this machine
+regardless of branch — **verify them now**, because a wrong URL or a dead credential
+found here saves a debugging round after merge:
 
 ```bash
-kubectl -n homepage rollout status deploy/homepage
+# Prometheus: the exact PromQL the Argo CD widget will run
+kubectl -n logging port-forward svc/prometheus 9090:9090 >/dev/null 2>&1 &
+sleep 3
+for q in 'count(argocd_app_info)' \
+         'count(argocd_app_info{sync_status="Synced"})' \
+         'count(argocd_app_info{sync_status="OutOfSync"})' \
+         'count(argocd_app_info{health_status="Degraded"})'; do
+  printf '%s => ' "$q"
+  curl -sG --data-urlencode "query=$q" http://localhost:9090/api/v1/query \
+    | python3 -c 'import json,sys; r=json.load(sys.stdin)["data"]["result"]; print(r[0]["value"][1] if r else "EMPTY — label mismatch")'
+done
+kill %1
+
+# Plex: the exact URL and token the widget will use
+curl -sS -o /dev/null -w '%{http_code}\n' "http://<WINDOWS_LAN_IP>:32400/library/sections?X-Plex-Token=<TOKEN>"
 ```
 
-Then open `https://home.arigsela.com` and confirm, tile by tile:
+Expected: four numbers (none `EMPTY`), and `200` from Plex. An `EMPTY` result means
+the PromQL label values differ from Task 1 Step 6 — fix the query in `configmap.yaml`
+now, not after merge.
+
+**DEFERRED — do not attempt:** `kubectl -n homepage rollout status deploy/homepage`,
+then opening `https://home.arigsela.com` and confirming tile by tile:
 
 - **Argo CD** — four numbers; `Apps` should match `kubectl get applications -n argo-cd | wc -l` minus the header.
 - **Grafana** — a dashboard count, not an error.
@@ -1238,18 +1302,41 @@ Adds gethomepage.dev/* annotations to the 14 link-only public hostnames.
 Tile metadata sits beside the route that defines the URL, so a tile follows
 its hostname automatically. weather-kitchen is annotated on the frontend
 route only — both routes share the hostname and would otherwise duplicate."
-git push
 ```
 
-- [ ] **Step 6: Verify tiles appear WITHOUT a restart**
+Do not push.
 
-Annotations are read from the Kubernetes API per request, unlike `configmap.yaml`. Do not restart the pod — confirming that is the point of this step.
+- [ ] **Step 6: Audit the annotations locally, defer the rendering check**
+
+**Verify now** — this catches the realistic mistakes without needing a cluster:
 
 ```bash
-kubectl -n homepage get pods  # note the AGE; it should not reset
+# Exactly 14 routes enabled, and NOT weather-kitchen-backend
+grep -rl 'gethomepage.dev/enabled' base-apps/*/httproute*.yaml | sort
+grep -rl 'gethomepage.dev/enabled' base-apps/weather-kitchen-backend/ && echo "ERROR: backend must not be annotated"
+
+# Every group used must exist in the settings.yaml layout, or the tile renders
+# in an unpredictable position or not at all
+grep -h 'gethomepage.dev/group' base-apps/*/httproute*.yaml | sed 's/.*group: *//' | sort -u
+grep -A12 'layout:' base-apps/homepage/configmap.yaml | grep -E '^\s{6}\S' | sed 's/://;s/^ *//'
 ```
 
-Reload `https://home.arigsela.com`. Expected: 17 tiles total (14 discovered + 3 static) across the six groups, each discovered tile linking to the right hostname, and pod-health dots on the ones with a `pod-selector`.
+Expected: 14 files listed, no backend hit, and every group value appearing in the
+layout list. A group name that is not in the layout is the single most common cause
+of a "missing" tile.
+
+**DEFERRED — do not attempt.** Annotations are read from the Kubernetes API per
+request, unlike `configmap.yaml`, so post-merge the tiles must appear with **no pod
+restart** — confirming that is the point of the check:
+
+```bash
+# post-merge only
+kubectl -n homepage get pods   # note the AGE; it must NOT reset
+```
+
+Then reload `https://home.arigsela.com`: expect 17 tiles total (14 discovered + 3
+static) across the six groups, each linking to the right hostname, with pod-health
+dots on the ones carrying a `pod-selector`.
 
 Any missing tile: check that file's `gethomepage.dev/enabled: "true"` and that its `group` exactly matches a key in `settings.yaml`'s `layout` — a group name that isn't in the layout renders in an unpredictable position or not at all.
 
@@ -1391,29 +1478,54 @@ git commit -m "homepage: agent-docs contract
 catalog-info.yaml, docs.md, runbook.md, mkdocs.yml, and the scope entry that
 turns on validation. Documents the tile-sourcing rule, why config changes need
 a checksum bump, and the external WSL2 Plex dependency."
-git push
 ```
 
-- [ ] **Step 8: Confirm CI is green**
+Do not push.
+
+- [ ] **Step 8: Run the full CI suite locally**
+
+CI runs on push, which is deferred — but every check it runs works offline, so run
+the whole set here. This is the last task, so this is the branch's final gate:
 
 ```bash
-gh run list --limit 3
+git status --short          # must be empty; a generated file left uncommitted
+                            # is exactly what breaks gen-techdocs --check in CI
+yamllint base-apps/homepage/ base-apps/homepage.yaml
+kubeconform -ignore-missing-schemas -summary base-apps/homepage/*.yaml base-apps/homepage.yaml
+python3 -m pytest tests/agent-docs/ tests/catalog-refs/ tests/techdocs/ -q
+python3 scripts/validate-agent-docs.py --repo-root .
+python3 scripts/validate-catalog-refs.py --repo-root .
+python3 scripts/gen-techdocs.py --repo-root . --check
 ```
 
-Expected: the Validate Manifests workflow passes on the new commit. If `gen-techdocs --check` fails in CI but passed locally, the generated `docs/` directory was not committed — re-run the generator and `git add base-apps/homepage/docs/`.
+Expected: all pass, `git status` clean, and the agent-docs validator reporting **20**
+apps in scope (up from the baseline 19).
+
+**DEFERRED:** `gh run list --limit 3` after merge, to confirm the Validate Manifests
+workflow passes on the real commit.
 
 ---
 
-## Post-implementation verification
+## Post-merge verification
 
-Independent of any single task — run these once everything is in:
+**Every live check in this plan collects here.** The branch is developed in an
+isolated worktree and Argo CD syncs `main` only, so none of this can run during
+implementation. Run the whole list after merging to `main` and pushing — in order,
+because a failure early makes the later ones meaningless:
 
-- [ ] `https://home.arigsela.com` returns `200` from an allow-listed address and `403` from elsewhere
+- [ ] Argo CD picked up the app: `kubectl -n argo-cd get app homepage` → Synced/Healthy
+- [ ] Pod is up: `kubectl -n homepage get pods` → `1/1 Running`, no CrashLoopBackOff
+- [ ] Certificate issued: `kubectl -n homepage get certificate homepage-tls` → `READY=True`
+- [ ] Secrets synced: `kubectl -n homepage get externalsecret homepage-secrets` → `SecretSynced`
+- [ ] `https://home.arigsela.com` returns `200` from an allow-listed address
+- [ ] **and `403` from a non-allow-listed network** (phone on cellular) — the check that actually matters
 - [ ] 17 tiles render across the six configured groups
 - [ ] All four widgets show real numbers, not errors or zeros
-- [ ] Argo CD reports `homepage` Synced/Healthy: `kubectl -n argo-cd get app homepage`
-- [ ] The pod has not restarted since Task 6: `kubectl -n homepage get pods`
-- [ ] CI green on `main`
+- [ ] The pod has not restarted since the widgets landed: `kubectl -n homepage get pods` (AGE)
+- [ ] CI green on `main`: `gh run list --limit 3`
+
+If a widget is blank, the `runbook.md` table written in Task 8 maps each symptom to
+its cause — that table exists precisely because these checks were deferred.
 
 ## Known follow-ups (deliberately out of scope)
 
