@@ -33,6 +33,12 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
+        # The logs volume below is an emptyDir mounted at /app/config/logs.
+        # Without fsGroup, emptyDir mounts root-owned and UID 1000 can't write
+        # to it. UID 1000 is correct — upstream's v1.13.2 Dockerfile does
+        # `COPY --chown=1000:1000` for all app files — so only the volume's
+        # ownership needed fixing, not the UID.
+        fsGroup: 1000
       containers:
         - name: homepage
           image: ghcr.io/gethomepage/homepage:v1.13.2
@@ -67,6 +73,10 @@ spec:
               cpu: 50m
               memory: 128Mi
             limits:
+              # cpu is required alongside memory: the repo's Kyverno
+              # ClusterPolicy require-resource-limits (Audit mode) flags any
+              # container missing either limit as a PolicyReport violation.
+              cpu: 500m
               memory: 512Mi
           volumeMounts:
             - name: config
