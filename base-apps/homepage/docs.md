@@ -111,7 +111,7 @@ ConfigMap edit. Recompute it after any `configmap.yaml` change:
 shasum -a 256 base-apps/homepage/configmap.yaml | cut -c1-16
 ```
 
-The current value baked into `deployments.yaml` is `243d51a75a0b41e9`.
+The current value baked into `deployments.yaml` is `d094a7e545976433`.
 Forgetting this step is indistinguishable from a successful, no-op deploy —
 Argo CD reports Synced/Healthy either way.
 
