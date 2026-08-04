@@ -1163,37 +1163,34 @@ Do not push.
 
 - [ ] **Step 8: Verify the widget backends now, defer the rendering check**
 
-Two of the three widget backends are live systems reachable from this machine
-regardless of branch — **verify them now**, because a wrong URL or a dead credential
-found here saves a debugging round after merge:
+Plex is a live system reachable from this machine regardless of branch — **verify it
+now**, because a wrong URL found here saves a debugging round after merge:
 
 ```bash
-# Prometheus: the exact PromQL the Argo CD widget will run
-kubectl -n logging port-forward svc/prometheus 9090:9090 >/dev/null 2>&1 &
-sleep 3
-for q in 'count(argocd_app_info)' \
-         'count(argocd_app_info{sync_status="Synced"})' \
-         'count(argocd_app_info{sync_status="OutOfSync"})' \
-         'count(argocd_app_info{health_status="Degraded"})'; do
-  printf '%s => ' "$q"
-  curl -sG --data-urlencode "query=$q" http://localhost:9090/api/v1/query \
-    | python3 -c 'import json,sys; r=json.load(sys.stdin)["data"]["result"]; print(r[0]["value"][1] if r else "EMPTY — label mismatch")'
-done
-kill %1
-
-# Plex: the exact URL and token the widget will use
-curl -sS -o /dev/null -w '%{http_code}\n' "http://<WINDOWS_LAN_IP>:32401/library/sections?X-Plex-Token=<TOKEN>"
+# Plex — the exact URL the widget will use. Already confirmed reachable:
+# WSL2 mirrored networking is on and the port is 32401, NOT the default 32400.
+curl -sS -o /dev/null -w '%{http_code}\n' "http://10.0.1.200:32401/library/sections"
 ```
 
-Expected: four numbers (none `EMPTY`), and `200` from Plex. An `EMPTY` result means
-the PromQL label values differ from Task 1 Step 6 — fix the query in `configmap.yaml`
-now, not after merge.
+Expected: `200`.
+
+**The Argo CD PromQL CANNOT be verified pre-merge.** `argocd_app_info` does not exist
+yet: enabling it is a Terraform change applied by Atlantis on the PR, behind a
+required-reviewer gate, so the metric only appears after that apply. Querying
+Prometheus now returns an empty result — that is **expected, not a failure**. Do not
+try to "fix" the query in response to it, and do not attempt the apply yourself.
+
+Write the queries against the documented label names (`sync_status` with values
+`Synced` / `OutOfSync`, `health_status` with `Degraded`), which `argocd_app_info` has
+carried across many Argo CD versions. If 3.5.0-rc2 differs, every counter renders `0`
+while the tile otherwise looks healthy — so the post-merge checklist verifies this
+explicitly, and the fix is a one-line ConfigMap edit plus a `checksum/config` bump.
 
 **DEFERRED — do not attempt:** `kubectl -n homepage rollout status deploy/homepage`,
 then opening `https://home.arigsela.com` and confirming tile by tile:
 
-- **Argo CD** — four numbers; `Apps` should match `kubectl get applications -n argo-cd | wc -l` minus the header.
-- **Grafana** — a dashboard count, not an error.
+- **Argo CD** — four numbers, none of them `0` unless genuinely zero; `Apps` should match `kubectl get applications -n argo-cd | wc -l` minus the header.
+- **Grafana** — a firing-alert count (2 at the time of writing), not an error.
 - **Plex** — library counts and stream count.
 - **Cluster resources** — CPU/memory bars for the cluster and each node.
 
@@ -1526,6 +1523,13 @@ isolated worktree and Argo CD syncs `main` only, so none of this can run during
 implementation. Run the whole list after merging to `main` and pushing — in order,
 because a failure early makes the later ones meaningless:
 
+- [ ] Atlantis applied the Terraform: `kubectl -n argo-cd get svc | grep metrics` shows the controller metrics Service
+- [ ] **The Argo CD PromQL labels are right** — the one guess in this branch. Run:
+      `curl -sG --data-urlencode 'query=argocd_app_info' localhost:9090/api/v1/query`
+      against a Prometheus port-forward and confirm the label set really uses
+      `sync_status` / `health_status` with values `Synced` / `OutOfSync` / `Degraded`.
+      A mismatch renders every Argo CD counter as `0` while the tile looks healthy.
+      Fix = one-line edit in configmap.yaml + a `checksum/config` bump.
 - [ ] Argo CD picked up the app: `kubectl -n argo-cd get app homepage` → Synced/Healthy
 - [ ] Pod is up: `kubectl -n homepage get pods` → `1/1 Running`, no CrashLoopBackOff
 - [ ] Certificate issued: `kubectl -n homepage get certificate homepage-tls` → `READY=True`
