@@ -1,0 +1,22 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: homepage
+  namespace: homepage
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=homepage'
+    backstage.io/kubernetes-namespace: homepage
+  tags: [dashboard, gitops, self-hosted]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  # default/platform is a Domain + Group, not a System — there is no System
+  # named bare "platform" (see catalog/platform-entities.yaml). Falling back to
+  # backstage's system, per templates/agent-docs/README.md: both are internal,
+  # unauthenticated-by-network-policy dashboards onto the rest of the cluster.
+  system: default/platform-tooling
+  dependsOn:
+    - resource:vault/vault
