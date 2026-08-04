@@ -1518,28 +1518,72 @@ workflow passes on the real commit.
 
 ## Post-merge verification
 
-**Every live check in this plan collects here.** The branch is developed in an
-isolated worktree and Argo CD syncs `main` only, so none of this can run during
-implementation. Run the whole list after merging to `main` and pushing — in order,
-because a failure early makes the later ones meaningless:
+**Every live check in this plan collects here.** The branch was developed in an
+isolated worktree and Argo CD syncs `main` only, so none of it could run during
+implementation. Run the list **in order** — it is sequenced so a failure never sends
+you debugging the wrong layer.
 
-- [ ] Atlantis applied the Terraform: `kubectl -n argo-cd get svc | grep metrics` shows the controller metrics Service
-- [ ] **The Argo CD PromQL labels are right** — the one guess in this branch. Run:
-      `curl -sG --data-urlencode 'query=argocd_app_info' localhost:9090/api/v1/query`
-      against a Prometheus port-forward and confirm the label set really uses
-      `sync_status` / `health_status` with values `Synced` / `OutOfSync` / `Degraded`.
-      A mismatch renders every Argo CD counter as `0` while the tile looks healthy.
-      Fix = one-line edit in configmap.yaml + a `checksum/config` bump.
+DNS is already done: `dig +short home.arigsela.com` returns `73.7.190.154`, matching
+`chores.arigsela.com`.
+
+**Phase 1 — did anything ELSE break?** This branch edits two files every hostname in
+the cluster depends on (`istio-ingress/gateway.yaml` and `authorizationpolicy.yaml`).
+If Istio's webhook rejects the policy or that app fails to sync, *everything* goes
+down, not just `home`. Check this first:
+
+- [ ] `kubectl -n argo-cd get app istio-ingress` → Synced/Healthy
+- [ ] `kubectl -n istio-ingress get gateway main -o jsonpath='{.status.listeners[*].conditions}'` — all listeners Programmed
+- [ ] Two unrelated hosts still serve: `curl -o /dev/null -w '%{http_code}\n' https://argocd.arigsela.com https://grafana.arigsela.com` → `200 200`
+
+**Phase 2 — does the new app come up?** ExternalSecret first: the `secretKeyRef`s are
+non-optional, so the pod cannot leave `CreateContainerConfigError` until the Secret
+materializes. Checking the pod first means debugging the wrong layer.
+
+- [ ] **Secrets synced:** `kubectl -n homepage get externalsecret homepage-secrets` → `SecretSynced`.
+      **This is the most likely first failure** — Vault was provisioned by hand through the
+      UI rather than by `scripts/provision-homepage-vault.sh`, so a property-name typo
+      (`plex-token`, `grafana-token`) or a policy missing the KV-v2 `data/` path prefix
+      surfaces here and nowhere earlier.
 - [ ] Argo CD picked up the app: `kubectl -n argo-cd get app homepage` → Synced/Healthy
 - [ ] Pod is up: `kubectl -n homepage get pods` → `1/1 Running`, no CrashLoopBackOff
 - [ ] Certificate issued: `kubectl -n homepage get certificate homepage-tls` → `READY=True`
-- [ ] Secrets synced: `kubectl -n homepage get externalsecret homepage-secrets` → `SecretSynced`
+
+**Phase 3 — is it reachable, and only by whom it should be?**
+
 - [ ] `https://home.arigsela.com` returns `200` from an allow-listed address
 - [ ] **and `403` from a non-allow-listed network** (phone on cellular) — the check that actually matters
 - [ ] 17 tiles render across the six configured groups
-- [ ] All four widgets show real numbers, not errors or zeros
+
+**Phase 4 — are the widgets telling the truth?**
+
+- [ ] Cluster resources, Plex, and Grafana show plausible values. Note Grafana's tile is
+      a *firing alert count* — `0` is a valid, healthy answer, not a failure.
+- [ ] Atlantis applied the Terraform: `kubectl -n argo-cd get svc -n argo-cd | grep metrics`
+      shows the controller metrics Service. Until this lands the Argo CD tile reads `-`,
+      which is expected, not broken.
+- [ ] **The Argo CD PromQL labels are right** — the one guess in this branch. Run
+      `curl -sG --data-urlencode 'query=argocd_app_info' localhost:9090/api/v1/query`
+      against a Prometheus port-forward and confirm the labels really are
+      `sync_status` / `health_status` with values `Synced` / `OutOfSync` / `Degraded`.
+      The queries use `or vector(0)` so a healthy cluster shows `0`, not `-`; a `-` on
+      `OutOfSync`/`Degraded` therefore means the label names are wrong.
+      Fix = one-line edit in `configmap.yaml` + a `checksum/config` bump.
+
+**Phase 5 — security posture holds**
+
+- [ ] The Grafana token really is Viewer-scoped. That scoping is the entire mitigation
+      for putting a Grafana credential in an unauthenticated app's environment, and it
+      currently exists only in whoever created it. Negative test — this must **403**:
+      `curl -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer <glsa_TOKEN>" \
+        -H 'Content-Type: application/json' -d '{"dashboard":{"title":"x"},"overwrite":false}' \
+        https://grafana.arigsela.com/api/dashboards/db`
 - [ ] The pod has not restarted since the widgets landed: `kubectl -n homepage get pods` (AGE)
 - [ ] CI green on `main`: `gh run list --limit 3`
+
+**Optional but recommended:** run `scripts/provision-homepage-vault.sh` once against the
+already-provisioned Vault. The secret write is guarded so live tokens are preserved,
+while the policy and role writes are unconditional — so a single run both tests the
+disaster-recovery recipe and reconciles any drift from hand-provisioning.
 
 If a widget is blank, the `runbook.md` table written in Task 8 maps each symptom to
 its cause — that table exists precisely because these checks were deferred.
