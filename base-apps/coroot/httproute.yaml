@@ -15,6 +15,9 @@ metadata:
     gethomepage.dev/group: Observability
     gethomepage.dev/icon: mdi-radar
     gethomepage.dev/description: eBPF observability
+    # coroot-coroot-0 only; the cluster-agent and node-agent carry
+    # component=coroot-cluster-agent / -node-agent and must not match.
+    gethomepage.dev/pod-selector: app.kubernetes.io/component=coroot
 spec:
   parentRefs:
     - name: main
