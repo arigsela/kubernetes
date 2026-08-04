@@ -1318,7 +1318,9 @@ grep -rl 'gethomepage.dev/enabled' base-apps/weather-kitchen-backend/ && echo "E
 # Every group used must exist in the settings.yaml layout, or the tile renders
 # in an unpredictable position or not at all
 grep -h 'gethomepage.dev/group' base-apps/*/httproute*.yaml | sed 's/.*group: *//' | sort -u
-grep -A12 'layout:' base-apps/homepage/configmap.yaml | grep -E '^\s{6}\S' | sed 's/://;s/^ *//'
+# -A20, not -A12: the layout block is six groups x 3 lines and -A12 silently
+# truncates it, which makes the comparison below pass against a partial list.
+grep -A20 'layout:' base-apps/homepage/configmap.yaml | grep -E '^\s{6}\S' | sed 's/://;s/^ *//'
 ```
 
 Expected: 14 files listed, no backend hit, and every group value appearing in the
