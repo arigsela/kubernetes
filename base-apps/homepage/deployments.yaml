@@ -24,7 +24,7 @@ spec:
         # you edit configmap.yaml without bumping this, the change deploys and
         # does nothing. Recompute with:
         #   shasum -a 256 base-apps/homepage/configmap.yaml | cut -c1-16
-        checksum/config: "9b6da78ba4ae760c"
+        checksum/config: "243d51a75a0b41e9"
     spec:
       serviceAccountName: homepage
       nodeSelector:
@@ -53,6 +53,19 @@ spec:
             # dropping it makes the pod fail readiness with no obvious cause.
             - name: HOMEPAGE_ALLOWED_HOSTS
               value: "$(MY_POD_IP):3000,home.arigsela.com"
+            # Referenced as {{HOMEPAGE_VAR_*}} in configmap.yaml. Homepage
+            # substitutes these in config files ONLY — never in annotations,
+            # which is why every widget-bearing tile is static.
+            - name: HOMEPAGE_VAR_PLEX_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: homepage-secrets
+                  key: plex-token
+            - name: HOMEPAGE_VAR_GRAFANA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: homepage-secrets
+                  key: grafana-token
           ports:
             - containerPort: 3000
               name: http
