@@ -33,6 +33,7 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | dex | OIDC provider fronting GitHub — issuer for Vault OIDC (human `vault` login via GitHub SSO) | dex | [docs.md](dex/docs.md) | [runbook.md](dex/runbook.md) | [catalog-info.yaml](dex/catalog-info.yaml) |
 | donetick | Self-hosted household chore and task tracker (Go + React), backed by the CNPG Postgres cluster. | donetick | [docs.md](donetick/docs.md) | [runbook.md](donetick/runbook.md) | [catalog-info.yaml](donetick/catalog-info.yaml) |
 | ecr-auth |  |  |  |  |  |
+| homepage | Homelab dashboard listing every cluster app plus the WSL2-hosted Plex server, with live widgets for Plex, Grafana, Argo CD, and cluster resources. | homepage | [docs.md](homepage/docs.md) | [runbook.md](homepage/runbook.md) | [catalog-info.yaml](homepage/catalog-info.yaml) |
 | istio-ingress | The cluster's north-south ingress: a Gateway API Gateway on the `istio` GatewayClass, directly internet-facing | istio-ingress | [docs.md](istio-ingress/docs.md) | [runbook.md](istio-ingress/runbook.md) | [catalog-info.yaml](istio-ingress/catalog-info.yaml) |
 | kagent | Kubernetes-native AI agent platform (kagent Helm controller, declarative agents, MCP tool servers) | kagent | [docs.md](kagent/docs.md) | [runbook.md](kagent/runbook.md) | [catalog-info.yaml](kagent/catalog-info.yaml) |
 | kyverno-policies |  |  |  |  |  |
