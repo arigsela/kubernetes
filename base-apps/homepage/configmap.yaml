@@ -1,0 +1,64 @@
+# ALL EIGHT FILES MUST EXIST, even empty ones: Homepage expects the full set.
+#
+# These are mounted as individual subPath files (see deployments.yaml), and
+# Kubernetes NEVER propagates ConfigMap updates into subPath mounts. Editing
+# this file therefore syncs cleanly and changes NOTHING until the pod restarts.
+# After any edit here, recompute the checksum in deployments.yaml:
+#   shasum -a 256 base-apps/homepage/configmap.yaml | cut -c1-16
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homepage
+  namespace: homepage
+data:
+  settings.yaml: |
+    title: Homelab
+    headerStyle: boxed
+    layout:
+      GitOps & Delivery:
+        style: row
+        columns: 3
+      Automation:
+        style: row
+        columns: 2
+      Observability:
+        style: row
+        columns: 2
+      Platform:
+        style: row
+        columns: 3
+      AI & Agents:
+        style: row
+        columns: 4
+      Home:
+        style: row
+        columns: 3
+
+  kubernetes.yaml: |
+    # cluster: use the in-cluster ServiceAccount.
+    # gateway: discover tiles from Gateway API HTTPRoute annotations.
+    # ingress/traefik stay off — this cluster uses neither.
+    mode: cluster
+    gateway: true
+    ingress: false
+
+  services.yaml: ""
+
+  widgets.yaml: |
+    - kubernetes:
+        cluster:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+          label: cluster
+        nodes:
+          show: true
+          cpu: true
+          memory: true
+          showLabel: true
+
+  bookmarks.yaml: ""
+  docker.yaml: ""
+  custom.css: ""
+  custom.js: ""
