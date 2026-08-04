@@ -42,7 +42,63 @@ data:
     gateway: true
     ingress: false
 
-  services.yaml: ""
+  # Only widget-bearing tiles live here. Link-only tiles are discovered from
+  # gethomepage.dev/* annotations on each app's own httproute.yaml. The split
+  # exists because Homepage substitutes {{HOMEPAGE_VAR_*}} in config files but
+  # not in annotations — a credential must never appear in an annotation.
+  services.yaml: |
+    - GitOps & Delivery:
+        - Argo CD:
+            href: https://argocd.arigsela.com
+            description: GitOps continuous delivery
+            icon: argo-cd.png
+            widget:
+              # Driven by Prometheus rather than an Argo CD API token: creating
+              # an apiKey account means editing argocd-cm, and this repo's
+              # Terraform module writes to the deprecated server.config.* path
+              # the chart ignores. See templates/agent-docs/README.md.
+              type: prometheusmetric
+              url: http://prometheus.logging.svc.cluster.local:9090
+              metrics:
+                - label: Apps
+                  query: count(argocd_app_info)
+                - label: Synced
+                  query: count(argocd_app_info{sync_status="Synced"})
+                - label: OutOfSync
+                  query: count(argocd_app_info{sync_status="OutOfSync"})
+                - label: Degraded
+                  query: count(argocd_app_info{health_status="Degraded"})
+
+    - Observability:
+        - Grafana:
+            href: https://grafana.arigsela.com
+            description: Dashboards and alerting
+            icon: grafana.png
+            widget:
+              # customapi + Bearer, NOT the built-in `grafana` widget: that one
+              # speaks only basic auth, and this Grafana runs with
+              # GF_AUTH_BASIC_ENABLED=false (GitHub OAuth is the only way in).
+              # `format: size` returns the length of the root JSON array.
+              type: customapi
+              url: http://grafana.logging.svc.cluster.local:3000/api/alertmanager/grafana/api/v2/alerts
+              headers:
+                Authorization: "Bearer {{HOMEPAGE_VAR_GRAFANA_TOKEN}}"
+              mappings:
+                - label: Firing
+                  format: size
+
+    - Home:
+        - Plex:
+            # Runs on the Windows/WSL2 box, not in the cluster. Reachable only
+            # because of the WSL2 mirrored-networking change documented in
+            # runbook.md. A DHCP lease change here silently blanks the widget.
+            href: http://10.0.1.200:32401/web
+            description: Media server
+            icon: plex.png
+            widget:
+              type: plex
+              url: http://10.0.1.200:32401
+              key: "{{HOMEPAGE_VAR_PLEX_TOKEN}}"
 
   widgets.yaml: |
     - kubernetes:
