@@ -232,6 +232,19 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    - name: https-homepage
+      protocol: HTTPS
+      port: 443
+      hostname: home.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: homepage-tls
+            namespace: homepage
+      allowedRoutes:
+        namespaces:
+          from: All
     - name: https-kagent-mcp
       protocol: HTTPS
       port: 443
