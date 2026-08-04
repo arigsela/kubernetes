@@ -94,7 +94,7 @@ missing" symptom.
 
 ### Why `checksum/config` exists and is mandatory
 
-`configmap.yaml` is mounted into the container as eight individual `subPath`
+`configmap.yaml` is mounted into the container as nine individual `subPath`
 files (`deployments.yaml`), and **Kubernetes never propagates ConfigMap
 updates into subPath mounts** — this is a documented kubelet limitation, not
 a bug specific to this app. Editing `configmap.yaml` and letting Argo CD sync
@@ -111,7 +111,7 @@ ConfigMap edit. Recompute it after any `configmap.yaml` change:
 shasum -a 256 base-apps/homepage/configmap.yaml | cut -c1-16
 ```
 
-The current value baked into `deployments.yaml` is `d094a7e545976433`.
+The current value baked into `deployments.yaml` is `910dd3cd79b4a78e`.
 Forgetting this step is indistinguishable from a successful, no-op deploy —
 Argo CD reports Synced/Healthy either way.
 

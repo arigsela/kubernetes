@@ -24,7 +24,7 @@ spec:
         # you edit configmap.yaml without bumping this, the change deploys and
         # does nothing. Recompute with:
         #   shasum -a 256 base-apps/homepage/configmap.yaml | cut -c1-16
-        checksum/config: "d094a7e545976433"
+        checksum/config: "910dd3cd79b4a78e"
     spec:
       serviceAccountName: homepage
       nodeSelector:
@@ -124,6 +124,11 @@ spec:
             - name: config
               mountPath: /app/config/custom.js
               subPath: custom.js
+            # Unused, but required: Homepage exits 1 if it cannot find or copy
+            # this file, and subPath mounts make /app/config unwritable.
+            - name: config
+              mountPath: /app/config/proxmox.yaml
+              subPath: proxmox.yaml
             - name: logs
               mountPath: /app/config/logs
       volumes:

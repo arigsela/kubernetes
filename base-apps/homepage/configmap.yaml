@@ -124,3 +124,12 @@ data:
   docker.yaml: ""
   custom.css: ""
   custom.js: ""
+
+  # NINE files, not eight. Homepage copies any missing config file from
+  # /app/src/skeleton at startup — but because these are subPath mounts,
+  # /app/config is not writable, so the copy fails with EACCES and the
+  # container exits 1. proxmox.yaml is unused here and stays empty, but it
+  # MUST exist or the pod CrashLoopBackOffs. Verified against the v1.13.2
+  # skeleton, which contains: bookmarks, custom.css, custom.js, docker,
+  # kubernetes, proxmox, services, settings, widgets.
+  proxmox.yaml: ""
