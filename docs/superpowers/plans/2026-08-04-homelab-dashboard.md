@@ -165,7 +165,7 @@ Plex runs inside WSL2, which sits behind a NAT'd virtual switch, so pods cannot 
 
 **Interfaces:**
 - Consumes: nothing
-- Produces: `http://<WINDOWS_LAN_IP>:32400` reachable from inside the cluster. Task 6 hardcodes that URL.
+- Produces: `http://<WINDOWS_LAN_IP>:32401` reachable from inside the cluster. Task 6 hardcodes that URL.
 
 - [ ] **Step 1: Record the Windows host's LAN IP and confirm the failure**
 
@@ -180,7 +180,7 @@ Write down the LAN address (expect `10.0.1.x` based on this network's other host
 From your laptop, confirm it is currently unreachable:
 
 ```bash
-curl -sS -m 5 -o /dev/null -w '%{http_code}\n' http://<WINDOWS_LAN_IP>:32400/identity
+curl -sS -m 5 -o /dev/null -w '%{http_code}\n' http://<WINDOWS_LAN_IP>:32401/identity
 ```
 
 Expected: a timeout or connection refused. If this already returns `200`, Plex is already reachable — skip to Step 5 and just do the DHCP reservation.
@@ -200,8 +200,8 @@ networkingMode=mirrored
 
 ```powershell
 $wslIp = (wsl hostname -I).Trim().Split()[0]
-netsh interface portproxy add v4tov4 listenport=32400 listenaddress=0.0.0.0 connectport=32400 connectaddress=$wslIp
-New-NetFirewallRule -DisplayName "Plex 32400" -Direction Inbound -LocalPort 32400 -Protocol TCP -Action Allow
+netsh interface portproxy add v4tov4 listenport=32401 listenaddress=0.0.0.0 connectport=32401 connectaddress=$wslIp
+New-NetFirewallRule -DisplayName "Plex 32401" -Direction Inbound -LocalPort 32401 -Protocol TCP -Action Allow
 ```
 
 Note this fallback breaks on every reboot, because the WSL IP changes. It needs a Scheduled Task running the same two lines at logon. Record whichever path you took — it goes in `runbook.md` in Task 8.
@@ -217,7 +217,7 @@ Then start your distro again and confirm Plex is running.
 - [ ] **Step 4: Verify from your laptop**
 
 ```bash
-curl -sS -m 5 -o /dev/null -w '%{http_code}\n' http://<WINDOWS_LAN_IP>:32400/identity
+curl -sS -m 5 -o /dev/null -w '%{http_code}\n' http://<WINDOWS_LAN_IP>:32401/identity
 ```
 
 Expected: `200`.
@@ -232,7 +232,7 @@ This is the check that actually matters — pod egress to a LAN address, through
 
 ```bash
 kubectl run plex-probe --rm -it --restart=Never --image=curlimages/curl:8.10.1 -- \
-  curl -sS -m 5 -o /dev/null -w '%{http_code}\n' http://<WINDOWS_LAN_IP>:32400/identity
+  curl -sS -m 5 -o /dev/null -w '%{http_code}\n' http://<WINDOWS_LAN_IP>:32401/identity
 ```
 
 Expected: `200`. If the laptop check passed but this fails, the problem is cluster egress rather than WSL — check for NetworkPolicies in the default namespace before proceeding.
@@ -276,7 +276,7 @@ Sign in to Plex Web, open any library item → **⋮ → Get Info → View XML**
 Verify it against the reachable address from Task 2:
 
 ```bash
-curl -sS "http://<WINDOWS_LAN_IP>:32400/library/sections?X-Plex-Token=<TOKEN>" | head -c 300
+curl -sS "http://<WINDOWS_LAN_IP>:32401/library/sections?X-Plex-Token=<TOKEN>" | head -c 300
 ```
 
 Expected: XML listing your libraries. A `401` means the token is wrong.
@@ -1109,12 +1109,12 @@ In `base-apps/homepage/configmap.yaml`, replace `services.yaml: ""` with the blo
             # Runs on the Windows/WSL2 box, not in the cluster. Reachable only
             # because of the WSL2 mirrored-networking change documented in
             # runbook.md. A DHCP lease change here silently blanks the widget.
-            href: http://<WINDOWS_LAN_IP>:32400/web
+            href: http://<WINDOWS_LAN_IP>:32401/web
             description: Media server
             icon: plex.png
             widget:
               type: plex
-              url: http://<WINDOWS_LAN_IP>:32400
+              url: http://<WINDOWS_LAN_IP>:32401
               key: "{{HOMEPAGE_VAR_PLEX_TOKEN}}"
 ```
 
@@ -1171,7 +1171,7 @@ done
 kill %1
 
 # Plex: the exact URL and token the widget will use
-curl -sS -o /dev/null -w '%{http_code}\n' "http://<WINDOWS_LAN_IP>:32400/library/sections?X-Plex-Token=<TOKEN>"
+curl -sS -o /dev/null -w '%{http_code}\n' "http://<WINDOWS_LAN_IP>:32401/library/sections?X-Plex-Token=<TOKEN>"
 ```
 
 Expected: four numbers (none `EMPTY`), and `200` from Plex. An `EMPTY` result means
@@ -1441,7 +1441,7 @@ Same frontmatter but `type: "Kubernetes App Runbook"`, `kind: runbook`, and `tit
 | Edited `configmap.yaml`, Argo synced, nothing changed | Pod `AGE` versus commit time | Bump `checksum/config`. subPath mounts never receive ConfigMap updates. |
 | A new app's tile is missing | The `gethomepage.dev/*` annotations on its HTTPRoute | Add `enabled: "true"`; confirm `group` matches a `layout` key in `settings.yaml`. No restart needed. |
 | Two tiles for one app | Whether two HTTPRoutes share the hostname | Annotate only the frontend route (this is why `weather-kitchen-backend` is unannotated). |
-| Plex stats blank, link still works | `kubectl run plex-probe --rm -it --restart=Never --image=curlimages/curl:8.10.1 -- curl -m5 http://<WINDOWS_LAN_IP>:32400/identity` | WSL2 mirrored networking off after a Windows update, or the DHCP lease moved. |
+| Plex stats blank, link still works | `kubectl run plex-probe --rm -it --restart=Never --image=curlimages/curl:8.10.1 -- curl -m5 http://<WINDOWS_LAN_IP>:32401/identity` | WSL2 mirrored networking off after a Windows update, or the DHCP lease moved. |
 | Argo CD tile blank or zeros | `count(argocd_app_info)` in Prometheus | `controller.metrics.enabled` reverted, or the metrics Service lost its scrape annotation. |
 | Grafana tile errors | `curl -u '<user>:<pass>' https://grafana.arigsela.com/api/search` | Viewer account deleted or password changed; update Vault and restart the pod. |
 | 403 on every host, not just this one | Your source IP against `authorizationpolicy.yaml` | ISP address moved off the allow-list. Affects all apps; the dashboard is just where you notice first. |
