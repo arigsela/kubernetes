@@ -47,6 +47,30 @@ module "argocd" {
           effect = "NoSchedule"
         }
       ]
+      # Creates the argocd-application-controller-metrics Service, which exposes
+      # argocd_app_info on :8082. Without this the metric does not exist at all —
+      # the chart only renders that Service when controller.metrics.enabled.
+      #
+      # The scrape annotations are picked up by the EXISTING Prometheus
+      # `kubernetes-service-endpoints` job (base-apps/logging/prometheus-config.yaml),
+      # which keeps any Service annotated prometheus.io/scrape=true and honors
+      # prometheus.io/port. So no Prometheus config change is needed here.
+      #
+      # Set in this `settings` map rather than as a `set` block in
+      # modules/argocd/helm.tf: helm's set syntax requires escaping the dots in
+      # annotation keys (cf. the `server.config.exec\\.enabled` line there).
+      #
+      # Consumed by the Argo CD tile on home.arigsela.com, which reads Prometheus
+      # instead of the Argo CD API to avoid needing an apiKey account in argocd-cm.
+      metrics = {
+        enabled = true
+        service = {
+          annotations = {
+            "prometheus.io/scrape" = "true"
+            "prometheus.io/port"   = "8082"
+          }
+        }
+      }
     }
 
     # Dex server node placement
