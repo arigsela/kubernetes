@@ -69,12 +69,16 @@ def test_port_suffix_hosts_are_normalised():
     assert mod.public_hosts(doc) == {"grafana.arigsela.com"}
 
 
-def test_lan_only_hosts_are_exempt():
-    """vault.local has no from: clause but is not internet-reachable."""
+def test_host_with_no_from_is_public_even_if_it_looks_internal():
+    """No exemption list: a host with no `from:` clause is reported as public
+    regardless of how internal-looking its name is. vault.local previously had
+    no `from:` clause and was wrongly assumed unreachable from the internet
+    (Host-header routing needs no DNS) — this is the property that assumption
+    violated, and the property this validator must never again let slide."""
     doc = _policy([
         {"to": [{"operation": {"hosts": ["vault.local", "vault.10.0.1.110"]}}]}
     ])
-    assert mod.public_hosts(doc) == set()
+    assert mod.public_hosts(doc) == {"vault.local", "vault.10.0.1.110"}
 
 
 def test_waf_scope_extracts_hosts_from_rule_9000():
