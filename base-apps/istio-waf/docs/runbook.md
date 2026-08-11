@@ -65,7 +65,18 @@ This is the dangerous one — it looks identical to "no attacks."
   container (not present in the istio-proxy image). A failed exec produces empty
   output and `grep -c` then returns 0, which reads exactly like "filter not
   attached" — that false negative happened during the real Gate A run.
-- **Check:** did the module load?
+- **Check:** did the module load? Prefer the metric — Envoy exports a real
+  counter for this, so there is no need to grep prose:
+  ```promql
+  {__name__=~"envoy_wasm_.*coraza.*vm_reload_failure"}
+  ```
+  Expect `0`. Also confirm the WAF is still seeing traffic:
+  ```promql
+  max by (pod) (rate(waf_filter_tx_total[5m]))
+  ```
+  A flatline here while the gateway still serves requests means the filter has
+  detached. Both are on the *Coraza WAF* dashboard.
+- **Check (fallback):** the log, if you need the actual error text:
   ```logql
   {namespace="istio-ingress", container="istio-proxy"} |~ "(?i)(wasm.*(fail|error|unable)|(fail|error|unable).*wasm)"
   ```
