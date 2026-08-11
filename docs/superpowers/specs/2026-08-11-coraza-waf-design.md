@@ -111,7 +111,7 @@ tests/waf/                             # NEW — pytest for the validator
 
 SPEC §V.8: *"∀ component upgrade → own commit, own sync, own rollback point. ⊥ batch."*
 
-The WAF is the component most likely to need an emergency rollback, and the tuning window will produce many iterations. Folding it into `istio-ingress` would make every tuning commit re-sync the app that owns the Gateway, its nineteen listeners, and the AuthorizationPolicy. Separate apps mean the WAF can be reverted, suspended, or deleted without touching ingress itself.
+The WAF is the component most likely to need an emergency rollback, and the tuning window will produce many iterations. Folding it into `istio-ingress` would make every tuning commit re-sync the app that owns the Gateway, its 20 listeners serving 19 hostnames, and the AuthorizationPolicy. Separate apps mean the WAF can be reverted, suspended, or deleted without touching ingress itself.
 
 ### 5.2 The WasmPlugin
 
@@ -304,7 +304,7 @@ Each flip is one commit (delete that host's `DetectionOnly` line), then a **48-h
 
 Coraza writes to the `istio-proxy` container's stdout in the gateway pod. Alloy already collects cluster-wide, so events flow to Loki with no pipeline change.
 
-### 8.1 Dashboard — folder `Coraza WAF`
+### 8.1 Dashboard — folder `Security`
 
 Four file changes, because dashboards mount as explicit volumes rather than through a sidecar:
 
@@ -384,16 +384,11 @@ The validator parses both files and asserts that every internet-reachable public
 
 *A host is "public" if it appears in **any** rule that has no `from:` clause.* Not "all its rules." `n8n.arigsela.com` appears twice — once path-scoped with no `from:` (the webhooks) and once with an IP allow-list (the admin UI). It is public.
 
-*Two hosts are exempt and must be explicitly allow-listed in the validator, with the reason in-band:*
+*Originally, two hosts (`vault.local`, `vault.10.0.1.110`) were exempted from this check* on the premise that they were LAN-only names with no public DNS and therefore not internet-reachable, so an IP rule on them would be "theatre rather than control." **That premise was wrong** — Host-header routing needs no DNS, and both hosts were confirmed reachable from the public internet (see `authorizationpolicy.yaml`'s 2026-08-11 correction). The exemption list masked a real exposure instead of catching it, which is the exact failure mode this validator exists to prevent.
 
-| Exempt host | Why |
-|---|---|
-| `vault.local` | LAN-only name, no public DNS, plaintext by design |
-| `vault.10.0.1.110` | LAN-only name, no public DNS, plaintext by design |
+The fix removed the exemption rather than keeping it: both hosts now carry a `from:` clause, so they are simply no longer "public" by the validator's own definition and need no special case at all. An exemption-free validator is strictly better than one with a list of hosts it trusts not to check — every exemption is a place a wrong assumption can hide, as this one did.
 
-Both carry no `from:` clause — the AuthorizationPolicy comments explain that an IP rule there "would be theatre rather than control" since they are unreachable from outside the network. A validator that did not know this would fail the build on two hosts that are correctly configured, and the likely response would be to weaken the check. The exemption list is therefore part of the validator's contract, not a workaround, and each entry carries its justification.
-
-Verified against the live policy on 2026-08-11: the public set is exactly `grafana.arigsela.com`, `oncall.arigsela.com`, `n8n.arigsela.com` (path-scoped), plus the two exempt LAN names.
+Verified against the live policy on 2026-08-11: the public set is exactly `grafana.arigsela.com`, `oncall.arigsela.com`, `n8n.arigsela.com` (path-scoped) — `vault.local` / `vault.10.0.1.110` are restricted, not exempt.
 
 Follows the established repo pattern: `scripts/validate-*.py` + `tests/*/` pytest + a job in `validate.yaml`.
 

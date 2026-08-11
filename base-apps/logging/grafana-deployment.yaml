@@ -29,9 +29,11 @@ data:
       - name: Loki
         type: loki
         # Explicit uid: Grafana alert rules reference a datasource BY UID, and an
-        # auto-generated uid is not stable across a re-provision. Safe to pin — no
-        # provisioned dashboard references a datasource uid (the only uid in the
-        # dashboard JSON is the dashboard's own, `istio-ambient-mesh`).
+        # auto-generated uid is not stable across a re-provision. This pin is now
+        # load-bearing for a provisioned dashboard too, not just alert rules: the
+        # Coraza WAF dashboard (base-apps/logging/grafana-dashboard-coraza.yaml)
+        # references `uid: loki` directly in five panel queries, so renaming or
+        # dropping this uid would break those queries, not just alerting.
         uid: loki
         access: proxy
         url: http://loki.logging.svc.cluster.local:3100

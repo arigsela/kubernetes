@@ -318,7 +318,27 @@ Expected: a CRS rule from the `REQUEST-941-APPLICATION-ATTACK-XSS` family logged
 
 This single check proves three things at once: the filter runs, CRS is loaded, and `ctl:ruleEngine=DetectionOnly` is honoured (verification item §12.1).
 
-- [ ] **Step 3: Gate B2 — prove the scope guard excludes internal hosts**
+- [ ] **Step 3: Gate B2 — prove the scope guard excludes internal hosts (BLOCKING pre-flight, not a one-time check)**
+
+This is not an ordinary gate to tick off once. It is a **blocking pre-flight
+check**: run it within minutes of the WAF's first sync, before treating the
+deployment as safe, and have rollback rung 2 (`SecRuleEngine Off`, see
+`runbook.md`'s Emergency section) staged and ready to apply the moment it
+fails.
+
+**Why this one is different from B1/B3/B4:** `ctl:ruleEngine=Off` on rule
+`9000` is the ONLY thing keeping untuned CRS v4 off `argocd.arigsela.com`,
+`vault.arigsela.com`, `backstage.arigsela.com`, and every other host on the
+Gateway. If that guard is inert for any reason — a Coraza Wasm build quirk, a
+`ctl:` action semantics mismatch (design §12.1), a directive ordering bug —
+CRS starts **blocking** requests on every one of those hosts immediately on
+first sync. `FAIL_OPEN` (design §7.2/§9.2) does **not** catch this failure
+mode: it only fires when the plugin itself is unhealthy (crashed, unfetched).
+Here the plugin is perfectly healthy and doing exactly what a working WAF
+does — it is only the scope guard that failed to apply. A green dashboard and
+a healthy gateway pod are fully consistent with Argo CD, Vault, and Backstage
+being silently 403'd for everyone. That is why this probe cannot wait to be
+"noticed" — it has to run, and block, before the rollout is trusted at all.
 
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' \
@@ -326,6 +346,10 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 ```
 
 Expected: normal response, and **no new Coraza rule match** in the log for this request. Rule 9000 turned the engine off for this host.
+
+If this does **not** hold — any block, any rule match — apply rollback rung 2
+(`SecRuleEngine Off`) immediately and diagnose before proceeding. Do not move
+on to Steps 4–7 with this gate unresolved.
 
 - [ ] **Step 4: Gate B3 — prove the port form does not bypass**
 

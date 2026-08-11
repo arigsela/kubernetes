@@ -84,7 +84,7 @@ This is the dangerous one — it looks identical to "no attacks."
    ```logql
    topk(20, sum by (rule_id) (count_over_time(
      {namespace="istio-ingress", container="istio-proxy"}
-       |= "Coraza" | regexp `id \"(?P<rule_id>\d+)\"` [24h])))
+       |= "Coraza" | regexp `id \"(?P<rule_id>\d{6})\"` [24h])))
    ```
 2. **Find the requests behind one rule:**
    ```logql
@@ -118,14 +118,29 @@ the next host. Order is `grafana` → `oncall` → `n8n`, ascending by
 
 ## Verification probes
 
-Re-run after every flip.
+The second probe below (the internal-host negative check) is **not merely a
+re-run-after-flip item** — it is a **BLOCKING pre-flight gate**. Run it within
+minutes of the WAF's first sync, before trusting the deployment at all, and
+have rollback rung 2 (`SecRuleEngine Off`, see Emergency above) staged and
+ready to apply the instant it fails. Rationale: if the `ctl:ruleEngine=Off`
+scope guard (rule `9000`) is inert for any reason, untuned CRS v4 starts
+**blocking** requests on `argocd`, `vault`, `backstage`, and every other host
+on the Gateway — and `FAIL_OPEN` cannot catch that, because the plugin is
+perfectly healthy; only the guard is inert. A quiet dashboard and a healthy
+pod are consistent with the whole Gateway silently blocking legitimate
+traffic on every internal host. This is why the check has to run immediately
+and block, not wait to be noticed.
+
+Re-run all three probes after every subsequent flip.
 
 ```bash
 # Detects on a protected host (403 once enforcing, 200/302 while DetectionOnly)
 curl -sS -o /dev/null -w '%{http_code}\n' \
   'https://grafana.arigsela.com/?arg=<script>alert(0)</script>'
 
-# Does NOT inspect an internal host - expect no new Coraza log line
+# BLOCKING PRE-FLIGHT GATE — does NOT inspect an internal host - expect no new
+# Coraza log line. Run within minutes of first sync; if this fails, apply
+# rollback rung 2 (SecRuleEngine Off) immediately.
 curl -sS -o /dev/null -w '%{http_code}\n' \
   'https://argocd.arigsela.com/?arg=<script>alert(0)</script>'
 
