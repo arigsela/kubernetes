@@ -70,6 +70,11 @@ spec:
           - '--config.file=/etc/prometheus/prometheus.yml'
           - '--storage.tsdb.path=/prometheus'
           - '--storage.tsdb.retention.time=15d'
+          # Hard ceiling on the TSDB. The PVC is `local-path`, which is a hostPath
+          # directory with no quota enforcement, so time-based retention alone let the
+          # TSDB grow past its 50Gi request and eat worker-01's root disk. 40GB is
+          # powers-of-2 here (Prometheus size units are base-2), i.e. ~43 GB on disk.
+          - '--storage.tsdb.retention.size=40GB'
           - '--web.console.libraries=/usr/share/prometheus/console_libraries'
           - '--web.console.templates=/usr/share/prometheus/consoles'
           - '--web.enable-lifecycle'
