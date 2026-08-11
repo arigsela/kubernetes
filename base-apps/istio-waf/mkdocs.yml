@@ -1,0 +1,7 @@
+site_name: istio-waf
+docs_dir: docs
+nav:
+  - Overview: index.md
+  - Runbook: runbook.md
+plugins:
+  - techdocs-core
