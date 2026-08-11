@@ -54,7 +54,12 @@ under `base-apps/logging/`.
    `/loki` mount is an `emptyDir`).
 3. **Prometheus** (`prometheus-statefulset.yaml`, single-replica StatefulSet, image
    `prom/prometheus:v3.0.1`) stores metrics on a 50Gi `local-path` PVC with 15-day retention
-   (`--storage.tsdb.retention.time=15d`) and has `--web.enable-remote-write-receiver` on so it
+   (`--storage.tsdb.retention.time=15d`) bounded by a 40GB size cap
+   (`--storage.tsdb.retention.size=40GB`, base-2, so ~43 GB on disk). The size cap matters
+   because `local-path` is a hostPath directory with no quota enforcement — without it the
+   TSDB grew to 59 GB, past its own 50Gi request, consuming worker-01's root filesystem.
+   Whichever limit trips first wins, so sustained ingest growth shortens the retention
+   window rather than filling the node. It has `--web.enable-remote-write-receiver` on so it
    can accept Alloy's remote-write pushes. `prometheus-config.yaml` also has it self-scrape
    the Kubernetes API server, nodes, cAdvisor, and any pod/service annotated for scraping —
    so it collects both from its own service discovery and from Alloy's forwarded metrics.
