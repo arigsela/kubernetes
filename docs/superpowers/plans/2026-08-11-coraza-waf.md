@@ -112,7 +112,8 @@ Create `base-apps/istio-waf.yaml`:
 # SEPARATE APP, NOT part of base-apps/istio-ingress/, deliberately (V8): this is
 # the component most likely to need an emergency rollback, and the tuning window
 # produces many commits. Folding it in would make every tuning iteration re-sync
-# the app that owns the Gateway, its 19 listeners and the AuthorizationPolicy.
+# the app that owns the Gateway, its 20 listeners serving 19 hostnames, and the
+# AuthorizationPolicy.
 #
 # sync-wave 3: istio-ingress is wave 2. The Gateway must exist before a
 # WasmPlugin can targetRef it.
@@ -512,8 +513,14 @@ runs in the Envoy that already terminates every request.
 ## What it protects, and why only three hosts
 
 `base-apps/istio-ingress/authorizationpolicy.yaml` is the security boundary, and
-it works at L3: it answers "what IP are you from?" Sixteen of the nineteen
-hostnames are restricted to four `/32` addresses and are well covered by it.
+it works at L3: it answers "what IP are you from?" Of the 19 hostnames, 14 are
+restricted to IPs exclusively — including `atlantis`, which allows the same
+four `/32`s plus six GitHub webhook CIDR ranges on top. `n8n` is mixed — its
+webhook paths are public while its admin UI is IP-restricted (see below).
+`vault.local` / `vault.10.0.1.110` were unrestricted (no `from:` clause at
+all, hence reachable from the public internet) until they were given an IP
+allow-list as part of this work (2026-08-11) — see
+`authorizationpolicy.yaml`'s comment on that rule for what that exposure was.
 
 Three are public by design and cannot be:
 

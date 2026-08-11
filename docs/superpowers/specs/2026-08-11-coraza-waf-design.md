@@ -30,7 +30,7 @@ Adding a fourth host later is a one-line regex change plus a documented tuning c
 
 ### 2.1 The three unprotected hostnames
 
-Sixteen of the nineteen hostnames on the Gateway are IP-restricted to four `/32` addresses. Three are not, each for a reason that cannot be engineered away:
+Sixteen of the nineteen hostnames on the Gateway are IP-restricted, but not uniformly: thirteen to the same four `/32` addresses, `atlantis` to those plus six GitHub webhook CIDR ranges, and `vault.local` / `vault.10.0.1.110` to the LAN plus the hairpin address. Those last two had **no `from:` clause at all** until they were restricted as part of this work on 2026-08-11 — see `authorizationpolicy.yaml`'s comment on that rule for what was exposed. Three hostnames remain public, each for a reason that cannot be engineered away:
 
 | Host | Why open | Current control |
 |---|---|---|
