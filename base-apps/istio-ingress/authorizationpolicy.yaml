@@ -170,15 +170,40 @@ spec:
             hosts:
               - grafana.arigsela.com
               - grafana.arigsela.com:*
-    # oncall.arigsela.com - PUBLIC BY DESIGN (slack-events-api). No `from` clause, so any
-      # source is permitted. Slack posts Events API callbacks from addresses that are not a stable
-      # allow-listable set. Authenticated at the app layer: SLACK_SIGNING_SECRET
-      # (HMAC) plus API_KEYS. Restricting by IP would break the integration.
+    # oncall.arigsela.com - RESTRICTED 2026-08-11. Was PUBLIC BY DESIGN
+    # (slack-events-api) with no `from` clause.
+    #
+    # THIS PAUSES THE SLACK EVENTS API INTEGRATION. Slack posts callbacks from
+    # AWS addresses it does not publish as a stable set, so there is no allow-list
+    # that keeps Slack working - the choice is public or paused, and paused was
+    # chosen deliberately. If Slack event handling is wanted back, DELETE THIS
+    # `from` BLOCK; nothing else needs to change. The failure mode meanwhile is
+    # silent from Slack's side (it just retries and gives up), so do not expect an
+    # alert to tell you the integration is off.
+    #
+    # Why: with no allow-list this host took 373 requests in a ~1h window, ALL of
+    # them GET scanner traffic hunting web shells (/wp-content/plugins/hellopress/
+    # wp_filemanager.php, /coffee.php, /mgrr.php ...) and ZERO POSTs, i.e. no Slack
+    # traffic at all. The app held up - 193x404, 177x301, and the only three 200s
+    # were `GET /` - so this is not incident response, it is removing an
+    # internet-facing surface that was earning nothing.
+    #
+    # It stays inside the Coraza WAF's scope regex (rule 9000) deliberately: it is
+    # the most-probed host on this Gateway, the allow-list and the WAF are
+    # independent controls, and leaving it covered means protection is already in
+    # place if the `from` block above is ever removed to bring Slack back.
     - to:
         - operation:
             hosts:
               - oncall.arigsela.com
               - oncall.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
     # weather-kitchen - restricted.
     - to:
         - operation:

@@ -37,16 +37,30 @@ all, hence reachable from the public internet) until they were given an IP
 allow-list as part of this work (2026-08-11) — see
 `authorizationpolicy.yaml`'s comment on that rule for what that exposure was.
 
-Three hosts are public by design and cannot be IP-restricted:
+Two hosts are public by design and cannot be IP-restricted:
 
 | Host | Why open | App-layer control |
 |---|---|---|
 | `grafana.arigsela.com` | Read from mobile; carrier IPs unlistable | GitHub OAuth |
-| `oncall.arigsela.com` | Slack Events API callbacks | HMAC signing secret |
 | `n8n.arigsela.com` `/webhook*` | Arbitrary external senders | Per-workflow auth |
 
-Coraza covers exactly those three. It is **defence in depth on top of** the
-AuthorizationPolicy, not a replacement for it.
+`oncall.arigsela.com` was a third until **2026-08-11**, when it was given an IP
+allow-list. Slack does not publish stable egress addresses, so there is no
+allow-list that keeps the Events API working — the choice was public or paused,
+and paused was chosen. Deleting the `from` block on that rule in
+`authorizationpolicy.yaml` restores it, and nothing else needs to change.
+
+Coraza's scope regex still covers all **three**, which is a deliberate superset
+of the public set. `oncall` is the most-probed hostname on this Gateway, the
+allow-list and the WAF are independent controls, and keeping it in scope means
+protection is already in place if that `from` block is ever removed.
+
+`scripts/validate-waf-scope.py` enforces the direction that matters — every
+public host must be covered — and does not object to the WAF covering more than
+that.
+
+Coraza is **defence in depth on top of** the AuthorizationPolicy, not a
+replacement for it.
 
 ## Where traffic meets it
 
