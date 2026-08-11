@@ -53,11 +53,32 @@ spec:
         - SecRule REQUEST_HEADERS:Host "!@rx ^(grafana|oncall|n8n)\.arigsela\.com(:\d+)?$" "id:9000,phase:1,pass,nolog,ctl:ruleEngine=Off"
 
         # ── ENFORCEMENT MODE ───────────────────────────────────────────────
-        # A host listed here LOGS BUT DOES NOT BLOCK.
-        # Flipping a host to enforcement = DELETING ITS LINE.
-        - SecRule REQUEST_HEADERS:Host "@rx ^grafana\.arigsela\.com(:\d+)?$" "id:9001,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"
-        - SecRule REQUEST_HEADERS:Host "@rx ^oncall\.arigsela\.com(:\d+)?$" "id:9002,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"
-        - SecRule REQUEST_HEADERS:Host "@rx ^n8n\.arigsela\.com(:\d+)?$" "id:9003,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"
+        # ENFORCING on all three protected hosts since 2026-08-11. A request
+        # scoring >= 5 on the CRS anomaly scale now gets 403 from Coraza and
+        # never reaches the app.
+        #
+        # TO ROLL A HOST BACK, re-add its line here - that is the whole fix:
+        #   - SecRule REQUEST_HEADERS:Host "@rx ^grafana\.arigsela\.com(:\d+)?$" "id:9001,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"
+        #   - SecRule REQUEST_HEADERS:Host "@rx ^oncall\.arigsela\.com(:\d+)?$"  "id:9002,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"
+        #   - SecRule REQUEST_HEADERS:Host "@rx ^n8n\.arigsela\.com(:\d+)?$"     "id:9003,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"
+        # Rule IDs 9001-9003 stay reserved for exactly that purpose.
+        #
+        # KNOWN, UNFIXED FALSE POSITIVE - accepted deliberately, not overlooked.
+        # An n8n webhook whose JSON body carries a filesystem path is blocked:
+        #   {"file":"../reports/x.csv","dir":"/var/log/app"}
+        #     930110 Path Traversal   matched `../`     in ARGS_POST:json.file
+        #     930120 OS File Access   matched `var/log` in ARGS_POST:json.dir
+        #     949110 anomaly score 15, threshold 5  -> 403
+        # Measured 2026-08-11 before enforcing. A blocked webhook fails SILENTLY
+        # from the sender's side, so if an automation stops working with no error
+        # anywhere, look here first. The fix when wanted is a scoped exclusion
+        # after the CRS include, NOT raising the anomaly threshold:
+        #   SecRuleUpdateTargetById 930110 "!ARGS_POST:json.file"
+        #
+        # Enforcement was enabled without the 7-day observation window the plan
+        # calls for. That was a deliberate, informed decision; the window's
+        # purpose is to find false positives like the one above from real traffic
+        # rather than from invented payloads, and it has not run.
 
         # ── BODY INSPECTION ────────────────────────────────────────────────
         # Off by default; on only where an external party controls the payload.
