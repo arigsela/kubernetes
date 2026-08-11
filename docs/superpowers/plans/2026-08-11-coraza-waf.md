@@ -621,7 +621,7 @@ This is the dangerous one — it looks identical to "no attacks."
   Expect > 0. If 0, the plugin is attached to nothing — check `targetRefs`.
 - **Check:** did the module load?
   ```logql
-  {namespace="istio-ingress", container="istio-proxy"} |~ "(?i)wasm.*(fail|error)"
+  {namespace="istio-ingress", container="istio-proxy"} |~ "(?i)(wasm.*(fail|error|unable)|(fail|error|unable).*wasm)"
   ```
 - **Fix:** if the fetch failed, confirm ghcr.io reachability from the node and
   that the tag `0.6.0` still exists.
@@ -1153,7 +1153,7 @@ data:
             {
               "refId": "A",
               "datasource": {"type": "loki", "uid": "loki"},
-              "expr": "sum(count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |~ `(?i)wasm.*(fail|error|unable)` [5m]))",
+              "expr": "sum(count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |~ `(?i)(wasm.*(fail|error|unable)|(fail|error|unable).*wasm)` [5m]))",
               "legendFormat": "wasm errors"
             }
           ],

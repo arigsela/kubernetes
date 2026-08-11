@@ -38,7 +38,7 @@ data:
             {
               "refId": "A",
               "datasource": {"type": "loki", "uid": "loki"},
-              "expr": "sum(count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |~ `(?i)wasm.*(fail|error|unable)` [5m]))",
+              "expr": "sum(count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |~ `(?i)(wasm.*(fail|error|unable)|(fail|error|unable).*wasm)` [5m]))",
               "legendFormat": "wasm errors"
             }
           ],
