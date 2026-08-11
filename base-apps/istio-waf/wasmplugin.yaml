@@ -1,0 +1,89 @@
+# Coraza WAF filter for the main Gateway.
+#
+# WHAT THIS PROTECTS: the three hostnames that are public by design and so are
+# NOT covered by the ipBlocks in base-apps/istio-ingress/authorizationpolicy.yaml:
+#   grafana.arigsela.com   - read from mobile, carrier IPs unlistable
+#   oncall.arigsela.com    - Slack Events API callbacks
+#   n8n.arigsela.com       - /webhook* from arbitrary external services
+# The other 16 hostnames are IP-restricted and get SecRuleEngine Off (rule 9000).
+apiVersion: extensions.istio.io/v1alpha1
+kind: WasmPlugin
+metadata:
+  name: coraza
+  namespace: istio-ingress
+spec:
+  # targetRefs, NOT selector. Coraza's upstream example uses
+  #   selector: matchLabels: {app: istio-ingressgateway, istio: ingressgateway}
+  # which are IstioOperator-era labels. This Gateway is Gateway API-generated and
+  # its pods DO NOT carry them, so the upstream example attaches to NOTHING - and
+  # a plugin attached to nothing looks exactly like a plugin finding no attacks.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: main
+  # Pinned. An untagged oci:// URL means :latest, which flips imagePullPolicy to
+  # Always and lets the gateway's behaviour change with no commit.
+  url: oci://ghcr.io/corazawaf/coraza-proxy-wasm:0.6.0
+  imagePullPolicy: IfNotPresent
+  # STATS = after Istio's authorization filters, so the ipBlocks allow-list culls
+  # traffic before Coraza spends CPU on it.
+  phase: STATS
+  # FAIL_OPEN, against Istio's FAIL_CLOSE default. This filter is in the chain for
+  # ALL 19 hostnames; under FAIL_CLOSE a ghcr.io outage or one Coraza panic returns
+  # 5xx for everything - including the Argo CD UI needed to roll it back. The
+  # security boundary is the AuthorizationPolicy; this is defence in depth on top,
+  # and fails back to the posture that exists without it.
+  # COST: a crashed WAF stops enforcing SILENTLY. That is what the "Wasm load
+  # errors" dashboard panel exists to catch (see base-apps/logging).
+  failStrategy: FAIL_OPEN
+  pluginConfig:
+    default_directives: default
+    directives_map:
+      default:
+        - SecRuleEngine On
+
+        # ── SCOPE ──────────────────────────────────────────────────────────
+        # Anything outside the protected set gets the engine turned off.
+        # The (:\d+)? is LOAD-BEARING: Envoy strips the port when matching
+        # routes but Coraza's authority lookup is an exact string match
+        # (wafmap.go getWAFOrDefault). Without it, "Host: grafana.arigsela.com:443"
+        # reaches Grafana completely uninspected.
+        #
+        # EXPANDING THE WAF TO A NEW HOST = ADDING IT TO THIS REGEX.
+        - SecRule REQUEST_HEADERS:Host "!@rx ^(grafana|oncall|n8n)\.arigsela\.com(:\d+)?$" "id:9000,phase:1,pass,nolog,ctl:ruleEngine=Off"
+
+        # ── ENFORCEMENT MODE ───────────────────────────────────────────────
+        # A host listed here LOGS BUT DOES NOT BLOCK.
+        # Flipping a host to enforcement = DELETING ITS LINE.
+        - SecRule REQUEST_HEADERS:Host "@rx ^grafana\.arigsela\.com(:\d+)?$" "id:9001,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"
+        - SecRule REQUEST_HEADERS:Host "@rx ^oncall\.arigsela\.com(:\d+)?$" "id:9002,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"
+        - SecRule REQUEST_HEADERS:Host "@rx ^n8n\.arigsela\.com(:\d+)?$" "id:9003,phase:1,pass,nolog,ctl:ruleEngine=DetectionOnly"
+
+        # ── BODY INSPECTION ────────────────────────────────────────────────
+        # Off by default; on only where an external party controls the payload.
+        # n8n's admin UI shares the hostname with its webhooks, so the path guard
+        # is required - running CRS body inspection over the workflow editor's
+        # JSON is a near-certain false positive.
+        - SecRequestBodyAccess Off
+        - SecRequestBodyLimit 1048576
+        - SecRequestBodyLimitAction ProcessPartial
+        - |-
+          SecRule REQUEST_HEADERS:Host "@rx ^n8n\.arigsela\.com(:\d+)?$" "id:9010,phase:1,pass,nolog,chain,ctl:requestBodyAccess=On"
+            SecRule REQUEST_URI "@rx ^/(webhook|webhook-test|mcp-server)" "t:lowercase"
+        - SecRule REQUEST_HEADERS:Host "@rx ^oncall\.arigsela\.com(:\d+)?$" "id:9011,phase:1,pass,nolog,ctl:requestBodyAccess=On"
+
+        # ── LOGGING ────────────────────────────────────────────────────────
+        # 3 logs rule matches. Upstream's example uses 9 = every internal
+        # decision for every request; on a continuously-scanned internet-facing
+        # gateway that floods Loki, which backs to S3.
+        - SecDebugLogLevel 3
+
+        # ── RULES ──────────────────────────────────────────────────────────
+        - Include @crs-setup-conf
+        - Include @owasp_crs/*.conf
+
+        # ── EXCLUSIONS ─────────────────────────────────────────────────────
+        # Populated during the tuning window. MUST stay after the CRS include:
+        # SecRuleRemoveById / SecRuleUpdateTargetById only act on loaded rules.
+        # Every exclusion carries a comment naming the request that triggered it
+        # and why it is legitimate.
