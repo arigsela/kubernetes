@@ -33,7 +33,9 @@ metadata:
 data:
   coraza-waf.json: |
     {
-      "annotations": {"list": []},
+      "annotations": {
+        "list": []
+      },
       "editable": true,
       "graphTooltip": 1,
       "id": null,
@@ -43,20 +45,36 @@ data:
       "version": 2,
       "schemaVersion": 39,
       "refresh": "1m",
-      "time": {"from": "now-6h", "to": "now"},
-      "tags": ["waf", "security", "coraza"],
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "tags": [
+        "waf",
+        "security",
+        "coraza"
+      ],
       "panels": [
         {
           "type": "stat",
           "title": "Plugin health",
           "description": "Envoy's Wasm reload-failure counter. Non-zero = the filter died, and under FAIL_OPEN traffic then flows UNINSPECTED, silently. Tells 'clean' apart from 'dead'.",
           "id": 1,
-          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
-          "datasource": {"type": "prometheus"},
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
+          "datasource": {
+            "type": "prometheus"
+          },
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "prometheus"},
+              "datasource": {
+                "type": "prometheus"
+              },
               "expr": "max(max by (pod) ({__name__=~\"envoy_wasm_.*coraza.*vm_reload_failure\"}))",
               "legendFormat": "reload failures"
             }
@@ -65,16 +83,40 @@ data:
             "colorMode": "background",
             "graphMode": "none",
             "textMode": "auto",
-            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
           },
           "fieldConfig": {
             "defaults": {
               "mappings": [
-                {"type": "value", "options": {"0": {"text": "HEALTHY", "color": "green", "index": 0}}}
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "HEALTHY",
+                      "color": "green",
+                      "index": 0
+                    }
+                  }
+                }
               ],
               "thresholds": {
                 "mode": "absolute",
-                "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 1
+                  }
+                ]
               }
             },
             "overrides": []
@@ -85,49 +127,105 @@ data:
           "title": "Transactions inspected",
           "description": "Cumulative requests the WAF evaluated, deduplicated across both scrape jobs. Stops climbing while traffic continues = the filter detached.",
           "id": 2,
-          "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
-          "datasource": {"type": "prometheus"},
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
+          "datasource": {
+            "type": "prometheus"
+          },
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "prometheus"},
+              "datasource": {
+                "type": "prometheus"
+              },
               "expr": "max(max by (pod) (waf_filter_tx_total))",
               "legendFormat": "transactions"
             }
           ],
           "options": {
-            "colorMode": "value", "graphMode": "area", "textMode": "auto",
-            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
           },
-          "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "blue"}, "unit": "short"}, "overrides": []}
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "blue"
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          }
         },
         {
           "type": "stat",
           "title": "Gateway memory used",
           "description": "One pod serves all 19 hostnames, so its memory failure mode is 'all ingress stops', not 'the WAF degrades'. CRS and body buffers live here. Limit 1 GiB.",
           "id": 3,
-          "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
-          "datasource": {"type": "prometheus"},
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 12,
+            "y": 0
+          },
+          "datasource": {
+            "type": "prometheus"
+          },
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "prometheus"},
+              "datasource": {
+                "type": "prometheus"
+              },
               "expr": "100 * max(container_memory_working_set_bytes{namespace=\"istio-ingress\", container=\"istio-proxy\"}) / max(container_spec_memory_limit_bytes{namespace=\"istio-ingress\", container=\"istio-proxy\"})",
               "legendFormat": "% of limit"
             }
           ],
           "options": {
-            "colorMode": "background", "graphMode": "area", "textMode": "auto",
-            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}
+            "colorMode": "background",
+            "graphMode": "area",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
           },
           "fieldConfig": {
             "defaults": {
-              "unit": "percent", "decimals": 1,
-              "thresholds": {"mode": "absolute", "steps": [
-                {"color": "green", "value": null},
-                {"color": "orange", "value": 60},
-                {"color": "red", "value": 80}
-              ]}
+              "unit": "percent",
+              "decimals": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 60
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
             },
             "overrides": []
           }
@@ -137,25 +235,45 @@ data:
           "title": "Requests blocked by the WAF",
           "description": "waf_filter_tx_interruptions counts actual BLOCKS. __name__ MUST stay in the inner aggregation - Envoy bakes rule_id and phase into the metric NAME, so dropping it collapses every rule into one series and undercounts.",
           "id": 4,
-          "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
-          "datasource": {"type": "prometheus"},
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 18,
+            "y": 0
+          },
+          "datasource": {
+            "type": "prometheus"
+          },
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "prometheus"},
+              "datasource": {
+                "type": "prometheus"
+              },
               "expr": "sum(max by (pod, __name__) ({__name__=~\"waf_filter_tx_interruptions.*\"}))",
               "legendFormat": "blocked"
             }
           ],
           "options": {
-            "colorMode": "value", "graphMode": "area", "textMode": "auto",
-            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}
+            "colorMode": "value",
+            "graphMode": "area",
+            "textMode": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
           },
           "fieldConfig": {
             "defaults": {
               "unit": "short",
               "noValue": "0 — detection-only",
-              "color": {"mode": "fixed", "fixedColor": "orange"}
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "orange"
+              }
             },
             "overrides": []
           }
@@ -165,18 +283,34 @@ data:
           "title": "WAF throughput — transactions inspected per second",
           "description": "Derived from waf_filter_tx_total. A flatline here while the gateway is still serving traffic is the strongest signal that the filter has silently detached.",
           "id": 5,
-          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
-          "datasource": {"type": "prometheus"},
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 5
+          },
+          "datasource": {
+            "type": "prometheus"
+          },
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "prometheus"},
+              "datasource": {
+                "type": "prometheus"
+              },
               "expr": "max by (pod) (rate(waf_filter_tx_total[5m]))",
               "legendFormat": "{{pod}}"
             }
           ],
           "fieldConfig": {
-            "defaults": {"custom": {"drawStyle": "line", "fillOpacity": 18, "lineWidth": 2}, "unit": "reqps"},
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 18,
+                "lineWidth": 2
+              },
+              "unit": "reqps"
+            },
             "overrides": []
           }
         },
@@ -185,31 +319,72 @@ data:
           "title": "Gateway memory vs 1 GiB limit",
           "description": "Watch this when body inspection is active. Sustained growth without plateau is the leak signature the pre-1.0 Wasm build has a history of.",
           "id": 6,
-          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
-          "datasource": {"type": "prometheus"},
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 5
+          },
+          "datasource": {
+            "type": "prometheus"
+          },
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "prometheus"},
+              "datasource": {
+                "type": "prometheus"
+              },
               "expr": "max(container_memory_working_set_bytes{namespace=\"istio-ingress\", container=\"istio-proxy\"})",
               "legendFormat": "working set"
             },
             {
               "refId": "B",
-              "datasource": {"type": "prometheus"},
+              "datasource": {
+                "type": "prometheus"
+              },
               "expr": "max(container_spec_memory_limit_bytes{namespace=\"istio-ingress\", container=\"istio-proxy\"})",
               "legendFormat": "limit"
             }
           ],
           "fieldConfig": {
-            "defaults": {"custom": {"drawStyle": "line", "fillOpacity": 12, "lineWidth": 2}, "unit": "bytes"},
+            "defaults": {
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 12,
+                "lineWidth": 2
+              },
+              "unit": "bytes"
+            },
             "overrides": [
-              {"matcher": {"id": "byName", "options": "limit"},
-               "properties": [
-                 {"id": "custom.fillOpacity", "value": 0},
-                 {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [8, 8]}},
-                 {"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}
-               ]}
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "limit"
+                },
+                "properties": [
+                  {
+                    "id": "custom.fillOpacity",
+                    "value": 0
+                  },
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash",
+                      "dash": [
+                        8,
+                        8
+                      ]
+                    }
+                  },
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
             ]
           }
         },
@@ -218,59 +393,542 @@ data:
           "title": "Gateway responses by status — the allow-list at work",
           "description": "Context, not the WAF. These 403s are AuthorizationPolicy denials - the IP allow-list is what turns scanners away today. Coraza blocks nothing yet.",
           "id": 7,
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 13},
-          "datasource": {"type": "prometheus"},
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 13
+          },
+          "datasource": {
+            "type": "prometheus"
+          },
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "prometheus"},
+              "datasource": {
+                "type": "prometheus"
+              },
               "expr": "sum by (response_code) (rate(istio_requests_total{namespace=\"istio-ingress\", job=\"kubernetes-pods\"}[5m]))",
               "legendFormat": "{{response_code}}"
             }
           ],
           "fieldConfig": {
-            "defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 70, "stacking": {"mode": "normal"}}, "unit": "reqps"},
+            "defaults": {
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 70,
+                "stacking": {
+                  "mode": "normal"
+                }
+              },
+              "unit": "reqps"
+            },
             "overrides": [
-              {"matcher": {"id": "byName", "options": "403"},
-               "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]}
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "403"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              }
             ]
           }
         },
         {
           "type": "table",
           "title": "Blocks by rule — cumulative",
-          "description": "Cumulative blocks per rule. Envoy does NOT expose rule_id or phase as labels - they are baked into the metric name - and any range function (rate, increase) strips __name__, leaving identical labelsets that Prometheus rejects. So this is an instant table, not a rate graph. A rule appearing here that matches your own traffic is a false positive: roll that host back.",
+          "description": "Cumulative blocks per rule. Envoy bakes rule_id and phase into the metric NAME instead of exposing labels, so label_replace() lifts them back out and the numbers are mapped to CRS descriptions. Range functions (rate/increase) strip __name__ and make the series collide - hence an instant table.",
           "id": 8,
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 21},
-          "datasource": {"type": "prometheus"},
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 21
+          },
+          "datasource": {
+            "type": "prometheus"
+          },
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "prometheus"},
-              "expr": "sum by (__name__) (max by (pod, __name__) ({__name__=~\"waf_filter_tx_interruptions.*\"}))",
+              "datasource": {
+                "type": "prometheus"
+              },
+              "expr": "label_replace(label_replace(sum by (__name__) (max by (pod, __name__) ({__name__=~\"waf_filter_tx_interruptions.*\"})), \"rule_id\", \"$1\", \"__name__\", \".*ruleid_([0-9]+).*\"), \"phase\", \"$1\", \"__name__\", \".*phase_(.+)$\")",
               "instant": true,
               "format": "table"
             }
           ],
           "fieldConfig": {
-            "defaults": {"unit": "short", "noValue": "No blocks recorded"},
-            "overrides": []
-          }
+            "defaults": {
+              "unit": "short",
+              "noValue": "No blocks recorded"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "rule_id"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "949110": {
+                            "text": "949110 · Anomaly score exceeded → THIS IS THE BLOCK",
+                            "index": 0
+                          },
+                          "949111": {
+                            "text": "949111 · Anomaly score exceeded (phase 1)",
+                            "index": 1
+                          },
+                          "930110": {
+                            "text": "930110 · Path traversal ../  [KNOWN FP on n8n json.file]",
+                            "index": 2
+                          },
+                          "930120": {
+                            "text": "930120 · OS file access  [KNOWN FP on n8n json.dir]",
+                            "index": 3
+                          },
+                          "941100": {
+                            "text": "941100 · XSS via libinjection",
+                            "index": 4
+                          },
+                          "941110": {
+                            "text": "941110 · XSS — script tag vector",
+                            "index": 5
+                          },
+                          "941160": {
+                            "text": "941160 · XSS — NoScript HTML injection",
+                            "index": 6
+                          },
+                          "941390": {
+                            "text": "941390 · XSS — JavaScript method",
+                            "index": 7
+                          },
+                          "942100": {
+                            "text": "942100 · SQL injection via libinjection",
+                            "index": 8
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(913\\d+)$",
+                          "result": {
+                            "text": "$1 · Scanner / bot detection",
+                            "index": 20
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(920\\d+)$",
+                          "result": {
+                            "text": "$1 · HTTP protocol enforcement",
+                            "index": 21
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(921\\d+)$",
+                          "result": {
+                            "text": "$1 · HTTP protocol attack",
+                            "index": 22
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(922\\d+)$",
+                          "result": {
+                            "text": "$1 · Multipart / content-type",
+                            "index": 23
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(930\\d+)$",
+                          "result": {
+                            "text": "$1 · Local file inclusion / traversal",
+                            "index": 24
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(931\\d+)$",
+                          "result": {
+                            "text": "$1 · Remote file inclusion",
+                            "index": 25
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(932\\d+)$",
+                          "result": {
+                            "text": "$1 · Remote code execution",
+                            "index": 26
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(933\\d+)$",
+                          "result": {
+                            "text": "$1 · PHP injection",
+                            "index": 27
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(934\\d+)$",
+                          "result": {
+                            "text": "$1 · Node / SSRF / generic injection",
+                            "index": 28
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(941\\d+)$",
+                          "result": {
+                            "text": "$1 · Cross-site scripting (XSS)",
+                            "index": 29
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(942\\d+)$",
+                          "result": {
+                            "text": "$1 · SQL injection",
+                            "index": 30
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(943\\d+)$",
+                          "result": {
+                            "text": "$1 · Session fixation",
+                            "index": 31
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(944\\d+)$",
+                          "result": {
+                            "text": "$1 · Java attack",
+                            "index": 32
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(949\\d+)$",
+                          "result": {
+                            "text": "$1 · Anomaly scoring / blocking",
+                            "index": 33
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 430
+                  }
+                ]
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "__name__": true
+                },
+                "renameByName": {
+                  "Value": "blocks"
+                }
+              }
+            }
+          ]
         },
         {
           "type": "table",
           "title": "Detections by rule — THE TUNING WORKLIST (Loki)",
           "description": "Prometheus cannot answer this in DetectionOnly - nothing is interrupted, so nothing is counted. The matching rule exists only in the log.",
           "id": 9,
-          "gridPos": {"h": 10, "w": 12, "x": 0, "y": 29},
-          "datasource": {"type": "loki", "uid": "loki"},
+          "gridPos": {
+            "h": 10,
+            "w": 12,
+            "x": 0,
+            "y": 29
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "loki", "uid": "loki"},
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
               "expr": "topk(20, sum by (rule_id) (count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza:` | regexp `id \"(?P<rule_id>\\d{6})\"` [$__range])))",
               "instant": true,
               "format": "table"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "rule_id"
+                },
+                "properties": [
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "949110": {
+                            "text": "949110 · Anomaly score exceeded → THIS IS THE BLOCK",
+                            "index": 0
+                          },
+                          "949111": {
+                            "text": "949111 · Anomaly score exceeded (phase 1)",
+                            "index": 1
+                          },
+                          "930110": {
+                            "text": "930110 · Path traversal ../  [KNOWN FP on n8n json.file]",
+                            "index": 2
+                          },
+                          "930120": {
+                            "text": "930120 · OS file access  [KNOWN FP on n8n json.dir]",
+                            "index": 3
+                          },
+                          "941100": {
+                            "text": "941100 · XSS via libinjection",
+                            "index": 4
+                          },
+                          "941110": {
+                            "text": "941110 · XSS — script tag vector",
+                            "index": 5
+                          },
+                          "941160": {
+                            "text": "941160 · XSS — NoScript HTML injection",
+                            "index": 6
+                          },
+                          "941390": {
+                            "text": "941390 · XSS — JavaScript method",
+                            "index": 7
+                          },
+                          "942100": {
+                            "text": "942100 · SQL injection via libinjection",
+                            "index": 8
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(913\\d+)$",
+                          "result": {
+                            "text": "$1 · Scanner / bot detection",
+                            "index": 20
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(920\\d+)$",
+                          "result": {
+                            "text": "$1 · HTTP protocol enforcement",
+                            "index": 21
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(921\\d+)$",
+                          "result": {
+                            "text": "$1 · HTTP protocol attack",
+                            "index": 22
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(922\\d+)$",
+                          "result": {
+                            "text": "$1 · Multipart / content-type",
+                            "index": 23
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(930\\d+)$",
+                          "result": {
+                            "text": "$1 · Local file inclusion / traversal",
+                            "index": 24
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(931\\d+)$",
+                          "result": {
+                            "text": "$1 · Remote file inclusion",
+                            "index": 25
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(932\\d+)$",
+                          "result": {
+                            "text": "$1 · Remote code execution",
+                            "index": 26
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(933\\d+)$",
+                          "result": {
+                            "text": "$1 · PHP injection",
+                            "index": 27
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(934\\d+)$",
+                          "result": {
+                            "text": "$1 · Node / SSRF / generic injection",
+                            "index": 28
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(941\\d+)$",
+                          "result": {
+                            "text": "$1 · Cross-site scripting (XSS)",
+                            "index": 29
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(942\\d+)$",
+                          "result": {
+                            "text": "$1 · SQL injection",
+                            "index": 30
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(943\\d+)$",
+                          "result": {
+                            "text": "$1 · Session fixation",
+                            "index": 31
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(944\\d+)$",
+                          "result": {
+                            "text": "$1 · Java attack",
+                            "index": 32
+                          }
+                        }
+                      },
+                      {
+                        "type": "regex",
+                        "options": {
+                          "pattern": "^(949\\d+)$",
+                          "result": {
+                            "text": "$1 · Anomaly scoring / blocking",
+                            "index": 33
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 430
+                  }
+                ]
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "renameByName": {
+                  "Value": "detections"
+                }
+              }
             }
           ]
         },
@@ -279,12 +937,23 @@ data:
           "title": "Detections by URI — attack, or my own app? (Loki)",
           "description": "A path from your own UI (/api/ds/query) points to a false positive. A path nobody should request (/.env, /wp-content/...) is a real probe.",
           "id": 10,
-          "gridPos": {"h": 10, "w": 12, "x": 12, "y": 29},
-          "datasource": {"type": "loki", "uid": "loki"},
+          "gridPos": {
+            "h": 10,
+            "w": 12,
+            "x": 12,
+            "y": 29
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "loki", "uid": "loki"},
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
               "expr": "topk(20, sum by (uri) (count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza:` | regexp `uri \"(?P<uri>[^\"]+)\"` [$__range])))",
               "instant": true,
               "format": "table"
