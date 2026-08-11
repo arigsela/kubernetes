@@ -135,7 +135,7 @@ data:
         {
           "type": "stat",
           "title": "Requests blocked by the WAF",
-          "description": "waf_filter_tx_interruptions counts actual BLOCKS. 'No data' while every host is in DetectionOnly is correct, not broken. It fills in once a host is flipped to enforcement.",
+          "description": "waf_filter_tx_interruptions counts actual BLOCKS. __name__ MUST stay in the inner aggregation - Envoy bakes rule_id and phase into the metric NAME, so dropping it collapses every rule into one series and undercounts.",
           "id": 4,
           "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
           "datasource": {"type": "prometheus"},
@@ -143,7 +143,7 @@ data:
             {
               "refId": "A",
               "datasource": {"type": "prometheus"},
-              "expr": "sum(max by (pod) ({__name__=~\"waf_filter_tx_interruptions.*\"}))",
+              "expr": "sum(max by (pod, __name__) ({__name__=~\"waf_filter_tx_interruptions.*\"}))",
               "legendFormat": "blocked"
             }
           ],
@@ -237,9 +237,9 @@ data:
           }
         },
         {
-          "type": "timeseries",
-          "title": "Blocks by rule — active only after enforcement",
-          "description": "Interruptions by rule_id and phase. Empty during DetectionOnly by design. After a flip, a spike on one rule means a false positive hit real traffic - roll that host back.",
+          "type": "table",
+          "title": "Blocks by rule — cumulative",
+          "description": "Cumulative blocks per rule. Envoy does NOT expose rule_id or phase as labels - they are baked into the metric name - and any range function (rate, increase) strips __name__, leaving identical labelsets that Prometheus rejects. So this is an instant table, not a rate graph. A rule appearing here that matches your own traffic is a false positive: roll that host back.",
           "id": 8,
           "gridPos": {"h": 8, "w": 24, "x": 0, "y": 21},
           "datasource": {"type": "prometheus"},
@@ -247,12 +247,13 @@ data:
             {
               "refId": "A",
               "datasource": {"type": "prometheus"},
-              "expr": "sum by (rule_id, phase) (max by (pod, rule_id, phase) (rate({__name__=~\"waf_filter_tx_interruptions.*\"}[5m])))",
-              "legendFormat": "rule {{rule_id}} / {{phase}}"
+              "expr": "sum by (__name__) (max by (pod, __name__) ({__name__=~\"waf_filter_tx_interruptions.*\"}))",
+              "instant": true,
+              "format": "table"
             }
           ],
           "fieldConfig": {
-            "defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 70}, "unit": "reqps", "noValue": "No blocks — every host is in DetectionOnly"},
+            "defaults": {"unit": "short", "noValue": "No blocks recorded"},
             "overrides": []
           }
         },
