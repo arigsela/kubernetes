@@ -1,0 +1,134 @@
+# Coraza WAF dashboard. Drives the tuning window and the per-host enforcement
+# flips (see base-apps/istio-waf/runbook.md).
+#
+# Panel 1 is not decoration. failStrategy is FAIL_OPEN, so a crashed or unfetched
+# Wasm module stops enforcing SILENTLY - and a "detections" graph cannot tell
+# CLEAN from DEAD, since both are an empty graph. Panel 1 is what separates them.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-coraza
+  namespace: logging
+  labels:
+    grafana_dashboard: "1"
+data:
+  coraza-waf.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "title": "Coraza WAF",
+      "uid": "coraza-waf",
+      "version": 1,
+      "schemaVersion": 39,
+      "refresh": "1m",
+      "time": {"from": "now-24h", "to": "now"},
+      "tags": ["waf", "security", "coraza"],
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Wasm load / fetch errors — IS THE PLUGIN ALIVE?",
+          "description": "FAIL_OPEN means a dead plugin stops enforcing silently. Non-zero here means requests are flowing UNINSPECTED. This must stay flat at zero.",
+          "id": 1,
+          "gridPos": {"h": 7, "w": 24, "x": 0, "y": 0},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "loki", "uid": "loki"},
+              "expr": "sum(count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |~ `(?i)wasm.*(fail|error|unable)` [5m]))",
+              "legendFormat": "wasm errors"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {"drawStyle": "line", "fillOpacity": 20},
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "red", "value": 1}
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Would-be blocks over time, by host",
+          "description": "The flip signal. A host is ready when this is explained — every spike is either a real attack or a documented exclusion.",
+          "id": 2,
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 7},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "loki", "uid": "loki"},
+              "expr": "sum by (authority) (count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza` | regexp `authority[\"=: ]+(?P<authority>[a-z0-9.-]+)` [5m]))",
+              "legendFormat": "{{authority}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 60}},
+            "overrides": []
+          }
+        },
+        {
+          "type": "table",
+          "title": "Top triggered rule IDs — THE TUNING WORKLIST",
+          "description": "Work top-down. For each: real attack, or your own app? If your app, add a commented exclusion.",
+          "id": 3,
+          "gridPos": {"h": 10, "w": 12, "x": 0, "y": 15},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "loki", "uid": "loki"},
+              "expr": "topk(20, sum by (rule_id) (count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza` | regexp `id[\"=: ]+(?P<rule_id>\\d{6})` [$__range])))",
+              "instant": true,
+              "format": "table"
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "title": "Triggers by URI path — attack or my own app?",
+          "description": "A path that is obviously part of your own UI (e.g. /api/ds/query) points to a false positive.",
+          "id": 4,
+          "gridPos": {"h": 10, "w": 12, "x": 12, "y": 15},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "loki", "uid": "loki"},
+              "expr": "topk(20, sum by (uri) (count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza` | regexp `uri[\"=: ]+(?P<uri>[^ \"]+)` [$__range])))",
+              "instant": true,
+              "format": "table"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Coraza-attributed 403s — DID THE FLIP BREAK SOMETHING?",
+          "description": "Watch this for 48h after every per-host flip. A rise here on legitimate paths means roll back that host to DetectionOnly.",
+          "id": 5,
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 25},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "loki", "uid": "loki"},
+              "expr": "sum(count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza` |~ `(?i)(denied|interrupt)` [5m]))",
+              "legendFormat": "blocked"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 60}},
+            "overrides": []
+          }
+        }
+      ]
+    }

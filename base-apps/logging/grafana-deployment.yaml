@@ -193,6 +193,8 @@ spec:
           mountPath: /var/lib/grafana/dashboards/k8s
         - name: dashboards-istio
           mountPath: /var/lib/grafana/dashboards/istio
+        - name: dashboards-coraza
+          mountPath: /var/lib/grafana/dashboards/coraza
         # Grafana unified alerting: contact point, notification policy, alert rules.
         # Grafana reads this at startup like any other provisioning dir. A malformed
         # file here makes Grafana FAIL TO START — validate before merging. See
@@ -238,6 +240,9 @@ spec:
       - name: dashboards-istio
         configMap:
           name: grafana-dashboard-istio-ambient
+      - name: dashboards-coraza
+        configMap:
+          name: grafana-dashboard-coraza
       - name: alerting
         configMap:
           name: grafana-alerting
