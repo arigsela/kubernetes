@@ -427,7 +427,11 @@ Items assumed but not yet confirmed. Each is resolved in the plan before it beco
 
 **12.2 Rule ID range 9000–9011.** Sits in the range CRS reserves for local rules; confirm no collision with CRS v4.14.0's own IDs.
 
-**12.3 Actual `:authority` forms.** Phase 0 measures rather than assumes.
+**12.3 Actual `:authority` forms — RESOLVED 2026-08-11.** Measured from 20k gateway access-log lines: 1,524 authority values across 14 hostnames, **all bare hostnames, none carrying a port suffix**.
+
+The `(:\d+)?` group stays. Organic traffic lacking ports is the expected result and does **not** make the guard redundant — the bypass it defeats is a deliberately crafted `Host` header, which by definition would not appear in legitimate traffic. What this measurement establishes is that the guard costs nothing on real traffic, not that it is unnecessary. Gate B3 tests the adversarial case directly.
+
+Incidental finding for §7.3: request volume on the protected hosts over the sampled window was `oncall` 157, `grafana` 23, `n8n` **5**. n8n's webhook traffic is thin enough that the observation window must exercise each workflow deliberately rather than wait for organic traffic.
 
 **12.4 Chained-rule action semantics for `id:9010`.** Confirm the `ctl:` action on the chain starter fires only when the full chain matches.
 
