@@ -23,3 +23,11 @@ data:
         editable: true
         options:
           path: /var/lib/grafana/dashboards/istio
+      - name: 'coraza'
+        orgId: 1
+        folder: 'Security'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/coraza
