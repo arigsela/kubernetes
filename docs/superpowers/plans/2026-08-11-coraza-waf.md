@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **GitOps only.** Every change is a git commit that Argo CD syncs. No `kubectl apply`, ever (CLAUDE.md, SPEC §C). `kubectl`/`istioctl` are for **reading and verifying** only.
+- **GitOps only.** Every change is a git commit that Argo CD syncs. No `kubectl apply`, ever (CLAUDE.md, SPEC §C). `kubectl` is for **reading and verifying** only (`istioctl` is not installed on this machine; use `pilot-agent request GET config_dump` inside the gateway pod for Envoy config).
 - **Own commit, own sync, own rollback point per component.** Do not batch unrelated changes (SPEC §V.8).
 - **Image pinned:** `oci://ghcr.io/corazawaf/coraza-proxy-wasm:0.6.0`. Never `latest` — an untagged URL flips `imagePullPolicy` to `Always` and lets gateway behaviour change with no commit.
 - **`failStrategy: FAIL_OPEN`** on the WasmPlugin. Istio's default is `FAIL_CLOSE`, which would 5xx all 19 hostnames on a fetch failure or plugin panic.
@@ -293,11 +293,19 @@ Expected: evidence the module fetched and initialised. **A `failed to load` or S
 - [ ] **Step 1: Gate A — prove the filter is in the listener chain**
 
 ```bash
-istioctl -n istio-ingress proxy-config listener \
-  deploy/main-istio -o json | grep -c "coraza"
+POD=$(kubectl -n istio-ingress get pods \
+  -l gateway.networking.k8s.io/gateway-name=main -o jsonpath='{.items[0].metadata.name}')
+kubectl -n istio-ingress exec $POD -c istio-proxy -- \
+  pilot-agent request GET config_dump | grep -c -i coraza
 ```
 
-Expected: a count **greater than 0**.
+Expected: a count **greater than 0** (it was 20 when this ran for real on 2026-08-11).
+
+Use `pilot-agent`, NOT `istioctl` — it is not installed — and NOT `curl` inside
+the container, which the istio-proxy image does not ship. Either mistake makes
+the exec fail, producing empty output that `grep -c` reports as `0`, which is
+indistinguishable from "the filter is not attached". That false negative
+actually occurred on the first Gate A attempt.
 
 If this is `0`, the plugin attached to nothing. Check `targetRefs.name` matches the Gateway (`main`) and that the `WasmPlugin` is in namespace `istio-ingress`. **Do not interpret an absence of detections as success until this passes** — that is precisely the failure this gate exists to catch.
 
@@ -647,9 +655,18 @@ kubectl -n argo-cd patch application istio-waf --type merge \
 This is the dangerous one — it looks identical to "no attacks."
 - **Check:** is the filter actually attached?
   ```bash
-  istioctl -n istio-ingress proxy-config listener deploy/main-istio -o json | grep -c coraza
+  POD=$(kubectl -n istio-ingress get pods \
+    -l gateway.networking.k8s.io/gateway-name=main -o jsonpath='{.items[0].metadata.name}')
+  kubectl -n istio-ingress exec $POD -c istio-proxy -- \
+    pilot-agent request GET config_dump | grep -c -i coraza
   ```
-  Expect > 0. If 0, the plugin is attached to nothing — check `targetRefs`.
+  Expect > 0 (was 20 when verified 2026-08-11). If 0, the plugin is attached to
+  nothing — check `targetRefs`.
+
+  Use `pilot-agent`, NOT `istioctl` (not installed) and NOT `curl` inside the
+  container (not present in the istio-proxy image). A failed exec produces empty
+  output and `grep -c` then returns 0, which reads exactly like "filter not
+  attached" — that false negative happened during the real Gate A run.
 - **Check:** did the module load?
   ```logql
   {namespace="istio-ingress", container="istio-proxy"} |~ "(?i)(wasm.*(fail|error|unable)|(fail|error|unable).*wasm)"

@@ -45,7 +45,7 @@ For these three, requests reach the application uninspected. That is the gap thi
 - Istio **1.30.3**, `ambient` profile (istiod + `ztunnel` DS + `istio-cni` DS).
 - Gateway `main` in namespace `istio-ingress`, `gatewayClassName: istio`, Gateway API — **not** `IstioOperator`.
 - Gateway runs as a **single pod** pinned to `k3s-control-01` via `nodeSelector`, no `hostNetwork`, `externalTrafficPolicy: Local`.
-- `gateway-options.yaml` sets **no resource requests or limits** — the pod runs on Istio defaults.
+- `gateway-options.yaml` sets no resource block, so the pod runs on Istio's defaults: **2 CPU / 1Gi memory limits**, 100m/128Mi requests (measured 2026-08-11).
 - Observability: Alloy → Loki → Grafana, plus Prometheus. Grafana dashboards mount as **explicit volumes**, not via a sidecar.
 
 ## 3. Why Coraza
@@ -344,7 +344,7 @@ The LogQL behind each panel goes in `runbook.md` as copy-pasteable queries. The 
 
 ### 9.1 The OOM risk deserves emphasis
 
-The Gateway is a **single pod** pinned to `k3s-control-01`, and `gateway-options.yaml` sets **no resources** — it runs on Istio defaults. Adding a compiled CRS plus body-inspection buffers means the WAF's memory failure mode is not "the WAF degrades," it is "all ingress stops."
+The Gateway is a **single pod** pinned to `k3s-control-01`. `gateway-options.yaml` sets no resource block, so Istio's defaults apply: 2 CPU / 1Gi limits. Measured with the WAF loaded (2026-08-11): 43m CPU, 293Mi memory — 29% of the memory limit, under the 50% gate, so no explicit resources block is needed. Adding a compiled CRS plus body-inspection buffers means the WAF's memory failure mode is not "the WAF degrades," it is "all ingress stops."
 
 Gate C establishes the actual limit and observed headroom **before** Phase 2 enables body inspection, and sets an explicit limit on the gateway if the default proves tight.
 

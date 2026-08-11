@@ -61,16 +61,37 @@ spec:
 
         # ── BODY INSPECTION ────────────────────────────────────────────────
         # Off by default; on only where an external party controls the payload.
-        # n8n's admin UI shares the hostname with its webhooks, so the path guard
-        # is required - running CRS body inspection over the workflow editor's
-        # JSON is a near-certain false positive.
+        #
+        # 9010 IS DELIBERATELY NOT A CHAINED RULE. It was, and the chain did not
+        # bind: Gate B4 (2026-08-11, live) showed a SQL-injection POST body to
+        # n8n's /rest/login firing 942100 via ARGS_POST_NAMES, i.e. body
+        # inspection was active on the WHOLE n8n host including the admin UI -
+        # exactly what the path guard existed to prevent. The chain starter fired
+        # standalone; Coraza's parser appears to treat each directives_map entry
+        # as its own directive, so `chain` never bound to the following SecRule.
+        # Control case that isolates it: the same body sent to grafana (which has
+        # no body rule) fired NOTHING, proving SecRequestBodyAccess Off works and
+        # the chain specifically was the broken part.
+        #
+        # The replacement matches on REQUEST_URI alone, with no host predicate,
+        # which is safe because rule 9000 has already turned the engine OFF for
+        # every host outside the protected set. Within that set: n8n's webhook
+        # paths get bodies and its admin UI does not; grafana has no /webhook*
+        # path; and oncall turns bodies on wholesale via 9011 regardless.
+        # DO NOT reintroduce `chain` here without re-running Gate B4.
         - SecRequestBodyAccess Off
         - SecRequestBodyLimit 1048576
         - SecRequestBodyLimitAction ProcessPartial
-        - |-
-          SecRule REQUEST_HEADERS:Host "@rx ^n8n\.arigsela\.com(:\d+)?$" "id:9010,phase:1,pass,nolog,chain,ctl:requestBodyAccess=On"
-            SecRule REQUEST_URI "@rx ^/(webhook|webhook-test|mcp-server)" "t:lowercase"
+        - SecRule REQUEST_URI "@rx ^/(webhook|webhook-test|mcp-server)" "id:9010,phase:1,pass,nolog,t:lowercase,ctl:requestBodyAccess=On"
         - SecRule REQUEST_HEADERS:Host "@rx ^oncall\.arigsela\.com(:\d+)?$" "id:9011,phase:1,pass,nolog,ctl:requestBodyAccess=On"
+        # JSON bodies must be parsed AS JSON. Without this, Coraza processes them
+        # as URL-encoded form data: Gate B4 observed the entire JSON document
+        # arriving as a single form parameter NAME
+        # (`ARGS_POST_NAMES:{"q":"' OR 1`). That is wrong in both directions - it
+        # can miss a real JSON-borne injection, and it manufactures nonsense
+        # matches out of ordinary payloads. Both of the hosts that get body
+        # inspection here (n8n webhooks, oncall/Slack) send JSON.
+        - SecRule REQUEST_HEADERS:Content-Type "@rx ^application/json" "id:9012,phase:1,pass,nolog,t:lowercase,ctl:requestBodyProcessor=JSON"
 
         # ── LOGGING ────────────────────────────────────────────────────────
         # 3 logs rule matches. Upstream's example uses 9 = every internal
