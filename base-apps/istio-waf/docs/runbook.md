@@ -53,9 +53,18 @@ kubectl -n argo-cd patch application istio-waf --type merge \
 This is the dangerous one — it looks identical to "no attacks."
 - **Check:** is the filter actually attached?
   ```bash
-  istioctl -n istio-ingress proxy-config listener deploy/main-istio -o json | grep -c coraza
+  POD=$(kubectl -n istio-ingress get pods \
+    -l gateway.networking.k8s.io/gateway-name=main -o jsonpath='{.items[0].metadata.name}')
+  kubectl -n istio-ingress exec $POD -c istio-proxy -- \
+    pilot-agent request GET config_dump | grep -c -i coraza
   ```
-  Expect > 0. If 0, the plugin is attached to nothing — check `targetRefs`.
+  Expect > 0 (was 20 when verified 2026-08-11). If 0, the plugin is attached to
+  nothing — check `targetRefs`.
+
+  Use `pilot-agent`, NOT `istioctl` (not installed) and NOT `curl` inside the
+  container (not present in the istio-proxy image). A failed exec produces empty
+  output and `grep -c` then returns 0, which reads exactly like "filter not
+  attached" — that false negative happened during the real Gate A run.
 - **Check:** did the module load?
   ```logql
   {namespace="istio-ingress", container="istio-proxy"} |~ "(?i)(wasm.*(fail|error|unable)|(fail|error|unable).*wasm)"
