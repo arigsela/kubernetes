@@ -132,6 +132,9 @@ Only when all three hold for that host:
 3. Its primary paths were actually exercised — an empty log means *untested*,
    not *clean*.
 
+(Historical — all three were enforced together on 2026-08-11 without this
+window. Kept because it is the correct procedure for any host added later.)
+
 Then delete that host's `DetectionOnly` line, commit, and soak 48 hours before
 the next host. Order is `grafana` → `oncall` → `n8n`, ascending by
 *silent*-failure risk.
@@ -154,7 +157,7 @@ and block, not wait to be noticed.
 Re-run all three probes after every subsequent flip.
 
 ```bash
-# Detects on a protected host (403 once enforcing, 200/302 while DetectionOnly)
+# Detects on a protected host. ENFORCING since 2026-08-11, so expect 403.
 curl -sS -o /dev/null -w '%{http_code}\n' \
   'https://grafana.arigsela.com/?arg=<script>alert(0)</script>'
 

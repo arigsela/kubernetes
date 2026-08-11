@@ -62,6 +62,34 @@ that.
 Coraza is **defence in depth on top of** the AuthorizationPolicy, not a
 replacement for it.
 
+## Current mode: ENFORCING (since 2026-08-11)
+
+All three hosts block. A request scoring >= 5 on the CRS anomaly scale gets a
+`403` from Coraza and never reaches the app. Rolling one host back means
+re-adding its `DetectionOnly` line in `wasmplugin.yaml`; IDs `9001`-`9003` stay
+reserved for that.
+
+**Known, unfixed false positive.** An n8n webhook whose JSON body carries a
+filesystem path is blocked:
+
+```
+{"file":"../reports/x.csv","dir":"/var/log/app"}
+  930110 Path Traversal   matched ../      in ARGS_POST:json.file
+  930120 OS File Access   matched var/log  in ARGS_POST:json.dir
+  949110 anomaly score 15 vs threshold 5   -> 403
+```
+
+Measured before enforcing and accepted deliberately. A blocked webhook fails
+**silently** from the sender's side, so an automation that stops working with no
+error anywhere is the signature. The fix is a scoped exclusion after the CRS
+include (`SecRuleUpdateTargetById 930110 "!ARGS_POST:json.file"`), never raising
+the anomaly threshold — that would weaken every rule at once.
+
+Enforcement was enabled **without** the 7-day observation window the plan calls
+for. The window's job is to surface false positives from real traffic rather
+than invented payloads, and it has not run — so treat unexplained breakage on
+these three hosts as WAF-related until shown otherwise.
+
 ## Where traffic meets it
 
 ```
