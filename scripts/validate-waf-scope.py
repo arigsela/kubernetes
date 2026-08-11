@@ -19,15 +19,18 @@ from pathlib import Path
 
 import yaml
 
-# Hosts with no `from:` clause that are nonetheless NOT internet-reachable.
-# These are LAN-only names with no public DNS; authorizationpolicy.yaml notes an
-# IP rule there "would be theatre rather than control". Without this exemption the
-# validator fails the build on two correctly-configured hosts, and the likely
-# response to a spurious failure is to weaken the check.
-_LAN_ONLY = {
-    "vault.local",           # LAN-only name, no public DNS, plaintext by design
-    "vault.10.0.1.110",      # ditto, IP-form alias
-}
+# An exemption list ("_LAN_ONLY") used to live here for vault.local /
+# vault.10.0.1.110, on the premise that LAN-only hostnames with no public DNS
+# are not internet-reachable. That premise was wrong — Host-header routing
+# needs no DNS, and both hosts were confirmed reachable from the public
+# internet (see authorizationpolicy.yaml's 2026-08-11 correction). The
+# exemption masked a real exposure instead of flagging it.
+#
+# Correct fix: restrict the hosts (give them a `from:` clause) rather than
+# exempt them from this check. Do not reintroduce a "not really public"
+# exemption list here — if a host is genuinely unreachable from the internet,
+# that needs to be demonstrated the way this one's absence was: empirically,
+# not asserted in a comment.
 
 _RULE_9000 = re.compile(r'id:9000\b')
 _SCOPE_RX = re.compile(r'!@rx\s+(\S+?)"')
@@ -40,7 +43,7 @@ def _strip_port(host):
 
 
 def public_hosts(policy_doc):
-    """Hosts appearing in ANY rule that has no `from:` clause, minus LAN-only.
+    """Hosts appearing in ANY rule that has no `from:` clause.
 
     "Any", not "all": n8n appears twice — once path-scoped with no `from:` (the
     public webhooks) and once IP-restricted (the admin UI). It is public.
@@ -52,7 +55,7 @@ def public_hosts(policy_doc):
         for to in rule.get("to", []) or []:
             for host in to.get("operation", {}).get("hosts", []) or []:
                 found.add(_strip_port(host))
-    return found - _LAN_ONLY
+    return found
 
 
 def _default_directives(plugin_doc):
@@ -116,8 +119,8 @@ def check(policy_doc, plugin_doc):
             f"{host} is public in authorizationpolicy.yaml (no `from:` clause) "
             f"but is not in the WAF scope regex {rx!r}. It is internet-facing "
             "with neither an IP allow-list nor L7 inspection. Add it to scope "
-            "rule id:9000, or add it to _LAN_ONLY if it is not actually "
-            "internet-reachable."
+            "rule id:9000, or restrict it with a `from:` clause if it should "
+            "not be public at all."
         )
     return problems
 
