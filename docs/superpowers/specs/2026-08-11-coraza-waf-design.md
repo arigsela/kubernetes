@@ -313,13 +313,33 @@ Four file changes, because dashboards mount as explicit volumes rather than thro
 3. `grafana-deployment.yaml` — volumeMount at `/var/lib/grafana/dashboards/coraza`
 4. `grafana-dashboard-configmap.yaml` — provider entry for that path
 
-| Panel | Question it answers |
-|---|---|
-| Wasm load / fetch errors | *Is the plugin alive?* |
-| Would-be blocks over time, by host | *Is this host ready to flip?* |
-| Top triggered rule IDs | *What do I tune next?* |
-| Triggers by URI path | *Real attack, or my own app?* |
-| Coraza-attributed 403s | *Did the flip break something?* |
+| Panel | Source | Question it answers |
+|---|---|---|
+| Plugin health (`vm_reload_failure`) | Prometheus | *Is the plugin alive?* |
+| Transactions inspected + throughput | Prometheus | *Is it still seeing traffic?* |
+| Gateway memory vs limit | Prometheus | *Are we near the OOM that takes out all ingress?* |
+| Responses by status | Prometheus | *What is the allow-list turning away?* |
+| Blocks by rule | Prometheus | *Did a flip break something?* (empty until enforcement) |
+| Detections by rule | Loki | *What do I tune next?* |
+| Detections by URI | Loki | *Real attack, or my own app?* |
+
+**Revised 2026-08-11 — Prometheus-first.** The first build scraped the Envoy
+debug log with regexes for everything, including liveness. That was wrong twice
+over: Envoy already exports `vm_reload_failure` as a real counter, and the
+plugin exports `waf_filter_tx_total`, both scraped automatically because the
+Gateway pod already carries `prometheus.io/scrape`. No new wiring was required —
+the metrics were there the whole time.
+
+Loki is retained only where Prometheus genuinely cannot answer. The plugin's
+detection counter is `waf_filter_tx_interruptions`, and an interruption means an
+actual **block**; in DetectionOnly nothing is blocked, so which-rule-fired
+detail exists only in the log. Metrics cannot drive the tuning window — they
+take over once enforcement begins.
+
+One trap worth recording: `waf_filter_tx_total` is scraped **twice**, by
+Prometheus' own `kubernetes-pods` job and again by Alloy as
+`prometheus.scrape.pods`. A naive `sum()` double-counts it, so every query
+aggregates with `max by (pod)`.
 
 ### 8.2 Why the liveness panel is not optional
 

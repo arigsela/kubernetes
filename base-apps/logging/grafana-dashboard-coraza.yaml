@@ -1,9 +1,28 @@
 # Coraza WAF dashboard. Drives the tuning window and the per-host enforcement
 # flips (see base-apps/istio-waf/runbook.md).
 #
-# Panel 1 is not decoration. failStrategy is FAIL_OPEN, so a crashed or unfetched
-# Wasm module stops enforcing SILENTLY - and a "detections" graph cannot tell
-# CLEAN from DEAD, since both are an empty graph. Panel 1 is what separates them.
+# PROMETHEUS-FIRST, with Loki only where Prometheus genuinely cannot answer.
+# The first version of this dashboard scraped the Envoy debug log with regexes
+# for everything, including "is the plugin alive" - which was both fragile and
+# unnecessary, because Envoy already exports a real counter for exactly that
+# (vm_reload_failure). Metrics are used for health, throughput, memory and
+# blocks; Loki is used only for which-rule-fired detail.
+#
+# WHY LOKI IS STILL HERE: the plugin's detection counter is
+# waf_filter_tx_interruptions, and an "interruption" means an actual BLOCK. In
+# DetectionOnly nothing is ever blocked, so that metric does not exist yet and
+# rule-level detail is available ONLY from the log. Metrics cannot drive the
+# tuning window; they take over once enforcement starts.
+#
+# DEDUPLICATION (load-bearing): waf_filter_tx_total is scraped TWICE - once by
+# Prometheus' own `kubernetes-pods` job and again by Alloy as
+# `prometheus.scrape.pods`. A naive sum() double-counts it (674 reads as 1348).
+# Every query below aggregates with `max by (pod)` so it stays correct whichever
+# scrapers are enabled.
+#
+# The wasm metric name embeds Istio's internal translation of the WasmPlugin
+# ("coraza~istio-translated-wasmplugin"), so health queries match on a regex
+# rather than the literal name, which would break if the plugin were renamed.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -16,119 +35,260 @@ data:
     {
       "annotations": {"list": []},
       "editable": true,
-      "graphTooltip": 0,
+      "graphTooltip": 1,
       "id": null,
       "links": [],
       "title": "Coraza WAF",
       "uid": "coraza-waf",
-      "version": 1,
+      "version": 2,
       "schemaVersion": 39,
       "refresh": "1m",
-      "time": {"from": "now-24h", "to": "now"},
+      "time": {"from": "now-6h", "to": "now"},
       "tags": ["waf", "security", "coraza"],
       "panels": [
         {
-          "type": "timeseries",
-          "title": "Wasm load / fetch errors — IS THE PLUGIN ALIVE?",
-          "description": "FAIL_OPEN means a dead plugin stops enforcing silently. Non-zero here means requests are flowing UNINSPECTED. This must stay flat at zero.",
+          "type": "stat",
+          "title": "Plugin health",
+          "description": "Envoy's Wasm reload-failure counter. Non-zero = the filter died, and under FAIL_OPEN traffic then flows UNINSPECTED, silently. Tells 'clean' apart from 'dead'.",
           "id": 1,
-          "gridPos": {"h": 7, "w": 24, "x": 0, "y": 0},
-          "datasource": {"type": "loki", "uid": "loki"},
+          "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+          "datasource": {"type": "prometheus"},
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "loki", "uid": "loki"},
-              "expr": "sum(count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |~ `(?i)(wasm.*(fail|error|unable)|(fail|error|unable).*wasm)` [5m]))",
-              "legendFormat": "wasm errors"
+              "datasource": {"type": "prometheus"},
+              "expr": "max(max by (pod) ({__name__=~\"envoy_wasm_.*coraza.*vm_reload_failure\"}))",
+              "legendFormat": "reload failures"
             }
           ],
+          "options": {
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}
+          },
           "fieldConfig": {
             "defaults": {
-              "custom": {"drawStyle": "line", "fillOpacity": 20},
+              "mappings": [
+                {"type": "value", "options": {"0": {"text": "HEALTHY", "color": "green", "index": 0}}}
+              ],
               "thresholds": {
                 "mode": "absolute",
-                "steps": [
-                  {"color": "green", "value": null},
-                  {"color": "red", "value": 1}
-                ]
+                "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]
               }
             },
             "overrides": []
           }
         },
         {
-          "type": "timeseries",
-          "title": "Would-be blocks over time, by host",
-          "description": "The flip signal. A host is ready when this is explained — every spike is either a real attack or a documented exclusion.",
+          "type": "stat",
+          "title": "Transactions inspected",
+          "description": "Cumulative requests the WAF evaluated, deduplicated across both scrape jobs. Stops climbing while traffic continues = the filter detached.",
           "id": 2,
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 7},
-          "datasource": {"type": "loki", "uid": "loki"},
+          "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+          "datasource": {"type": "prometheus"},
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "loki", "uid": "loki"},
-              "expr": "sum by (authority) (count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza` | regexp `authority[\"=: ]+(?P<authority>[a-z0-9.-]+)` [5m]))",
-              "legendFormat": "{{authority}}"
+              "datasource": {"type": "prometheus"},
+              "expr": "max(max by (pod) (waf_filter_tx_total))",
+              "legendFormat": "transactions"
             }
           ],
+          "options": {
+            "colorMode": "value", "graphMode": "area", "textMode": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}
+          },
+          "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "blue"}, "unit": "short"}, "overrides": []}
+        },
+        {
+          "type": "stat",
+          "title": "Gateway memory used",
+          "description": "One pod serves all 19 hostnames, so its memory failure mode is 'all ingress stops', not 'the WAF degrades'. CRS and body buffers live here. Limit 1 GiB.",
+          "id": 3,
+          "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+          "datasource": {"type": "prometheus"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "prometheus"},
+              "expr": "100 * max(container_memory_working_set_bytes{namespace=\"istio-ingress\", container=\"istio-proxy\"}) / max(container_spec_memory_limit_bytes{namespace=\"istio-ingress\", container=\"istio-proxy\"})",
+              "legendFormat": "% of limit"
+            }
+          ],
+          "options": {
+            "colorMode": "background", "graphMode": "area", "textMode": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}
+          },
           "fieldConfig": {
-            "defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 60}},
+            "defaults": {
+              "unit": "percent", "decimals": 1,
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null},
+                {"color": "orange", "value": 60},
+                {"color": "red", "value": 80}
+              ]}
+            },
             "overrides": []
           }
         },
         {
-          "type": "table",
-          "title": "Top triggered rule IDs — THE TUNING WORKLIST",
-          "description": "Work top-down. For each: real attack, or your own app? If your app, add a commented exclusion.",
-          "id": 3,
-          "gridPos": {"h": 10, "w": 12, "x": 0, "y": 15},
-          "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {"type": "loki", "uid": "loki"},
-              "expr": "topk(20, sum by (rule_id) (count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza` | regexp `id[\"=: ]+(?P<rule_id>\\d{6})` [$__range])))",
-              "instant": true,
-              "format": "table"
-            }
-          ]
-        },
-        {
-          "type": "table",
-          "title": "Triggers by URI path — attack or my own app?",
-          "description": "A path that is obviously part of your own UI (e.g. /api/ds/query) points to a false positive.",
+          "type": "stat",
+          "title": "Requests blocked by the WAF",
+          "description": "waf_filter_tx_interruptions counts actual BLOCKS. 'No data' while every host is in DetectionOnly is correct, not broken. It fills in once a host is flipped to enforcement.",
           "id": 4,
-          "gridPos": {"h": 10, "w": 12, "x": 12, "y": 15},
-          "datasource": {"type": "loki", "uid": "loki"},
+          "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+          "datasource": {"type": "prometheus"},
           "targets": [
             {
               "refId": "A",
-              "datasource": {"type": "loki", "uid": "loki"},
-              "expr": "topk(20, sum by (uri) (count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza` | regexp `uri[\"=: ]+(?P<uri>[^ \"]+)` [$__range])))",
-              "instant": true,
-              "format": "table"
-            }
-          ]
-        },
-        {
-          "type": "timeseries",
-          "title": "Coraza-attributed 403s — DID THE FLIP BREAK SOMETHING?",
-          "description": "Watch this for 48h after every per-host flip. A rise here on legitimate paths means roll back that host to DetectionOnly.",
-          "id": 5,
-          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 25},
-          "datasource": {"type": "loki", "uid": "loki"},
-          "targets": [
-            {
-              "refId": "A",
-              "datasource": {"type": "loki", "uid": "loki"},
-              "expr": "sum(count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza` |~ `(?i)(denied|interrupt)` [5m]))",
+              "datasource": {"type": "prometheus"},
+              "expr": "sum(max by (pod) ({__name__=~\"waf_filter_tx_interruptions.*\"}))",
               "legendFormat": "blocked"
             }
           ],
+          "options": {
+            "colorMode": "value", "graphMode": "area", "textMode": "auto",
+            "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}
+          },
           "fieldConfig": {
-            "defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 60}},
+            "defaults": {
+              "unit": "short",
+              "noValue": "0 — detection-only",
+              "color": {"mode": "fixed", "fixedColor": "orange"}
+            },
             "overrides": []
           }
+        },
+        {
+          "type": "timeseries",
+          "title": "WAF throughput — transactions inspected per second",
+          "description": "Derived from waf_filter_tx_total. A flatline here while the gateway is still serving traffic is the strongest signal that the filter has silently detached.",
+          "id": 5,
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+          "datasource": {"type": "prometheus"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "prometheus"},
+              "expr": "max by (pod) (rate(waf_filter_tx_total[5m]))",
+              "legendFormat": "{{pod}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {"custom": {"drawStyle": "line", "fillOpacity": 18, "lineWidth": 2}, "unit": "reqps"},
+            "overrides": []
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Gateway memory vs 1 GiB limit",
+          "description": "Watch this when body inspection is active. Sustained growth without plateau is the leak signature the pre-1.0 Wasm build has a history of.",
+          "id": 6,
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+          "datasource": {"type": "prometheus"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "prometheus"},
+              "expr": "max(container_memory_working_set_bytes{namespace=\"istio-ingress\", container=\"istio-proxy\"})",
+              "legendFormat": "working set"
+            },
+            {
+              "refId": "B",
+              "datasource": {"type": "prometheus"},
+              "expr": "max(container_spec_memory_limit_bytes{namespace=\"istio-ingress\", container=\"istio-proxy\"})",
+              "legendFormat": "limit"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {"custom": {"drawStyle": "line", "fillOpacity": 12, "lineWidth": 2}, "unit": "bytes"},
+            "overrides": [
+              {"matcher": {"id": "byName", "options": "limit"},
+               "properties": [
+                 {"id": "custom.fillOpacity", "value": 0},
+                 {"id": "custom.lineStyle", "value": {"fill": "dash", "dash": [8, 8]}},
+                 {"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}
+               ]}
+            ]
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Gateway responses by status — the allow-list at work",
+          "description": "Context, not the WAF. These 403s are AuthorizationPolicy denials - the IP allow-list is what turns scanners away today. Coraza blocks nothing yet.",
+          "id": 7,
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 13},
+          "datasource": {"type": "prometheus"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "prometheus"},
+              "expr": "sum by (response_code) (rate(istio_requests_total{namespace=\"istio-ingress\", job=\"kubernetes-pods\"}[5m]))",
+              "legendFormat": "{{response_code}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 70, "stacking": {"mode": "normal"}}, "unit": "reqps"},
+            "overrides": [
+              {"matcher": {"id": "byName", "options": "403"},
+               "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]}
+            ]
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Blocks by rule — active only after enforcement",
+          "description": "Interruptions by rule_id and phase. Empty during DetectionOnly by design. After a flip, a spike on one rule means a false positive hit real traffic - roll that host back.",
+          "id": 8,
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 21},
+          "datasource": {"type": "prometheus"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "prometheus"},
+              "expr": "sum by (rule_id, phase) (max by (pod, rule_id, phase) (rate({__name__=~\"waf_filter_tx_interruptions.*\"}[5m])))",
+              "legendFormat": "rule {{rule_id}} / {{phase}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {"custom": {"drawStyle": "bars", "fillOpacity": 70}, "unit": "reqps", "noValue": "No blocks — every host is in DetectionOnly"},
+            "overrides": []
+          }
+        },
+        {
+          "type": "table",
+          "title": "Detections by rule — THE TUNING WORKLIST (Loki)",
+          "description": "Prometheus cannot answer this in DetectionOnly - nothing is interrupted, so nothing is counted. The matching rule exists only in the log.",
+          "id": 9,
+          "gridPos": {"h": 10, "w": 12, "x": 0, "y": 29},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "loki", "uid": "loki"},
+              "expr": "topk(20, sum by (rule_id) (count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza:` | regexp `id \"(?P<rule_id>\\d{6})\"` [$__range])))",
+              "instant": true,
+              "format": "table"
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "title": "Detections by URI — attack, or my own app? (Loki)",
+          "description": "A path from your own UI (/api/ds/query) points to a false positive. A path nobody should request (/.env, /wp-content/...) is a real probe.",
+          "id": 10,
+          "gridPos": {"h": 10, "w": 12, "x": 12, "y": 29},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type": "loki", "uid": "loki"},
+              "expr": "topk(20, sum by (uri) (count_over_time({namespace=\"istio-ingress\", container=\"istio-proxy\"} |= `Coraza:` | regexp `uri \"(?P<uri>[^\"]+)\"` [$__range])))",
+              "instant": true,
+              "format": "table"
+            }
+          ]
         }
       ]
     }
