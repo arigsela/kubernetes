@@ -263,9 +263,37 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
-    # vault.local / vault.10.0.1.110 - LAN-only names, no public DNS, no TLS.
-      # Not reachable from outside the network, so an IP rule here would be
-      # theatre rather than control.
+    # vault.local / vault.10.0.1.110 - CORRECTED 2026-08-11. This rule previously
+      # had no `from:` clause on the premise that these are "LAN-only names, no
+      # public DNS, no TLS... an IP rule here would be theatre rather than
+      # control." That premise was WRONG: Host-header routing needs no DNS at
+      # all. Confirmed live against the cluster:
+      #
+      #   curl -H 'Host: vault.local' http://73.7.190.154/v1/sys/health
+      #   -> HTTP 200 {"initialized":true,"sealed":false,...}
+      #
+      # base-apps/vault/httproute-internal.yaml binds these hostnames to
+      # vault:8200 with PathPrefix: /, so with no `from:` clause the ENTIRE
+      # Vault API was reachable from the public internet in cleartext (Vault
+      # runs tls_disable: 1). No allow-list, no TLS, no auth gate ahead of it.
+      #
+      # 73.7.190.154/32 covers the hairpin path: the router hairpin-NATs LAN
+      # traffic to the public address, so this single /32 is how ALL observed
+      # traffic arrives, LAN included (see the /8-vs-hairpin note above).
+      # 10.0.1.0/24 covers direct LAN access to 10.0.1.110 (not hairpinned),
+      # which base-apps/dex/configmap.yaml's OIDC callback
+      # (https://vault.local/ui/vault/auth/oidc/oidc/callback) depends on - the
+      # operator must keep reaching Vault from the LAN. Note this is
+      # 10.0.1.0/24, NOT 10.0.0.0/8: the /8 form contains the pod network
+      # 10.42.0.0/16 and was deliberately excluded repo-wide (§B.9/§V.66); the
+      # /24 does not contain it and is safe to allow-list directly.
+      #
+      # The other three /32s used throughout this file (170.85.56.189,
+      # 170.85.130.202, 104.28.177.82) are DELIBERATELY NOT included here.
+      # Those are remote networks where `vault.local` cannot resolve at all, so
+      # adding them would only re-open a Host-header path to cleartext Vault
+      # with no working use case behind it. Do not "fix" this apparent
+      # inconsistency with the other rules in this file - it is intentional.
     - to:
         - operation:
             hosts:
@@ -273,3 +301,8 @@ spec:
               - vault.local:*
               - vault.10.0.1.110
               - vault.10.0.1.110:*
+      from:
+        - source:
+            ipBlocks:
+              - 73.7.190.154/32
+              - 10.0.1.0/24
