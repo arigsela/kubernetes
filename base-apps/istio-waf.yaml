@@ -3,7 +3,8 @@
 # SEPARATE APP, NOT part of base-apps/istio-ingress/, deliberately (V8): this is
 # the component most likely to need an emergency rollback, and the tuning window
 # produces many commits. Folding it in would make every tuning iteration re-sync
-# the app that owns the Gateway, its 19 listeners and the AuthorizationPolicy.
+# the app that owns the Gateway, its 20 listeners serving 19 hostnames, and the
+# AuthorizationPolicy.
 #
 # sync-wave 3: istio-ingress is wave 2. The Gateway must exist before a
 # WasmPlugin can targetRef it.
