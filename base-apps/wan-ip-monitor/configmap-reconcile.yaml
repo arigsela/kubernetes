@@ -331,7 +331,7 @@ data:
 
         Returns (url, created). `created` is False when this rotation already
         had a PR, which is what keeps a rotation that sits unmerged for a day
-        from opening 288 of them - and what keeps the notification quiet.
+        from opening one per run - and what keeps the notification quiet.
 
         This never merges or approves the PR it opens - a human always merges.
         """
@@ -558,7 +558,7 @@ data:
         print("allow-list PR: %s (new=%s)" % (pr_url, pr_created))
 
         # Only speak up when something actually happened. Between the rotation
-        # and the merge this runs every 5 minutes with the PR already open and
+        # and the merge this runs on every tick with the PR already open and
         # DNS already fixed; alerting on each of those would train the operator
         # to ignore the notification.
         if updated or pr_created:

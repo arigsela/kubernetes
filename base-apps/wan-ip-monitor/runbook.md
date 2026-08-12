@@ -68,7 +68,7 @@ docs.md, "DRY_RUN").
   ```
 - **Fix:** whichever half the `error_type` points at, above. The job is
   self-healing once the cause clears — it re-derives everything from scratch
-  on the next 5-minute run and needs no manual catch-up.
+  on the next scheduled run and needs no manual catch-up.
 - **If the failure is real but no notification arrived**, the notification path
   itself is broken. `notify()` is best-effort and swallows its own errors by
   design, so this is silent. Confirm the `wan-ip-rotated` workflow is active in
@@ -188,7 +188,7 @@ docs.md, "DRY_RUN").
 - **Likely cause:** branch deletion racing the job. `open_allowlist_pr` dedups
   by checking for an existing open PR on branch `automation/wan-ip-<new_ip>`
   (`branch_name`) before creating anything; if that branch was deleted (e.g.
-  during PR cleanup) while the CronJob still runs every 5 minutes, the next
+  during PR cleanup) while the CronJob still runs on schedule, the next
   run finds no matching branch/PR and opens a new one.
 - **Check:** confirm `branch_name(new_ip)` is still deterministic for a given
   IP (`tests/wan_ip/test_logic.py::test_branch_name_is_deterministic_per_address`)
@@ -228,7 +228,7 @@ docs.md, "DRY_RUN").
 Two options, in order of reversibility:
 - **Soft disable (keep observing, stop acting):** set `DRY_RUN` to `"true"` on
   the CronJob (`cronjob.yaml`) and let Argo CD sync it. The job keeps running
-  every 5 minutes and logging `detected=... declared=... dry_run=True`, but
+  on schedule and logging `detected=... declared=... dry_run=True`, but
   never touches Route 53 or opens a PR.
 - **Hard disable (stop running entirely):**
   ```bash
