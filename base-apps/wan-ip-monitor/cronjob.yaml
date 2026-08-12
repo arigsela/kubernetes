@@ -1,6 +1,23 @@
-# Runs every 5 minutes. Steady state is two read-only API calls, so the cost of
-# checking often is negligible and the reward is that a rotation is caught
-# before it is noticed.
+# Runs twice a day, at 00:00 and 12:00.
+#
+# BE CLEAR ABOUT WHAT THIS CADENCE COSTS: detection latency is now up to 12
+# hours, so a rotation at 00:05 is not noticed until noon. For that whole window
+# every host in authorizationpolicy.yaml is unreachable - DNS points at an
+# address the house no longer holds - which is precisely the outage this app was
+# built after. The tool shortens such an outage from "however long until someone
+# investigates" to "at most 12 hours, then automatic", but it no longer catches a
+# rotation before a human would.
+#
+# That is a deliberate trade, not an oversight. A steady-state run is two
+# read-only API calls, so the API cost of running often is negligible; what is
+# not negligible is `pip install boto3` on every single run (see the image note
+# below), which at */5 meant 288 PyPI fetches a day and made a PyPI outage a
+# recurring failure mode. Twice a day makes that noise instead of a nuisance.
+#
+# If detection latency starts mattering more than that, the ordering is: bake an
+# image so pip drops out of the hot path, THEN raise the frequency - not the
+# other way round. Hourly (`0 * * * *`) is the obvious middle ground and costs 24
+# runs a day.
 #
 # The allow-list is read from GitHub `main` via the API
 # (reconcile.py's read_policy_from_main), NOT from a mounted copy of the live
@@ -15,7 +32,7 @@
 # binary but no `python3` on PATH to run reconcile.py under - the CLI bundles
 # its own internal interpreter without exposing it for scripting. boto3 and
 # PyYAML are installed at container start instead of baked into a custom image,
-# trading a few seconds of startup (negligible on a 5-minute schedule) for not
+# trading a few seconds of startup (immaterial twice a day) for not
 # maintaining a bespoke image. See docs.md ("Container image choice").
 apiVersion: batch/v1
 kind: CronJob
@@ -23,7 +40,7 @@ metadata:
   name: wan-ip-monitor
   namespace: wan-ip-monitor
 spec:
-  schedule: "*/5 * * * *"
+  schedule: "0 */12 * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   concurrencyPolicy: Forbid
@@ -52,8 +69,30 @@ spec:
               env:
                 - name: AWS_DEFAULT_REGION
                   value: us-east-1
+                # ARMED 2026-08-12. Was "true" from first deploy until a dry run
+                # proved both credentials live, which is what this flag is for:
+                # every write in this job - the Route 53 change batch and the
+                # allow-list PR - is gated on it, so a disarmed deploy exercises
+                # detection, the zone read and the GitHub read while touching
+                # nothing.
+                #
+                # The dry run that justified flipping it (job manual-check):
+                #   detected=76.97.4.210 dry_run=True
+                #   route53: 21 managed hostname(s) already on 76.97.4.210
+                #   allow-list: declared=76.97.4.210 detected=76.97.4.210
+                #   allow-list: already trusts 76.97.4.210, nothing to propose
+                #   allow-list PR: None (new=False)
+                # Line 2 is the AWS credential working, line 3 is the GitHub
+                # token working. Both are required before arming; a run that
+                # prints only line 1 has proven nothing.
+                #
+                # To disarm in a hurry, set this back to "true" - it takes effect
+                # on the next scheduled tick and needs no code change. To stop it
+                # dead instead:
+                #   kubectl -n wan-ip-monitor patch cronjob wan-ip-monitor \
+                #     -p '{"spec":{"suspend":true}}'
                 - name: DRY_RUN
-                  value: "true"
+                  value: "false"
                 # The Route 53 A records this job owns. This list is the
                 # SELECTOR for the DNS half - a record is moved onto the newly
                 # detected address because its name is here, never because its
@@ -116,7 +155,7 @@ spec:
                   # cpu: 200m (there was previously no CPU limit at all) is
                   # sized for that same pip install: it is CPU-bound at
                   # container start and, throttled to 0.2 core, takes on the
-                  # order of a minute or two - comfortably inside the 5-minute
+                  # order of a minute or two - comfortably inside the 12-hour
                   # schedule, and concurrencyPolicy: Forbid means a slow start
                   # here delays the next run rather than overlapping it.
                   cpu: 200m

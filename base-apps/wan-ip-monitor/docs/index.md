@@ -23,7 +23,7 @@ sources:
 # wan-ip-monitor
 
 ## What it is
-A CronJob (`*/5 * * * *`) that keeps the home WAN address's two dependents in
+A CronJob (`0 */12 * * *`) that keeps the home WAN address's two dependents in
 sync with reality: the Route 53 A records that point at it, and the Istio
 `AuthorizationPolicy` allow-list that trusts it. This is the ISP-facing
 counterpart to `base-apps/istio-ingress/authorizationpolicy.yaml`'s access
@@ -73,7 +73,7 @@ re-raising, because those two failures need very different responses and a
 bare traceback does not distinguish them.
 
 Both halves are still reconcilers, not change-detectors — nothing is persisted
-between runs, and the steady state (288 runs a day) re-derives the same
+between runs, and the steady state (two runs a day) re-derives the same
 conclusion each time. Between rotation and merge, `open_allowlist_pr`'s
 existing-PR lookup finds the same PR rather than opening a new one.
 
@@ -233,7 +233,7 @@ path replaces `aws_json` first via `monkeypatch`.
 The CronJob's container `command` installs `boto3==1.35.99` and
 `pyyaml==6.0.2` at start (`pip install --quiet ... && python3
 /app/reconcile.py`, see `cronjob.yaml`) rather than baking a custom image —
-the few seconds of install time are immaterial on a 5-minute schedule, and
+the few seconds of install time are immaterial twice a day, and
 there is then no bespoke image to build, publish, or keep patched.
 
 ## Where config lives
@@ -272,8 +272,12 @@ there is then no bespoke image to build, publish, or keep patched.
 - **`"event": "wan-ip-reconciled"`** — a rotation was actually acted on:
   records moved, or a PR was newly created (`records_updated`, `new`,
   `pr_url`). It deliberately does *not* fire on the runs between the rotation
-  and the merge, when DNS is already fixed and the PR is already open — 288
-  of those a day would train the operator to ignore it.
+  and the merge, when DNS is already fixed and the PR is already open —
+  repeating that alert every run would train the operator to ignore it. The
+  guard was written when the schedule was `*/5` and 288 such alerts a day was
+  the concrete risk; it matters less at the current twice-daily cadence, but it
+  is what makes the cadence a free choice rather than one constrained by how
+  noisy the alerting gets.
 - **`"event": "wan-ip-monitor-failed"`** — `reconcile()` raised. Carries
   `error_type` and `error`. `main()` wraps the whole body for this reason:
   without it, the only failure signal is a non-zero pod exit in a namespace
