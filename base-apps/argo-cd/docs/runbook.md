@@ -51,7 +51,16 @@ Added 2026-08-12 with SSO. Work through these in order — they fail at differen
 Add `base-apps/<app>.yaml` (an Argo CD `Application`) plus a `base-apps/<app>/` manifest directory; the `master-app` Application discovers the new file and creates the child Application automatically. There is no manual `argocd app create` step in this repo's workflow.
 
 ### Change Argo CD's own install/config
-Edit `terraform/modules/argocd/helm.tf` (chart/values) or the `module "argocd"` block in `terraform/roots/asela-cluster/argocd.tf` (node placement, resource exclusions), then run the normal `terraform plan`/`terraform apply` from `terraform/roots/asela-cluster/`. This is one of the few things in this repo that is *not* GitOps-synced by Argo CD — it's applied out-of-band via Terraform.
+Edit `terraform/modules/argocd/helm.tf` (chart/values) or the `module "argocd"` block in `terraform/roots/asela-cluster/argocd.tf`. This is one of the few things in this repo that is *not* GitOps-synced by Argo CD — it is applied by the in-cluster Atlantis, which holds the AWS credentials and cluster reachability that GitHub-hosted runners lack.
+
+**Apply before you merge — merging is the last step, not the trigger.** Nothing applies on merge.
+
+1. Open the PR. Atlantis autoplans on any `**/*.tf` change (`atlantis.yaml`).
+2. Wait for `atlantis/plan: asela-cluster` to go green, and read the diff.
+3. Run the **Terraform Apply (gated)** Action with the PR number, or comment `atlantis apply` directly. The Action only posts that comment; the real gate is the `terraform-apply` GitHub Environment's required reviewer.
+4. Confirm `atlantis/apply` is green, **then** merge.
+
+**If you merge first, the change is silently stranded.** Atlantis deletes the saved `plan.tfplan` and the workspace locks within seconds of the PR closing, and `.github/workflows/terraform-apply.yaml` hard-fails on a non-`OPEN` PR (`PR #N is not OPEN (state=MERGED)`). Git then disagrees with the cluster and **no check anywhere reports a failure** — the PR is green and merged, it simply never took effect. Recovery is a fresh PR touching any `.tf` file to re-trigger autoplan, then the sequence above. Verify with `kubectl -n argo-cd get cm argocd-cm -o jsonpath='{.data.admin\.enabled}'` (or whichever key you changed) rather than trusting the merge.
 
 ### Change this app's own GitOps-managed resources (e.g. the ingress)
 Edit `base-apps/argo-cd/ingress.yaml` and push; it is synced like any other app, via the `argo-cd-config` Application (`base-apps/argo-cd.yaml`).

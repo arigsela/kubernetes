@@ -1,3 +1,24 @@
+# APPLY BEFORE YOU MERGE. Terraform in this repo is applied by the in-cluster
+# Atlantis while the PR is still OPEN - merging is the LAST step, not the
+# trigger. Nothing applies on merge.
+#
+#   1. open the PR; Atlantis autoplans (atlantis.yaml, when_modified **/*.tf)
+#   2. wait for `atlantis/plan: asela-cluster` to finish
+#   3. run the "Terraform Apply (gated)" Action with the PR number, or comment
+#      `atlantis apply` - the Action just posts that comment behind the
+#      terraform-apply Environment's required-reviewer gate
+#   4. confirm `atlantis/apply` went green, THEN merge
+#
+# Merging first silently strands the change: Atlantis deletes the saved
+# plan.tfplan and the workspace locks within seconds of the PR closing, and
+# .github/workflows/terraform-apply.yaml refuses to run on a non-OPEN PR. Git
+# then says one thing and the cluster another, with no failed check anywhere to
+# tell you - the PR is green and merged, it just never took effect. Recovering
+# means opening a fresh PR that touches a .tf file to re-trigger autoplan.
+#
+# Learned the hard way on PR #547 (admin.enabled=false merged unapplied, so
+# password login stayed live), which is what this very block is fixing.
+
 module "argocd" {
   source    = "../../modules/argocd"
   enabled   = true
