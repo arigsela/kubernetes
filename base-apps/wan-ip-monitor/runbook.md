@@ -26,13 +26,17 @@ kubectl -n wan-ip-monitor get jobs --sort-by=.metadata.creationTimestamp
 kubectl -n wan-ip-monitor logs -l app=wan-ip-monitor --tail=50
 kubectl -n wan-ip-monitor get externalsecret wan-ip-monitor
 ```
-A healthy steady-state run's log is exactly four lines:
+A healthy steady-state run's log is exactly five lines:
 ```
 detected=<ip> dry_run=<True|False>
 route53: 21 managed hostname(s) already on <ip>
 allow-list: declared=<ip> detected=<ip>
 allow-list: already trusts <ip>, nothing to propose
+allow-list PR: None (new=False)
 ```
+The last line is printed on every run, not only when a PR exists — `None`
+and `new=False` together are the healthy reading, meaning nothing needed
+proposing and nothing was opened.
 Note the zone is listed on **every** run, not only when a rotation is
 detected — so a clean steady-state run proves both credentials work (see
 docs.md, "DRY_RUN").
@@ -251,9 +255,17 @@ script's only home, so a change there is a change to production.
 kubectl -n wan-ip-monitor create job --from=cronjob/wan-ip-monitor manual-check
 kubectl -n wan-ip-monitor logs job/manual-check
 ```
-A steady-state result (`in sync, nothing to do`) only proves `GITHUB_TOKEN`
-works — the Route 53 List call never runs in that path. It is **not** proof
-that AWS credentials are valid; see docs.md, "DRY_RUN", for why.
+A clean steady-state result proves **both** credentials work. The zone is
+listed on every run — that is not gated behind a detected rotation — so
+`route53: 21 managed hostname(s) already on <ip>` is itself evidence the AWS
+credentials are valid, and `allow-list: declared=...` is evidence
+`GITHUB_TOKEN` is. See docs.md, "DRY_RUN", for exactly what a dry run does
+and does not exercise.
+
+(Before 2026-08-12 this section said the opposite, because Route 53 used to
+be reached only when a rotation was detected. That ordering was the C1 defect
+— it let DNS strand on a dead address — and the reconcile now runs
+unconditionally.)
 
 ### Arm it (flip DRY_RUN off)
 Set `DRY_RUN` to `"false"` in `cronjob.yaml` and push as its own commit,
