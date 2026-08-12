@@ -352,6 +352,7 @@ data:
     matters: a change-detector that updated Route 53 first would see "no change"
     on the next run and never re-open an allow-list PR that went unmerged.
     """
+    import base64
     import ipaddress
     import json
     import os
@@ -584,6 +585,7 @@ The reviewed half, plus the wiring that runs each cycle.
   - `detect_wan_ip(fetch) -> str`
   - `notify(payload: dict, post) -> None`
   - `main() -> int`
+  - `open_allowlist_pr(old_ip: str, new_ip: str) -> tuple[str | None, bool]`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -708,30 +710,30 @@ Append to the `reconcile.py` block in the ConfigMap:
 
 
     def open_allowlist_pr(old_ip, new_ip):
-        """Branch, commit the rewritten policy, open a PR. Returns its URL.
+        """Branch, commit the rewritten policy, open a PR.
 
-        Returns the existing PR's URL if this rotation already has one, so a
-        rotation that sits unmerged for a day does not open 288 pull requests.
+        Returns (url, created). `created` is False when this rotation already
+        had a PR, which is what keeps a rotation that sits unmerged for a day
+        from opening 288 of them - and what keeps the notification quiet.
         """
         branch = branch_name(new_ip)
-        existing = github("GET", "/pulls?state=open&head=%s:%s" % (REPO.split("/")[0], branch))
+        owner = REPO.split("/")[0]
+        existing = github("GET", "/pulls?state=open&head=%s:%s" % (owner, branch))
         if existing:
-            return existing[0]["html_url"]
+            return existing[0]["html_url"], False
 
         main_sha = github("GET", "/git/ref/heads/main")["object"]["sha"]
         try:
             github("POST", "/git/refs", {"ref": "refs/heads/%s" % branch, "sha": main_sha})
         except urllib.error.HTTPError as exc:
-            if exc.code != 422:  # 422 = already exists, fine
+            if exc.code != 422:  # 422 = ref already exists, which is fine
                 raise
 
         current = github("GET", "/contents/%s?ref=main" % POLICY_PATH)
-        import base64
-
         text = base64.b64decode(current["content"]).decode()
         rewritten = rewrite_policy(text, old_ip, new_ip)
         if rewritten == text:
-            return None
+            return None, False
 
         github(
             "PUT",
@@ -789,17 +791,23 @@ Append to the `reconcile.py` block in the ConfigMap:
         anchored to the same revision. Reading a mounted copy instead would add
         a second source of truth that can silently drift.
         """
-        import base64
-
         current = github("GET", "/contents/%s?ref=main" % POLICY_PATH)
         return base64.b64decode(current["content"]).decode()
 
 
     def main():
         current = detect_wan_ip()
-        policy = read_policy_from_main()
-        declared = read_declared_wan_ip(policy)
+        declared = read_declared_wan_ip(read_policy_from_main())
         print("detected=%s declared=%s dry_run=%s" % (current, declared, DRY_RUN))
+
+        # The annotation is the whole comparison. When it already names the
+        # detected address, both targets are consistent by definition: the
+        # Route 53 records this job manages are exactly those sitting on the
+        # declared address, and the allow-list is built around it. This is the
+        # steady state and must stay completely silent - it runs 288 times a day.
+        if declared == current:
+            print("in sync, nothing to do")
+            return 0
 
         zone = aws_json(
             ["route53", "list-resource-record-sets", "--hosted-zone-id", HOSTED_ZONE_ID,
@@ -807,16 +815,13 @@ Append to the `reconcile.py` block in the ConfigMap:
         )
         stale = records_needing_update(zone.get("ResourceRecordSets", []), declared)
 
-        if not stale and declared == current:
-            print("in sync, nothing to do")
-            return 0
-
         if DRY_RUN:
-            print("DRY_RUN: would update %d records and open a PR" % len(stale))
+            print("DRY_RUN: would move %d records %s -> %s and open a PR"
+                  % (len(stale), declared, current))
             return 0
 
         updated = 0
-        if stale and declared != current:
+        if stale:
             batch = build_change_batch(stale, current)
             aws_json(
                 ["route53", "change-resource-record-sets",
@@ -826,17 +831,20 @@ Append to the `reconcile.py` block in the ConfigMap:
             updated = len(stale)
             print("updated %d Route 53 records" % updated)
 
-        pr_url = None
-        if declared != current:
-            pr_url = open_allowlist_pr(declared, current)
-            print("allow-list PR: %s" % pr_url)
+        pr_url, pr_created = open_allowlist_pr(declared, current)
+        print("allow-list PR: %s (new=%s)" % (pr_url, pr_created))
 
-        notify({
-            "old": declared,
-            "new": current,
-            "records_updated": updated,
-            "pr_url": pr_url,
-        })
+        # Only speak up when something actually happened. Between the rotation
+        # and the merge this function runs every 5 minutes with the PR already
+        # open and DNS already fixed; alerting on each of those would train the
+        # operator to ignore it.
+        if updated or pr_created:
+            notify({
+                "old": declared,
+                "new": current,
+                "records_updated": updated,
+                "pr_url": pr_url,
+            })
         return 0
 
 
@@ -890,7 +898,7 @@ kubectl run imgcheck --rm -i --restart=Never --image=amazon/aws-cli:2.17.0 \
   --command -- sh -c 'aws --version; python3 -c "import yaml; print(\"yaml ok\")"'
 ```
 
-If `python3` or PyYAML is missing, use `python:3.12-slim` instead and install the AWS CLI is NOT acceptable at runtime — in that case switch `aws_json` to boto3 and set the image to `python:3.12-slim` with `pip install boto3==1.35.99 pyyaml==6.0.2` in the container command. Record which option was chosen in `docs.md`.
+If either is missing, do **not** try to install the AWS CLI at runtime. Instead switch to `python:3.12-slim`, replace `aws_json` with boto3 equivalents, and set the container command to `pip install --quiet boto3==1.35.99 pyyaml==6.0.2 && python3 /app/reconcile.py`. The boto3 calls are `client.list_resource_record_sets(HostedZoneId=...)` and `client.change_resource_record_sets(HostedZoneId=..., ChangeBatch=batch)`; `records_needing_update` and `build_change_batch` are unaffected because they operate on plain dicts either way. Record which option was chosen in `docs.md`.
 
 - [ ] **Step 2: Create the namespace, SecretStore, and ExternalSecret**
 
