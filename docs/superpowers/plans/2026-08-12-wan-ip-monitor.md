@@ -301,14 +301,14 @@ def test_missing_annotation_raises(reconcile):
 
 
 def test_rewrite_moves_annotation_and_rule(reconcile):
-    out = reconcile.rewrite_policy(POLICY, "76.97.4.210", "203.0.113.9")
-    assert 'arigsela.com/wan-ip: "203.0.113.9"' in out
-    assert "- 203.0.113.9/32" in out
+    out = reconcile.rewrite_policy(POLICY, "76.97.4.210", "76.97.99.1")
+    assert 'arigsela.com/wan-ip: "76.97.99.1"' in out
+    assert "- 76.97.99.1/32" in out
     assert "76.97.4.210" not in out
 
 
 def test_rewrite_leaves_the_other_addresses_alone(reconcile):
-    out = reconcile.rewrite_policy(POLICY, "76.97.4.210", "203.0.113.9")
+    out = reconcile.rewrite_policy(POLICY, "76.97.4.210", "76.97.99.1")
     assert "- 170.85.56.189/32" in out
     assert "- 104.28.177.82/32" in out
 
@@ -371,6 +371,12 @@ data:
         Deliberately strict. This value ends up in a security allow-list and in
         public DNS, so an error page, a captive-portal redirect, or an RFC1918
         address from a misbehaving detector must never get through.
+
+        NOTE for anyone writing tests against this: Python treats the RFC 5737
+        documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) as
+        is_private, so the usual "example IP" habit produces addresses this
+        rejects. That is correct behaviour - a documentation address is never a
+        real WAN address - so pick a genuinely public one in fixtures instead.
         """
         try:
             addr = ipaddress.IPv4Address(str(value).strip())
@@ -458,7 +464,7 @@ RECORDSETS = [
     {"Name": "grafana.arigsela.com.", "Type": "A", "TTL": 0,
      "ResourceRecords": [{"Value": "76.97.4.210"}]},
     {"Name": "elsewhere.arigsela.com.", "Type": "A", "TTL": 300,
-     "ResourceRecords": [{"Value": "203.0.113.77"}]},
+     "ResourceRecords": [{"Value": "8.8.4.4"}]},
     {"Name": "arigsela.com.", "Type": "NS", "TTL": 172800,
      "ResourceRecords": [{"Value": "ns-1337.awsdns-39.org."}]},
     {"Name": "multi.arigsela.com.", "Type": "A", "TTL": 300,
@@ -483,12 +489,12 @@ def test_ignores_multi_value_records(reconcile):
 
 
 def test_returns_nothing_when_already_current(reconcile):
-    assert reconcile.records_needing_update(RECORDSETS, "203.0.113.9") == []
+    assert reconcile.records_needing_update(RECORDSETS, "76.97.99.1") == []
 
 
 def test_change_batch_preserves_ttl_per_record(reconcile):
     records = reconcile.records_needing_update(RECORDSETS, "76.97.4.210")
-    batch = reconcile.build_change_batch(records, "203.0.113.9")
+    batch = reconcile.build_change_batch(records, "76.97.99.1")
     ttls = {c["ResourceRecordSet"]["Name"]: c["ResourceRecordSet"]["TTL"]
             for c in batch["Changes"]}
     assert ttls == {"argocd.arigsela.com.": 300, "grafana.arigsela.com.": 0}
@@ -496,10 +502,10 @@ def test_change_batch_preserves_ttl_per_record(reconcile):
 
 def test_change_batch_upserts_the_new_address(reconcile):
     records = reconcile.records_needing_update(RECORDSETS, "76.97.4.210")
-    batch = reconcile.build_change_batch(records, "203.0.113.9")
+    batch = reconcile.build_change_batch(records, "76.97.99.1")
     assert all(c["Action"] == "UPSERT" for c in batch["Changes"])
     for change in batch["Changes"]:
-        assert change["ResourceRecordSet"]["ResourceRecords"] == [{"Value": "203.0.113.9"}]
+        assert change["ResourceRecordSet"]["ResourceRecords"] == [{"Value": "76.97.99.1"}]
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -598,8 +604,8 @@ import pytest
 def test_branch_name_is_deterministic_per_address(reconcile):
     """Idempotency depends on this: same rotation, same branch, so a second run
     finds the existing PR instead of opening another."""
-    assert reconcile.branch_name("203.0.113.9") == "automation/wan-ip-203.0.113.9"
-    assert reconcile.branch_name("203.0.113.9") == reconcile.branch_name("203.0.113.9")
+    assert reconcile.branch_name("76.97.99.1") == "automation/wan-ip-76.97.99.1"
+    assert reconcile.branch_name("76.97.99.1") == reconcile.branch_name("76.97.99.1")
 
 
 def test_detect_uses_the_first_source_that_returns_a_public_address(reconcile):
@@ -607,26 +613,26 @@ def test_detect_uses_the_first_source_that_returns_a_public_address(reconcile):
 
     def fetch(url):
         calls.append(url)
-        return "203.0.113.9\n"
+        return "76.97.99.1\n"
 
-    assert reconcile.detect_wan_ip(fetch) == "203.0.113.9"
+    assert reconcile.detect_wan_ip(fetch) == "76.97.99.1"
     assert len(calls) == 1
 
 
 def test_detect_falls_through_a_bad_response(reconcile):
     def fetch(url):
-        return "<html>captive portal</html>" if "amazonaws" in url else "203.0.113.9"
+        return "<html>captive portal</html>" if "amazonaws" in url else "76.97.99.1"
 
-    assert reconcile.detect_wan_ip(fetch) == "203.0.113.9"
+    assert reconcile.detect_wan_ip(fetch) == "76.97.99.1"
 
 
 def test_detect_falls_through_an_exception(reconcile):
     def fetch(url):
         if "amazonaws" in url:
             raise OSError("network unreachable")
-        return "203.0.113.9"
+        return "76.97.99.1"
 
-    assert reconcile.detect_wan_ip(fetch) == "203.0.113.9"
+    assert reconcile.detect_wan_ip(fetch) == "76.97.99.1"
 
 
 def test_detect_raises_when_every_source_is_unusable(reconcile):
@@ -643,7 +649,7 @@ def test_notify_never_raises(reconcile):
     def post(payload):
         raise OSError("n8n is down")
 
-    reconcile.notify({"new": "203.0.113.9"}, post)
+    reconcile.notify({"new": "76.97.99.1"}, post)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
