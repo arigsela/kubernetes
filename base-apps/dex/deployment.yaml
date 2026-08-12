@@ -15,8 +15,17 @@ spec:
       labels:
         app: dex
       annotations:
-        # Roll when the config changes so Dex reloads it.
-        checksum/config: "5326419fe0a7dc38"
+        # Roll when the config changes so Dex reloads it. Dex does NOT watch its
+        # config file and there is no reloader controller in this cluster, so
+        # without bumping this a ConfigMap edit syncs cleanly and changes
+        # nothing - the old config keeps serving until something unrelated
+        # restarts the pod. A new client would then 400 as "invalid client".
+        #
+        # Value is sha256 of the ConfigMap's config.yaml, first 16 hex chars:
+        #   python3 -c "import hashlib,yaml; print(hashlib.sha256(
+        #     yaml.safe_load(open('base-apps/dex/configmap.yaml'))
+        #     ['data']['config.yaml'].encode()).hexdigest()[:16])"
+        checksum/config: "cf4f848580a3bd08"
     spec:
       serviceAccountName: dex
       nodeSelector:
