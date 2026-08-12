@@ -42,10 +42,46 @@ def test_accepts_public_addresses(reconcile, value):
         "<html>error</html>",  # captive portal
         "76.97.4.210\n76.97.4.211",  # two values
         "2606:4700::1111",   # IPv6
+        "100.64.1.5",        # RFC 6598 carrier-grade NAT
+        "100.127.255.254",   # RFC 6598, top of the range
     ],
 )
 def test_rejects_everything_else(reconcile, value):
     assert reconcile.is_valid_public_ipv4(value) is False
+
+
+@pytest.mark.parametrize("value", ["100.64.1.5", "100.100.7.9", "100.127.255.254"])
+def test_rejects_rfc6598_cgnat_space(reconcile, value):
+    """CGNAT addresses are NOT is_private, so the old enumeration of
+    is_private/is_loopback/is_reserved/is_multicast/is_link_local/
+    is_unspecified accepted every one of them.
+
+    The stakes are not cosmetic: 100.64.0.0/10 is shared carrier space. Writing
+    one of these into 21 public A records points the homelab at an address that
+    is not routable from the internet, and allow-listing it in
+    authorizationpolicy.yaml would grant the security boundary to every other
+    subscriber sitting behind the same carrier NAT. The runbook lists CGNAT as
+    a live possibility for this residential line, so this is a real input, not
+    a hypothetical one.
+    """
+    import ipaddress
+
+    assert ipaddress.IPv4Address(value).is_private is False, (
+        "if this ever becomes True, the CGNAT check is being made by "
+        "is_private rather than by is_global - re-check the reasoning above"
+    )
+    assert reconcile.is_valid_public_ipv4(value) is False
+
+
+def test_still_rejects_multicast_which_is_global_does_not_cover(reconcile):
+    """`is_global` alone is not sufficient: CPython does not count 224.0.0.0/4
+    among its private networks, so IPv4Address("224.0.0.1").is_global is True.
+    is_valid_public_ipv4 carries an explicit `not is_multicast` for exactly
+    that reason - this test fails if someone simplifies it away."""
+    import ipaddress
+
+    assert ipaddress.IPv4Address("224.0.0.1").is_global is True
+    assert reconcile.is_valid_public_ipv4("224.0.0.1") is False
 
 
 def test_reads_declared_wan_ip(reconcile):

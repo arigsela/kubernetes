@@ -26,13 +26,73 @@ kubectl -n wan-ip-monitor get jobs --sort-by=.metadata.creationTimestamp
 kubectl -n wan-ip-monitor logs -l app=wan-ip-monitor --tail=50
 kubectl -n wan-ip-monitor get externalsecret wan-ip-monitor
 ```
-A healthy steady-state run's log is exactly two lines:
+A healthy steady-state run's log is exactly four lines:
 ```
-detected=<ip> declared=<ip> dry_run=<True|False>
-in sync, nothing to do
+detected=<ip> dry_run=<True|False>
+route53: 21 managed hostname(s) already on <ip>
+allow-list: declared=<ip> detected=<ip>
+allow-list: already trusts <ip>, nothing to propose
 ```
+Note the zone is listed on **every** run, not only when a rotation is
+detected — so a clean steady-state run proves both credentials work (see
+docs.md, "DRY_RUN").
 
 ## Failure modes
+
+### Job is failing and I got a notification
+- **Symptom:** an n8n execution on the `wan-ip-rotated` webhook carrying
+  `"event": "wan-ip-monitor-failed"` with `error_type` and `error`, and/or a
+  `Job` in `wan-ip-monitor` that ended `Failed`.
+- **Read `error_type` first — it names the half that broke:**
+  - `RuntimeError: no source returned a usable public IPv4` — detection
+    failed. Nothing was written; the job touched neither Route 53 nor GitHub.
+    Either both detectors are unreachable, or they are returning something
+    `is_valid_public_ipv4` rejects (a captive portal, or a **CGNAT**
+    `100.64.x.x` address — see "Detected address flapping").
+  - `ClientError` / `EndpointConnectionError` / anything printed after
+    `route53 call failed:` — the AWS half. See "Job failing on AWS auth". DNS
+    was **not** updated.
+  - `HTTPError` / `URLError` — the GitHub half. Look for the line
+    `route53 was reconciled onto <ip>, but the allow-list PR could NOT be
+    opened`: if it is present, **DNS is already correct** and only the PR is
+    missing, so the protected hosts resolve fine and answer `403` until the
+    allow-list catches up. See "Job failing on GitHub auth".
+- **Check:**
+  ```bash
+  kubectl -n wan-ip-monitor logs -l app=wan-ip-monitor --tail=50
+  kubectl -n wan-ip-monitor get jobs --sort-by=.metadata.creationTimestamp
+  ```
+- **Fix:** whichever half the `error_type` points at, above. The job is
+  self-healing once the cause clears — it re-derives everything from scratch
+  on the next 5-minute run and needs no manual catch-up.
+- **If the failure is real but no notification arrived**, the notification path
+  itself is broken. `notify()` is best-effort and swallows its own errors by
+  design, so this is silent. Confirm the `wan-ip-rotated` workflow is active in
+  n8n (`base-apps/n8n/workflows-configmap.yaml`); if the workflow JSON was
+  edited without bumping `checksum/workflows` in
+  `base-apps/n8n/deployments.yaml`, the n8n pod never rolled and the webhook
+  route was never registered — `kubectl rollout restart deploy/n8n -n n8n`.
+
+### A host stopped resolving to home after a rotation
+- **Symptom:** one specific hostname still resolves to the **old** WAN address
+  long after a rotation, while the others moved. No error anywhere; the job
+  logs look completely healthy.
+- **Cause:** that hostname is not in `MANAGED_HOSTNAMES` (`cronjob.yaml`). The
+  Route 53 half only ever touches records whose name is on that list — a
+  deliberate fail-safe so the job can never move a record it does not own.
+- **Check:**
+  ```bash
+  kubectl -n wan-ip-monitor get cronjob wan-ip-monitor \
+    -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].env[?(@.name=="MANAGED_HOSTNAMES")].value}'
+  ```
+- **Fix:** add `<name>.arigsela.com` to `MANAGED_HOSTNAMES` in
+  `cronjob.yaml`, commit, let Argo CD sync. The next run corrects the record.
+  **Adding a host to the homelab means adding it here** — see docs.md, "Which
+  Route 53 records it owns".
+- **Also check:** the record may be excluded by a safety rule rather than by
+  the list — `records_needing_update` skips non-`A` records, multi-value
+  records, and alias records (which carry no `ResourceRecords` at all). Those
+  are never automated; fix them by hand.
 
 ### PR opened but nothing merged
 - **Symptom:** one or more of the protected hosts
@@ -147,6 +207,12 @@ in sync, nothing to do
   is built on doesn't hold. There may be more than one visible public address
   depending on which upstream NAT hop happens to serve a given outbound
   request.
+- **Note on CGNAT specifically:** if a detector returns an address *inside*
+  RFC 6598 space (`100.64.0.0/10`), `is_valid_public_ipv4` rejects it outright
+  and that source is skipped; if every source does, the run fails with
+  `RuntimeError: no source returned a usable public IPv4` rather than writing
+  a carrier-NAT address into public DNS and the allow-list. So the CGNAT case
+  is loud, not silent — but it is also unfixable in code, per below.
 - **Fix:** this is an ISP/network-topology problem, not a bug in the
   reconciler. Confirm with the ISP whether CGNAT is in play. There is no code
   fix here — the job would need a fundamentally different detection strategy
