@@ -74,14 +74,29 @@ different blast radii if the job gets detection wrong:
   `contents:write` + `pull_requests:write` is exactly what GitHub's `PUT
   /pulls/{n}/merge` requires, and `contents:write` alone is sufficient to push
   straight to `main` via `PUT /contents/{path}` with `"branch": "main"`. If
-  the *code* changed to call either of those, the token would let it. The
-  boundary that actually holds: `main`'s ruleset requires
+  the *code* changed to call either of those, the token would let it. None of
+  this changes what the code actually does today — `open_allowlist_pr` never
+  calls a merge endpoint, so the automation cannot and does not merge
+  anything right now. The rest of this paragraph is about what the credential
+  could theoretically permit if that ever changed, and separates what is
+  verified from what is not.
+
+  **Verified:** the ruleset on `main` is active and requires
   `required_approving_review_count: 1` with `require_last_push_approval:
-  true`, so the identity that pushed the automation branch cannot supply the
-  approval its own PR needs — and bypassing the ruleset outright requires the
-  `administration` permission, which this token does **not** have. **The
-  reconciler must never be able to merge its own PR; that branch ruleset — not
-  the credential scope — is the control this task must never weaken.**
+  true`, so the identity that pushed a commit cannot supply the approval its
+  own PR needs to merge. That control is real and stands. **Also verified —
+  and not fully closed:** the ruleset carries a bypass actor (the Admin
+  repository role, `bypass_mode: "pull_request"`), and the GitHub account
+  that mints `GITHUB_TOKEN` holds admin on this repo. **Not verified:**
+  whether a fine-grained PAT lacking the `administration` permission still
+  inherits that role-based bypass at merge time — GitHub does not document
+  this either way, so it is not asserted as closed here. If this needs to be
+  closed deterministically rather than resting on undocumented behavior, the
+  operator's choices are: remove the Admin bypass actor from the ruleset, or
+  mint `GITHUB_TOKEN` on a machine account that does not hold admin — neither
+  has been done as of this writing. **The reconciler must never be able to
+  merge its own PR; today it structurally cannot, because the code never
+  calls a merge endpoint.**
 
 Until the PR merges, DNS is already correct but the allow-list still trusts
 the old address, so the protected hosts resolve and return `403` — this is

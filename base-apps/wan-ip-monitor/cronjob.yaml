@@ -70,6 +70,12 @@ spec:
                   # boto3.client("route53") loading its service model sits
                   # close to that ceiling, so this is sized for the current
                   # python:3.12-slim + pip-install-on-start image instead.
+                  # cpu: 200m (there was previously no CPU limit at all) is
+                  # sized for that same pip install: it is CPU-bound at
+                  # container start and, throttled to 0.2 core, takes on the
+                  # order of a minute or two - comfortably inside the 5-minute
+                  # schedule, and concurrencyPolicy: Forbid means a slow start
+                  # here delays the next run rather than overlapping it.
                   cpu: 200m
                   memory: 256Mi
           volumes:
