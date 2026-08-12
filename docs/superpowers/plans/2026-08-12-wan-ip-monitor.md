@@ -768,7 +768,7 @@ Append to the `reconcile.py` block in the ConfigMap:
                 ) % (old_ip, new_ip),
             },
         )
-        return pr["html_url"]
+        return pr["html_url"], True
 
 
     def post_json(payload):
