@@ -14,7 +14,7 @@
 #   Scope — apps are discovered two ways and unioned. Querying only PVCs with an Argo
 #   tracking-id misses StatefulSets using `volumeClaimTemplates`, whose claims the
 #   StatefulSet controller creates rather than Argo. That omission would have skipped
-#   `vault` and `openshell`, the two that matter most.
+#   `vault`, the one that matters most.
 #
 # §V.30: the pause must be liftable to reach §V.5 green. A paused app cannot self-heal, so
 # resume is not gated on Synced — the order is pause → hop → manual sync → verify → resume.

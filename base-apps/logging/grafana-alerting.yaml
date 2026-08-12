@@ -181,7 +181,7 @@ data:
                   #
                   # "Contact K8S API Server From Container" is excluded for the
                   # controllers that talk to the API *by design* — argo-cd (GitOps
-                  # reconcile), backstage (catalog ingestor), openshell (sandbox
+                  # reconcile), backstage (catalog ingestor)
                   # manager), kagent (its k8s agents). They emit thousands of these
                   # events/hour and kept this alert permanently firing on benign
                   # control-plane traffic, which is just alert fatigue. The exclusion
@@ -197,7 +197,7 @@ data:
                     sum(count_over_time({namespace="falco"} |= "priority" | json
                     | (rule="Read sensitive file untrusted"
                     or rule="Contact K8S API Server From Container"
-                    and output_fields_k8s_ns_name!~"argo-cd|backstage|openshell|kagent")
+                    and output_fields_k8s_ns_name!~"argo-cd|backstage|kagent")
                     [1h]))
               - refId: threshold
                 relativeTimeRange:

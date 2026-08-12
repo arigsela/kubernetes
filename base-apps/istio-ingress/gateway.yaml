@@ -137,19 +137,6 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
-    - name: https-oncall-crewai
-      protocol: HTTPS
-      port: 443
-      hostname: oncall-crewai.arigsela.com
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - kind: Secret
-            name: oncall-crewai-frontend-tls
-            namespace: oncall-crewai
-      allowedRoutes:
-        namespaces:
-          from: All
     - name: https-vault
       protocol: HTTPS
       port: 443
