@@ -16,6 +16,7 @@ sources:
   - base-apps/wan-ip-monitor/secret-store.yaml
   - base-apps/wan-ip-monitor/namespace.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
+  - base-apps/n8n/workflows-configmap.yaml
   - tests/wan_ip
 ---
 
@@ -36,21 +37,45 @@ that file is its only home; `tests/wan_ip/conftest.py` loads `reconcile.py`
 directly out of the ConfigMap, so there is no second copy that can drift from
 what actually runs.
 
-## Reconciler, not change-detector
-Every run independently compares reality against two desired states and fixes
-whichever has drifted — it never assumes anything from a previous run. This
-distinction matters concretely: a change-detector that updated Route 53 first
-would see "no change" on its next run and never re-open an allow-list PR that
-a human hadn't merged. Because this is a reconciler, the sequence "rotation
-detected, Route 53 fixed, PR opened, PR sits unmerged for a day" produces 288
-runs (every 5 minutes) that each independently re-derive the same conclusion —
-DNS is already correct, the allow-list PR is already open — and, via
-`open_allowlist_pr`'s existing-PR lookup, find the same PR rather than opening
-a new one or going silent.
+## Two independent halves
+`main()` does exactly two things per run, in this order, and **neither is a
+precondition for the other**:
 
-The comparison is always `declared == current`: the `arigsela.com/wan-ip`
-annotation (below) versus what `detect_wan_ip` observes right now — never a
-locally persisted "last known" value.
+1. **Route 53** (`reconcile_route53`) — list the zone; for every hostname in
+   `MANAGED_HOSTNAMES` whose single-value A record is not already the address
+   `detect_wan_ip()` just returned, UPSERT it to that address. This half never
+   touches GitHub: not the annotation, not the PR, not the token.
+2. **The allow-list** (`reconcile_allowlist`) — read the policy from `main`,
+   compare its `arigsela.com/wan-ip` annotation to the same detected address,
+   and open (or find) a PR if they differ.
+
+Then, only if records actually moved *or* a PR was newly created, notify.
+
+**Why the independence is load-bearing.** An earlier version keyed both halves
+off `declared == current` and returned early when they matched — making the
+annotation both the change signal *and* the selector for which Route 53
+records to move. Those two things move on completely different clocks: DNS
+moves in seconds, the annotation moves only when a human merges the PR. Once
+they diverge the code cannot notice. The proven failure: WAN goes A→B (records
+move to B, PR opened), then flaps back to A before the merge. Now
+`detected == declared == A`, the early return fires, the job prints `in sync,
+nothing to do` — and all 21 records stay stranded on B, permanently and
+silently, because every subsequent run draws the same conclusion.
+`tests/wan_ip/test_main.py::test_dns_follows_a_flap_back_to_the_previous_address`
+drives that exact three-run sequence; it needs multiple runs to express, which
+is why every single-shot `main()` test missed it.
+
+The second consequence of the independence: a GitHub outage or an expired
+`GITHUB_TOKEN` can no longer prevent the automatic half from running. Step 1
+completes first; if step 2 then raises, the job prints an explicit "route53
+was reconciled onto X, but the allow-list PR could NOT be opened" line before
+re-raising, because those two failures need very different responses and a
+bare traceback does not distinguish them.
+
+Both halves are still reconcilers, not change-detectors — nothing is persisted
+between runs, and the steady state (288 runs a day) re-derives the same
+conclusion each time. Between rotation and merge, `open_allowlist_pr`'s
+existing-PR lookup finds the same PR rather than opening a new one.
 
 ## Why Route 53 is automatic but the allow-list is a PR
 Both halves must move together — correct DNS is useless if the Istio policy
@@ -102,6 +127,41 @@ Until the PR merges, DNS is already correct but the allow-list still trusts
 the old address, so the protected hosts resolve and return `403` — this is
 expected, not a bug (see runbook: "PR opened but nothing merged").
 
+## Which Route 53 records it owns
+An **explicit list**, in `cronjob.yaml`'s `MANAGED_HOSTNAMES` env var
+(comma-separated; trailing dots and case are normalised on both sides before
+comparing, so `Argocd.arigsela.com.` and `argocd.arigsela.com` are the same
+entry). Seeded with the 21 A records in zone `Z0524483LR4JCFNLS7N0` that point
+at the WAN address:
+
+`agent`, `argo-workflows`, `argocd`, `atlantis`, `backstage`, `chores`,
+`coroot`, `dex`, `grafana`, `home`, `kagent-mcp`, `kagent`, `langflow`, `n8n`,
+`oncall-crewai`, `oncall`, `overseerr`, `rollouts`, `vault`,
+`weather-kitchen`, `whoami` — each `<name>.arigsela.com`.
+
+**Adding a host to the homelab means adding it here.** A hostname absent from
+the list is simply never touched: after a rotation it keeps pointing at the
+old address and stops resolving to home. That is the deliberate failure mode —
+visible and self-inflicted, rather than the job guessing at records it does
+not own. `tests/wan_ip/test_route53.py::test_cronjob_manages_every_hostname_the_allow_list_protects`
+fails CI if a host gains an entry in the Istio allow-list without gaining one
+here.
+
+**Why a list and not "whatever currently points at the old address".** The only
+value the job can read back as "the old address" is the annotation, which lags
+by a merge — so a value-based selector stops matching the moment DNS and the
+annotation diverge, and stops correcting anything (see "Two independent
+halves"). A name is knowable without asking anything that lags.
+
+Two hard safety rules survive from the original selector and are what keep a
+wrong answer from being destructive — `records_needing_update` skips anything
+that is **not type `A`**, and anything whose value list does not have
+**exactly one entry**. The single-value rule covers two distinct hazards: a
+multi-value record is not ours to rewrite from a single-address signal, and an
+**alias** record (`AliasTarget`, no `ResourceRecords` at all) would otherwise
+read as "zero values, therefore not current" and get flattened into a plain A
+record.
+
 ## The `arigsela.com/wan-ip` annotation contract
 `base-apps/istio-ingress/authorizationpolicy.yaml`'s `metadata.annotations`
 carries:
@@ -111,8 +171,11 @@ arigsela.com/wan-ip: "76.97.4.210"
 This is the **single source of truth** for which of the several `/32`s
 allow-listed in that file is the home WAN address (the file also allow-lists
 three other, unrelated, non-rotating remote addresses per rule).
-`read_declared_wan_ip` reads it; every comparison in `main()` is
-`declared == current` against this value and nothing else. `rewrite_policy`
+`read_declared_wan_ip` reads it, and `reconcile_allowlist` compares it to the
+detected address. **That is its only job.** It is deliberately *not* consulted
+by the Route 53 half — it is a value that lags reality by however long the PR
+sits unmerged, so anything that has to be correct within seconds cannot be
+derived from it (see "Two independent halves"). `rewrite_policy`
 moves the annotation and the matching `ipBlocks` entry together, in the same
 commit, so the two can never independently drift —
 `tests/wan_ip/test_policy_annotation.py` (Task 1) fails CI if a hand-edit ever
@@ -189,27 +252,58 @@ there is then no bespoke image to build, publish, or keep patched.
 - **Route 53 zone**: `Z0524483LR4JCFNLS7N0` (hardcoded default in
   `reconcile.py`'s `HOSTED_ZONE_ID`, overridable via the `HOSTED_ZONE_ID` env
   var, which the CronJob does not set).
+- **Records it owns**: `cronjob.yaml`'s `MANAGED_HOSTNAMES` env var (see
+  "Which Route 53 records it owns").
 - **n8n notification**: best-effort POST to
   `http://n8n.n8n.svc.cluster.local:5678/webhook/wan-ip-rotated`; a failed
-  notification never fails the run (`notify` swallows and logs).
+  notification never fails the run (`notify` swallows and logs). **That
+  webhook is defined in `base-apps/n8n/workflows-configmap.yaml`** as the
+  `wan-ip-rotated.json` workflow (id `wan-ip-rotated`), imported and activated
+  by the n8n Deployment's `import-workflows` initContainer. It previously did
+  not exist anywhere — n8n 404'd every POST and `notify()` swallowed it, so no
+  notification had ever actually been delivered. Editing or adding a workflow
+  there requires bumping `checksum/workflows` in
+  `base-apps/n8n/deployments.yaml`, otherwise the pod does not roll and n8n
+  never registers the route.
+
+## What gets notified
+`notify()` fires on exactly two occasions, and never in the steady state:
+
+- **`"event": "wan-ip-reconciled"`** — a rotation was actually acted on:
+  records moved, or a PR was newly created (`records_updated`, `new`,
+  `pr_url`). It deliberately does *not* fire on the runs between the rotation
+  and the merge, when DNS is already fixed and the PR is already open — 288
+  of those a day would train the operator to ignore it.
+- **`"event": "wan-ip-monitor-failed"`** — `reconcile()` raised. Carries
+  `error_type` and `error`. `main()` wraps the whole body for this reason:
+  without it, the only failure signal is a non-zero pod exit in a namespace
+  nobody watches, and a broken run stays invisible until a protected host
+  starts timing out. The original exception is always re-raised (so the pod's
+  exit status stays honest), and `notify()` is best-effort by construction, so
+  an n8n that is *also* down cannot mask the real cause.
 
 ## DRY_RUN
 Ships with `DRY_RUN: "true"` on the CronJob deliberately. **`DRY_RUN` only
 gates the write path — it does not gate the reads.** Every run, dry or not,
-steady-state or not, calls `read_policy_from_main()` — a live GitHub
-`contents` read — before `DRY_RUN` is even consulted, so `GITHUB_TOKEN` must
-already work for the job to get past its first two lines. If a rotation is
-detected (`declared != current`), the job then also performs a live Route 53
-`list-resource-record-sets` call, still *before* `DRY_RUN` is checked — so a
-dry run exercises AWS credentials too, in that case. Only the actual writes
-(`change-resource-record-sets` and opening the PR) are skipped when `DRY_RUN`
-is true.
+steady-state or not, performs both:
 
-Practically: a dry run only exercises AWS credentials when there is an actual
-rotation for it to detect. The steady-state dry run (the expected output when
-verifying the deploy: `in sync, nothing to do`) proves GitHub read access but
-**not** AWS access — do not treat a clean steady-state dry run as proof both
-credentials work; it only proves the GitHub half.
+- a live Route 53 `list-resource-record-sets` on the zone
+  (`reconcile_route53` always lists — that is what makes it a reconciler), and
+- a live GitHub `contents` read of the policy on `main`
+  (`read_policy_from_main`).
+
+Only the writes are skipped when `DRY_RUN` is true:
+`change-resource-record-sets` and `open_allowlist_pr`. Instead the job logs
+what it *would* have done, naming the specific records:
+`DRY_RUN: would move 21 Route 53 record(s) to <ip>: ...`.
+
+Because both reads now happen on **every** run, a steady-state dry run
+exercises **both** credentials — unlike the previous design, where the Route 53
+call only happened if a rotation was already detected, so a clean steady-state
+dry run proved nothing about AWS. A dry run that gets to
+`route53: 21 managed hostname(s) already on <ip>` has proven the AWS half, and
+one that gets to `allow-list: declared=... detected=...` has proven the GitHub
+half.
 
 Arming it (`DRY_RUN: "false"`) is a separate, deliberately reviewable commit,
 not part of the initial deployment (see runbook: "Disabling it" for the
@@ -245,7 +339,31 @@ reverse operation).
 - `is_valid_public_ipv4` rejects the RFC 5737 documentation ranges
   (`192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`) as `is_private` under
   Python's `ipaddress` module — real fixtures use genuinely public addresses.
+- **`is_valid_public_ipv4` is `addr.is_global and not addr.is_multicast`, not
+  an enumeration of `is_private`/`is_loopback`/`is_reserved`/…** The
+  enumeration it replaced silently accepted RFC 6598 CGNAT space
+  (`100.64.0.0/10`): `IPv4Address("100.64.1.5").is_private` is `False`, and so
+  is every other flag in that list. CGNAT is a live possibility on this
+  residential line (see runbook, "Detected address flapping"), and
+  allow-listing a carrier-NAT address would hand the security boundary to
+  every other subscriber behind that NAT. The explicit `not is_multicast` is
+  **not** redundant — CPython does not count `224.0.0.0/4` among its private
+  networks, so a bare `is_global` returns `True` for `224.0.0.1`; removing that
+  clause re-admits multicast, and
+  `test_still_rejects_multicast_which_is_global_does_not_cover` exists to make
+  that a CI failure.
 - `open_allowlist_pr` is idempotent per rotation: it looks up an existing open
   PR for branch `automation/wan-ip-<new_ip>` before doing anything else, so a
   rotation that sits unmerged for a day does not open a second PR five minutes
   later.
+- **`open_allowlist_pr` reads the file's blob SHA from the *branch* when the
+  branch already exists**, not from `main`. `PUT /contents` needs the SHA of
+  the blob it replaces on the target branch; committing `main`'s SHA onto a
+  branch that already carries its own commit to that path is a **409
+  Conflict** — and because that leaves the PR uncreated, the existing-PR
+  short-circuit never engages, so the next run repeats it, forever, with no PR
+  ever opened. Two real ways to land there: a partial failure (branch and
+  commit succeed, `POST /pulls` fails) and a closed-but-not-merged PR whose
+  branch survives until the ISP hands the same address back. If the branch
+  already carries exactly this rotation, there is nothing to commit and the
+  code goes straight to opening the PR.

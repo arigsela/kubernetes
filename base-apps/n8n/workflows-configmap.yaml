@@ -14,6 +14,17 @@
 # exactly that: bump it (sha256 of grafana-alerts.json) when editing here, or
 # `kubectl rollout restart deploy/n8n -n n8n`.
 #
+# wan-ip-rotated.json — the endpoint base-apps/wan-ip-monitor posts to
+# (http://n8n.n8n.svc.cluster.local:5678/webhook/wan-ip-rotated). It receives
+# BOTH outcomes: a successful reconcile ("event": "wan-ip-reconciled") and a
+# crashed run ("event": "wan-ip-monitor-failed", carrying error_type/error).
+# Deliberately minimal — one Webhook node, no routing. Before this existed the
+# URL 404'd and reconcile.py's notify() swallowed the failure, so a broken WAN
+# reconcile was invisible until a protected host started timing out; the value
+# here is that the POST lands somewhere durable and visible in n8n's execution
+# list. Fan-out to Slack can be added later by wiring nodes after the webhook,
+# exactly as grafana-alerts.json does.
+#
 # grafana-alerts.json — the alert-delivery endpoint Grafana depends on
 # (base-apps/logging/grafana-alerting.yaml posts to
 # http://n8n.n8n.svc.cluster.local:5678/webhook/grafana-alerts). Three nodes:
@@ -97,5 +108,28 @@ data:
           "main": [[{ "node": "Post to Slack", "type": "main", "index": 0 }]]
         }
       },
+      "settings": { "executionOrder": "v1" }
+    }
+  wan-ip-rotated.json: |
+    {
+      "id": "wan-ip-rotated",
+      "name": "WAN IP Monitor Notifications",
+      "active": true,
+      "nodes": [
+        {
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "wan-ip-rotated",
+            "options": {}
+          },
+          "id": "c2a7d2f1-5b7f-4b12-9111-000000000001",
+          "name": "WAN IP Webhook",
+          "type": "n8n-nodes-base.webhook",
+          "typeVersion": 2,
+          "position": [0, 0],
+          "webhookId": "c2a7d2f1-5b7f-4b12-9111-00000000000a"
+        }
+      ],
+      "connections": {},
       "settings": { "executionOrder": "v1" }
     }

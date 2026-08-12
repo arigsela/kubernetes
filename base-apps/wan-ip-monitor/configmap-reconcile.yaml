@@ -11,9 +11,18 @@ data:
     """Reconcile the home WAN address into Route 53 and the Istio allow-list.
 
     This is a RECONCILER, not a change-detector. Every run compares reality
-    against two desired states independently and fixes whichever drifted. That
-    matters: a change-detector that updated Route 53 first would see "no change"
-    on the next run and never re-open an allow-list PR that went unmerged.
+    against two desired states INDEPENDENTLY and fixes whichever drifted:
+
+      1. Route 53 - every hostname in MANAGED_HOSTNAMES must have a single-value
+         A record equal to the address detected right now. No GitHub involved.
+      2. The Istio allow-list - the arigsela.com/wan-ip annotation on main must
+         name that same address; if it does not, open a PR and let a human merge.
+
+    Neither half is a precondition for the other. That is not stylistic: the
+    annotation only advances when a human merges, DNS advances in seconds, so
+    any design that uses the annotation to decide what Route 53 should do
+    strands records the moment the two diverge. See reconcile() for the exact
+    sequence that used to break.
     """
     import base64
     import ipaddress
@@ -31,8 +40,26 @@ data:
         """True only for a single, routable, public IPv4 address.
 
         Deliberately strict. This value ends up in a security allow-list and in
-        public DNS, so an error page, a captive-portal redirect, or an RFC1918
-        address from a misbehaving detector must never get through.
+        public DNS, so an error page, a captive-portal redirect, an RFC1918
+        address from a misbehaving detector, or a carrier-NAT address must never
+        get through.
+
+        WHY is_global INSTEAD OF AN ENUMERATION of is_private/is_loopback/
+        is_reserved/is_multicast/is_link_local/is_unspecified: that enumeration
+        silently ACCEPTED RFC 6598 CGNAT space (100.64.0.0/10). Verified:
+        IPv4Address("100.64.1.5").is_private is False, and so is every other
+        flag in that list, so a carrier-NAT address passed. The runbook names
+        CGNAT as a live possibility for this residential line ("Detected address
+        flapping"), and writing one into 21 public A records - let alone
+        proposing to allow-list it - would hand the security boundary to every
+        other subscriber sitting behind that same carrier NAT. is_global is
+        precisely "not 100.64.0.0/10 and not private", which is the property
+        actually wanted.
+
+        The explicit `not addr.is_multicast` is NOT redundant: CPython does not
+        list 224.0.0.0/4 among its private networks (checked on 3.12, the
+        image's interpreter, and on 3.14), so a bare `is_global` returns True
+        for 224.0.0.1. Dropping this clause re-admits multicast.
 
         NOTE for anyone writing tests against this: Python treats the RFC 5737
         documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) as
@@ -44,14 +71,7 @@ data:
             addr = ipaddress.IPv4Address(str(value).strip())
         except (ipaddress.AddressValueError, ValueError):
             return False
-        return not (
-            addr.is_private
-            or addr.is_loopback
-            or addr.is_reserved
-            or addr.is_multicast
-            or addr.is_link_local
-            or addr.is_unspecified
-        )
+        return addr.is_global and not addr.is_multicast
 
 
     def read_declared_wan_ip(policy_yaml):
@@ -183,19 +203,65 @@ data:
         raise ValueError("aws_json: unsupported args %r" % (args,))
 
 
-    def records_needing_update(recordsets, old_ip):
-        """A records whose ONLY value is the previous WAN address.
+    def normalise_hostname(name):
+        """Route 53 returns names fully qualified ("argocd.arigsela.com.") and
+        case-insensitively; MANAGED_HOSTNAMES is hand-maintained. Normalise both
+        sides before comparing so a trailing dot or a capital letter can never
+        make a managed record look unmanaged (and therefore never get fixed)."""
+        return str(name).strip().rstrip(".").lower()
 
-        Anything else is left alone on purpose: a record pointing somewhere else
-        is someone's deliberate choice, and a multi-value record is not ours to
-        rewrite from a single-address signal.
+
+    def managed_hostnames(raw=None):
+        """The hostnames this job owns, from MANAGED_HOSTNAMES (comma-separated).
+
+        An EXPLICIT list, not "whatever currently points at the previous
+        address". Selecting by previous value cannot work here: the only thing
+        the job can read back as "previous" is the allow-list annotation, which
+        does not move until a human merges the PR. Route 53 moves in seconds,
+        the annotation moves on merge, so after the very first rotation the two
+        diverge and a value-based selector matches nothing - stranding every
+        record on a dead address while the run still reports success.
+
+        An explicit list is deterministic and still never touches a record this
+        job does not own. A hostname missing from the list is simply never
+        touched, which fails safe and visibly (that host stops resolving to
+        home) rather than silently mis-selecting someone else's record.
+
+        Adding a host to the homelab means adding it here - the list lives in
+        cronjob.yaml's MANAGED_HOSTNAMES env var. See docs.md, "Which Route 53
+        records it owns".
         """
+        if raw is None:
+            raw = os.environ.get("MANAGED_HOSTNAMES", "")
+        return [normalise_hostname(part) for part in raw.split(",") if part.strip()]
+
+
+    def records_needing_update(recordsets, current_ip, managed):
+        """Managed A records that are not already sitting on current_ip.
+
+        Two hard safety rules, both carried over unchanged from the original
+        selector - they are what keeps a wrong answer from being destructive:
+
+        - Type must be A. Nothing else is ever rewritten.
+        - The value list must have EXACTLY one entry. A multi-value record is
+          not ours to rewrite from a single-address signal, and an ALIAS record
+          (AliasTarget, with no ResourceRecords at all) would otherwise read as
+          "zero values, therefore not current" and get flattened into a plain A
+          record pointing at the WAN address.
+
+        On top of those, the record's name must appear in `managed`.
+        """
+        wanted = {normalise_hostname(name) for name in managed}
         out = []
         for record in recordsets:
             if record.get("Type") != "A":
                 continue
+            if normalise_hostname(record.get("Name", "")) not in wanted:
+                continue
             values = [v["Value"] for v in record.get("ResourceRecords", [])]
-            if values == [old_ip]:
+            if len(values) != 1:
+                continue
+            if values[0] != current_ip:
                 out.append(record)
         return out
 
@@ -276,28 +342,53 @@ data:
             return existing[0]["html_url"], False
 
         main_sha = github("GET", "/git/ref/heads/main")["object"]["sha"]
+        branch_exists = False
         try:
             github("POST", "/git/refs", {"ref": "refs/heads/%s" % branch, "sha": main_sha})
         except urllib.error.HTTPError as exc:
             if exc.code != 422:  # 422 = ref already exists, which is fine
                 raise
+            branch_exists = True
 
-        current = github("GET", "/contents/%s?ref=main" % POLICY_PATH)
+        # WHICH REF THE BLOB SHA COMES FROM IS LOAD-BEARING. PUT /contents needs
+        # the SHA of the blob it is replacing ON THE TARGET BRANCH. Reading it
+        # from main unconditionally works only while the branch still points at
+        # main's tree; the moment the branch carries its own commit to this path
+        # GitHub answers 409 Conflict, and since that leaves the PR uncreated,
+        # the existing-PR short-circuit above never engages either - so the next
+        # run repeats it, forever. Two real ways to land there: a partial
+        # failure (branch + commit succeed, POST /pulls fails), and a
+        # closed-but-not-merged PR whose branch survives until the ISP hands the
+        # same address back. Read from the branch when it already exists.
+        ref = branch if branch_exists else "main"
+        current = github("GET", "/contents/%s?ref=%s" % (POLICY_PATH, ref))
         text = base64.b64decode(current["content"]).decode()
-        rewritten = rewrite_policy(text, old_ip, new_ip)
-        if rewritten == text:
+
+        # Rewrite against what THAT ref actually declares, not against what main
+        # declared. On a pre-existing branch they differ by construction - the
+        # branch is usually already rewritten to new_ip, in which case
+        # rewrite_policy is a no-op and there is simply nothing left to commit.
+        try:
+            base_ip = read_declared_wan_ip(text)
+        except KeyError:
+            base_ip = old_ip
+        rewritten = rewrite_policy(text, base_ip, new_ip)
+
+        if rewritten == text and not branch_exists:
+            # main already declares new_ip: nothing to propose.
             return None, False
 
-        github(
-            "PUT",
-            "/contents/%s" % POLICY_PATH,
-            {
-                "message": "istio-ingress: follow the WAN IP rotation %s -> %s" % (old_ip, new_ip),
-                "content": base64.b64encode(rewritten.encode()).decode(),
-                "sha": current["sha"],
-                "branch": branch,
-            },
-        )
+        if rewritten != text:
+            github(
+                "PUT",
+                "/contents/%s" % POLICY_PATH,
+                {
+                    "message": "istio-ingress: follow the WAN IP rotation %s -> %s" % (old_ip, new_ip),
+                    "content": base64.b64encode(rewritten.encode()).decode(),
+                    "sha": current["sha"],
+                    "branch": branch,
+                },
+            )
 
         stale_lines = stale_comment_lines(text, old_ip)
         body = (
@@ -374,57 +465,132 @@ data:
             raise
 
 
-    def main():
-        current = detect_wan_ip()
-        declared = read_declared_wan_ip(read_policy_from_main())
-        print("detected=%s declared=%s dry_run=%s" % (current, declared, DRY_RUN))
+    def reconcile_route53(current):
+        """Point every managed A record at `current`. Returns how many moved.
 
-        # The annotation is the whole comparison. When it already names the
-        # detected address, both targets are consistent by definition: the
-        # Route 53 records this job manages are exactly those sitting on the
-        # declared address, and the allow-list is built around it. This is the
-        # steady state and must stay completely silent - it runs 288 times a day.
-        if declared == current:
-            print("in sync, nothing to do")
+        Deliberately knows NOTHING about GitHub, the annotation, or the PR. The
+        desired state of a managed A record is "whatever detect_wan_ip just
+        observed", full stop, so this half keeps working when GitHub is down,
+        when GITHUB_TOKEN has expired, and when the allow-list PR has been
+        sitting unmerged for a week. It also cannot be fooled by the annotation
+        lagging: the selector is the managed-name list, never a value that has
+        to be read back from somewhere slower than DNS.
+        """
+        managed = managed_hostnames()
+        if not managed:
+            print("MANAGED_HOSTNAMES is empty - no Route 53 records are managed, "
+                  "skipping the DNS half")
             return 0
 
         zone = route53_json(
             ["route53", "list-resource-record-sets", "--hosted-zone-id", HOSTED_ZONE_ID,
              "--output", "json"]
         )
-        stale = records_needing_update(zone.get("ResourceRecordSets", []), declared)
-
-        if DRY_RUN:
-            print("DRY_RUN: would move %d records %s -> %s and open a PR"
-                  % (len(stale), declared, current))
+        stale = records_needing_update(zone.get("ResourceRecordSets", []), current, managed)
+        if not stale:
+            print("route53: %d managed hostname(s) already on %s" % (len(managed), current))
             return 0
 
-        updated = 0
-        if stale:
-            batch = build_change_batch(stale, current)
-            route53_json(
-                ["route53", "change-resource-record-sets",
-                 "--hosted-zone-id", HOSTED_ZONE_ID,
-                 "--change-batch", json.dumps(batch), "--output", "json"]
-            )
-            updated = len(stale)
-            print("updated %d Route 53 records" % updated)
+        names = ", ".join(record["Name"] for record in stale)
+        if DRY_RUN:
+            print("DRY_RUN: would move %d Route 53 record(s) to %s: %s"
+                  % (len(stale), current, names))
+            return 0
 
-        pr_url, pr_created = open_allowlist_pr(declared, current)
+        batch = build_change_batch(stale, current)
+        route53_json(
+            ["route53", "change-resource-record-sets",
+             "--hosted-zone-id", HOSTED_ZONE_ID,
+             "--change-batch", json.dumps(batch), "--output", "json"]
+        )
+        print("route53: updated %d record(s) to %s: %s" % (len(stale), current, names))
+        return len(stale)
+
+
+    def reconcile_allowlist(current):
+        """Propose the allow-list change if it has not been merged yet.
+
+        Returns (pr_url, created). The annotation on main is the desired state
+        for THIS half only - it is what the allow-list claims to trust, and it
+        legitimately lags reality until a human merges the PR.
+        """
+        declared = read_declared_wan_ip(read_policy_from_main())
+        print("allow-list: declared=%s detected=%s" % (declared, current))
+        if declared == current:
+            print("allow-list: already trusts %s, nothing to propose" % current)
+            return None, False
+        if DRY_RUN:
+            print("DRY_RUN: would open an allow-list PR %s -> %s" % (declared, current))
+            return None, False
+        return open_allowlist_pr(declared, current)
+
+
+    def reconcile():
+        """The two halves, in order, independent of one another.
+
+        THE ORDER AND THE INDEPENDENCE ARE THE POINT. An earlier version keyed
+        both halves off `declared == current` and returned early when they
+        matched, which made the annotation - a value that only advances when a
+        human merges a PR - both the change signal and the Route 53 selector.
+        Once they diverged, the code could not notice: a WAN address that went
+        A -> B (records moved, PR opened) and then flapped back to A hit
+        `detected == declared == A`, printed "in sync, nothing to do", and left
+        every record stranded on B permanently. Keeping these two halves
+        independent is what makes that unrepresentable.
+        """
+        current = detect_wan_ip()
+        print("detected=%s dry_run=%s" % (current, DRY_RUN))
+
+        updated = reconcile_route53(current)
+
+        try:
+            pr_url, pr_created = reconcile_allowlist(current)
+        except Exception:
+            # DNS is already correct at this point; say so explicitly, because
+            # the two failures need very different responses and the traceback
+            # alone does not distinguish them.
+            print("route53 was reconciled onto %s, but the allow-list PR could "
+                  "NOT be opened - the Istio policy still trusts the old "
+                  "address, so protected hosts resolve and answer 403 until "
+                  "this is fixed" % current)
+            raise
+
         print("allow-list PR: %s (new=%s)" % (pr_url, pr_created))
 
         # Only speak up when something actually happened. Between the rotation
-        # and the merge this function runs every 5 minutes with the PR already
-        # open and DNS already fixed; alerting on each of those would train the
-        # operator to ignore it.
+        # and the merge this runs every 5 minutes with the PR already open and
+        # DNS already fixed; alerting on each of those would train the operator
+        # to ignore the notification.
         if updated or pr_created:
             notify({
-                "old": declared,
+                "event": "wan-ip-reconciled",
                 "new": current,
                 "records_updated": updated,
                 "pr_url": pr_url,
+                "dry_run": DRY_RUN,
             })
         return 0
+
+
+    def main():
+        """reconcile(), with any crash turned into a notification.
+
+        Without this the only failure signal is a non-zero pod exit in a
+        namespace nobody watches, so a broken run is invisible until a host
+        times out. notify() is best effort by construction, so a webhook that
+        is itself down cannot mask the original exception - which is always
+        re-raised, keeping the pod's exit status honest.
+        """
+        try:
+            return reconcile()
+        except Exception as exc:
+            notify({
+                "event": "wan-ip-monitor-failed",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "dry_run": DRY_RUN,
+            })
+            raise
 
 
     if __name__ == "__main__":

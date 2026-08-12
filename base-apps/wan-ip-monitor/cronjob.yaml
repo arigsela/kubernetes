@@ -54,6 +54,49 @@ spec:
                   value: us-east-1
                 - name: DRY_RUN
                   value: "true"
+                # The Route 53 A records this job owns. This list is the
+                # SELECTOR for the DNS half - a record is moved onto the newly
+                # detected address because its name is here, never because its
+                # current value happens to match some previously-known address.
+                # That distinction is the whole reason this env var exists: the
+                # only "previous address" the job can read back is the
+                # allow-list annotation, which does not move until a human
+                # merges the PR, so a value-based selector stops matching as
+                # soon as DNS and the annotation diverge - and silently strands
+                # every record on a dead address (see configmap-reconcile.yaml,
+                # managed_hostnames()).
+                #
+                # A hostname NOT listed here is never touched. That fails safe
+                # and visibly: the host simply stops resolving to home after a
+                # rotation, rather than this job guessing at records it does not
+                # own. ADDING A HOST TO THE HOMELAB MEANS ADDING IT HERE.
+                #
+                # Seeded with the 21 A records in zone Z0524483LR4JCFNLS7N0 that
+                # point at the WAN address. Trailing dots are optional and case
+                # does not matter - both sides are normalised before comparison.
+                - name: MANAGED_HOSTNAMES
+                  value: >-
+                    agent.arigsela.com,
+                    argo-workflows.arigsela.com,
+                    argocd.arigsela.com,
+                    atlantis.arigsela.com,
+                    backstage.arigsela.com,
+                    chores.arigsela.com,
+                    coroot.arigsela.com,
+                    dex.arigsela.com,
+                    grafana.arigsela.com,
+                    home.arigsela.com,
+                    kagent-mcp.arigsela.com,
+                    kagent.arigsela.com,
+                    langflow.arigsela.com,
+                    n8n.arigsela.com,
+                    oncall-crewai.arigsela.com,
+                    oncall.arigsela.com,
+                    overseerr.arigsela.com,
+                    rollouts.arigsela.com,
+                    vault.arigsela.com,
+                    weather-kitchen.arigsela.com,
+                    whoami.arigsela.com
               envFrom:
                 - secretRef:
                     name: wan-ip-monitor

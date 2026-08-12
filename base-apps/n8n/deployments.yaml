@@ -14,12 +14,17 @@ spec:
         app: n8n
       annotations:
         # Roll the pod when the workflow JSON changes so the import initContainer
-        # re-imports it and n8n re-registers its webhook at startup. Value is the
-        # sha256 (first 16 hex chars) of workflows-configmap.yaml's
-        # grafana-alerts.json. If you edit the workflow, recompute this — else the
-        # pod won't roll and the change won't take effect. (Or just
+        # re-imports it and n8n re-registers its webhooks at startup. Value is
+        # the sha256 (first 16 hex chars) of every workflow in
+        # workflows-configmap.yaml, concatenated in sorted-key order:
+        #   python3 -c "import hashlib,yaml; d=yaml.safe_load(open('base-apps/n8n/workflows-configmap.yaml'))['data']; print(hashlib.sha256(''.join(d[k] for k in sorted(d)).encode()).hexdigest()[:16])"
+        # (It covered grafana-alerts.json alone until wan-ip-rotated.json was
+        # added; a per-file checksum would not roll the pod when a NEW workflow
+        # appears, which is exactly when the import has to re-run.) If you edit
+        # or add a workflow, recompute this — else the pod won't roll and the
+        # change won't take effect. (Or just
         # `kubectl rollout restart deploy/n8n -n n8n`.)
-        checksum/workflows: "2c16107926191499"
+        checksum/workflows: "bd209e38e3b5a0cb"
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
@@ -44,6 +49,8 @@ spec:
           set -e
           n8n import:workflow --input=/workflows/grafana-alerts.json
           n8n update:workflow --id=grafana-alerts-slack --active=true
+          n8n import:workflow --input=/workflows/wan-ip-rotated.json
+          n8n update:workflow --id=wan-ip-rotated --active=true
         env:
         - name: DB_TYPE
           value: "postgresdb"
