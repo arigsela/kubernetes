@@ -68,17 +68,64 @@ data:
     def rewrite_policy(policy_yaml, old_ip, new_ip):
         """Swap exactly the declared WAN /32, and move the annotation with it.
 
-        Text substitution rather than a YAML round-trip on purpose: this file is
-        heavily commented and the comments are load-bearing documentation.
-        Re-serialising through PyYAML would strip every one of them.
+        Line-wise text substitution rather than a YAML round-trip or a blanket
+        string replace, on purpose. This file is heavily commented and the
+        comments are load-bearing documentation:
+
+        - A blanket substring replace would also rewrite a comment shaped like
+          "# historical: was - <old_ip>/32", corrupting a dated historical
+          record into a lie.
+        - It would also MISS a comment that names the address without the
+          "- <ip>/32" list-item shape (e.g. "# <old_ip>/32 covers the hairpin
+          path"), leaving stale documentation with no signal that it drifted.
+
+        So a line is only ever rewritten when its stripped form is EXACTLY the
+        ipBlocks entry or EXACTLY the annotation line - comments are never
+        touched, no matter what they contain. See stale_comment_lines for the
+        lines this deliberately leaves alone.
         """
         if not is_valid_public_ipv4(new_ip):
             raise ValueError("refusing to write non-public address %r" % new_ip)
         if old_ip == new_ip:
             return policy_yaml
-        out = policy_yaml.replace("- %s/32" % old_ip, "- %s/32" % new_ip)
-        out = out.replace(
-            '%s: "%s"' % (WAN_IP_ANNOTATION, old_ip),
-            '%s: "%s"' % (WAN_IP_ANNOTATION, new_ip),
-        )
-        return out
+
+        old_block = "- %s/32" % old_ip
+        new_block = "- %s/32" % new_ip
+        old_annotation = '%s: "%s"' % (WAN_IP_ANNOTATION, old_ip)
+        new_annotation = '%s: "%s"' % (WAN_IP_ANNOTATION, new_ip)
+
+        lines = policy_yaml.split("\n")
+        blocks_replaced = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            indent = line[: len(line) - len(line.lstrip())]
+            if stripped == old_block:
+                lines[i] = indent + new_block
+                blocks_replaced += 1
+            elif stripped == old_annotation:
+                lines[i] = indent + new_annotation
+
+        if blocks_replaced == 0:
+            raise ValueError(
+                "old_ip %r not found as an ipBlocks entry; refusing a rewrite "
+                "that would silently no-op against a stale caller view" % old_ip
+            )
+
+        return "\n".join(lines)
+
+
+    def stale_comment_lines(policy_yaml, old_ip):
+        """1-based line numbers of comments that still mention old_ip.
+
+        rewrite_policy deliberately never edits a comment, so after a rotation
+        any comment naming the old address is left exactly as it was - whether
+        that is a dated historical record worth keeping or documentation that
+        has gone stale. This lists those lines so a human reviewing the PR can
+        tell the difference; it does not judge which is which.
+        """
+        stale = []
+        for lineno, line in enumerate(policy_yaml.split("\n"), start=1):
+            stripped = line.strip()
+            if stripped.startswith("#") and old_ip in stripped:
+                stale.append(lineno)
+        return stale
