@@ -77,3 +77,78 @@ def test_rewrite_refuses_a_bad_new_address(reconcile):
 
 def test_rewrite_is_a_noop_when_already_current(reconcile):
     assert reconcile.rewrite_policy(POLICY, "76.97.4.210", "76.97.4.210") == POLICY
+
+
+POLICY_WITH_DASHED_COMMENT = """\
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: gateway-allow
+  namespace: istio-ingress
+  annotations:
+    arigsela.com/wan-ip: "76.97.4.210"
+spec:
+  rules:
+    - to:
+        - operation:
+            hosts:
+              - argocd.arigsela.com
+      from:
+        - source:
+            ipBlocks:
+              # historical: was - 76.97.4.210/32
+              - 76.97.4.210/32
+              - 170.85.56.189/32
+              - 104.28.177.82/32
+"""
+
+DASHED_COMMENT_LINE = "              # historical: was - 76.97.4.210/32"
+
+POLICY_WITH_DASHLESS_COMMENT = """\
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: gateway-allow
+  namespace: istio-ingress
+  annotations:
+    arigsela.com/wan-ip: "76.97.4.210"
+spec:
+  rules:
+    - to:
+        - operation:
+            hosts:
+              - vault.local
+      from:
+        - source:
+            ipBlocks:
+              # 76.97.4.210/32 covers the hairpin path
+              - 76.97.4.210/32
+              - 10.0.1.0/24
+"""
+
+DASHLESS_COMMENT_LINE = "              # 76.97.4.210/32 covers the hairpin path"
+
+
+def test_rewrite_leaves_a_dashed_comment_byte_identical(reconcile):
+    assert DASHED_COMMENT_LINE in POLICY_WITH_DASHED_COMMENT.split("\n")
+    out = reconcile.rewrite_policy(POLICY_WITH_DASHED_COMMENT, "76.97.4.210", "76.97.99.1")
+    assert DASHED_COMMENT_LINE in out.split("\n")
+    assert "              - 76.97.99.1/32" in out.split("\n")
+    assert "              - 76.97.4.210/32" not in out.split("\n")
+
+
+def test_rewrite_leaves_a_dashless_comment_alone_and_flags_it_stale(reconcile):
+    lines = POLICY_WITH_DASHLESS_COMMENT.split("\n")
+    comment_lineno = lines.index(DASHLESS_COMMENT_LINE) + 1
+    out = reconcile.rewrite_policy(POLICY_WITH_DASHLESS_COMMENT, "76.97.4.210", "76.97.99.1")
+    assert DASHLESS_COMMENT_LINE in out.split("\n")
+    assert comment_lineno in reconcile.stale_comment_lines(POLICY_WITH_DASHLESS_COMMENT, "76.97.4.210")
+
+
+def test_stale_comment_lines_is_empty_when_nothing_mentions_the_address(reconcile):
+    assert reconcile.stale_comment_lines(POLICY, "76.97.4.210") == []
+
+
+def test_rewrite_raises_when_old_ip_is_not_present(reconcile):
+    with pytest.raises(ValueError):
+        reconcile.rewrite_policy(POLICY, "9.9.9.9", "76.97.99.1")
