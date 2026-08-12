@@ -36,6 +36,17 @@ kind: AuthorizationPolicy
 metadata:
   name: gateway-allow
   namespace: istio-ingress
+  annotations:
+    # SOURCE OF TRUTH for which of the four /32s below is the home WAN address.
+    #
+    # This file allow-lists four addresses per rule; only this one rotates when
+    # the ISP reassigns it. base-apps/wan-ip-monitor replaces exactly the string
+    # named here and moves this annotation in the same commit, so it can never
+    # guess wrong and clobber one of the three remote addresses.
+    #
+    # Keep it consistent with the ipBlocks by hand too - tests/wan_ip/
+    # test_policy_annotation.py fails CI if they diverge.
+    arigsela.com/wan-ip: "76.97.4.210"
 spec:
   targetRefs:
     - group: gateway.networking.k8s.io
