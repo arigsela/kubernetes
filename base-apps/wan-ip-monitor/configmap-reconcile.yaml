@@ -167,3 +167,223 @@ data:
             updated["ResourceRecords"] = [{"Value": new_ip}]
             changes.append({"Action": "UPSERT", "ResourceRecordSet": updated})
         return {"Comment": "wan-ip-monitor: rotate to %s" % new_ip, "Changes": changes}
+
+
+    REPO = os.environ.get("GITHUB_REPO", "arigsela/kubernetes")
+    POLICY_PATH = "base-apps/istio-ingress/authorizationpolicy.yaml"
+    N8N_WEBHOOK = os.environ.get(
+        "N8N_WEBHOOK",
+        "http://n8n.n8n.svc.cluster.local:5678/webhook/wan-ip-rotated",
+    )
+    IP_SOURCES = ["https://checkip.amazonaws.com", "https://ifconfig.me/ip"]
+    DRY_RUN = os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes")
+
+
+    def http_get(url):
+        request = urllib.request.Request(url, headers={"User-Agent": "wan-ip-monitor"})
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return response.read().decode()
+
+
+    def detect_wan_ip(fetch=http_get):
+        """First source that yields a usable public address wins.
+
+        Two sources because a single detector having a bad day should not look
+        like a rotation. Anything unusable is skipped rather than trusted.
+        """
+        for url in IP_SOURCES:
+            try:
+                candidate = fetch(url).strip()
+            except Exception:
+                continue
+            if is_valid_public_ipv4(candidate):
+                return candidate
+        raise RuntimeError("no source returned a usable public IPv4")
+
+
+    def branch_name(new_ip):
+        return "automation/wan-ip-%s" % new_ip
+
+
+    def github(method, path, body=None):
+        url = "https://api.github.com/repos/%s%s" % (REPO, path)
+        data = json.dumps(body).encode() if body is not None else None
+        request = urllib.request.Request(url, data=data, method=method)
+        request.add_header("Authorization", "Bearer %s" % os.environ["GITHUB_TOKEN"])
+        request.add_header("Accept", "application/vnd.github+json")
+        request.add_header("User-Agent", "wan-ip-monitor")
+        if data:
+            request.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = response.read().decode()
+        return json.loads(payload) if payload.strip() else {}
+
+
+    def open_allowlist_pr(old_ip, new_ip):
+        """Branch, commit the rewritten policy, open a PR.
+
+        Returns (url, created). `created` is False when this rotation already
+        had a PR, which is what keeps a rotation that sits unmerged for a day
+        from opening 288 of them - and what keeps the notification quiet.
+
+        This never merges or approves the PR it opens - a human always merges.
+        """
+        branch = branch_name(new_ip)
+        owner = REPO.split("/")[0]
+        existing = github("GET", "/pulls?state=open&head=%s:%s" % (owner, branch))
+        if existing:
+            return existing[0]["html_url"], False
+
+        main_sha = github("GET", "/git/ref/heads/main")["object"]["sha"]
+        try:
+            github("POST", "/git/refs", {"ref": "refs/heads/%s" % branch, "sha": main_sha})
+        except urllib.error.HTTPError as exc:
+            if exc.code != 422:  # 422 = ref already exists, which is fine
+                raise
+
+        current = github("GET", "/contents/%s?ref=main" % POLICY_PATH)
+        text = base64.b64decode(current["content"]).decode()
+        rewritten = rewrite_policy(text, old_ip, new_ip)
+        if rewritten == text:
+            return None, False
+
+        github(
+            "PUT",
+            "/contents/%s" % POLICY_PATH,
+            {
+                "message": "istio-ingress: follow the WAN IP rotation %s -> %s" % (old_ip, new_ip),
+                "content": base64.b64encode(rewritten.encode()).decode(),
+                "sha": current["sha"],
+                "branch": branch,
+            },
+        )
+
+        stale_lines = stale_comment_lines(text, old_ip)
+        body = (
+            "Opened automatically by `wan-ip-monitor`.\n\n"
+            "The ISP moved the home WAN address from `%s` to `%s`.\n\n"
+            "**Route 53 has already been updated** - DNS is correct right now. "
+            "Until this merges, the allow-listed hosts resolve correctly and "
+            "answer `403`, because the Istio policy still trusts the old "
+            "address.\n\nMerging is all that is required; Argo CD syncs it.\n"
+        ) % (old_ip, new_ip)
+        if stale_lines:
+            body += (
+                "\n**Heads up:** comment(s) on line(s) %s still mention `%s` and "
+                "were left untouched - rewrite_policy never edits comments, since "
+                "some are dated historical record. Check whether they need a "
+                "manual update.\n" % (", ".join(str(n) for n in stale_lines), old_ip)
+            )
+
+        pr = github(
+            "POST",
+            "/pulls",
+            {
+                "title": "istio-ingress: follow the WAN IP rotation %s -> %s" % (old_ip, new_ip),
+                "head": branch,
+                "base": "main",
+                "body": body,
+            },
+        )
+        return pr["html_url"], True
+
+
+    def post_json(payload):
+        request = urllib.request.Request(
+            N8N_WEBHOOK,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(request, timeout=15).close()
+
+
+    def notify(payload, post=post_json):
+        """Best effort. Never let a missing alert fail an otherwise good run."""
+        try:
+            post(payload)
+        except Exception as exc:
+            print("notify failed (continuing): %s" % exc)
+
+
+    def read_policy_from_main():
+        """The allow-list as it exists on main.
+
+        main IS the desired state - Argo CD syncs from it, and the PR targets
+        it - so reading from there keeps the comparison and the eventual commit
+        anchored to the same revision. Reading a mounted copy instead would add
+        a second source of truth that can silently drift.
+        """
+        current = github("GET", "/contents/%s?ref=main" % POLICY_PATH)
+        return base64.b64decode(current["content"]).decode()
+
+
+    def route53_json(args):
+        """aws_json, but with the AWS CLI's stderr surfaced on failure.
+
+        aws_json uses check=True, so a failing call raises CalledProcessError -
+        whose default traceback does not include stderr. This runs unattended,
+        so the auth/throttle/zone error the CLI printed must not be lost.
+        """
+        try:
+            return aws_json(args)
+        except subprocess.CalledProcessError as exc:
+            print(exc.stderr)
+            raise
+
+
+    def main():
+        current = detect_wan_ip()
+        declared = read_declared_wan_ip(read_policy_from_main())
+        print("detected=%s declared=%s dry_run=%s" % (current, declared, DRY_RUN))
+
+        # The annotation is the whole comparison. When it already names the
+        # detected address, both targets are consistent by definition: the
+        # Route 53 records this job manages are exactly those sitting on the
+        # declared address, and the allow-list is built around it. This is the
+        # steady state and must stay completely silent - it runs 288 times a day.
+        if declared == current:
+            print("in sync, nothing to do")
+            return 0
+
+        zone = route53_json(
+            ["route53", "list-resource-record-sets", "--hosted-zone-id", HOSTED_ZONE_ID,
+             "--output", "json"]
+        )
+        stale = records_needing_update(zone.get("ResourceRecordSets", []), declared)
+
+        if DRY_RUN:
+            print("DRY_RUN: would move %d records %s -> %s and open a PR"
+                  % (len(stale), declared, current))
+            return 0
+
+        updated = 0
+        if stale:
+            batch = build_change_batch(stale, current)
+            route53_json(
+                ["route53", "change-resource-record-sets",
+                 "--hosted-zone-id", HOSTED_ZONE_ID,
+                 "--change-batch", json.dumps(batch), "--output", "json"]
+            )
+            updated = len(stale)
+            print("updated %d Route 53 records" % updated)
+
+        pr_url, pr_created = open_allowlist_pr(declared, current)
+        print("allow-list PR: %s (new=%s)" % (pr_url, pr_created))
+
+        # Only speak up when something actually happened. Between the rotation
+        # and the merge this function runs every 5 minutes with the PR already
+        # open and DNS already fixed; alerting on each of those would train the
+        # operator to ignore it.
+        if updated or pr_created:
+            notify({
+                "old": declared,
+                "new": current,
+                "records_updated": updated,
+                "pr_url": pr_url,
+            })
+        return 0
+
+
+    if __name__ == "__main__":
+        raise SystemExit(main())
