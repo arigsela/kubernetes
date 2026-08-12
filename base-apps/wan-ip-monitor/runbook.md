@@ -79,10 +79,14 @@ in sync, nothing to do
   `pull_requests:write` on `arigsela/kubernetes` — no `administration` scope,
   in particular. Note that `contents:write` + `pull_requests:write` is not
   what stops this job from merging its own PR (that pair is exactly what a
-  merge call needs); what stops it is the `main` branch ruleset requiring an
-  approval the pusher cannot supply, which `administration` could bypass and
-  everything else cannot — see docs.md, "Why Route 53 is automatic but the
-  allow-list is a PR", for the full explanation. Then
+  merge call needs); what stops it — verified — is the `main` branch
+  ruleset's `require_last_push_approval`, which blocks the pusher from
+  approving their own PR. That ruleset also has an Admin-role bypass actor,
+  and the account minting this token holds admin on the repo; whether a
+  fine-grained PAT without `administration` inherits that bypass is **not**
+  documented by GitHub either way — see docs.md, "Why Route 53 is automatic
+  but the allow-list is a PR", for the full, verified-vs-unverified
+  breakdown. Then
   `vault kv put k8s-secrets/wan-ip-monitor github-token=<new token> ...`
   (carrying forward the existing AWS keys in the same `kv put`, since KV v2
   `put` replaces the whole secret version).
@@ -181,6 +185,9 @@ script's only home, so a change there is a change to production.
 kubectl -n wan-ip-monitor create job --from=cronjob/wan-ip-monitor manual-check
 kubectl -n wan-ip-monitor logs job/manual-check
 ```
+A steady-state result (`in sync, nothing to do`) only proves `GITHUB_TOKEN`
+works — the Route 53 List call never runs in that path. It is **not** proof
+that AWS credentials are valid; see docs.md, "DRY_RUN", for why.
 
 ### Arm it (flip DRY_RUN off)
 Set `DRY_RUN` to `"false"` in `cronjob.yaml` and push as its own commit,
