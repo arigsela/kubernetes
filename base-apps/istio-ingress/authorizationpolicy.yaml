@@ -162,18 +162,6 @@ spec:
     - to:
         - operation:
             hosts:
-              - oncall-crewai.arigsela.com
-              - oncall-crewai.arigsela.com:*
-      from:
-        - source:
-            ipBlocks:
-              - 76.97.4.210/32
-              - 170.85.56.189/32
-              - 170.85.130.202/32
-              - 104.28.177.82/32
-    - to:
-        - operation:
-            hosts:
               - vault.arigsela.com
               - vault.arigsela.com:*
       from:
