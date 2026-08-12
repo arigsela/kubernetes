@@ -155,14 +155,27 @@ data:
         - which every test in tests/wan_ip/ does - never requires boto3 to be
         installed locally; every test path that reaches this function replaces
         it first via monkeypatch.
+
+        list-resource-record-sets is PAGINATED. The `aws` CLI this replaced
+        auto-paginated; a single client.list_resource_record_sets() call does
+        not - it silently returns at most one page (default 100 records) and
+        sets IsTruncated rather than raising. Missing this would mean records
+        past the boundary never get corrected: main() would still print
+        "updated N records" and exit 0, having silently never looked at the
+        rest of the zone. get_paginator() is used specifically to make that
+        failure mode impossible rather than trusting the zone to always stay
+        under one page.
         """
         import boto3
 
         client = boto3.client("route53")
         if args[:2] == ["route53", "list-resource-record-sets"]:
             zone_id = args[args.index("--hosted-zone-id") + 1]
-            response = client.list_resource_record_sets(HostedZoneId=zone_id)
-            return {"ResourceRecordSets": response.get("ResourceRecordSets", [])}
+            paginator = client.get_paginator("list_resource_record_sets")
+            record_sets = []
+            for page in paginator.paginate(HostedZoneId=zone_id):
+                record_sets.extend(page.get("ResourceRecordSets", []))
+            return {"ResourceRecordSets": record_sets}
         if args[:2] == ["route53", "change-resource-record-sets"]:
             zone_id = args[args.index("--hosted-zone-id") + 1]
             batch = json.loads(args[args.index("--change-batch") + 1])

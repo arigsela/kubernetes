@@ -67,13 +67,21 @@ different blast radii if the job gets detection wrong:
   `GITHUB_TOKEN` could grant itself (or an attacker who compromised the
   cluster) unrestricted network access to production simply by lying about the
   detected address. So this half only ever *opens* a PR (`open_allowlist_pr`)
-  — it never approves, merges, or auto-merges it, and it is never granted the
-  permissions to do so. The `external-secret.yaml`'s GitHub token is scoped to
-  `contents:write` + `pull_requests:write` only — deliberately excluding
-  anything that could approve, merge, or bypass branch protection. **The
-  reconciler must never be able to merge its own PR; the review of that
-  security boundary is the entire reason the allow-list half goes through a PR
-  at all.**
+  — the code never calls a merge endpoint.
+
+  **What actually stops a self-merge is a GitHub branch ruleset on `main`, not
+  the token's scope.** Do not read the token scope as the control: the pair
+  `contents:write` + `pull_requests:write` is exactly what GitHub's `PUT
+  /pulls/{n}/merge` requires, and `contents:write` alone is sufficient to push
+  straight to `main` via `PUT /contents/{path}` with `"branch": "main"`. If
+  the *code* changed to call either of those, the token would let it. The
+  boundary that actually holds: `main`'s ruleset requires
+  `required_approving_review_count: 1` with `require_last_push_approval:
+  true`, so the identity that pushed the automation branch cannot supply the
+  approval its own PR needs — and bypassing the ruleset outright requires the
+  `administration` permission, which this token does **not** have. **The
+  reconciler must never be able to merge its own PR; that branch ruleset — not
+  the credential scope — is the control this task must never weaken.**
 
 Until the PR merges, DNS is already correct but the allow-list still trusts
 the old address, so the protected hosts resolve and return `403` — this is
@@ -171,12 +179,41 @@ there is then no bespoke image to build, publish, or keep patched.
   notification never fails the run (`notify` swallows and logs).
 
 ## DRY_RUN
-Ships with `DRY_RUN: "true"` on the CronJob deliberately. In dry-run the job
-still detects the address, reads the declared one, and logs what it *would*
-do — it never calls Route 53's `change-resource-record-sets` and never opens a
-PR. Arming it (`DRY_RUN: "false"`) is a separate, deliberately reviewable
-commit, not part of the initial deployment (see runbook: "Disabling it" for
-the reverse operation).
+Ships with `DRY_RUN: "true"` on the CronJob deliberately. **`DRY_RUN` only
+gates the write path — it does not gate the reads.** Every run, dry or not,
+steady-state or not, calls `read_policy_from_main()` — a live GitHub
+`contents` read — before `DRY_RUN` is even consulted, so `GITHUB_TOKEN` must
+already work for the job to get past its first two lines. If a rotation is
+detected (`declared != current`), the job then also performs a live Route 53
+`list-resource-record-sets` call, still *before* `DRY_RUN` is checked — so a
+dry run exercises AWS credentials too, in that case. Only the actual writes
+(`change-resource-record-sets` and opening the PR) are skipped when `DRY_RUN`
+is true.
+
+Practically: a dry run only exercises AWS credentials when there is an actual
+rotation for it to detect. The steady-state dry run (the expected output when
+verifying the deploy: `in sync, nothing to do`) proves GitHub read access but
+**not** AWS access — do not treat a clean steady-state dry run as proof both
+credentials work; it only proves the GitHub half.
+
+Arming it (`DRY_RUN: "false"`) is a separate, deliberately reviewable commit,
+not part of the initial deployment (see runbook: "Disabling it" for the
+reverse operation).
+
+## Known limitations (deferred, not part of this task)
+- **`pip install` at container start is version-pinned but not hash-pinned.**
+  `boto3==1.35.99` and `pyyaml==6.0.2` are exact versions, but nothing stops
+  PyPI (or a MITM on the way to it) from serving a different artifact for the
+  same version string. Hash-pinning (`--require-hashes` with a lockfile) or
+  moving to a baked, digest-pinned custom image would close this gap. Neither
+  is done here — deliberately out of scope for this task; both are real,
+  tracked follow-ups.
+- **No custom/baked image.** Installing dependencies at every run start
+  (see runbook: "PyPI unreachable") trades a small, recurring startup cost and
+  a runtime dependency on PyPI's availability for not having to build,
+  publish, and patch a bespoke image. A baked image would remove both the
+  PyPI dependency and open the door to hash-pinning in one move — also
+  deferred.
 
 ## Gotchas & tribal knowledge
 - The allow-list policy is read from `main` via the GitHub API
