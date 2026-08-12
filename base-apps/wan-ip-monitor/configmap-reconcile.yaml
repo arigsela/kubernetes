@@ -1,0 +1,84 @@
+# The reconciler script. This ConfigMap is its ONLY home - tests/wan_ip/
+# load reconcile.py out of this file rather than a copy, so the two cannot
+# drift apart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wan-ip-reconcile
+  namespace: wan-ip-monitor
+data:
+  reconcile.py: |
+    """Reconcile the home WAN address into Route 53 and the Istio allow-list.
+
+    This is a RECONCILER, not a change-detector. Every run compares reality
+    against two desired states independently and fixes whichever drifted. That
+    matters: a change-detector that updated Route 53 first would see "no change"
+    on the next run and never re-open an allow-list PR that went unmerged.
+    """
+    import base64
+    import ipaddress
+    import json
+    import os
+    import subprocess
+    import urllib.error
+    import urllib.request
+
+    import yaml
+
+    WAN_IP_ANNOTATION = "arigsela.com/wan-ip"
+
+
+    def is_valid_public_ipv4(value):
+        """True only for a single, routable, public IPv4 address.
+
+        Deliberately strict. This value ends up in a security allow-list and in
+        public DNS, so an error page, a captive-portal redirect, or an RFC1918
+        address from a misbehaving detector must never get through.
+
+        NOTE for anyone writing tests against this: Python treats the RFC 5737
+        documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) as
+        is_private, so the usual "example IP" habit produces addresses this
+        rejects. That is correct behaviour - a documentation address is never a
+        real WAN address - so pick a genuinely public one in fixtures instead.
+        """
+        try:
+            addr = ipaddress.IPv4Address(str(value).strip())
+        except (ipaddress.AddressValueError, ValueError):
+            return False
+        return not (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_reserved
+            or addr.is_multicast
+            or addr.is_link_local
+            or addr.is_unspecified
+        )
+
+
+    def read_declared_wan_ip(policy_yaml):
+        """The WAN address the allow-list currently claims to be built around."""
+        doc = yaml.safe_load(policy_yaml)
+        annotations = (doc.get("metadata") or {}).get("annotations") or {}
+        value = annotations.get(WAN_IP_ANNOTATION)
+        if not value:
+            raise KeyError("%s annotation missing from the policy" % WAN_IP_ANNOTATION)
+        return value
+
+
+    def rewrite_policy(policy_yaml, old_ip, new_ip):
+        """Swap exactly the declared WAN /32, and move the annotation with it.
+
+        Text substitution rather than a YAML round-trip on purpose: this file is
+        heavily commented and the comments are load-bearing documentation.
+        Re-serialising through PyYAML would strip every one of them.
+        """
+        if not is_valid_public_ipv4(new_ip):
+            raise ValueError("refusing to write non-public address %r" % new_ip)
+        if old_ip == new_ip:
+            return policy_yaml
+        out = policy_yaml.replace("- %s/32" % old_ip, "- %s/32" % new_ip)
+        out = out.replace(
+            '%s: "%s"' % (WAN_IP_ANNOTATION, old_ip),
+            '%s: "%s"' % (WAN_IP_ANNOTATION, new_ip),
+        )
+        return out
