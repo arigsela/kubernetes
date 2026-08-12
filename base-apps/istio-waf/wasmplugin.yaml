@@ -122,6 +122,34 @@ spec:
 
         # ── RULES ──────────────────────────────────────────────────────────
         - Include @crs-setup-conf
+
+        # CRS TUNING - must sit BETWEEN the two includes: crs-setup defines the
+        # default, the rules include consumes it. Below the rules include it
+        # would be assigned after 920420 has already read the variable.
+        #
+        # Adds |text/plain| to the CRS 4.14 default allow-list. Coroot's own UI
+        # POSTs telemetry to /stats as text/plain, which 920420 rejects for +5
+        # anomaly - exactly the inbound threshold, so 949111 fires too. Measured
+        # 2026-08-11..12: 21 such requests, 42 of the ~130 daily Envoy `critical`
+        # lines, and both recurring "main-istio fatal in the logs" Coroot alerts.
+        # Every one returned 200, because coroot.arigsela.com is outside rule
+        # 9000's protected set - so this was pure log noise with no enforcement
+        # behind it. It was also a live trap: adding coroot to the protected
+        # regex would have started 403ing Coroot's own UI on day one.
+        #
+        # SCOPE COST, stated plainly: this is global, so text/plain stops being
+        # flagged on grafana/oncall/n8n too. Accepted because bodies are not
+        # inspected there by default (SecRequestBodyAccess Off; only /webhook*
+        # and oncall turn it on, and both senders use JSON), so 920420 was
+        # protocol hygiene rather than a control doing real work.
+        # NOT scoped with `chain` - chains do not bind in this parser, see the
+        # 9010 note above. NOT done with ctl:ruleRemoveById either: rule 9000
+        # already demonstrates that ctl actions misbehave here (ctl:ruleEngine=Off
+        # stops blocking but NOT rule evaluation or logging, which is the very
+        # reason these lines reach the log). A setvar the rule reads itself has
+        # no such ambiguity.
+        - SecAction "id:9100,phase:1,nolog,pass,t:none,setvar:'tx.allowed_request_content_type=|application/x-www-form-urlencoded| |multipart/form-data| |multipart/related| |text/xml| |application/xml| |application/soap+xml| |application/json| |application/cloudevents+json| |application/cloudevents-batch+json| |text/plain|'"
+
         - Include @owasp_crs/*.conf
 
         # ── EXCLUSIONS ─────────────────────────────────────────────────────

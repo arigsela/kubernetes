@@ -132,11 +132,32 @@ first panel watches Wasm load errors rather than only rule hits. An empty
 | Which hosts are inspected | rule `9000` scope regex, `wasmplugin.yaml` |
 | Whether a host blocks or logs | rules `9001`–`9003` (present = log only) |
 | Body inspection | rules `9010` (n8n, path-scoped), `9011` (oncall) |
+| CRS tuning (allow-lists) | rule `9100`, between the two `Include` lines |
 | CRS exclusions | end of the `default` directives list |
 | Log verbosity | `SecDebugLogLevel` |
 
+### Rule 9000 does not stop logging
+
+`ctl:ruleEngine=Off` suppresses *blocking* on unprotected hosts, but CRS rules
+still evaluate and still write to the error log. Observed 2026-08-11..12:
+`POST /stats` on `coroot.arigsela.com` — outside the protected set — returned
+`200` while emitting `920420` and `949111` at Envoy `critical`.
+
+Two consequences worth remembering. Unprotected hosts are a live source of
+`critical` log lines, which Coroot's log alerting reports as "fatal in the
+logs" even though nothing is being enforced. And the anomaly scores those hosts
+accumulate are real: a host sitting at or above 5 is already at the blocking
+threshold, so adding it to rule `9000`'s regex starts returning 403 on its very
+first request. Check what a host currently scores before promoting it.
+
+Rule `9100` exists because of exactly that trap — Coroot's UI would have been
+blocked by its own telemetry the moment the host was promoted.
+
 ## Adding a fourth host
 
+0. Check what it already scores. Unprotected hosts still evaluate CRS (see
+   above), so grep the gateway log for its traffic first — a host already
+   hitting `949111` is at the blocking threshold and will 403 immediately.
 1. Add it to rule `9000`'s regex.
 2. Add a `DetectionOnly` line for it in the `9001`–`9003` block.
 3. Observe ≥7 days, tune (see runbook).
