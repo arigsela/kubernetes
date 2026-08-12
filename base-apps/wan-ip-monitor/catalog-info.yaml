@@ -1,0 +1,19 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: wan-ip-monitor
+  namespace: wan-ip-monitor
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=wan-ip-monitor'
+    backstage.io/kubernetes-namespace: wan-ip-monitor
+  tags: [automation, dns, route53, istio, github-actions]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-gitops
+  dependsOn:
+    - resource:vault/vault
+    - resource:istio-ingress/istio-ingress
