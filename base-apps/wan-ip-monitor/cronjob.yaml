@@ -2,8 +2,13 @@
 # checking often is negligible and the reward is that a rotation is caught
 # before it is noticed.
 #
-# The policy file is mounted from the live cluster object rather than fetched
-# from GitHub, so the job reconciles against what is actually enforced.
+# The allow-list is read from GitHub `main` via the API
+# (reconcile.py's read_policy_from_main), NOT from a mounted copy of the live
+# cluster object - there is no policy volume below on purpose. `main` is the
+# exact revision Argo CD syncs and the PR targets, so the comparison and the
+# eventual commit stay anchored to the same source of truth, and this also
+# avoids granting the job RBAC to read the live Istio AuthorizationPolicy
+# object. See docs.md, "Where config lives".
 #
 # Image: python:3.12-slim, not amazon/aws-cli:2.17.0. The aws-cli image was
 # tried first (Step 1 of task-5-brief.md) and rejected: it has a working `aws`
@@ -60,7 +65,13 @@ spec:
                   cpu: 10m
                   memory: 64Mi
                 limits:
-                  memory: 128Mi
+                  # 128Mi was sized for the old aws-cli image, which installed
+                  # nothing at runtime. pip resolving/unpacking botocore plus
+                  # boto3.client("route53") loading its service model sits
+                  # close to that ceiling, so this is sized for the current
+                  # python:3.12-slim + pip-install-on-start image instead.
+                  cpu: 200m
+                  memory: 256Mi
           volumes:
             - name: script
               configMap:

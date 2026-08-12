@@ -76,12 +76,43 @@ in sync, nothing to do
   (`k8s-secrets/wan-ip-monitor`, property `github-token`) — GitHub PATs expire
   on a schedule and this token has no auto-rotation.
 - **Fix:** re-mint a token scoped to **only** `contents:write` +
-  `pull_requests:write` on `arigsela/kubernetes` (no admin, no workflow scope
-  — see docs.md, "Why Route 53 is automatic but the allow-list is a PR", for
-  why this scope is deliberately narrow and must stay that way) and
+  `pull_requests:write` on `arigsela/kubernetes` — no `administration` scope,
+  in particular. Note that `contents:write` + `pull_requests:write` is not
+  what stops this job from merging its own PR (that pair is exactly what a
+  merge call needs); what stops it is the `main` branch ruleset requiring an
+  approval the pusher cannot supply, which `administration` could bypass and
+  everything else cannot — see docs.md, "Why Route 53 is automatic but the
+  allow-list is a PR", for the full explanation. Then
   `vault kv put k8s-secrets/wan-ip-monitor github-token=<new token> ...`
   (carrying forward the existing AWS keys in the same `kv put`, since KV v2
   `put` replaces the whole secret version).
+
+### PyPI unreachable
+- **Symptom:** job fails fast with a `pip` error (connection timeout / could
+  not find a version) instead of ever reaching `reconcile.py`.
+- **Cause:** `cronjob.yaml`'s `command` runs `pip install --quiet
+  boto3==1.35.99 pyyaml==6.0.2` at container start rather than baking a custom
+  image (see docs.md, "Container image choice") — so this job now depends on
+  PyPI being reachable from the cluster on **every single run**, not just at
+  deploy time. A PyPI outage, or an egress/DNS problem specific to this
+  namespace, fails the run even though nothing about the reconciler's own
+  logic is wrong.
+- **Fix:** this self-corrects once PyPI is reachable again (next run, 5
+  minutes later); no action needed for a transient PyPI blip. If it persists,
+  check cluster egress/DNS generally (other CronJobs hitting the internet
+  would show the same symptom) before suspecting this job specifically.
+
+### CreateContainerConfigError right after first deploy
+- **Symptom:** `kubectl -n wan-ip-monitor get pods` shows
+  `CreateContainerConfigError` shortly after this app first syncs.
+- **Cause:** the CronJob's `envFrom` references the `wan-ip-monitor` Secret
+  that External Secrets Operator creates from the `ExternalSecret`
+  (`external-secret.yaml`). If a run fires before that Secret exists yet
+  (ExternalSecret's first sync hasn't completed), the pod can't start.
+- **Fix:** none needed — this self-corrects within one schedule interval (5
+  minutes) once the ExternalSecret finishes its first sync. Confirm with
+  `kubectl -n wan-ip-monitor get externalsecret wan-ip-monitor` if it doesn't
+  clear within ~10 minutes (see "Job failing on AWS auth" above).
 
 ### Repeated PRs for the same address
 - **Symptom:** more than one open PR targeting the same rotation (same
