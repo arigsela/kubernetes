@@ -15,7 +15,18 @@
 # SNAT it would make arbitrary internet traffic look allow-listed - failing OPEN
 # and silently (B9). It also turns out to be unnecessary: the router hairpin-NATs
 # LAN traffic to the public address, verified in nginx's own access log, where
-# requests from LAN host 10.0.1.182 arrive as 73.7.190.154. Nothing is lost.
+# requests from LAN host 10.0.1.182 arrive as the WAN address. Nothing is lost.
+#
+# THE WAN ADDRESS IS DYNAMIC AND HAS ROTATED ONCE ALREADY:
+# 73.7.190.154 -> 76.97.4.210 (2026-08-12). It is residential Comcast, so expect
+# this again. The symptom is total loss of every host in this file at once: the
+# Route 53 A records (21 of them, NOT Terraform-managed - hand-edited via the
+# AWS API) keep pointing at the dead address, so requests time out; fix only DNS
+# and every host then returns 403 from this policy instead. BOTH have to move
+# together. REPLACE the old /32 here, never append: the old address is returned
+# to the ISP pool and reassigned, and leaving it listed grants a stranger the
+# allow-list. Re-verify the hairpin claim above after any such rotation -
+# confirmed still true on 2026-08-12 (LAN curl arrived as 76.97.4.210).
 #
 # ipBlocks, not remoteIpBlocks: the Gateway runs hostNetwork so the packet source
 # IS the client (R35). remoteIpBlocks would need XFF trust, which is V56's hazard
@@ -42,7 +53,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -54,7 +65,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -66,7 +77,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -78,7 +89,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -91,7 +102,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -109,7 +120,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -121,7 +132,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -133,7 +144,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -145,7 +156,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -157,7 +168,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -200,7 +211,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -213,7 +224,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -227,7 +238,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -242,7 +253,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -270,7 +281,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -284,7 +295,7 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
@@ -302,7 +313,7 @@ spec:
       # Vault API was reachable from the public internet in cleartext (Vault
       # runs tls_disable: 1). No allow-list, no TLS, no auth gate ahead of it.
       #
-      # 73.7.190.154/32 covers the hairpin path: the router hairpin-NATs LAN
+      # 76.97.4.210/32 covers the hairpin path: the router hairpin-NATs LAN
       # traffic to the public address, so this single /32 is how ALL observed
       # traffic arrives, LAN included (see the /8-vs-hairpin note above).
       # 10.0.1.0/24 covers direct LAN access to 10.0.1.110 (not hairpinned),
@@ -329,5 +340,5 @@ spec:
       from:
         - source:
             ipBlocks:
-              - 73.7.190.154/32
+              - 76.97.4.210/32
               - 10.0.1.0/24
