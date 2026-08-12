@@ -55,8 +55,12 @@ installed by the Helm chart rather than by a manifest here.
 | Argo CD | public (PKCE) | none, by design | `terraform/roots/asela-cluster/argocd.tf` |
 
 Because both depend on Dex, **Dex is a single point of failure for human login to
-both**. Vault keeps its own token/root path and Argo CD keeps its local `admin`
-account as the respective break-glass routes.
+both** — and the two relying parties handle that differently. Vault keeps its own
+token/root path as a break-glass route. Argo CD **does not**: its local `admin`
+login was disabled on 2026-08-12, so if Dex is down there is no Argo CD UI login
+at all. That is deliberate (Argo CD is driven by git and `kubectl`, not the UI),
+but it means **taking Dex down locks out the Argo CD UI entirely** — worth
+remembering before restarting or reconfiguring this app.
 
 ## Storage
 Dex uses its **Kubernetes CRD storage backend** (`storage.type: kubernetes`,

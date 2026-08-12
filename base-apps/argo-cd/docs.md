@@ -36,8 +36,9 @@ All Applications, including `argo-cd-config` (`base-apps/argo-cd.yaml`) itself, 
 - Original source of the `master-app` Application object: `terraform/modules/application-sets/application-sets.tf` — see the provenance caveat above.
 
 ## Authentication (SSO)
-Since 2026-08-12 Argo CD supports **GitHub login via the standalone Dex**
-(`base-apps/dex`), alongside the local `admin` account which stays enabled.
+Since 2026-08-12 Argo CD authenticates **only** through GitHub via the standalone
+Dex (`base-apps/dex`). Local username/password login is **disabled**
+(`admin.enabled = false`) — there is no fallback login.
 
 - Argo CD is a **public OIDC client using PKCE** — there is deliberately no client
   secret, so nothing to store in Vault and nothing to rotate. The matching
@@ -55,8 +56,14 @@ Since 2026-08-12 Argo CD supports **GitHub login via the standalone Dex**
 `dex.arigsela.com` to the public address and reaches it back through the router via
 hairpin NAT, so it is subject to the ingress allow-list in
 `base-apps/istio-ingress/authorizationpolicy.yaml`. When the ISP rotates that
-address, SSO breaks along with everything else until the allow-list is updated —
-use the local `admin` account to get back in.
+address, SSO breaks along with everything else until the allow-list is updated.
+
+**With local admin disabled there is no login that survives Dex being down.** That
+is deliberate, and it is survivable because losing the UI is not losing control:
+Argo CD is driven by git, Applications are plain CRs that `kubectl` manages
+without a UI session, and the allow-list fix that restores SSO is itself a git
+push that syncs without anyone logging in. If you genuinely need the UI before SSO
+is repaired, the emergency re-enable is in the runbook.
 
 ## Gotchas & tribal knowledge
 - Because every Application (including `argo-cd-config`) has `selfHeal: true`, manual `kubectl` edits anywhere are reverted — all changes must go through git.

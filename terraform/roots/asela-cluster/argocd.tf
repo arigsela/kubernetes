@@ -239,12 +239,34 @@ module "argocd" {
             - email
         EOT
 
-        # Local admin stays ON as the break-glass path. This is the chart
-        # default, set explicitly because it is now load-bearing: Dex fronts
-        # GitHub, so if GitHub, Dex, or the ingress allow-list is down, SSO is
-        # down with it and this is the only way in. Revisit only once SSO has
-        # been trusted for a while.
-        "admin.enabled" = "true"
+        # Local admin DISABLED 2026-08-12, once SSO was confirmed working end to
+        # end. Username/password login is gone; Dex is now the only way into the
+        # UI. Nothing automated depended on it - checked before flipping: no
+        # `accounts.*` entries exist (admin was the only local account), no API
+        # tokens, and nothing in this repo references argocd-initial-admin-secret
+        # or does an `argocd login`. The home.arigsela.com tile reads Prometheus
+        # rather than the Argo CD API precisely to avoid needing an account here.
+        #
+        # WHAT THIS COSTS: there is no longer a login that survives Dex being
+        # down. SSO depends on GitHub, on Dex, and on the ingress allow-list, and
+        # the WAN address rotation on this same day proved that last one is not
+        # hypothetical - when the ISP moves the address, dex.arigsela.com stops
+        # being reachable from the Argo CD pod and SSO stops with it.
+        #
+        # WHY THAT IS ACCEPTABLE: losing the UI is not losing control. Argo CD is
+        # driven by git and the Applications are plain CRs, so kubectl still
+        # manages everything without a UI session, and the allow-list fix that
+        # restores SSO is itself a git push that syncs without anyone logging in.
+        #
+        # EMERGENCY RE-ENABLE, if you ever need the UI before SSO is repaired:
+        #   kubectl -n argo-cd patch cm argocd-cm --type merge \
+        #     -p '{"data":{"admin.enabled":"true"}}'
+        # argocd-cm is Helm-managed, NOT synced by an Argo CD Application, so
+        # selfHeal will not revert that patch - it holds until the next
+        # `terraform apply` re-renders the chart. Treat it as a stopgap and land
+        # the real fix in git. The admin password is still in the untouched
+        # argocd-initial-admin-secret (unless it was rotated since install).
+        "admin.enabled" = "false"
       }
 
       # RBAC. Without this an SSO login SUCCEEDS and then lands with zero
