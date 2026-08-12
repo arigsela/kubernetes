@@ -37,9 +37,22 @@ def _pvc_docs():
 
 
 def test_pvc_manifests_exist():
-    """Guard against the glob silently matching nothing and the suite passing vacuously."""
+    """Guard against the glob silently matching nothing and the suite passing vacuously.
+
+    This is a FLOOR, not an inventory. Its only job is to prove `_pvc_docs()`
+    still finds things, so the prune-scope assertions below cannot pass by
+    iterating an empty list. It therefore tracks reality and gets lowered when
+    apps are legitimately removed - it is not a claim that a particular set of
+    PVCs must exist.
+
+    Was 9 until 2026-08-12, when oncall-crewai, openclaw-qwen and openshell were
+    removed and took three PVC manifests with them. If this fails after an app
+    deletion, confirm the deletion was intended and lower it; if it fails
+    without one, the glob or the manifests are the problem, which is exactly
+    what it exists to catch.
+    """
     found = list(_pvc_docs())
-    assert len(found) >= 9, f"expected the known PVC manifests, found {len(found)}"
+    assert len(found) >= 6, f"expected the known PVC manifests, found {len(found)}"
 
 
 @pytest.mark.parametrize(
