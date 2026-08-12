@@ -38,6 +38,34 @@ data:
           - https://vault.10.0.1.110/ui/vault/auth/oidc/oidc/callback
           - https://vault.arigsela.com/ui/vault/auth/oidc/oidc/callback
 
+      # Argo CD, added 2026-08-12. Deliberately a PUBLIC client, i.e. no
+      # secretEnv and no shared secret anywhere - unlike the `vault` client
+      # above. Two reasons, and the first is the real one:
+      #
+      #   1. The login runs in a browser, so a client secret would be shipped
+      #      to the user agent and could not stay secret. PKCE is the correct
+      #      control for that flow: Argo CD sends a per-login code_challenge
+      #      and must present the matching verifier to redeem the code, so an
+      #      intercepted code is useless on its own. Argo CD sets this with
+      #      enablePKCEAuthentication (terraform/roots/asela-cluster/argocd.tf).
+      #   2. A secret would need a Vault-backed SecretStore in the argo-cd
+      #      namespace, which needs a Vault k8s auth role + policy. That is
+      #      real standing setup and rotation burden bought for no security
+      #      gain here, given (1).
+      #
+      # DO NOT "fix" this by adding secretEnv to match the vault client - that
+      # would break PKCE-only logins, and the asymmetry is the point: Vault
+      # authenticates server-to-server and CAN hold a secret; Argo CD cannot.
+      #
+      # localhost:8085 is the `argocd login --sso` CLI callback; the https one
+      # is the web UI. Both must be listed or that login path 400s at Dex.
+      - id: argocd
+        name: Argo CD
+        public: true
+        redirectURIs:
+          - https://argocd.arigsela.com/auth/callback
+          - http://localhost:8085/auth/callback
+
     connectors:
       - type: github
         id: github

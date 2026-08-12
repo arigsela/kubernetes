@@ -26,7 +26,7 @@ Dex (`ghcr.io/dexidp/dex:v2.41.1`) is an **OIDC provider** that fronts an upstre
 identity source. In this cluster it wraps **GitHub** so that humans can log in to
 other services with their GitHub account without those services holding GitHub
 credentials directly. It is deployed as a single `Deployment` in the `dex`
-namespace and served at `https://dex.arigsela.com` (`base-apps/dex/ingress.yaml`,
+namespace and served at `https://dex.arigsela.com` (`base-apps/dex/httproute.yaml`,
 TLS via `letsencrypt-prod`).
 
 Its OIDC issuer is `https://dex.arigsela.com` (`configmap.yaml`, `dex-config`).
@@ -37,6 +37,26 @@ at Dex, so operators log in to the Vault UI (`vault.arigsela.com`) with GitHub v
 Dex rather than with a Vault token. The Vault callback URLs are registered as
 `redirectURIs` on Dex's static client, and Vault authenticates to Dex with the
 `vault-client-secret` credential.
+
+**Argo CD** is the second relying party (added 2026-08-12). It logs in through the
+same GitHub identity, but as a **public client using PKCE** — there is no
+`argocd-client-secret` anywhere, deliberately. Argo CD's login happens in a
+browser, so a client secret could not be kept secret; PKCE is the correct control
+for that flow. The practical benefit is that Argo CD needs no Vault-backed
+`SecretStore` in its namespace at all.
+
+Argo CD's own config lives in Terraform, not in `base-apps/`
+(`terraform/roots/asela-cluster/argocd.tf`, under `configs.cm`), because Argo CD is
+installed by the Helm chart rather than by a manifest here.
+
+| Relying party | Client type | Credential | Config lives in |
+|---|---|---|---|
+| Vault | confidential | `vault-client-secret` from Vault | `base-apps/vault/` |
+| Argo CD | public (PKCE) | none, by design | `terraform/roots/asela-cluster/argocd.tf` |
+
+Because both depend on Dex, **Dex is a single point of failure for human login to
+both**. Vault keeps its own token/root path and Argo CD keeps its local `admin`
+account as the respective break-glass routes.
 
 ## Storage
 Dex uses its **Kubernetes CRD storage backend** (`storage.type: kubernetes`,
