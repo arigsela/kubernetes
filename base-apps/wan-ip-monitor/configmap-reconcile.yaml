@@ -19,7 +19,6 @@ data:
     import ipaddress
     import json
     import os
-    import subprocess
     import urllib.error
     import urllib.request
 
@@ -135,11 +134,40 @@ data:
 
 
     def aws_json(args):
-        """Run an aws CLI command and parse its JSON output."""
-        result = subprocess.run(
-            ["aws"] + args, capture_output=True, text=True, check=True, timeout=60
-        )
-        return json.loads(result.stdout) if result.stdout.strip() else {}
+        """Run a Route 53 operation via boto3 and return its JSON-shaped result.
+
+        Talks to AWS via boto3, not the `aws` CLI. amazon/aws-cli:2.17.0 (the
+        image this app tried first) bundles the CLI's own internal Python
+        interpreter but exposes no `python3` on PATH to run this script under
+        - confirmed live: `aws --version` succeeds in that image, `python3
+        --version` reports "command not found". See docs.md ("Container image
+        choice") for both options considered and why this one was picked.
+        cronjob.yaml runs python:3.12-slim with boto3/pyyaml pip-installed at
+        container start instead.
+
+        `args` stays the same argv-shaped list the AWS-CLI-backed version
+        accepted (e.g. ["route53", "list-resource-record-sets",
+        "--hosted-zone-id", ID, "--output", "json"]), so route53_json, main()'s
+        two call sites, and the test suite's `aws_json` monkeypatches all
+        needed no change - only what happens inside this function changed.
+
+        boto3 is imported here, not at module level, so importing this module
+        - which every test in tests/wan_ip/ does - never requires boto3 to be
+        installed locally; every test path that reaches this function replaces
+        it first via monkeypatch.
+        """
+        import boto3
+
+        client = boto3.client("route53")
+        if args[:2] == ["route53", "list-resource-record-sets"]:
+            zone_id = args[args.index("--hosted-zone-id") + 1]
+            response = client.list_resource_record_sets(HostedZoneId=zone_id)
+            return {"ResourceRecordSets": response.get("ResourceRecordSets", [])}
+        if args[:2] == ["route53", "change-resource-record-sets"]:
+            zone_id = args[args.index("--hosted-zone-id") + 1]
+            batch = json.loads(args[args.index("--change-batch") + 1])
+            return client.change_resource_record_sets(HostedZoneId=zone_id, ChangeBatch=batch)
+        raise ValueError("aws_json: unsupported args %r" % (args,))
 
 
     def records_needing_update(recordsets, old_ip):
@@ -319,16 +347,17 @@ data:
 
 
     def route53_json(args):
-        """aws_json, but with the AWS CLI's stderr surfaced on failure.
+        """aws_json, with the failure logged before it propagates.
 
-        aws_json uses check=True, so a failing call raises CalledProcessError -
-        whose default traceback does not include stderr. This runs unattended,
-        so the auth/throttle/zone error the CLI printed must not be lost.
+        botocore exceptions already include the error code and message in
+        str(exc) - unlike the AWS CLI's CalledProcessError, whose default
+        traceback drops stderr - so this mostly exists to guarantee the
+        auth/throttle/zone error is printed before it ends an unattended run.
         """
         try:
             return aws_json(args)
-        except subprocess.CalledProcessError as exc:
-            print(exc.stderr)
+        except Exception as exc:
+            print("route53 call failed: %s" % exc)
             raise
 
 
