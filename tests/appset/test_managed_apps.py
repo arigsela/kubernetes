@@ -5,9 +5,6 @@ malformed config does not fail loudly at apply time -- goTemplateOptions
 missingkey=error stops the render for ALL apps in the set and the existing
 Applications simply stop reconciling. These tests are the loud failure.
 """
-import pathlib
-
-import pytest
 import yaml
 
 from conftest import expand
@@ -71,3 +68,13 @@ def test_golden_equivalence(configs, goldens):
     assert set(configs) == set(goldens)
     for stem, cfg in configs.items():
         assert expand(cfg) == goldens[stem], f"{stem}: spec would change"
+
+
+def test_goldens_match_the_live_applications(goldens, repo_root):
+    """Until the swap deletes them, the hand-written Applications are the source
+    of truth the goldens were captured from. Self-disables once they are gone."""
+    for stem, golden in goldens.items():
+        app = repo_root / "base-apps" / f"{stem}.yaml"
+        if not app.exists():
+            continue
+        assert yaml.safe_load(app.read_text())["spec"] == golden, f"{stem}: golden is stale"
