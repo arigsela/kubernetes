@@ -1,0 +1,14 @@
+destination:
+  namespace: crossplane-system
+  server: https://kubernetes.default.svc
+project: default
+source:
+  path: base-apps/crossplane-compositions
+  repoURL: https://github.com/arigsela/kubernetes
+  targetRevision: main
+syncPolicy:
+  automated:
+    prune: true
+    selfHeal: true
+  syncOptions:
+  - CreateNamespace=false

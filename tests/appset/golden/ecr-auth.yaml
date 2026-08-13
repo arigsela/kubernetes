@@ -1,0 +1,12 @@
+destination:
+  namespace: kube-system
+  server: https://kubernetes.default.svc
+project: default
+source:
+  path: base-apps/ecr-auth
+  repoURL: https://github.com/arigsela/kubernetes
+  targetRevision: main
+syncPolicy:
+  automated:
+    prune: true
+    selfHeal: true
