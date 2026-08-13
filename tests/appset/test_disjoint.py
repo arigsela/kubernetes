@@ -70,6 +70,10 @@ def test_applicationset_manifest_exists_and_is_wellformed(repo_root):
     assert doc["spec"]["goTemplate"] is True
     assert doc["spec"]["goTemplateOptions"] == ["missingkey=error"]
     assert doc["spec"]["syncPolicy"]["preserveResourcesOnDeletion"] is True
+    # create-update, not the default: a malformed config skips its entry rather
+    # than halting the render, so under the default policy a typo could put an
+    # app on the deletion path. Measured 2026-08-13.
+    assert doc["spec"]["syncPolicy"]["applicationsSync"] == "create-update"
     files = doc["spec"]["generators"][0]["git"]["files"]
     assert files == [{"path": "appsets/managed-apps/*.yaml"}]
 

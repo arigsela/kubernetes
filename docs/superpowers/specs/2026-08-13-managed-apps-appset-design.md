@@ -198,7 +198,7 @@ spec:
           {{- end }}
 ```
 
-`applicationsSync` is left at its default (`create-update-delete`), so the set stays fully declarative: removing a config file removes the Application.
+`applicationsSync` is set to `create-update`, so this ApplicationSet can never delete an Application. This reverses the original decision; §11.2 records the measurement that prompted it. The cost is that removing a config leaves an orphan Application to delete by hand — accepted, because it also means a malformed config cannot evict a healthy app.
 
 #### Why `syncOptions` needs `templatePatch`
 
@@ -369,11 +369,12 @@ look perfectly healthy — rather than the clean whole-set freeze §5.4 predicte
 
 ### 11.3 Consequences for the design
 
-- §4.3's choice of `applicationsSync` default (`create-update-delete`) was made on
-  the belief that a malformed config produced a harmless freeze. That belief is
-  now falsified, and `create-update` deserves reconsideration: it makes the
-  deletion path impossible at the cost of leaving an orphan Application behind
-  when a config is legitimately removed.
+- §4.3's original choice of the `applicationsSync` default was made on the belief
+  that a malformed config produced a harmless freeze. That belief is falsified,
+  so the decision was **reversed**: the ApplicationSet now sets
+  `applicationsSync: create-update`, making the deletion path impossible. The
+  cost is an orphan Application when a config is legitimately removed, which the
+  runbook's "Removing an app" section now covers with an explicit manual step.
 - `tests/appset/` catches this class of error at PR time — the break reddens three
   tests — so Preview's marginal value here is smaller than §1.1 assumed. Preview's
   real value is the class CI cannot see: a generator whose glob silently matches
