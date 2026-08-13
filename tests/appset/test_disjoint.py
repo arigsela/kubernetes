@@ -7,6 +7,8 @@ copy-paste and that outcome.
 """
 import yaml
 
+from conftest import DEST_SERVER, REPO_URL, TARGET_REVISION
+
 
 def _top_level_application_names(repo_root):
     names = set()
@@ -35,3 +37,38 @@ def test_applicationset_manifest_exists_and_is_wellformed(repo_root):
     assert doc["spec"]["syncPolicy"]["preserveResourcesOnDeletion"] is True
     files = doc["spec"]["generators"][0]["git"]["files"]
     assert files == [{"path": "appsets/managed-apps/*.yaml"}]
+
+
+def test_applicationset_template_matches_expand(repo_root):
+    """`expand()` in conftest.py is a hand-written Python restatement of this
+    manifest's `template` and `templatePatch` -- nothing ties the two
+    together automatically. Without this test, an edit to the live template
+    (a swapped revision, a renamed placeholder, a deleted templatePatch)
+    would leave every other test green while the manifest silently drifts
+    from what expand() -- and therefore the goldens -- predict.
+
+    Asserts against the same REPO_URL/TARGET_REVISION/DEST_SERVER constants
+    expand() uses, so the manifest and the mirror are pinned to one source
+    of truth.
+    """
+    path = repo_root / "base-apps" / "managed-apps.yaml"
+    doc = yaml.safe_load(path.read_text())
+    template = doc["spec"]["template"]
+
+    assert template["metadata"]["name"] == "{{ .name }}"
+    assert template["spec"]["project"] == "default"
+    assert template["spec"]["source"]["repoURL"] == REPO_URL
+    assert template["spec"]["source"]["targetRevision"] == TARGET_REVISION
+    # The literal Go template string, not an expanded value -- this is what
+    # guards against a `.path` / `.sourcePath` field-name collision.
+    assert template["spec"]["source"]["path"] == "{{ .sourcePath }}"
+    assert template["spec"]["destination"]["server"] == DEST_SERVER
+    assert template["spec"]["destination"]["namespace"] == "{{ .namespace }}"
+    assert template["spec"]["syncPolicy"]["automated"] == {
+        "prune": True,
+        "selfHeal": True,
+    }
+
+    template_patch = doc["spec"]["templatePatch"]
+    assert template_patch
+    assert "range .syncOptions" in template_patch
