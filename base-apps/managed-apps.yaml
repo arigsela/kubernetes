@@ -1,0 +1,61 @@
+# Generates the Applications for base-apps subdirectories that need no
+# per-app Argo CD configuration -- no Helm values, no ignoreDifferences, no
+# sync waves. Their shape is entirely described by the config files in
+# appsets/managed-apps/, which master-app cannot see (it reads only top-level
+# base-apps/*.yaml, and does not recurse).
+#
+# Adding an app here means adding a config file, not an Application manifest.
+# Anything needing bespoke Argo CD config stays a hand-written
+# base-apps/<app>.yaml instead.
+#
+# See docs/managed-apps-appset.md for the runbook.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: managed-apps
+  namespace: argo-cd
+spec:
+  goTemplate: true
+  # A typo'd config key fails the render loudly instead of silently producing
+  # an Application with a missing field.
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/arigsela/kubernetes
+        revision: main
+        files:
+          - path: appsets/managed-apps/*.yaml
+  syncPolicy:
+    # Generated Applications get NO resources-finalizer. If this generator ever
+    # returns empty -- path typo, branch rename, repo unreachable -- the
+    # Applications are deleted but their resources keep running. Three of these
+    # apps front real S3 buckets and IAM users via Crossplane CRs that have no
+    # deletionPolicy: Orphan, so a cascade here would be unrecoverable.
+    preserveResourcesOnDeletion: true
+  template:
+    metadata:
+      name: '{{ .name }}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/arigsela/kubernetes
+        targetRevision: main
+        path: '{{ .sourcePath }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .namespace }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+  # syncOptions varies in length across apps, and Go control flow is not
+  # permitted inside the structured template above -- only here. An empty list
+  # renders `syncOptions:` (YAML null), which a merge patch treats as "delete
+  # the key"; the template never sets it, so those apps simply have none.
+  templatePatch: |
+    spec:
+      syncPolicy:
+        syncOptions:
+          {{- range .syncOptions }}
+          - {{ . }}
+          {{- end }}
