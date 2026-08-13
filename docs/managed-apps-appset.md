@@ -138,10 +138,19 @@ Restoring the glob restores the Applications. This is why
 front real S3 buckets and IAM users via Crossplane CRs with the default
 `deletionPolicy: Delete`.
 
-**A malformed config**: `goTemplateOptions: ["missingkey=error"]` halts the
-render for *all* apps in the set. Existing Applications keep running but stop
-reconciling from the ApplicationSet, which is quiet — `tests/appset/` is the
-loud failure, and the Preview Apps tab is the pre-merge check.
+**A malformed config**: the broken entry drops out of the generated set — the
+render does **not** halt for the others. Measured on 2026-08-13 by deleting one
+config's `namespace` key: the controller logged a precise error naming the
+missing key, then `generated 11 applications`.
+
+That is the dangerous part. A reduced generated set is the same signal the
+controller gets when an app is legitimately removed from Git, so a one-line typo
+can put an app on the deletion path while the other eleven look perfectly
+healthy. `preserveResourcesOnDeletion: true` means its workloads survive
+regardless, but nothing would be reconciling them.
+
+`tests/appset/` is the loud failure and catches this at PR time — the break above
+reddens three tests. Treat Preview as the second line, not the first.
 
 **Never set `recurse: true` on `master-app`.** The config files live outside
 `base-apps/` precisely so that `master-app` cannot reach them; recursing would
