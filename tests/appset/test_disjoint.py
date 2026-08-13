@@ -1,9 +1,18 @@
-"""master-app and the managed-apps ApplicationSet must never own the same name.
+"""master-app and the managed-apps ApplicationSet must never own the same
+Application name, nor point two different Applications at the same
+spec.source.path.
 
 master-app applies every top-level base-apps/*.yaml. If an Application name
 also appears in appsets/managed-apps/, two controllers write the same object
-and fight over it. This test is the only thing standing between a future
-copy-paste and that outcome.
+and fight over it -- caught by test_appset_names_disjoint_from_app_of_apps.
+But a name match isn't the only way to get double ownership: this repo has
+several Applications whose name differs from the directory they source
+(argo-cd-config, atlantis-config, cert-manager-config, kagent-secrets,
+istio-gateway-api), so two differently-named Applications can still sync the
+same directory with prune+selfHeal and fight over the tracking label instead.
+test_appset_source_paths_disjoint_from_app_of_apps catches that form. Together
+these are the only things standing between a future copy-paste (or a rename
+made to dodge the name check) and that outcome.
 """
 import yaml
 
@@ -19,11 +28,37 @@ def _top_level_application_names(repo_root):
     return names
 
 
+def _top_level_application_source_paths(repo_root):
+    paths = set()
+    for path in sorted((repo_root / "base-apps").glob("*.yaml")):
+        doc = yaml.safe_load(path.read_text())
+        if isinstance(doc, dict) and doc.get("kind") == "Application":
+            source_path = doc.get("spec", {}).get("source", {}).get("path")
+            if source_path:
+                paths.add(source_path)
+    return paths
+
+
 def test_appset_names_disjoint_from_app_of_apps(configs, repo_root):
     generated = {cfg["name"] for cfg in configs.values()}
     hand_written = _top_level_application_names(repo_root)
     overlap = generated & hand_written
     assert not overlap, f"owned by both master-app and managed-apps: {sorted(overlap)}"
+
+
+def test_appset_source_paths_disjoint_from_app_of_apps(configs, repo_root):
+    """Name-disjointness alone isn't enough: two Applications with different
+    names but the same spec.source.path both sync one directory with
+    prune+selfHeal and fight over the tracking label -- the same hazard the
+    name check guards against, just reachable by a rename instead of a
+    copy-paste. See the module docstring.
+    """
+    generated = {cfg["sourcePath"] for cfg in configs.values()}
+    hand_written = _top_level_application_source_paths(repo_root)
+    overlap = generated & hand_written
+    assert not overlap, (
+        f"source path owned by both master-app and managed-apps: {sorted(overlap)}"
+    )
 
 
 def test_applicationset_manifest_exists_and_is_wellformed(repo_root):
