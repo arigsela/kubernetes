@@ -105,10 +105,21 @@ Delete its config file, its golden, and its entry in `EXPECTED_APPS`
 (`tests/appset/test_managed_apps.py`) — `test_expected_configs_present`
 asserts the config directory's stems equal that hardcoded set exactly, so it
 fails the moment the config is gone if the set isn't updated too.
-`applicationsSync` is at its default, so the Application is deleted on the
-next reconcile. Because `preserveResourcesOnDeletion: true` is set, **its
-Kubernetes resources are not deleted** — they keep running, unmanaged. Clean
-them up deliberately if that is what you want.
+Then delete the Application object by hand:
+
+```bash
+kubectl delete application <name> -n argo-cd
+```
+
+That manual step is required: `applicationsSync: create-update` stops this
+ApplicationSet from ever deleting an Application, so removing the config alone
+leaves an orphan that nothing reconciles and nothing cleans up. The policy is
+deliberate — see the comment in `base-apps/managed-apps.yaml` — because it also
+means a malformed config cannot evict a healthy app.
+
+`preserveResourcesOnDeletion: true` means deleting the Application still leaves
+**its Kubernetes resources running, unmanaged**. Clean those up deliberately if
+that is what you want.
 
 ## Rollback
 
@@ -143,11 +154,13 @@ render does **not** halt for the others. Measured on 2026-08-13 by deleting one
 config's `namespace` key: the controller logged a precise error naming the
 missing key, then `generated 11 applications`.
 
-That is the dangerous part. A reduced generated set is the same signal the
-controller gets when an app is legitimately removed from Git, so a one-line typo
-can put an app on the deletion path while the other eleven look perfectly
-healthy. `preserveResourcesOnDeletion: true` means its workloads survive
-regardless, but nothing would be reconciling them.
+That would be the dangerous part under the default policy: a reduced generated
+set is the same signal the controller gets when an app is legitimately removed
+from Git, so a one-line typo could put an app on the deletion path while the
+other eleven look perfectly healthy. **`applicationsSync: create-update` closes
+that path** — this ApplicationSet cannot delete an Application at all, so the
+broken app simply stops updating, which is visibly stale rather than silently
+gone.
 
 `tests/appset/` is the loud failure and catches this at PR time — the break above
 reddens three tests. Treat Preview as the second line, not the first.

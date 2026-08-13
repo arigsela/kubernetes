@@ -32,6 +32,19 @@ spec:
     # apps front real S3 buckets and IAM users via Crossplane CRs that have no
     # deletionPolicy: Orphan, so a cascade here would be unrecoverable.
     preserveResourcesOnDeletion: true
+    # This controller must never DELETE an Application, only create and update.
+    #
+    # Measured 2026-08-13: a config missing one key does not halt the render for
+    # the set, as originally assumed -- the broken entry is skipped and the rest
+    # generate ("generated 11 applications"). A reduced generated set is the same
+    # signal the controller gets when an app is legitimately removed from Git, so
+    # under the default policy a one-line typo can put an app on the deletion
+    # path while the other eleven look healthy.
+    #
+    # The cost is that removing a config leaves an orphan Application to delete
+    # by hand; see the "Removing an app" section of the runbook. For twelve
+    # rarely-changing infrastructure apps that is the better trade.
+    applicationsSync: create-update
   template:
     metadata:
       name: '{{ .name }}'
