@@ -267,7 +267,7 @@ Phase 0 does not need reverting — no-finalizer is the intended end state eithe
 |---|---|---|
 | Generator matches nothing (path typo, branch rename, repo unreachable) | All 12 Applications deleted | `preserveResourcesOnDeletion: true` — workloads and Crossplane CRs keep running; restoring the glob restores the Applications. This is the failure behind [argo-cd#18780](https://github.com/argoproj/argo-cd/issues/18780) and [argo-cd#9227](https://github.com/argoproj/argo-cd/issues/9227) |
 | Duplicate names — someone adds both `base-apps/foo.yaml` and `appsets/managed-apps/foo.yaml` | Two controllers fight over one object | Test asserting the two name sets are disjoint (§6) |
-| Malformed config | `missingkey=error` stops the render for all 12; existing Applications keep running but stop reconciling from the ApplicationSet | Fail-safe but silent. The Preview Apps tab is the pre-flight check — see §8 |
+| Malformed config | The broken entry **drops out of the generated set**; the render does *not* halt for the others. Measured 2026-08-13 — see §11 | `preserveResourcesOnDeletion: true` keeps workloads alive whichever way the controller resolves a reduced set. `applicationsSync: create-update` would remove the deletion path entirely |
 
 ## 6. Testing
 
@@ -314,3 +314,67 @@ Two documents are still in scope:
 - `base-apps/crossplane-system/secret-store.yaml` sits at the umbrella chart's root rather than under `templates/`, so Argo is almost certainly not applying it. Pre-existing and unchanged by this work.
 - `CLAUDE.md` imports `@AGENTS.md`, which does not exist in the repository.
 - The Argo CD version pin in `terraform/modules/argocd/variables.tf:13` carries a TODO to move off the `3.5.0-rc2` binaries once argo-helm publishes a 3.5 chart. That is now unblocked: 3.5.1 GA shipped 2026-08-12 and argo-cd chart 10.3.3 shipped 2026-08-13.
+
+## 11. What the pilot measured (2026-08-13)
+
+The cutover is live and verified: all 12 Applications generated, Synced, Healthy,
+carrying no finalizer, with every live spec matching its golden exactly. The S3
+buckets and IAM users behind the three Crossplane-backed apps survived the prune.
+
+Acceptance criterion 5 — the deliberate break — was then run by pointing the
+Preview tab's sandboxed generator at a branch with the `namespace` key deleted
+from `appsets/managed-apps/ecr-auth.yaml`. It produced two findings.
+
+### 11.1 Preview works, and the error is precise
+
+```
+failed to execute go template {{ .namespace }}: template: base:1:3:
+executing "base" at <.namespace>: map has no entry for key "namespace"
+```
+
+It names the failing template expression and the missing key, and the logged
+`params` dump shows every config's resolved values, so the offending file is
+identifiable. As a pre-flight check this is genuinely useful.
+
+Note the workflow is not the one §8 assumed. The generator is pinned to
+`revision: main`, so a change on a branch is invisible to Preview. Exercising it
+means editing `revision` **inside the Preview tab's sandbox** — those edits are
+never saved — and re-previewing. Opening a PR does nothing on its own.
+
+### 11.2 The render does NOT halt for the whole set — §5.4 was wrong
+
+The controller logged:
+
+```
+level=error msg="error generating application from params" ... ecr-auth ...
+level=info  msg="generated 11 applications" applicationset=managed-apps
+```
+
+Eleven, not zero. The broken entry is skipped and the rest render normally. This
+matters more than the error message, because a reduced generated set is the same
+signal the controller receives when an app is legitimately removed from Git —
+i.e. the deletion path.
+
+What the controller then does with a partial result is **not settled by this
+evidence**, and upstream reports conflict: [argo-cd#16832](https://github.com/argoproj/argo-cd/issues/16832)
+describes the controller logging "generated x applications" while creating none,
+whereas [argo-cd#18780](https://github.com/argoproj/argo-cd/issues/18780) and
+[argo-cd#9227](https://github.com/argoproj/argo-cd/issues/9227) are about reduced
+sets causing deletions. Determining which applies here would require merging the
+broken config, which is not worth doing to a production cluster.
+
+Either way `preserveResourcesOnDeletion: true` holds the important line: the
+workloads survive. But the failure mode is *partial and silent* — eleven apps
+look perfectly healthy — rather than the clean whole-set freeze §5.4 predicted.
+
+### 11.3 Consequences for the design
+
+- §4.3's choice of `applicationsSync` default (`create-update-delete`) was made on
+  the belief that a malformed config produced a harmless freeze. That belief is
+  now falsified, and `create-update` deserves reconsideration: it makes the
+  deletion path impossible at the cost of leaving an orphan Application behind
+  when a config is legitimately removed.
+- `tests/appset/` catches this class of error at PR time — the break reddens three
+  tests — so Preview's marginal value here is smaller than §1.1 assumed. Preview's
+  real value is the class CI cannot see: a generator whose glob silently matches
+  nothing, or a template edit whose blast radius is not obvious from the diff.
