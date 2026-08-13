@@ -59,3 +59,6 @@ docs/research/
 # read-only for design work) — never tracked here, neither as files nor as a
 # submodule gitlink.
 docs/reference/claude-agents/
+
+# Superpowers SDD scratch workspace (ledgers, briefs, review packages)
+.superpowers/
