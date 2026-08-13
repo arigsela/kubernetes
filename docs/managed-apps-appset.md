@@ -76,11 +76,15 @@ leaving the app's config in `appsets/managed-apps/`. Adding the hand-written
 manifest back without removing the config would put the app under both
 `master-app` and `managed-apps` at once: two Applications generated from two
 different sources for the same `base-apps/<app>` directory. This is exactly
-the double-ownership `tests/appset/test_disjoint.py` exists to catch: with
-both in place, the Application `name` shows up in both the generated set and
-the hand-written set, and `test_appset_names_disjoint_from_app_of_apps` fails
-on the shared name — which is CI catching the mistake, not evidence the
-mistake is safe to make.
+the double-ownership `tests/appset/test_disjoint.py` exists to catch, and it
+catches it either way the manifest comes back. Keep the name `<app>` and its
+Application `name` shows up in both the generated set and the hand-written
+set, failing `test_appset_names_disjoint_from_app_of_apps` on the shared name.
+Rename it to dodge that check and both Applications still point
+`sourcePath`/`spec.source.path` at `base-apps/<app>`, failing
+`test_appset_source_paths_disjoint_from_app_of_apps` on the shared path
+instead — which is CI catching the mistake, not evidence the mistake is safe
+to make.
 
 The correct fix is to move the app back out of `managed-apps` entirely:
 
@@ -108,10 +112,22 @@ them up deliberately if that is what you want.
 
 ## Rollback
 
-`git revert` the commit. Deleting the ApplicationSet cascades to its generated
-Applications, but `preserveResourcesOnDeletion: true` means the resources
-survive; restoring the hand-written `base-apps/<app>.yaml` files puts them back
-under `master-app`.
+`git revert` the branch's merge/squash commit as a whole, not just the
+individual commit that swapped the 12 Applications for the ApplicationSet.
+The swap commit is only one step in this branch; the ApplicationSet manifest,
+its pinned-template test, and this runbook were added in later commits on the
+same branch. Reverting just the swap commit leaves those later commits in
+place while removing `base-apps/managed-apps.yaml` out from under them, so
+`tests/appset/test_disjoint.py` fails: the tests that read the ApplicationSet
+manifest error because it's gone, and the restored hand-written
+`base-apps/<app>.yaml` files collide with the still-present
+`appsets/managed-apps/` configs. Reverting the whole branch's merge/squash
+commit removes the ApplicationSet, the configs, and the tests together, which
+is coherent and leaves CI green.
+
+Deleting the ApplicationSet cascades to its generated Applications, but
+`preserveResourcesOnDeletion: true` means the resources survive; restoring the
+hand-written `base-apps/<app>.yaml` files puts them back under `master-app`.
 
 ## Failure modes
 

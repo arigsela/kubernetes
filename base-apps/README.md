@@ -15,11 +15,11 @@ the `managed-apps` ApplicationSet from configs in `appsets/managed-apps/` — se
 ### Infrastructure Components
 - **vault** - Secret management with Kubernetes authentication
 - **external-secrets** - Vault-to-Kubernetes secret synchronization
-- **crossplane-aws-provider** - AWS resource provisioning (S3, IAM)
+- **crossplane-aws-provider** (managed) - AWS resource provisioning (S3, IAM)
 - **cert-manager** - TLS certificate automation via LetsEncrypt
-- **loki-aws-infrastructure** - Loki S3 bucket and IAM setup
+- **loki-aws-infrastructure** (managed) - Loki S3 bucket and IAM setup
 - **logging** - Loki/Prometheus/Grafana observability stack
-- **ecr-auth** - ECR credential synchronization CronJob
+- **ecr-auth** (managed) - ECR credential synchronization CronJob
 
 ### Terraform CI/CD
 - **atlantis** - PR-based Terraform plan/apply with Infracost cost estimation
@@ -30,7 +30,7 @@ the `managed-apps` ApplicationSet from configs in `appsets/managed-apps/` — se
 
 ### Policy Engine (Kyverno)
 - **kyverno** - Kubernetes policy engine (Helm chart v3.7.1) for validating, mutating, and generating resources
-- **kyverno-policies** - Custom ClusterPolicies:
+- **kyverno-policies** (managed) - Custom ClusterPolicies:
   - `inject-ecr-pull-secret` - Automatically injects `imagePullSecrets` into pods referencing ECR images
   - `generate-ecr-secret` - Clones `ecr-registry` secret into new namespaces on creation
   - `require-labels` - Requires `app.kubernetes.io/name` on Deployments/StatefulSets (Audit)

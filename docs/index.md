@@ -40,6 +40,7 @@ in `scripts/validate-agent-*.py`.
 | `vault-auto-unseal-plan.md` | Vault KMS auto-unseal plan |
 | `openclaw-setup-guide.md` | OpenClaw app setup |
 | `feed-aggregator-refactor-plan.md` | Feed-aggregator refactor plan |
+| `managed-apps-appset.md` | The `managed-apps` ApplicationSet: config schema, adding/removing apps, rollback |
 
 ## Specs & plans
 
