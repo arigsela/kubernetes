@@ -1,0 +1,4 @@
+name: kyverno-policies
+sourcePath: base-apps/kyverno-policies
+namespace: kyverno
+syncOptions: []

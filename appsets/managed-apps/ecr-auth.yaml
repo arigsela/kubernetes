@@ -1,0 +1,4 @@
+name: ecr-auth
+sourcePath: base-apps/ecr-auth
+namespace: kube-system
+syncOptions: []

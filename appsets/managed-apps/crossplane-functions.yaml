@@ -1,0 +1,7 @@
+# Crossplane composition functions.
+# Synced before crossplane-compositions (lower wave on the Function CR inside).
+name: crossplane-functions
+sourcePath: base-apps/crossplane-functions
+namespace: crossplane-system
+syncOptions:
+  - CreateNamespace=false

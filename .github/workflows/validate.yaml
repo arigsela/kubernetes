@@ -28,7 +28,10 @@ jobs:
           # (base-apps/<app>.yaml). Without 'base-apps/*.yaml' those files are
           # never linted or schema-validated, and the jobs below skip while
           # reporting green.
-          PATHSPEC=('base-apps/*.yaml' 'base-apps/**/*.yaml')
+          # appsets/*/*.yaml holds ApplicationSet generator configs. They are
+          # plain data (no 'kind'), so kubernetes-validate skips them below,
+          # but yamllint must still cover them.
+          PATHSPEC=('base-apps/*.yaml' 'base-apps/**/*.yaml' 'appsets/*/*.yaml')
           if [ "${{ github.event_name }}" = "push" ]; then
             FILES=$(git diff --name-only --diff-filter=d HEAD~1 HEAD -- "${PATHSPEC[@]}" | tr '\n' ' ')
           else
@@ -65,10 +68,11 @@ jobs:
           sudo mv kubeconform /usr/local/bin/
       - name: Validate changed Kubernetes manifests
         run: |
-          # base-apps/<app>/mkdocs.yml is Backstage TechDocs config, not a
-          # Kubernetes manifest (no kind), so kubeconform would fail it. Drop
-          # those before validating; yamllint still covers them.
-          FILES=$(echo "${{ needs.changed-files.outputs.yaml_files }}" | tr ' ' '\n' | grep -v '/mkdocs\.yml$' || true)
+          # base-apps/<app>/mkdocs.yml is Backstage TechDocs config and
+          # appsets/*/*.yaml are ApplicationSet generator configs. Neither is a
+          # Kubernetes manifest (no kind), so kubeconform would fail them. Drop
+          # both before validating; yamllint still covers them.
+          FILES=$(echo "${{ needs.changed-files.outputs.yaml_files }}" | tr ' ' '\n' | grep -v -e '/mkdocs\.yml$' -e '^appsets/' || true)
           if [ -z "$FILES" ]; then echo "No Kubernetes manifests to validate."; exit 0; fi
           echo "$FILES" | xargs kubeconform \
             -summary \
@@ -286,3 +290,21 @@ jobs:
       # TESTED — and the redaction logic is exactly what you cannot have two of.
       - name: Check the agent-audit CronJob is in sync with the script
         run: python scripts/gen-agent-audit-cronjob.py --check --repo-root .
+
+  # The ApplicationSet configs are not schema-validated by kubernetes-validate
+  # (they have no kind), and a malformed one does not fail loudly at apply time:
+  # goTemplateOptions missingkey=error halts the render for ALL 12 apps and the
+  # existing Applications silently stop reconciling. These tests are the loud
+  # failure, including a golden check that no config changes an app's spec.
+  appset-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run managed-apps ApplicationSet config tests
+        run: python -m pytest tests/appset/ -q
