@@ -1,0 +1,4 @@
+name: argo-workflows-aws-infrastructure
+sourcePath: base-apps/argo-workflows-aws-infrastructure
+namespace: argo-workflows
+syncOptions: []

@@ -1,0 +1,8 @@
+name: agent-audit-aws-infrastructure
+sourcePath: base-apps/agent-audit-aws-infrastructure
+# The AccessKey's connection secret is written into postgresql, where the
+# export CronJob runs alongside the SELECT-only DB credential.
+namespace: postgresql
+syncOptions:
+  - CreateNamespace=true
+  - ServerSideApply=true

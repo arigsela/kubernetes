@@ -1,0 +1,4 @@
+name: argo-workflow-tasks
+sourcePath: base-apps/argo-workflow-tasks
+namespace: argo-workflows
+syncOptions: []

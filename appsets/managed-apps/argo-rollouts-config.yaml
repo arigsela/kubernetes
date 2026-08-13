@@ -1,0 +1,6 @@
+name: argo-rollouts-config
+# Named -config to avoid colliding with the argo-rollouts Helm chart
+# Application, which owns the same namespace.
+sourcePath: base-apps/argo-rollouts
+namespace: argo-rollouts
+syncOptions: []

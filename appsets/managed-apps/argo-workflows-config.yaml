@@ -1,0 +1,6 @@
+name: argo-workflows-config
+# Named -config to avoid colliding with the argo-workflows Helm chart
+# Application, which owns the same namespace.
+sourcePath: base-apps/argo-workflows
+namespace: argo-workflows
+syncOptions: []

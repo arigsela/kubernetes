@@ -1,0 +1,4 @@
+name: crossplane-aws-provider
+sourcePath: base-apps/crossplane-aws-provider
+namespace: crossplane-system
+syncOptions: []

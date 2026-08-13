@@ -1,0 +1,6 @@
+# XRDs and Compositions (cluster-scoped resources).
+name: crossplane-compositions
+sourcePath: base-apps/crossplane-compositions
+namespace: crossplane-system
+syncOptions:
+  - CreateNamespace=false

@@ -1,0 +1,7 @@
+name: loki-aws-infrastructure
+sourcePath: base-apps/loki-aws-infrastructure
+namespace: logging
+syncOptions:
+  - CreateNamespace=true
+  # ServerSideApply for better handling of managed fields
+  - ServerSideApply=true

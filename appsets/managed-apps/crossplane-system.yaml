@@ -1,0 +1,8 @@
+# base-apps/crossplane-system is an umbrella Helm chart (Chart.yaml declaring a
+# crossplane dependency), not a plain manifest directory. Argo auto-detects
+# that from the path; nothing extra is needed here.
+name: crossplane-system
+sourcePath: base-apps/crossplane-system
+namespace: crossplane-system
+syncOptions:
+  - CreateNamespace=true
