@@ -197,53 +197,6 @@ path: /
 
 ## Istio Ambient Mesh
 
-### Enrolling a Namespace in the Mesh
-
-To add a namespace to the Istio Ambient mesh (L4 mTLS):
-
-```yaml
-# Add to base-apps/istio-ambient-config/namespace-labels.yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: my-namespace
-  labels:
-    istio.io/dataplane-mode: ambient
-```
-
-### Adding L7 (HTTP) Processing
-
-To enable L7 metrics and policies, add a waypoint proxy:
-
-```yaml
-# Add to base-apps/istio-ambient-config/waypoint-proxy.yaml
-apiVersion: gateway.networking.k8s.io/v1
-kind: Gateway
-metadata:
-  name: my-namespace-waypoint
-  namespace: my-namespace
-  labels:
-    istio.io/waypoint-for: all
-spec:
-  gatewayClassName: istio-waypoint
-  listeners:
-    - name: mesh
-      port: 15008
-      protocol: HBONE
-      allowedRoutes:
-        namespaces:
-          from: Same
-```
-
-Then reference the waypoint in the namespace:
-
-```yaml
-metadata:
-  labels:
-    istio.io/dataplane-mode: ambient
-    istio.io/use-waypoint: my-namespace-waypoint
-```
-
 ### Viewing Mesh Metrics
 
 - **Grafana Dashboard**: Access the "Istio Ambient Mesh" dashboard in the Istio folder

@@ -39,11 +39,18 @@ collide with the `argo-rollouts` Helm chart Application.
 ## Adding an app
 
 1. Create `appsets/managed-apps/<name>.yaml` with the four keys.
-2. Capture the expected spec in `tests/appset/golden/<name>.yaml` if you are
-   converting an existing Application; for a brand-new app, write the golden to
-   match what you expect and let `test_golden_equivalence` hold you to it.
-3. Run `python -m pytest tests/appset/ -q`.
-4. Open a PR and check the **Preview Apps** tab on the ApplicationSet in the
+2. Add a golden at `tests/appset/golden/<name>.yaml` — this is required for
+   every config, not just conversions: `test_golden_equivalence` asserts
+   `set(configs) == set(goldens)`, so a config with no golden fails the same
+   as a mismatched one. Capture the expected spec by copying the existing
+   Application's `spec:` if you are converting one; for a brand-new app,
+   write the golden to match what you expect and let the test hold you to it.
+3. Add `<name>` to `EXPECTED_APPS` in `tests/appset/test_managed_apps.py`.
+   `test_expected_configs_present` asserts the config directory's stems equal
+   that hardcoded set exactly, so a new config with no matching entry fails
+   it even though everything else about the config is correct.
+4. Run `python -m pytest tests/appset/ -q`.
+5. Open a PR and check the **Preview Apps** tab on the ApplicationSet in the
    Argo CD UI before merging. It shows exactly which Applications the change
    would produce.
 
@@ -68,14 +75,20 @@ That message reads as "add back `base-apps/<app>.yaml`" — do not do that while
 leaving the app's config in `appsets/managed-apps/`. Adding the hand-written
 manifest back without removing the config would put the app under both
 `master-app` and `managed-apps` at once: two Applications generated from two
-different sources for the same `base-apps/<app>` directory, which is exactly
-the double-ownership this pattern exists to prevent, and which
-`tests/appset/test_disjoint.py` would (rightly) start failing to catch if it
-ever ran against the live tree.
+different sources for the same `base-apps/<app>` directory. This is exactly
+the double-ownership `tests/appset/test_disjoint.py` exists to catch: with
+both in place, the Application `name` shows up in both the generated set and
+the hand-written set, and `test_appset_names_disjoint_from_app_of_apps` fails
+on the shared name — which is CI catching the mistake, not evidence the
+mistake is safe to make.
 
 The correct fix is to move the app back out of `managed-apps` entirely:
 
-1. Delete `appsets/managed-apps/<app>.yaml` and `tests/appset/golden/<app>.yaml`.
+1. Delete `appsets/managed-apps/<app>.yaml`, its golden at
+   `tests/appset/golden/<app>.yaml`, and its entry in `EXPECTED_APPS`
+   (`tests/appset/test_managed_apps.py`) — `test_expected_configs_present`
+   fails otherwise, since the config directory's stems no longer match that
+   hardcoded set.
 2. Restore a hand-written `base-apps/<app>.yaml`, adding the
    `spec.source.directory.exclude` the agent-docs contract requires.
 3. Run `python -m pytest tests/appset/ -q` to confirm the app is gone from the
@@ -84,11 +97,14 @@ The correct fix is to move the app back out of `managed-apps` entirely:
 
 ## Removing an app
 
-Delete its config file and its golden. `applicationsSync` is at its default, so
-the Application is deleted on the next reconcile. Because
-`preserveResourcesOnDeletion: true` is set, **its Kubernetes resources are not
-deleted** — they keep running, unmanaged. Clean them up deliberately if that is
-what you want.
+Delete its config file, its golden, and its entry in `EXPECTED_APPS`
+(`tests/appset/test_managed_apps.py`) — `test_expected_configs_present`
+asserts the config directory's stems equal that hardcoded set exactly, so it
+fails the moment the config is gone if the set isn't updated too.
+`applicationsSync` is at its default, so the Application is deleted on the
+next reconcile. Because `preserveResourcesOnDeletion: true` is set, **its
+Kubernetes resources are not deleted** — they keep running, unmanaged. Clean
+them up deliberately if that is what you want.
 
 ## Rollback
 
