@@ -110,7 +110,7 @@ The variant that avoids the move — generating over `base-apps/*` with ~38 excl
 
 ### 3.2 Why git files wins here
 
-Directories stay exactly where they are, so all 70 references remain valid and no script or test breaks. The config files are purely additive. Both `path` ≠ `name` cases and all four `syncOptions` variants are expressed as ordinary config data, so no `templatePatch` — and therefore no YAML-inside-a-Go-template string escaping — is needed anywhere.
+Directories stay exactly where they are, so all 70 references remain valid and no script or test breaks. The config files are purely additive. Both `path` ≠ `name` cases and all four `syncOptions` variants are expressed as ordinary config data, and the only `templatePatch` required is the three-line `syncOptions` block explained in §4.3 — no per-application patching and no conditional logic keyed on application names.
 
 ## 4. Architecture
 
@@ -189,15 +189,29 @@ spec:
         automated:
           prune: true
           selfHeal: true
-        {{- if .syncOptions }}
+  templatePatch: |
+    spec:
+      syncPolicy:
         syncOptions:
-        {{- range .syncOptions }}
+          {{- range .syncOptions }}
           - {{ . }}
-        {{- end }}
-        {{- end }}
+          {{- end }}
 ```
 
 `applicationsSync` is left at its default (`create-update-delete`), so the set stays fully declarative: removing a config file removes the Application.
+
+#### Why `syncOptions` needs `templatePatch`
+
+Go template control flow (`{{- if }}`, `{{- range }}`) cannot appear in the structured `template` field — that field must deserialise as an `ApplicationSpec`, and Argo renders only its *string values* through Go templating, so the number of elements in a list cannot vary. Control flow is supported **only** inside `templatePatch`, which is a block string rendered to YAML and then merged onto the template.
+
+This is the one place `templatePatch` is unavoidable, and it is three lines. Its behaviour at both ends is correct:
+
+- **Non-empty `syncOptions`** → renders a proper YAML list. `templatePatch` replaces list fields wholesale rather than merging them, which is exactly the desired semantic here since `template` declares no `syncOptions`.
+- **Empty `syncOptions: []`** → renders `syncOptions:` with no items, i.e. YAML null. In a JSON merge patch, a null value deletes the key; deleting a key the template never set is a no-op, so the generated Application simply has no `syncOptions`. That matches the seven applications that have none today.
+
+`spec.syncPolicy.automated` survives the patch because merge-patch semantics merge maps recursively and only remove keys explicitly set to null.
+
+Using `templatePatch` rather than inline control flow also keeps `base-apps/managed-apps.yaml` valid YAML and schema-valid, so `yaml-lint` and `kubernetes-validate` in `.github/workflows/validate.yaml` both continue to cover it.
 
 ### 4.4 Zero behaviour change
 
@@ -258,6 +272,8 @@ Phase 0 does not need reverting — no-finalizer is the intended end state eithe
 ## 6. Testing
 
 New `tests/appset/` with a CI job matching the existing per-directory convention in `.github/workflows/validate.yaml` (`pip install pyyaml==6.0.2 pytest==8.3.3` → `python -m pytest tests/appset/ -q`).
+
+The `changed-files` job's `PATHSPEC` at `.github/workflows/validate.yaml:31` currently covers only `base-apps/*.yaml` and `base-apps/**/*.yaml`, so files under `appsets/` would be neither linted nor schema-validated — the exact silently-green failure the comment above that pathspec warns about. It gains `appsets/*/*.yaml`, and the `kubernetes-validate` job's filter (which already drops `mkdocs.yml`) also drops `appsets/` paths, since the config files are plain data with no `kind`.
 
 1. Every config has all four keys, with correct types.
 2. Every `sourcePath` resolves to a non-empty directory.
