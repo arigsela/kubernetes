@@ -1,0 +1,12 @@
+destination:
+  namespace: argo-workflows
+  server: https://kubernetes.default.svc
+project: default
+source:
+  path: base-apps/argo-workflows
+  repoURL: https://github.com/arigsela/kubernetes
+  targetRevision: main
+syncPolicy:
+  automated:
+    prune: true
+    selfHeal: true
