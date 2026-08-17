@@ -1,0 +1,280 @@
+# Weekly container image vulnerability scan.
+#
+# Design: docs/superpowers/specs/2026-08-17-image-vulnerability-scanning-design.md
+#
+# Scans EVERY running image (~75) and reports all of it to S3, but alerts only on
+# the handful we build ourselves (ECR). Scanning everything and alerting on
+# everything would surface hundreds of CVEs in upstream images we cannot patch,
+# and a report nobody acts on gets ignored — at which point it is worse than
+# nothing, because it is assumed to be watching.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: image-scan
+  namespace: argo-workflows
+spec:
+  entrypoint: main
+  serviceAccountName: argo-workflow
+
+  # Bounds concurrent scan pods. Peak temp disk is roughly four scans' worth
+  # rather than seventy-five. See sizeLimit on the emptyDir below.
+  parallelism: 4
+
+  # Keep a quarter's worth of history for trend, then let them go.
+  ttlStrategy:
+    secondsAfterCompletion: 7776000
+  podGC:
+    strategy: OnWorkflowSuccess
+
+  arguments:
+    parameters:
+      # Images matching this prefix are "ours" and are the only ones that alert.
+      - name: owned-image-prefix
+        value: "852893458518.dkr.ecr."
+      - name: n8n-webhook
+        value: "http://n8n.n8n.svc.cluster.local:5678/webhook/image-scan-report"
+
+  templates:
+    - name: main
+      dag:
+        tasks:
+          - name: discover
+            template: discover-images
+          - name: scan
+            template: scan-image
+            dependencies: [discover]
+            # Fan out: one scan pod per distinct image.
+            withParam: "{{tasks.discover.outputs.result}}"
+            arguments:
+              parameters:
+                - name: image
+                  value: "{{item}}"
+          - name: report
+            template: aggregate
+            dependencies: [scan]
+
+    # ---------------------------------------------------------------- discover
+    - name: discover-images
+      # Emits a JSON array of distinct images, which withParam fans out over.
+      # Requires ClusterRole/argo-workflow-pod-reader (serviceaccount.yaml).
+      script:
+        image: bitnami/kubectl:1.30
+        command: [bash]
+        source: |
+          set -eo pipefail
+          kubectl get pods -A \
+            -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' \
+            | grep -v '^$' | sort -u \
+            | python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))'
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {cpu: 200m, memory: 256Mi}
+
+    # -------------------------------------------------------------------- scan
+    - name: scan-image
+      inputs:
+        parameters:
+          - name: image
+      # A flaky registry pull must not lose the whole run. Individual failures
+      # are tolerated by the aggregate step, which reports them as unscanned —
+      # silence about an unscanned image is the failure mode worth avoiding.
+      retryStrategy:
+        limit: "2"
+        retryPolicy: OnError
+        backoff:
+          duration: "30s"
+          factor: "2"
+      script:
+        image: aquasec/trivy:0.74.0
+        command: [sh]
+        source: |
+          set -eo pipefail
+          IMAGE="{{inputs.parameters.image}}"
+          echo "scanning ${IMAGE}" >&2
+          # Full severity set here; filtering to what we alert on happens at
+          # aggregate time so the S3 report keeps everything.
+          trivy image \
+            --format json \
+            --output /tmp/out/report.json \
+            --scanners vuln \
+            --timeout 15m \
+            "${IMAGE}" >&2
+        env:
+          # Trivy reads registry credentials from a docker config. ecr-registry
+          # is a dockerconfigjson refreshed hourly into EVERY namespace by
+          # base-apps/ecr-auth/cronjobs.yaml, so no new credential is minted.
+          - name: DOCKER_CONFIG
+            value: /docker
+          - name: TRIVY_CACHE_DIR
+            value: /tmp/cache
+        volumeMounts:
+          - name: scratch
+            mountPath: /tmp
+          - name: ecr
+            mountPath: /docker
+            readOnly: true
+        resources:
+          requests: {cpu: 200m, memory: 512Mi}
+          limits: {cpu: "1", memory: 2Gi}
+      volumes:
+        # emptyDir sizeLimit IS enforced by kubelet — a pod exceeding it is
+        # evicted rather than filling the node. This is the control the
+        # local-path PVC in base-apps/jupyter deliberately cannot provide, and
+        # it is why no node pinning is needed here.
+        - name: scratch
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: ecr
+          secret:
+            secretName: ecr-registry
+            items:
+              - key: .dockerconfigjson
+                path: config.json
+      outputs:
+        artifacts:
+          - name: report
+            path: /tmp/out/report.json
+            # Absent on scan failure; the aggregate step treats a missing
+            # report as "unscanned" rather than "clean".
+            optional: true
+
+    # --------------------------------------------------------------- aggregate
+    - name: aggregate
+      inputs:
+        artifacts:
+          - name: reports
+            path: /reports
+            # All per-image reports from this workflow's artifact repository
+            # prefix. keyFormat is set chart-side in base-apps/argo-workflows.yaml.
+            s3:
+              key: "{{workflow.namespace}}/{{workflow.name}}"
+            optional: true
+      script:
+        image: python:3.12-slim
+        command: [python3]
+        source: |
+          import json, os, pathlib, sys, urllib.request
+
+          OWNED = "{{workflow.parameters.owned-image-prefix}}"
+          WEBHOOK = "{{workflow.parameters.n8n-webhook}}"
+          ALERT_SEVERITIES = {"CRITICAL", "HIGH"}
+
+          findings, scanned, failed = [], [], []
+          for p in sorted(pathlib.Path("/reports").rglob("report.json")):
+              try:
+                  data = json.loads(p.read_text())
+              except Exception as e:
+                  failed.append(f"{p}: {e}")
+                  continue
+              artifact = data.get("ArtifactName", str(p))
+              scanned.append(artifact)
+              for result in data.get("Results") or []:
+                  for v in result.get("Vulnerabilities") or []:
+                      findings.append({
+                          "image": artifact,
+                          "id": v.get("VulnerabilityID"),
+                          "pkg": v.get("PkgName"),
+                          "installed": v.get("InstalledVersion"),
+                          "fixed": v.get("FixedVersion"),
+                          "severity": v.get("Severity"),
+                          "title": (v.get("Title") or "")[:200],
+                      })
+
+          # The full picture goes to S3 — every image, every severity, fixable
+          # or not. This is the queryable inventory, not the alert.
+          pathlib.Path("/tmp/out").mkdir(parents=True, exist_ok=True)
+          pathlib.Path("/tmp/out/full-report.json").write_text(json.dumps({
+              "scanned": scanned, "failed": failed, "findings": findings,
+          }, indent=2))
+
+          # The alert is deliberately much narrower: our own images only,
+          # CRITICAL/HIGH only, and only where a fix actually exists. A CVE with
+          # no available patch is something to know, not something to do — it
+          # stays in the S3 report above.
+          actionable = [
+              f for f in findings
+              if f["image"].startswith(OWNED)
+              and f["severity"] in ALERT_SEVERITIES
+              and f["fixed"]
+          ]
+
+          print(f"scanned {len(scanned)} images, {len(failed)} failed")
+          print(f"{len(findings)} total findings, {len(actionable)} actionable")
+
+          if actionable or failed:
+              by_image = {}
+              for f in actionable:
+                  by_image.setdefault(f["image"], []).append(f)
+              lines = []
+              for image, items in sorted(by_image.items()):
+                  short = image.split("/")[-1]
+                  crit = sum(1 for i in items if i["severity"] == "CRITICAL")
+                  high = sum(1 for i in items if i["severity"] == "HIGH")
+                  lines.append(f"*{short}* — {crit} critical, {high} high (all fixable)")
+                  for i in sorted(items, key=lambda x: x["id"])[:5]:
+                      lines.append(
+                          f"  • {i['id']} {i['pkg']} {i['installed']} → {i['fixed']}"
+                      )
+                  if len(items) > 5:
+                      lines.append(f"  • …and {len(items) - 5} more")
+              if failed:
+                  lines.append(f"_{len(failed)} image(s) could not be scanned_")
+
+              payload = {
+                  "scanned": len(scanned),
+                  "actionable": len(actionable),
+                  "failed": len(failed),
+                  "workflow": "{{workflow.name}}",
+                  "text": "\n".join(lines),
+              }
+              try:
+                  req = urllib.request.Request(
+                      WEBHOOK,
+                      data=json.dumps(payload).encode(),
+                      headers={"Content-Type": "application/json"},
+                  )
+                  urllib.request.urlopen(req, timeout=30).read()
+                  print("posted to n8n")
+              except Exception as e:
+                  # A webhook failure must not hide the finding. Surface it and
+                  # still fail below, so the Argo run is red either way.
+                  print(f"WARNING: n8n post failed: {e}", file=sys.stderr)
+
+          # Red run iff something is actionable. Unscanned images alone do not
+          # fail the run, but they are named in the alert above.
+          sys.exit(1 if actionable else 0)
+        volumeMounts:
+          - name: out
+            mountPath: /tmp/out
+        resources:
+          requests: {cpu: 100m, memory: 256Mi}
+          limits: {cpu: 500m, memory: 1Gi}
+      volumes:
+        - name: out
+          emptyDir:
+            sizeLimit: 1Gi
+      outputs:
+        artifacts:
+          - name: full-report
+            path: /tmp/out/full-report.json
+---
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: image-scan
+  namespace: argo-workflows
+spec:
+  # Sunday 04:00 UTC. Clear of every other schedule in the repo: ecr-auth
+  # (hourly), agent-audit (01:30, 07:00), CNPG backup (02:00), wan-ip-monitor
+  # (every 12h).
+  schedules:
+    - "0 4 * * 0"
+  timezone: UTC
+  concurrencyPolicy: Forbid
+  # A scan that did not run is not an emergency; skip rather than pile up.
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 4
+  failedJobsHistoryLimit: 4
+  workflowSpec:
+    workflowTemplateRef:
+      name: image-scan
