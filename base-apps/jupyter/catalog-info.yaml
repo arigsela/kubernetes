@@ -12,6 +12,10 @@ metadata:
 spec:
   type: service
   lifecycle: production
-  owner: platform
+  # Fully qualified, matching the other 21 apps. A bare `platform` resolves
+  # against this entity's own namespace (`jupyter`) rather than `default`, so
+  # validate-catalog-refs.py cannot find it. The agent-docs template still
+  # carries the bare form.
+  owner: group:default/platform
   system: default/platform-tooling
   dependsOn: []
