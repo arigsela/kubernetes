@@ -78,17 +78,18 @@ spec:
               # A runaway cell must not evict neighbours on the node.
               memory: "4Gi"
               cpu: "2000m"
+          # TCP check, not HTTP: /api requires a token, so an unauthenticated
+          # HTTP probe can't tell "wedged" from "working" and would fail
+          # permanently, taking the pod out of Ready forever.
           livenessProbe:
-            httpGet:
-              path: /api
+            tcpSocket:
               port: 8888
             initialDelaySeconds: 60
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 6
           readinessProbe:
-            httpGet:
-              path: /api
+            tcpSocket:
               port: 8888
             initialDelaySeconds: 30
             periodSeconds: 10
