@@ -18,6 +18,10 @@ sources:
 
 ## Failure modes
 
+### Symptom: pod CrashLoopBackOff, logs end with `ValueError: invalid literal for int() with base 10: 'tcp://10.43.x.x:8888'`
+- **Check:** `kubectl -n jupyter get deploy jupyter -o jsonpath='{.spec.template.spec.enableServiceLinks}'`
+- **Fix:** it must be `false`. Kubernetes injects Docker-link-style env vars for every Service in the namespace, so `Service/jupyter` sets `JUPYTER_PORT=tcp://<clusterIP>:8888`, which `jupyter_server` tries to parse as a port number. This is a name collision between the Service and the app's own env var, not a Jupyter misconfiguration — do not chase it in the `args:` block. Renaming the Service would also fix it, but the HTTPRoute and NetworkPolicy both target `jupyter` by name.
+
 ### Symptom: pod CrashLoopBackOff, logs show a permission error on /home/jovyan
 - **Check:** `kubectl -n jupyter get deploy jupyter -o jsonpath='{.spec.template.spec.securityContext}'`
 - **Fix:** `fsGroup` must be `100` and `runAsUser` `1000`. Any other value leaves the mounted home unwritable.

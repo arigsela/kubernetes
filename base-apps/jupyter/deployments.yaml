@@ -24,6 +24,18 @@ spec:
       # NO SERVICEACCOUNT TOKEN. This pod executes arbitrary Python; with a
       # token it would be a general-purpose cluster client. See design §3.3.
       automountServiceAccountToken: false
+      # MUST stay false, and not only for tidiness. Kubernetes injects
+      # Docker-link-style env vars for every Service in the namespace, so
+      # `Service/jupyter` produces JUPYTER_PORT=tcp://10.43.x.x:8888 — and
+      # jupyter_server reads JUPYTER_PORT expecting an integer. With links on,
+      # the container dies at startup with
+      #   ValueError: invalid literal for int() with base 10: 'tcp://...:8888'
+      # which reads like a Jupyter config bug and is really a name collision
+      # between the Service and the app's own env var. Observed on first deploy.
+      # Turning links off is also the right posture regardless: the NetworkPolicy
+      # forbids this pod from reaching any in-cluster service, so it has no use
+      # for service-discovery env vars.
+      enableServiceLinks: false
       securityContext:
         # scipy-notebook runs as jovyan (1000) in group users (100). fsGroup
         # MUST be 100 or the mounted home is unwritable and the server exits.
