@@ -44,7 +44,7 @@ sources:
 
 ### Symptom: pod never becomes Ready after someone edits the probes; `Service/jupyter` has no endpoints
 - **Check:** `kubectl -n jupyter get deploy jupyter -o jsonpath='{.spec.template.spec.containers[0].livenessProbe}'`
-- **Fix:** it must stay `tcpSocket` on port `8888`, same for the readiness probe. Switching either to `httpGet` against `/api` fails permanently, because that endpoint requires a token an unauthenticated probe doesn't have — revert to `tcpSocket`.
+- **Fix:** it must stay `tcpSocket` on port `8888`, same for the readiness probe. Revert to `tcpSocket`. If you genuinely need an HTTP probe, `/api` is the **only** endpoint that answers unauthenticated (200); `/api/status` — the intuitive choice — returns 403 to a probe with no token and will hold the pod out of `Ready` forever. Measured surface is in `docs.md`.
 
 ### Symptom: pod Pending after a node reboot
 - **Check:** `kubectl -n jupyter describe pvc jupyter-pvc`

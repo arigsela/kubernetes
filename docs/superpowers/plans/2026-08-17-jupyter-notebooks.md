@@ -1064,7 +1064,20 @@ curl -s -o /dev/null -w 'with-token: %{http_code}\n' \
   -H "Authorization: token $TOKEN" https://jupyter.arigsela.com/api
 ```
 
-Expected: `no-token: 403` and `with-token: 200`. A `200` without a token means `JUPYTER_TOKEN` did not reach the container — stop and fix before proceeding.
+**Corrected after measuring against the live service (2026-08-17):** `/api` answers
+`200` **unauthenticated** — it is a version-discovery endpoint and the only one that
+does. Testing the auth boundary there proves nothing. Use an endpoint that actually
+holds data:
+
+```bash
+curl -s -o /dev/null -w 'no-token: %{http_code}\n' https://jupyter.arigsela.com/api/kernels
+curl -s -o /dev/null -w 'with-token: %{http_code}\n' \
+  -H "Authorization: token $TOKEN" https://jupyter.arigsela.com/api/kernels
+```
+
+Expected: `no-token: 403` and `with-token: 200`. A `200` without a token on
+`/api/kernels` means `JUPYTER_TOKEN` did not reach the container — stop and fix
+before proceeding, because that endpoint creates kernels.
 
 ---
 
