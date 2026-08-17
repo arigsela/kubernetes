@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jupyter
+  namespace: jupyter
+spec:
+  replicas: 1
+  strategy:
+    # local-path is ReadWriteOnce, so a rolling update would deadlock: the new
+    # pod cannot mount the volume until the old one releases it.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: jupyter
+  template:
+    metadata:
+      labels:
+        app: jupyter
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      # NO SERVICEACCOUNT TOKEN. This pod executes arbitrary Python; with a
+      # token it would be a general-purpose cluster client. See design §3.3.
+      automountServiceAccountToken: false
+      securityContext:
+        # scipy-notebook runs as jovyan (1000) in group users (100). fsGroup
+        # MUST be 100 or the mounted home is unwritable and the server exits.
+        runAsUser: 1000
+        runAsGroup: 100
+        fsGroup: 100
+        runAsNonRoot: true
+      containers:
+        - name: jupyter
+          image: quay.io/jupyter/scipy-notebook@sha256:807a696f0dd467e4e47cf8bb19ff14f31c1ad105966d3de8ab73f2db8af4c7c6
+          env:
+            # Jupyter's native token auth. Same credential for the browser and
+            # for Claude Code's /api/kernels calls.
+            - name: JUPYTER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: jupyter-secrets
+                  key: token
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: jupyter-s3-creds
+                  key: username
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jupyter-s3-creds
+                  key: attribute.secret
+            - name: AWS_DEFAULT_REGION
+              value: "us-east-1"
+            - name: JUPYTER_SCRATCH_BUCKET
+              value: "asela-jupyter-scratch"
+          args:
+            - "start-notebook.py"
+            # Bind all interfaces inside the pod.
+            - "--ServerApp.ip=0.0.0.0"
+            # Without this the server refuses connections whose Host header is
+            # not localhost, which is every request arriving via the Gateway.
+            - "--ServerApp.allow_remote_access=True"
+            # The websocket origin check compares against the request Host.
+            # Behind the Gateway that is the public hostname, so it must be
+            # named explicitly or /api/kernels websockets are rejected with 403
+            # while plain HTTP still works — a confusing half-broken state.
+            - "--ServerApp.allow_origin=https://jupyter.arigsela.com"
+            - "--ServerApp.root_dir=/home/jovyan"
+          ports:
+            - containerPort: 8888
+              name: http
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              # A runaway cell must not evict neighbours on the node.
+              memory: "4Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /api
+              port: 8888
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /api
+              port: 8888
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            # The WHOLE home, not the conventional work/ subdirectory. This is
+            # what makes ~/.local persistent, so `pip install --user` survives
+            # restarts without a custom image. See design §3.4.
+            - name: jupyter-home
+              mountPath: /home/jovyan
+            # The GitHub PAT, read at git-invocation time by the credential
+            # helper configured in the notebooks repo bootstrap. Mounted OUTSIDE
+            # the home on purpose: writing it into ~/.git-credentials would
+            # persist the credential onto the PVC, where it would survive
+            # rotation in Vault and outlive the secret it came from.
+            - name: git-credentials
+              mountPath: /etc/jupyter-secrets
+              readOnly: true
+      volumes:
+        - name: jupyter-home
+          persistentVolumeClaim:
+            claimName: jupyter-pvc
+        - name: git-credentials
+          secret:
+            secretName: jupyter-secrets
+            items:
+              - key: github-token
+                path: github-token
+            defaultMode: 0400

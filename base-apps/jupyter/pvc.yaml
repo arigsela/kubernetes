@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jupyter-pvc
+  namespace: jupyter
+  annotations:
+    # local-path reclaims Delete, so an Argo prune of this PVC destroys the
+    # data with it. Opt out of pruning: removing this volume must be a
+    # deliberate act, not a side effect of a manifest rename.
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 20Gi

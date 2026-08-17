@@ -1,0 +1,58 @@
+# THIS IS THE ISOLATION BOUNDARY for a pod that runs arbitrary Python.
+#
+# Requirements gathering established the notebooks need local compute, one S3
+# bucket, and PyPI — and NOTHING in-cluster. That constraint is what makes a
+# long-lived arbitrary-code pod tolerable, so it is enforced here rather than
+# left as a habit.
+#
+# The RFC1918 exclusions also cover the Kubernetes API server (192.168.0.100),
+# which is belt-and-braces: the pod additionally has no ServiceAccount token
+# (automountServiceAccountToken: false in deployments.yaml). Either control
+# alone would do; both together mean a single misconfiguration is not enough.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jupyter
+  namespace: jupyter
+spec:
+  podSelector:
+    matchLabels:
+      app: jupyter
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Only the ingress Gateway may reach the notebook server.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - protocol: TCP
+          port: 8888
+
+  egress:
+    # DNS. Deliberately unrestricted by destination: kube-dns lives in the
+    # service CIDR, which the RFC1918 exclusion below would otherwise block.
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # HTTPS to the public internet ONLY — S3, PyPI, GitHub. Every private
+    # range is excluded, so PostgreSQL, Vault, Loki, Ollama and the
+    # Kubernetes API are all unreachable from a notebook kernel.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
