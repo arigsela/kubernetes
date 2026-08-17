@@ -133,3 +133,65 @@ data:
       "connections": {},
       "settings": { "executionOrder": "v1" }
     }
+  image-scan-report.json: |
+    {
+      "id": "image-scan-report",
+      "name": "Image Vulnerability Scan Report",
+      "active": true,
+      "nodes": [
+        {
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "image-scan-report",
+            "options": {}
+          },
+          "id": "d3b8e3f2-6c8f-4c23-a222-000000000001",
+          "name": "Scan Webhook",
+          "type": "n8n-nodes-base.webhook",
+          "typeVersion": 2,
+          "position": [0, 0],
+          "webhookId": "d3b8e3f2-6c8f-4c23-a222-00000000000a"
+        },
+        {
+          "parameters": {
+            "jsCode": "const p = $json.body ?? $json;\nconst n = p.actionable || 0;\nconst head = n > 0\n  ? ':shield: *Image scan: ' + n + ' fixable finding(s) in our images*'\n  : ':shield: *Image scan: no fixable findings in our images*';\nconst foot = '_' + (p.scanned || 0) + ' images scanned'\n  + (p.failed ? ', ' + p.failed + ' failed' : '')\n  + ' — full report in S3 (workflow ' + (p.workflow || 'unknown') + ')_';\nconst text = [head, p.text || '', foot].filter(Boolean).join('\\n');\nreturn [{ json: { slack: { channel: '#oncall-alerts', text: text, unfurl_links: false } } }];"
+          },
+          "id": "d3b8e3f2-6c8f-4c23-a222-000000000002",
+          "name": "Format Scan Report",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [220, 0]
+        },
+        {
+          "parameters": {
+            "method": "POST",
+            "url": "https://slack.com/api/chat.postMessage",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                { "name": "Authorization", "value": "=Bearer {{ $env.SLACK_BOT_TOKEN }}" },
+                { "name": "Content-Type", "value": "application/json" }
+              ]
+            },
+            "sendBody": true,
+            "specifyBody": "json",
+            "jsonBody": "={{ JSON.stringify($json.slack) }}",
+            "options": {}
+          },
+          "id": "d3b8e3f2-6c8f-4c23-a222-000000000003",
+          "name": "Post Scan to Slack",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.2,
+          "position": [440, 0]
+        }
+      ],
+      "connections": {
+        "Scan Webhook": {
+          "main": [[{ "node": "Format Scan Report", "type": "main", "index": 0 }]]
+        },
+        "Format Scan Report": {
+          "main": [[{ "node": "Post Scan to Slack", "type": "main", "index": 0 }]]
+        }
+      },
+      "settings": { "executionOrder": "v1" }
+    }
