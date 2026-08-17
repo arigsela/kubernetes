@@ -138,9 +138,13 @@ The PVC still carries `argocd.argoproj.io/sync-options: Prune=false` per repo
 convention — a manifest rename must not destroy a working environment even when
 rebuilding it is cheap.
 
-Git authentication uses a PAT scoped to the notebooks repository, delivered by
-ESO from `k8s-secrets/jupyter` and mounted as `~/.git-credentials`. Path-scoped
-per consumer, per the agent-identity contract.
+Git authentication uses a fine-grained PAT scoped to the notebooks repository,
+delivered by ESO from `k8s-secrets/jupyter` and mounted read-only at
+`/etc/jupyter-secrets/github-token` — **outside** the home directory. A git
+credential helper reads it at each invocation. It must not be written to
+`~/.git-credentials`, because the home is the PVC and a copy there would survive
+rotation in Vault and outlive the secret it came from. Path-scoped per consumer,
+per the agent-identity contract.
 
 ### 3.6 Two Applications, split by lifecycle
 
@@ -180,6 +184,7 @@ Claude ──┘        │                    (AuthorizationPolicy: 4 × /32)
 | `pvc.yaml` | 20Gi `local-path`, RWO, `Prune=false` |
 | `httproute.yaml` | `parentRefs` → `main`/`istio-ingress`, `sectionName: https-jupyter` |
 | `certificate.yaml` | issuer **`letsencrypt-route53`** — see §6 |
+| `reference-grant.yaml` | required: the Gateway is in `istio-ingress`, the TLS Secret in `jupyter`; Gateway API forbids that cross-namespace read without a grant |
 | `secret-store.yaml` | Vault role `jupyter` |
 | `external-secret.yaml` | `token`, `github-token` from `k8s-secrets/jupyter` |
 | `network-policy.yaml` | modelled on `base-apps/atlantis/network-policy.yaml` |
