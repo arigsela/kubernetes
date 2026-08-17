@@ -46,6 +46,14 @@ sources:
 - **Check:** `kubectl -n jupyter get deploy jupyter -o jsonpath='{.spec.template.spec.containers[0].livenessProbe}'`
 - **Fix:** it must stay `tcpSocket` on port `8888`, same for the readiness probe. Revert to `tcpSocket`. If you genuinely need an HTTP probe, `/api` is the **only** endpoint that answers unauthenticated (200); `/api/status` — the intuitive choice — returns 403 to a probe with no token and will hold the pod out of `Ready` forever. Measured surface is in `docs.md`.
 
+### Symptom: pod Pending with `node(s) didn't match Pod's node affinity/selector`, or a volume node-affinity conflict
+- **Check:** `kubectl -n jupyter get pvc jupyter-pvc -o jsonpath='{.spec.volumeName}'` then `kubectl get pv <name> -o jsonpath='{.spec.nodeAffinity}'`
+- **Fix:** the pod is pinned to `k3s-worker-02` (see `docs.md` for why — it is a disk-isolation control). A `local-path` PV is bound to whichever node first provisioned it, so a PVC created while the pod ran on `k3s-worker-01` cannot follow it. Delete the PVC and let Argo CD recreate it — nothing irreplaceable is on it by design: `kubectl -n jupyter delete pvc jupyter-pvc`, wait for the pod to start, then re-clone the notebooks repo and `pip install --user -r ~/work/notebooks/requirements.txt`. Confirm the clone has nothing unpushed first.
+
+### Symptom: node disk filling, or other apps on the node failing to write
+- **Check:** `kubectl -n jupyter exec deploy/jupyter -- du -sh /home/jovyan` and `df -h /home/jovyan` — the latter reports the **node's** filesystem, not a 20Gi volume.
+- **Fix:** `local-path` enforces no quota, so the PVC's 20Gi is advisory. Move large datasets to S3 (`asela-jupyter-scratch`) and delete them from the PVC. This is why the pod is pinned away from the node holding Vault and PostgreSQL.
+
 ### Symptom: pod Pending after a node reboot
 - **Check:** `kubectl -n jupyter describe pvc jupyter-pvc`
 - **Fix:** `local-path` pins the volume to one node. If that node is gone the PVC cannot bind. Nothing irreplaceable is on it: delete the PVC, let it rebind, then re-clone the notebooks repo and re-run `pip install --user -r requirements.txt`.
