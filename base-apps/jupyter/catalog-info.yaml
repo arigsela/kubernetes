@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: jupyter
+  namespace: jupyter
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=jupyter'
+    backstage.io/kubernetes-namespace: jupyter
+  tags: [python, notebooks, jupyter]
+spec:
+  type: service
+  lifecycle: production
+  owner: platform
+  system: default/platform-tooling
+  dependsOn: []

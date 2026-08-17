@@ -19,3 +19,4 @@ donetick
 homepage
 istio-waf
 wan-ip-monitor
+jupyter
