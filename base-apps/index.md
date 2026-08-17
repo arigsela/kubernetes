@@ -36,6 +36,8 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | homepage | Homelab dashboard listing every cluster app plus the WSL2-hosted Plex server, with live widgets for Plex, Grafana, Argo CD, and cluster resources. | homepage | [docs.md](homepage/docs.md) | [runbook.md](homepage/runbook.md) | [catalog-info.yaml](homepage/catalog-info.yaml) |
 | istio-ingress | The cluster's north-south ingress: a Gateway API Gateway on the `istio` GatewayClass, directly internet-facing | istio-ingress | [docs.md](istio-ingress/docs.md) | [runbook.md](istio-ingress/runbook.md) | [catalog-info.yaml](istio-ingress/catalog-info.yaml) |
 | istio-waf | OWASP Coraza WAF as an Envoy Wasm filter on the main ingress Gateway, protecting the three public-by-design hostnames | istio-ingress | [docs.md](istio-waf/docs.md) | [runbook.md](istio-waf/runbook.md) | [catalog-info.yaml](istio-waf/catalog-info.yaml) |
+| jupyter | Single-workspace JupyterLab for interactive Python, served to a browser and to Claude Code via /api/kernels. | jupyter | [docs.md](jupyter/docs.md) | [runbook.md](jupyter/runbook.md) | [catalog-info.yaml](jupyter/catalog-info.yaml) |
+| jupyter-aws-infrastructure |  |  |  |  |  |
 | kagent | Kubernetes-native AI agent platform (kagent Helm controller, declarative agents, MCP tool servers) | kagent | [docs.md](kagent/docs.md) | [runbook.md](kagent/runbook.md) | [catalog-info.yaml](kagent/catalog-info.yaml) |
 | kyverno-policies |  |  |  |  |  |
 | logging | Observability stack (Alloy collector, Loki logs on S3, Prometheus metrics, Grafana) | logging | [docs.md](logging/docs.md) | [runbook.md](logging/runbook.md) | [catalog-info.yaml](logging/catalog-info.yaml) |
