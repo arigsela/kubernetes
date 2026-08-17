@@ -38,6 +38,10 @@ sources:
 - **Check:** `kubectl -n jupyter get secret jupyter-s3-creds -o jsonpath='{.data}' | jq keys`
 - **Fix:** keys are `username` and `attribute.secret` — there is no `attribute.id`. The IAM policy grants only `asela-jupyter-scratch`; any other bucket is denied by design, not by mistake.
 
+### Symptom: pod never becomes Ready after someone edits the probes; `Service/jupyter` has no endpoints
+- **Check:** `kubectl -n jupyter get deploy jupyter -o jsonpath='{.spec.template.spec.containers[0].livenessProbe}'`
+- **Fix:** it must stay `tcpSocket` on port `8888`, same for the readiness probe. Switching either to `httpGet` against `/api` fails permanently, because that endpoint requires a token an unauthenticated probe doesn't have — revert to `tcpSocket`.
+
 ### Symptom: pod Pending after a node reboot
 - **Check:** `kubectl -n jupyter describe pvc jupyter-pvc`
 - **Fix:** `local-path` pins the volume to one node. If that node is gone the PVC cannot bind. Nothing irreplaceable is on it: delete the PVC, let it rebind, then re-clone the notebooks repo and re-run `pip install --user -r requirements.txt`.

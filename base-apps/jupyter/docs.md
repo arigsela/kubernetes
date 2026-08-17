@@ -39,5 +39,6 @@ State is split three ways. Notebooks live in `arigsela/notebooks` on GitHub. The
 - **`--ServerApp.allow_origin` must name the public hostname.** Omit it and plain HTTP works while `/api/kernels` websockets are rejected with 403 — a half-broken state that looks like an auth bug.
 - **The pod has no ServiceAccount token and cannot reach any RFC1918 address.** This is the design's central control, not an oversight. Anything needing in-cluster access does not belong in a notebook — see `docs/superpowers/specs/2026-08-17-jupyter-notebooks-design.md` §3.3.
 - **`strategy: Recreate`.** `local-path` is ReadWriteOnce, so a rolling update deadlocks on the volume.
+- **Liveness and readiness probes are `tcpSocket` on 8888, not `httpGet`.** Every endpoint under `/api` requires a token, so an unauthenticated HTTP probe can't tell "wedged" from "working" — it just fails every time, taking the pod out of `Ready` forever. Do not "fix" this to an HTTP health check.
 - **Rotating the token logs out both clients**, because both use it.
 - **The GitHub PAT is mounted at `/etc/jupyter-secrets/github-token`, outside the home, and read by a git credential helper at invocation time.** It is deliberately never written to `~/.git-credentials`: the home is the PVC, so a copy there would survive rotation in Vault and outlive the secret it came from.
