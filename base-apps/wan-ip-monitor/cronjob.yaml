@@ -135,6 +135,7 @@ spec:
                     dex.arigsela.com,
                     grafana.arigsela.com,
                     home.arigsela.com,
+                    jupyter.arigsela.com,
                     kagent-mcp.arigsela.com,
                     kagent.arigsela.com,
                     langflow.arigsela.com,

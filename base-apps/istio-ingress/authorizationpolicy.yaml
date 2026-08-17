@@ -284,6 +284,22 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
+    # jupyter - restricted. The kernel executes arbitrary Python and holds S3
+    # credentials, so this allow-list and the Jupyter token are the two
+    # controls standing between the LAN and remote code execution. There is
+    # deliberately no public path here, unlike n8n's webhook carve-out.
+    - to:
+        - operation:
+            hosts:
+              - jupyter.arigsela.com
+              - jupyter.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 76.97.4.210/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
     # kagent-mcp - restricted. Basic auth dropped (T52); the allow-list is now the
       # only control, which is why it must be right.
     - to:
