@@ -10,10 +10,48 @@ spec:
   source:
     repoURL: https://argoproj.github.io/argo-helm
     chart: argo-workflows
-    targetRevision: 0.45.19
+    # Chart 2.0.1 -> app v4.1.1 (was 0.45.19 -> v3.6.10). Two chart majors, and
+    # the only structural change that affects us is CRD installation.
+    #
+    # With crds.full=true (the default, kept below) the chart no longer ships
+    # CRDs as plain templates. It installs them from a `crdinstaller` image via
+    # a Job annotated `helm.sh/hook: pre-install,pre-upgrade`, which Argo CD maps
+    # to its PreSync phase. Consequences worth knowing before debugging a sync:
+    #
+    #   - A crdinstaller Job pod is created on EVERY sync of this app, not only
+    #     on version changes (hook-delete-policy recreates it each time). A
+    #     short-lived Job appearing in argo-workflows on unrelated syncs is
+    #     expected, not a leak.
+    #   - The Job server-side-applies the CRDs itself, so Argo CD never applies
+    #     them. The full CRDs are large; this is what keeps them clear of
+    #     client-side apply's annotation size limit.
+    #   - If the Job cannot schedule or lacks RBAC, the sync stalls in PreSync
+    #     and the controller is never upgraded. Look at the Job, not the chart.
+    #
+    # The alternative is crds.full=false: minified CRDs applied as ordinary
+    # templates with x-kubernetes-preserve-unknown-fields, no Job. Rejected —
+    # it drops OpenAPI validation, so a typo in a Workflow spec is accepted by
+    # the API server and only fails at runtime.
+    #
+    # 4.0 removed the Python SDK, the singular mutex/semaphore/schedule fields,
+    # podPriority, and INFORMER_WRITE_BACK. None are used here; verified against
+    # base-apps/argo-workflow-tasks/ before upgrading.
+    targetRevision: 2.0.1
     helm:
       releaseName: argo-workflows
       values: |
+        crds:
+          # Bound the PreSync Job so it cannot schedule unconstrained. The chart
+          # defaults these to {}, and ClusterPolicy/require-resource-limits is
+          # Audit rather than Enforce, so nothing else would catch it.
+          upgradeJob:
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
         controller:
           workflowNamespaces:
             - argo-workflows
