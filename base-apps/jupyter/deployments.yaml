@@ -21,6 +21,23 @@ spec:
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
+        # PINNED to worker-02 on purpose, and it is a security control, not
+        # scheduling preference.
+        #
+        # local-path does NOT enforce the PVC's size request — it bind-mounts a
+        # directory on the node, so a container sees (and can fill) the node's
+        # whole filesystem. `df` inside this pod reports the node's disk, not 20Gi.
+        #
+        # k3s-worker-01 carries the local-path volumes for Vault, PostgreSQL,
+        # Prometheus and Coroot's ClickHouse. A notebook writing one large
+        # dataset there would fill the disk out from under all of them. The
+        # NetworkPolicy stops this pod from TALKING to Vault and PostgreSQL; it
+        # does nothing about starving them of disk. worker-02 hosts no stateful
+        # workload, so the blast radius of a runaway write is this pod alone.
+        #
+        # Moving this back to worker-01 re-opens that path. If you need to, put
+        # a real quota in place first.
+        kubernetes.io/hostname: k3s-worker-02
       # NO SERVICEACCOUNT TOKEN. This pod executes arbitrary Python; with a
       # token it would be a general-purpose cluster client. See design §3.3.
       automountServiceAccountToken: false

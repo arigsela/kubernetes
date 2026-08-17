@@ -99,6 +99,7 @@ following enforceable:
 | No lateral movement | `NetworkPolicy` — egress to `0.0.0.0/0` **except** RFC1918, DNS excepted | Vault, PostgreSQL, Loki, and the API server unreachable. **Verified in-cluster 2026-08-17** — see below. |
 | Bounded AWS | IAM user scoped to `arn:aws:s3:::asela-jupyter-scratch/*` | Total compromise yields one throwaway bucket. |
 | Bounded ingress | Gateway allow-list (4 × /32) **and** Jupyter token from Vault | Two independent controls must fail. |
+| Bounded disk | `nodeSelector` pins the pod to `k3s-worker-02` | A runaway write can only starve this pod — see §3.3.1. |
 
 Plus `runAsNonRoot` (uid 1000, fsGroup 100) and CPU/memory limits so a runaway
 cell cannot evict neighbours.
@@ -136,6 +137,36 @@ constrained anything.** Atlantis works because its policy is inert, not because
 enforcement is off. That leaves a service holding AWS credentials and a GitHub
 token with a NetworkPolicy that appears to protect it and does not — tracked
 here as a finding against `base-apps/atlantis`, out of scope for this design.
+
+### 3.3.1 Shared disk — a gap this design originally missed
+
+Added 2026-08-17, after the workspace was live. The blast-radius argument above
+was **incomplete**: it reasoned entirely about the network and said nothing
+about storage.
+
+`local-path` does not enforce the PVC's size request. It bind-mounts a directory
+on the node, so the container sees the node's entire filesystem — `df` inside
+the pod reported 193G, not 20Gi. The volume's "20Gi" is documentation.
+
+`k3s-worker-01`, where the pod first landed, also holds the `local-path` volumes
+for **Vault, PostgreSQL, Prometheus, and Coroot's ClickHouse**. So a notebook
+writing one oversized dataset could have taken all of them down by exhausting
+the disk. The irony is precise: the NetworkPolicy blocks this pod from *talking*
+to Vault and PostgreSQL, and that control was worth nothing against starving
+them of storage. It does not even require a compromise — a careless
+`to_parquet()` would do it.
+
+**Mitigation: schedule, not quota.** The pod is pinned to `k3s-worker-02`
+(`kubernetes.io/hostname` in `deployments.yaml`), which hosts no stateful
+workload, so a runaway write starves only this pod. This is cheap precisely
+because §3.5 already established the PVC holds nothing irreplaceable — moving it
+costs a re-clone and a `pip install`.
+
+**What this is not.** It is isolation by placement, not a quota; nothing stops
+the pod filling `worker-02`. Accepted because that node carries no other
+stateful workload. A real fix needs a storage class that enforces size
+(XFS project quotas, or anything other than `local-path`), and that is a
+cluster-wide change, not a Jupyter one.
 
 ### 3.4 Upstream image, PVC mounted at `/home/jovyan`
 
