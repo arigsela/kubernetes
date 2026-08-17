@@ -5,6 +5,13 @@
 # long-lived arbitrary-code pod tolerable, so it is enforced here rather than
 # left as a habit.
 #
+# AMENDED 2026-08-17: two read-only in-cluster endpoints were added on purpose
+# (Prometheus :9090, Ollama :11434 — see the egress rules and spec §3.3.2).
+# The claim this file enforces is therefore no longer "nothing in-cluster" but
+# "nothing in-cluster except two read-only endpoints that hold no credentials".
+# Every other private address remains blocked, and the reasoning for keeping it
+# that way is unchanged.
+#
 # The RFC1918 exclusions also cover the Kubernetes API server (192.168.0.100),
 # which is belt-and-braces: the pod additionally has no ServiceAccount token
 # (automountServiceAccountToken: false in deployments.yaml). Either control
@@ -41,9 +48,43 @@ spec:
         - protocol: TCP
           port: 53
 
+    # ---- Deliberate in-cluster exceptions. Read this before adding a third. ----
+    #
+    # The original design's clean property was "reaches nothing in-cluster".
+    # That is no longer true, and the weaker claim is now "reaches exactly two
+    # read-only endpoints". Both were argued individually; that is precisely how
+    # an isolation boundary erodes, so the bar for a third is: it must be
+    # read-only, hold no credentials, and accept no mutations. Anything failing
+    # that belongs behind a different design (see spec §8, the Sandbox seam).
+    #
+    # Prometheus query API. Port 9090 ONLY — Loki (3100) and Grafana (3000) live
+    # in this same namespace and MUST stay unreachable, which is why this is
+    # port-scoped rather than a bare namespaceSelector. Verified read-only:
+    # the deployment sets no --web.enable-admin-api, so the delete-series
+    # endpoints are off and a notebook cannot destroy metric history.
+    # Coroot's node-agent scrapes into this same Prometheus, so its data comes
+    # along without opening the coroot namespace as well.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Ollama inference API. No auth, no data at rest, no credentials — the
+    # exposure is compute, not information.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ollama
+      ports:
+        - protocol: TCP
+          port: 11434
+
     # HTTPS to the public internet ONLY — S3, PyPI, GitHub. Every private
-    # range is excluded, so PostgreSQL, Vault, Loki, Ollama and the
-    # Kubernetes API are all unreachable from a notebook kernel.
+    # range is excluded, so PostgreSQL, Vault, Loki, Grafana, ClickHouse and
+    # the Kubernetes API are all unreachable from a notebook kernel.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

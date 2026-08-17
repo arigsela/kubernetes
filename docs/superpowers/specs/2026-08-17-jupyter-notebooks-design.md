@@ -25,7 +25,8 @@ load-bearing fact in this design, and section 3 explains what it buys.
 
 **In scope.** A single-workspace JupyterLab deployment; token authentication;
 a dedicated S3 scratch bucket with a scoped IAM user; notebooks version-controlled
-in a separate git repository; network isolation from the rest of the cluster.
+in a separate git repository; network isolation from the rest of the cluster,
+with two deliberate read-only exceptions (§3.3.2).
 
 **Explicitly out of scope.** Multi-user JupyterHub. kagent tool integration
 (no taxonomy entry, no `requireApproval` wiring, no Kyverno capability class —
@@ -96,7 +97,7 @@ following enforceable:
 | Control | Mechanism | Effect |
 |---|---|---|
 | No cluster access | `automountServiceAccountToken: false` | No ServiceAccount token in the pod. The kernel cannot reach the Kubernetes API at all. |
-| No lateral movement | `NetworkPolicy` — egress to `0.0.0.0/0` **except** RFC1918, DNS excepted | Vault, PostgreSQL, Loki, and the API server unreachable. **Verified in-cluster 2026-08-17** — see below. |
+| No lateral movement | `NetworkPolicy` — egress to `0.0.0.0/0` **except** RFC1918, DNS excepted, plus two read-only exceptions | Vault, PostgreSQL, Loki, Grafana, ClickHouse and the API server unreachable. **Verified in-cluster 2026-08-17** — see below. Exceptions for Prometheus `:9090` and Ollama `:11434` are §3.3.2. |
 | Bounded AWS | IAM user scoped to `arn:aws:s3:::asela-jupyter-scratch/*` | Total compromise yields one throwaway bucket. |
 | Bounded ingress | Gateway allow-list (4 × /32) **and** Jupyter token from Vault | Two independent controls must fail. |
 | Bounded disk | `nodeSelector` pins the pod to `k3s-worker-02` | A runaway write can only starve this pod — see §3.3.1. |
@@ -162,11 +163,72 @@ workload, so a runaway write starves only this pod. This is cheap precisely
 because §3.5 already established the PVC holds nothing irreplaceable — moving it
 costs a re-clone and a `pip install`.
 
+It also costs no capacity, contrary to a first reading of `kubectl get nodes`.
+Measured 2026-08-17, both workers carry the same 193 GiB root filesystem:
+
+| Node | Used | Free | Stateful workloads |
+|---|---|---|---|
+| `k3s-worker-01` | 110 G (57%) | 83 G | Vault, PostgreSQL ×2, Coroot ×4, oncall-agent |
+| `k3s-worker-02` | 40 G (21%) | **154 G** | none |
+
+Do not read `.status.capacity.ephemeral-storage` as disk size — it reports
+~47 GiB for `worker-02`, which is k3s's own accounting for its image and log
+filesystem, not the volume `local-path` writes into. The `df` figures above are
+ground truth, taken from inside pods on each node.
+
+Worth noting for anyone re-assessing urgency: over the 14 days to 2026-08-17,
+`worker-01` was trending **down** ~2.3 GB/day. The exposure this section
+describes was structural, not imminent.
+
 **What this is not.** It is isolation by placement, not a quota; nothing stops
 the pod filling `worker-02`. Accepted because that node carries no other
 stateful workload. A real fix needs a storage class that enforces size
 (XFS project quotas, or anything other than `local-path`), and that is a
 cluster-wide change, not a Jupyter one.
+
+### 3.3.2 Two deliberate in-cluster exceptions — and why the list stops here
+
+Added 2026-08-17, after the workspace was live. §3.3 above claims the pod
+reaches **nothing** in-cluster. That is no longer true. Two read-only endpoints
+were opened deliberately:
+
+| Endpoint | Port | Why | Exposure |
+|---|---|---|---|
+| `prometheus.logging.svc` | 9090 | Capacity planning — node disk trend and forecasting | Metrics disclose structure (namespace/pod names, label values). No secrets. Query-only: the deployment sets no `--web.enable-admin-api`, so delete-series is off. |
+| `ollama.ollama.svc` | 11434 | Local LLM inference without API cost | No auth, no data at rest, no credentials. The exposure is compute, not information. |
+
+Both rules are **port-scoped, not namespace-wide**. That matters most for
+`logging`, which also hosts Loki (3100) and Grafana (3000); a bare
+`namespaceSelector` would have handed the pod the log store it is otherwise
+denied. Coroot's node-agent scrapes into this same Prometheus, so its data
+arrives without opening the `coroot` namespace at all — one hole instead of two.
+
+**The honest cost.** The design's clean, memorable property — *reaches nothing
+in-cluster* — is gone, replaced by *reaches two read-only endpoints that hold no
+credentials*. That is a materially weaker claim, and each exception was
+individually reasonable, which is exactly how an isolation boundary erodes. The
+line is therefore stated explicitly rather than left to judgement: **a third
+exception must be read-only, hold no credentials, and accept no mutations.**
+Anything failing that test does not get a NetworkPolicy rule — it belongs behind
+the ephemeral `Sandbox` design in §8, which is where per-invocation credentials
+and per-invocation blast radius actually live.
+
+Both remain blocked from the other direction too: nothing about this lets
+Prometheus or Ollama reach *into* the notebook. The ingress rule is unchanged
+and still admits only the Gateway.
+
+**What this does not buy: per-PVC disk attribution.** The capacity-planning use
+case that motivated Prometheus access is only half-served, and the failure is in
+the data, not the permissions. Both `kubelet_volume_stats_used_bytes` and
+Coroot's `container_resources_disk_used_bytes` report the *shared block device*,
+so every `local-path` PVC on a node reports that node's total usage — measured
+2026-08-17, eight PVCs on `worker-01` (vault, postgresql ×2, coroot ×4,
+oncall-agent) all read ~117.8GB. There is no `node_exporter` in this cluster, so
+`node_filesystem_*` does not exist either. Node-level trend and exhaustion
+forecasting work; "which workload is filling the disk" is unanswerable by any
+query. It is the same root cause as §3.3.1 — `local-path` provides no per-volume
+isolation, so there is no per-volume accounting to expose. Fixing it needs a
+storage class with real per-volume accounting, not a better PromQL query.
 
 ### 3.4 Upstream image, PVC mounted at `/home/jovyan`
 
