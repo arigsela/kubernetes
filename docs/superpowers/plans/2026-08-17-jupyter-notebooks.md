@@ -861,11 +861,19 @@ Expected: the ExternalSecret shows `SecretSynced`, and the pod reaches `Running`
 ```bash
 kubectl -n jupyter port-forward svc/jupyter 8888:8888 &
 TOKEN=$(kubectl -n jupyter get secret jupyter-secrets -o jsonpath='{.data.token}' | base64 -d)
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8888/api
+curl -s -o /dev/null -w 'authenticated: %{http_code}\n' \
+  -H "Authorization: token $TOKEN" http://127.0.0.1:8888/api
 curl -s -H "Authorization: token $TOKEN" http://127.0.0.1:8888/api/kernelspecs | head -c 200
 ```
 
-Expected: `200` from `/api`, and a JSON body naming the `python3` kernelspec.
+Expected: `authenticated: 200`, and a JSON body naming the `python3` kernelspec.
+
+**Do not test `/api` without a token here and expect 200.** An earlier draft of
+this plan did, contradicting Task 4 Step 9 which expects the same unauthenticated
+request to return 403. The 403 is the design's actual claim; treat any 200 from an
+unauthenticated request as a failure, not a success. This is also why the probes in
+`deployments.yaml` are `tcpSocket` rather than `httpGet` — an unauthenticated HTTP
+probe against a token-protected endpoint would leave the pod permanently `NotReady`.
 
 ---
 
