@@ -1,0 +1,8 @@
+name: jupyter-aws-infrastructure
+sourcePath: base-apps/jupyter-aws-infrastructure
+# The AccessKey's connection secret is written into the jupyter namespace,
+# where the workspace pod consumes it as AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY.
+namespace: jupyter
+syncOptions:
+  - CreateNamespace=true
+  - ServerSideApply=true

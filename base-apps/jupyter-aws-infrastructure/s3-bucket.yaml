@@ -1,0 +1,75 @@
+# Scratch bucket for the JupyterLab workspace. Deliberately holds nothing
+# anything else depends on: this is the entire AWS blast radius of a pod that
+# runs arbitrary Python. Nothing else may be granted access to it, and it must
+# not become a dependency of another app.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: asela-jupyter-scratch
+  labels:
+    app: jupyter
+    component: storage
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-1
+    tags:
+      # S3 tag VALUES allow only letters, digits, spaces and + - = . _ : / @ —
+      # NOT parentheses or commas, which fail with InvalidTag and leave the
+      # bucket stuck Ready=False.
+      Name: "Jupyter workspace scratch bucket"
+      Environment: "homelab"
+      ManagedBy: "Crossplane"
+      Purpose: "Interactive notebook scratch storage"
+      CostCenter: "platform"
+  providerConfigRef:
+    name: default
+---
+# Block ALL public access. Scratch or not, nothing here is public.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketPublicAccessBlock
+metadata:
+  name: asela-jupyter-scratch-pab
+  labels:
+    app: jupyter
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-1
+    bucketSelector:
+      matchLabels:
+        app: jupyter
+        component: storage
+    blockPublicAcls: true
+    blockPublicPolicy: true
+    ignorePublicAcls: true
+    restrictPublicBuckets: true
+  providerConfigRef:
+    name: default
+---
+# Expire scratch objects after 90 days. This is scratch by contract; an
+# unbounded bucket becomes a de facto data store people rely on, which is
+# exactly what the blast-radius argument above forbids.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: BucketLifecycleConfiguration
+metadata:
+  name: asela-jupyter-scratch-lifecycle
+  labels:
+    app: jupyter
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-1
+    bucketSelector:
+      matchLabels:
+        app: jupyter
+        component: storage
+    rule:
+      - id: expire-scratch
+        status: Enabled
+        filter:
+          - prefix: ""
+        expiration:
+          - days: 90
+  providerConfigRef:
+    name: default

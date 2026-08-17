@@ -1,0 +1,26 @@
+# Crossplane mints the access key and writes it to a k8s Secret directly — no
+# manual key creation, no Vault round-trip.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: AccessKey
+metadata:
+  name: jupyter-s3-key
+  labels:
+    app: jupyter
+    component: access-key
+    managed-by: crossplane
+spec:
+  forProvider:
+    userSelector:
+      matchLabels:
+        app: jupyter
+        component: iam-user
+  # provider-aws-iam writes the connection secret with these keys:
+  #   username          -> the AWS access key ID (AKIA...)
+  #   attribute.secret  -> the AWS secret access key
+  # There is NO attribute.id key. Confirmed against the live
+  # agent-audit-s3-creds and argo-workflows-s3-creds secrets.
+  writeConnectionSecretToRef:
+    name: jupyter-s3-creds
+    namespace: jupyter
+  providerConfigRef:
+    name: default

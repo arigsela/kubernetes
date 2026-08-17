@@ -1,0 +1,19 @@
+# IAM user for the JupyterLab workspace. Dedicated service account, one workload.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: User
+metadata:
+  name: jupyter-s3-user
+  labels:
+    app: jupyter
+    component: iam-user
+    managed-by: crossplane
+spec:
+  forProvider:
+    path: /serviceaccounts/
+    tags:
+      Name: "Jupyter Workspace Service Account"
+      Purpose: "Jupyter-S3-Scratch"
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+  providerConfigRef:
+    name: default

@@ -1,0 +1,15 @@
+destination:
+  namespace: jupyter
+  server: https://kubernetes.default.svc
+project: default
+source:
+  path: base-apps/jupyter-aws-infrastructure
+  repoURL: https://github.com/arigsela/kubernetes
+  targetRevision: main
+syncPolicy:
+  automated:
+    prune: true
+    selfHeal: true
+  syncOptions:
+  - CreateNamespace=true
+  - ServerSideApply=true
