@@ -1,0 +1,18 @@
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: UserPolicyAttachment
+metadata:
+  name: jupyter-s3-user-policy
+  labels:
+    app: jupyter
+    component: iam-policy-attachment
+    managed-by: crossplane
+spec:
+  forProvider:
+    policyArnSelector:
+      matchLabels:
+        app: jupyter
+        component: iam-policy
+    userRef:
+      name: jupyter-s3-user
+  providerConfigRef:
+    name: default

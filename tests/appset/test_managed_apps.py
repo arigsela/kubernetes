@@ -22,6 +22,7 @@ EXPECTED_APPS = {
     "crossplane-functions",
     "crossplane-system",
     "ecr-auth",
+    "jupyter-aws-infrastructure",
     "kyverno-policies",
     "loki-aws-infrastructure",
 }

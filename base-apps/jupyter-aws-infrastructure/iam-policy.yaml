@@ -1,0 +1,44 @@
+# Read/write scoped to ONE bucket. This policy is the AWS half of the
+# blast-radius argument in the design (§3.3): a fully compromised notebook
+# kernel gets this bucket and nothing else in the account.
+#
+# ListBucket is on the bucket ARN; object actions are on the /* ARN. Both are
+# needed — boto3's list_objects_v2 fails without the former.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: jupyter-s3-scratch
+  labels:
+    app: jupyter
+    component: iam-policy
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "Read/write access to the Jupyter scratch bucket only"
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "JupyterScratchList",
+            "Effect": "Allow",
+            "Action": ["s3:ListBucket"],
+            "Resource": "arn:aws:s3:::asela-jupyter-scratch"
+          },
+          {
+            "Sid": "JupyterScratchObjects",
+            "Effect": "Allow",
+            "Action": [
+              "s3:GetObject",
+              "s3:PutObject",
+              "s3:DeleteObject"
+            ],
+            "Resource": "arn:aws:s3:::asela-jupyter-scratch/*"
+          }
+        ]
+      }
+    tags:
+      Name: "Jupyter Scratch Bucket Policy"
+      ManagedBy: "Crossplane"
+  providerConfigRef:
+    name: default
