@@ -40,5 +40,6 @@ spec:
     tags:
       Name: "Jupyter Scratch Bucket Policy"
       ManagedBy: "Crossplane"
+      Environment: "homelab"
   providerConfigRef:
     name: default

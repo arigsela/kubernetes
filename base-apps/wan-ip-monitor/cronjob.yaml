@@ -117,12 +117,14 @@ spec:
                 # own. ADDING A HOST TO THE HOMELAB MEANS ADDING IT HERE.
                 #
                 # Seeded with the A records in zone Z0524483LR4JCFNLS7N0 that
-                # point at the WAN address - 21 at first, now 20:
-                # oncall-crewai.arigsela.com came out when that app was removed.
-                # Its Route 53 record may still exist; an entry here is only ever
-                # a claim of ownership, and a name absent from this list is simply
-                # left alone. Trailing dots are optional and case does not matter
-                # - both sides are normalised before comparison.
+                # point at the WAN address - 21 at first, then 20 after
+                # oncall-crewai.arigsela.com came out when that app was
+                # removed, now 21 again after jupyter.arigsela.com was added.
+                # oncall-crewai's Route 53 record may still exist; an entry
+                # here is only ever a claim of ownership, and a name absent
+                # from this list is simply left alone. Trailing dots are
+                # optional and case does not matter - both sides are
+                # normalised before comparison.
                 - name: MANAGED_HOSTNAMES
                   value: >-
                     agent.arigsela.com,

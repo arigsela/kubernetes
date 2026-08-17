@@ -23,8 +23,8 @@ sources:
 - **Fix:** `fsGroup` must be `100` and `runAsUser` `1000`. Any other value leaves the mounted home unwritable.
 
 ### Symptom: browser loads JupyterLab but notebooks will not start a kernel; console shows a 403 on the websocket
-- **Check:** `kubectl -n jupyter get deploy jupyter -o yaml | grep allow_origin`
-- **Fix:** `--ServerApp.allow_origin` must be exactly `https://jupyter.arigsela.com`. Plain HTTP endpoints work without it, which makes this look like an auth problem rather than an origin-check problem.
+- **Check:** first rule out the Gateway allow-list — `grep -A12 'jupyter.arigsela.com' base-apps/istio-ingress/authorizationpolicy.yaml`. A 403 from Istio's `AuthorizationPolicy` looks identical to a 403 from Jupyter itself in the browser console. Next, check for a failed websocket upgrade at the Gateway rather than an application-level rejection. Only then check `kubectl -n jupyter get deploy jupyter -o yaml | grep allow_origin`.
+- **Fix:** if the allow-list is the cause, see "403 from every request" below. If the Gateway is failing to upgrade the websocket, that's a Gateway/HTTPRoute problem, not a Jupyter one. `--ServerApp.allow_origin` is belt-and-braces, not the load-bearing check: `jupyter_server`'s origin check already passes because `Origin` matches `Host` behind this Gateway, so a wrong value here is an unlikely last resort — check it last, not first.
 
 ### Symptom: 403 from every request, including with a valid token
 - **Check:** `grep -A12 'jupyter.arigsela.com' base-apps/istio-ingress/authorizationpolicy.yaml`
@@ -53,6 +53,13 @@ Commit to `main`; Argo CD syncs. Never `kubectl apply`.
 
 ### Rotate the Jupyter token
 `vault kv patch k8s-secrets/jupyter token=<new>`, then `kubectl -n jupyter rollout restart deploy/jupyter`. ESO refreshes hourly, but the pod reads the token only at startup. This logs out the browser and Claude Code together.
+
+### Log in without leaking the token
+Browse to `https://jupyter.arigsela.com/login` and paste the token into the form. That submits it as a POST body, which the gateway access log does not capture.
+
+**Never** browse to `https://jupyter.arigsela.com/?token=<token>`. `base-apps/istio-ingress/telemetry.yaml` enables Envoy access logging on the `main` Gateway, the default format logs the request path including the query string, and `base-apps/logging/alloy-config.yaml` ships every pod's logs to Loki, which persists to S3 — so a token pasted into the URL is written to durable, plaintext storage. Treat any token used that way as compromised and rotate it immediately (above).
+
+Programmatic clients (Claude Code) send `Authorization: token <…>` as a header, which is never captured by the access log either.
 
 ### Install a package permanently
 Add it to `requirements.txt` in `arigsela/notebooks`, then from a JupyterLab terminal: `pip install --user -r ~/work/notebooks/requirements.txt`. It persists because `~/.local` is on the PVC.

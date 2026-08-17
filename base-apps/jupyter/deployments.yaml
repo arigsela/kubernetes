@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: jupyter
   namespace: jupyter
+  labels:
+    app: jupyter
 spec:
   replicas: 1
   strategy:
@@ -61,10 +63,12 @@ spec:
             # Without this the server refuses connections whose Host header is
             # not localhost, which is every request arriving via the Gateway.
             - "--ServerApp.allow_remote_access=True"
-            # The websocket origin check compares against the request Host.
-            # Behind the Gateway that is the public hostname, so it must be
-            # named explicitly or /api/kernels websockets are rejected with 403
-            # while plain HTTP still works — a confusing half-broken state.
+            # Belt-and-braces, not load-bearing: jupyter_server's origin check
+            # short-circuits and passes whenever the request's Origin host
+            # matches its Host header, which is already true behind this
+            # Gateway (both are jupyter.arigsela.com), so /api/kernels
+            # websockets work without this flag. Kept explicit as insurance
+            # in case that equality ever stops holding.
             - "--ServerApp.allow_origin=https://jupyter.arigsela.com"
             - "--ServerApp.root_dir=/home/jovyan"
           ports:
@@ -95,6 +99,14 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 6
+          # Defence in depth for a pod that runs arbitrary Python.
+          # readOnlyRootFilesystem is deliberately omitted: incompatible with
+          # a notebook workspace that pip-installs into its home.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           volumeMounts:
             # The WHOLE home, not the conventional work/ subdirectory. This is
             # what makes ~/.local persistent, so `pip install --user` survives

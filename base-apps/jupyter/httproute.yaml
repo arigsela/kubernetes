@@ -6,7 +6,7 @@ metadata:
   annotations:
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: Jupyter
-    gethomepage.dev/group: Development
+    gethomepage.dev/group: Platform
     gethomepage.dev/icon: jupyter.png
     gethomepage.dev/description: Interactive Python notebooks
     gethomepage.dev/pod-selector: app=jupyter
