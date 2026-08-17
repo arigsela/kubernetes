@@ -459,7 +459,7 @@ Use exactly that address.
 dig +short jupyter.arigsela.com
 ```
 
-Expected: the same address printed in Step 6. If it differs, stop — Task 4's TLS issuance will fail.
+Expected: the same address printed in Step 6. If it differs, fix it before relying on this hostname being reachable. This does **not** block Task 4's TLS issuance — ACME DNS-01 only needs the `_acme-challenge` TXT record cert-manager creates in the hosted zone, never the A record — but an unreachable host is still broken in every way that matters.
 
 - [ ] **Step 8: No commit**
 
@@ -1054,7 +1054,7 @@ kubectl -n jupyter describe certificate jupyter-tls
 kubectl -n jupyter get challenges
 ```
 
-A pending DNS-01 challenge usually means Task 2 Step 6's Route 53 record is missing or in the wrong hosted zone.
+A pending DNS-01 challenge means cert-manager cannot create or verify the `_acme-challenge` TXT record — check its Route 53 credentials and hosted-zone access. It is not the A record from Task 2 Step 6: DNS-01 issuance never depends on that record, only on the TXT challenge record.
 
 - [ ] **Step 9: Verify end-to-end HTTPS and the auth boundary**
 

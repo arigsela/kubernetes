@@ -96,7 +96,7 @@ following enforceable:
 | Control | Mechanism | Effect |
 |---|---|---|
 | No cluster access | `automountServiceAccountToken: false` | No ServiceAccount token in the pod. The kernel cannot reach the Kubernetes API at all. |
-| No lateral movement | `NetworkPolicy` — egress to `0.0.0.0/0` **except** RFC1918, DNS excepted | Vault, PostgreSQL, Loki, Ollama unreachable. Follows `base-apps/atlantis/network-policy.yaml`. |
+| No lateral movement | `NetworkPolicy` — egress to `0.0.0.0/0` **except** RFC1918, DNS excepted | Vault, PostgreSQL, Loki, Ollama unreachable, if enforced — see below. |
 | Bounded AWS | IAM user scoped to `arn:aws:s3:::asela-jupyter-scratch/*` | Total compromise yields one throwaway bucket. |
 | Bounded ingress | Gateway allow-list (4 × /32) **and** Jupyter token from Vault | Two independent controls must fail. |
 
@@ -105,9 +105,21 @@ cell cannot evict neighbours.
 
 **The NetworkPolicy is the load-bearing control**, and it is the one thing here
 whose enforcement is not already proven in this cluster. `base-apps/atlantis`
-carries the repo's only other NetworkPolicy. Verification that k3s's policy
-controller enforces egress rules alongside ztunnel is an explicit implementation
-step (§7, test 6), not an assumption.
+carries the repo's only other NetworkPolicy, but it is not usable evidence for
+enforcement — it is stale. Its `ingress` rule allows traffic only from
+namespace `nginx-ingress`, yet atlantis has been served exclusively from
+`istio-ingress` since the Gateway cutover (no `kind: Ingress` exists anywhere
+in `base-apps/`), and atlantis is in active, daily use. Those two facts are
+only consistent with NetworkPolicy having gone unenforced since the cutover —
+the alternative, that it is enforced and atlantis is unreachable, is
+contradicted by that active use. So the repo's closest precedent points
+toward the opposite of what it was originally cited for: not proof that
+NetworkPolicy works here, but a live example of one that has likely been
+decorative for months. That makes this design's one unproven assumption
+probably *false* rather than merely unverified, and makes verification that
+k3s's policy controller enforces egress rules alongside ztunnel — an explicit
+implementation step (§7, test 6; plan Task 6 Step 3) — more important, not
+less. Do not treat it as a formality.
 
 ### 3.4 Upstream image, PVC mounted at `/home/jovyan`
 
