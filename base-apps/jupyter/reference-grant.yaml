@@ -1,0 +1,15 @@
+# Lets the ingress Gateway in istio-ingress read this namespace's TLS secret.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: gateway-to-jupyter-tls
+  namespace: jupyter
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: istio-ingress
+  to:
+    - group: ""
+      kind: Secret
+      name: jupyter-tls

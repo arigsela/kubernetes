@@ -1,0 +1,27 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: jupyter
+  namespace: jupyter
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Jupyter
+    gethomepage.dev/group: Development
+    gethomepage.dev/icon: jupyter.png
+    gethomepage.dev/description: Interactive Python notebooks
+    gethomepage.dev/pod-selector: app=jupyter
+spec:
+  parentRefs:
+    - name: main
+      namespace: istio-ingress
+      sectionName: https-jupyter
+  hostnames:
+    - jupyter.arigsela.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: jupyter
+          port: 8888

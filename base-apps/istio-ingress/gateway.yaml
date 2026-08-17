@@ -202,6 +202,19 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    - name: https-jupyter
+      protocol: HTTPS
+      port: 443
+      hostname: jupyter.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: jupyter-tls
+            namespace: jupyter
+      allowedRoutes:
+        namespaces:
+          from: All
     # chores.arigsela.com is served by donetick, which replaces the old
     # chores-tracker app on the hostname it already owned. Hence the secret name:
     # donetick-tls is the one cert here issued from a Certificate tracked in Git

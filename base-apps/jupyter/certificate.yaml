@@ -1,0 +1,15 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: jupyter-tls
+  namespace: jupyter
+spec:
+  secretName: jupyter-tls
+  dnsNames:
+    - jupyter.arigsela.com
+  issuerRef:
+    # NOT letsencrypt-prod: its only solver is http01.ingress.class=nginx,
+    # which nothing has satisfied since the Istio cutover. DNS-01 via Route 53
+    # is the only working issuer for new hosts.
+    name: letsencrypt-route53
+    kind: ClusterIssuer
