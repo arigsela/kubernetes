@@ -6,7 +6,7 @@ app: logging
 catalog_entity: logging
 kind: docs
 namespace: logging
-last_reviewed: 2026-07-10
+last_reviewed: 2026-08-18
 status: current
 tags: [loki, grafana, prometheus, alloy]
 sources:
@@ -36,15 +36,21 @@ under `base-apps/logging/`.
 ## Pipeline
 1. **Alloy** (`alloy-daemonset.yaml`, image `grafana/alloy:v1.4.3`) runs as a DaemonSet on
    every `node.kubernetes.io/workload: application` node, using a cluster-wide RBAC
-   ClusterRole/ClusterRoleBinding (`alloy-rbac.yaml`) to discover pods/nodes. Its pipeline
-   config (`alloy-config.yaml`) does two things in parallel:
-   - **Logs**: discovers running pods, tails `/var/log/pods/...` (mounted `hostPath`
-     `varlog`/`varlibdockercontainers`), parses JSON fields, drops nginx health-check and
-     non-`development` `[DEBUG]` lines, and pushes to
-     `http://loki.logging.svc.cluster.local:3100/loki/api/v1/push`.
-   - **Metrics**: scrapes pods annotated `prometheus.io/scrape: "true"`, plus node and
-     cAdvisor metrics (via the node's kubelet on port 10250), and remote-writes to
-     `http://prometheus.logging.svc.cluster.local:9090/api/v1/write`.
+   ClusterRole/ClusterRoleBinding (`alloy-rbac.yaml`) to discover pods. It collects **logs
+   only** (`alloy-config.yaml`): `discovery.kubernetes` lists pods on its own node (field
+   selector `spec.nodeName=` + `sys.env("HOSTNAME")`, where the DaemonSet injects `HOSTNAME`
+   from `spec.nodeName`), `loki.source.kubernetes` tails those containers **through the
+   Kubernetes API**, and the pipeline parses JSON fields, drops nginx health-check and
+   non-`development` `[DEBUG]` lines, then pushes to
+   `http://loki.logging.svc.cluster.local:3100/loki/api/v1/push`.
+   Alloy deliberately collects **no metrics** — Prometheus scrapes those itself (step 3).
+   Until 2026-08-18 it did both, and neither half was scoped to the local node, so every
+   Alloy pod scraped all three nodes plus every annotated pod and tailed every pod in the
+   cluster. That duplicated collection was ~160MB of the ~240MB live heap per pod and
+   OOM-killed them in a loop; see `runbook.md`.
+   Because tailing goes through the API, the `varlog`/`varlibdockercontainers` `hostPath`
+   mounts and `privileged: true`/`runAsUser: 0` in `alloy-daemonset.yaml` are vestigial from
+   an earlier file-tailing config and are not read by the current pipeline.
 2. **Loki** (`loki-deployment.yaml`, single-replica Deployment, image `grafana/loki:3.2.1`,
    `-target=all` monolithic mode) receives log pushes and stores chunks/index in **S3**
    (`loki-config.yaml`: `common.storage.s3` and `storage_config.aws.s3` both point at bucket
@@ -59,10 +65,11 @@ under `base-apps/logging/`.
    because `local-path` is a hostPath directory with no quota enforcement — without it the
    TSDB grew to 59 GB, past its own 50Gi request, consuming worker-01's root filesystem.
    Whichever limit trips first wins, so sustained ingest growth shortens the retention
-   window rather than filling the node. It has `--web.enable-remote-write-receiver` on so it
-   can accept Alloy's remote-write pushes. `prometheus-config.yaml` also has it self-scrape
-   the Kubernetes API server, nodes, cAdvisor, and any pod/service annotated for scraping —
-   so it collects both from its own service discovery and from Alloy's forwarded metrics.
+   window rather than filling the node. `prometheus-config.yaml` has it scrape the Kubernetes
+   API server, nodes, cAdvisor, and any pod/service annotated `prometheus.io/scrape: "true"`.
+   Since Alloy stopped forwarding metrics (2026-08-18) this service discovery is the only
+   path into the TSDB; `--web.enable-remote-write-receiver` is still enabled but nothing
+   writes to it.
 4. **Grafana** (`grafana-deployment.yaml`, single-replica Deployment, image
    `grafana/grafana:11.3.1`, 10Gi `local-path` PVC) is provisioned with two datasources
    (`grafana-datasources` ConfigMap): `Loki` at `http://loki.logging.svc.cluster.local:3100`

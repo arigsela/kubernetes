@@ -6,7 +6,7 @@ app: logging
 catalog_entity: logging
 kind: runbook
 namespace: logging
-last_reviewed: 2026-07-10
+last_reviewed: 2026-08-18
 status: current
 tags: [loki, grafana, prometheus, alloy]
 sources:
@@ -25,16 +25,36 @@ sources:
 
 ### Symptom: Alloy DaemonSet pods CrashLooping / OOMKilled
 - **Check:** `kubectl -n logging get pods -l app=alloy` — look for `OOMKilled` (exit code
-  137) in `kubectl -n logging describe pod <alloy-pod>`, and restart counts. Compare against
-  current limits in `alloy-daemonset.yaml` (`requests.memory: 256Mi`, `limits.memory: 512Mi`
-  — these were raised from 128Mi/256Mi after pods sitting at ~253Mi steady-state caused a
-  real OOMKilled crashloop and log-shipping gaps).
-- **Fix:** if pods are again running close to the current 512Mi limit,
-  PR a further increase to `alloy-daemonset.yaml`'s `resources.requests/limits.memory`. Since
-  Alloy is a DaemonSet, an OOMKilled pod only breaks log/metric collection on that one node,
-  but if it's cluster-wide, check whether a recent change to `alloy-config.yaml` (e.g. a new
-  scrape target or log volume spike) is driving memory up rather than assuming the limit
-  alone is at fault.
+  137) in `kubectl -n logging describe pod <alloy-pod>`, and restart counts. Then find out
+  *where* the memory is before touching limits. Port-forward the pod
+  (`kubectl -n logging port-forward <alloy-pod> 12345:12345`) and read its own metrics:
+
+  ```bash
+  curl -s localhost:12345/metrics | grep -E \
+    'process_resident_memory_bytes|go_memstats_(heap_inuse|next_gc)_bytes|scrape_targets_gauge'
+  curl -s localhost:12345/debug/pprof/heap > heap.pb.gz   # go tool pprof -top -inuse_space
+  ```
+
+  `next_gc_bytes` at or above `limits.memory` means Go is being killed before it collects,
+  not that it needs more memory. `scrape_targets_gauge` above the local node's share means
+  discovery has lost its node filter.
+- **Fix:** raising `resources.limits.memory` is usually the wrong first move — it was raised
+  twice already (128Mi/256Mi → 256Mi/512Mi) and the crashloop came back both times. Work
+  through these in order:
+  1. **Is `GOMEMLIMIT` still ~85% of `limits.memory`?** (Both in `alloy-daemonset.yaml`.) If
+     they drift apart, Go sizes its heap target from host memory rather than the cgroup and
+     the kernel kills the process before a GC runs. That was the 2026-08-18 crashloop:
+     `next_gc` 527MB against a 512Mi limit, 86-97 restarts per pod.
+  2. **Has Alloy's workload widened?** It should tail only pods on its own node (the
+     `spec.nodeName` field selector in `alloy-config.yaml`) and collect no metrics at all.
+     Removing the node filter, or re-adding `prometheus.scrape`/`remote_write` components,
+     multiplies memory by the node count and makes every pod ship duplicate data — visible
+     as Loki `entry too old` drops (`loki_write_dropped_entries_total`) and Prometheus
+     `out of order sample` rejections (`prometheus_remote_storage_samples_failed_total`).
+  3. **Only if neither holds** and live heap (`inuse_space`) is genuinely growing, raise
+     `requests`/`limits` and `GOMEMLIMIT` together, keeping the ~85% ratio.
+
+  Since Alloy is a DaemonSet, an OOMKilled pod only breaks log collection on that one node.
 
 ### Symptom: Loki can't write logs / storage errors ("AccessDenied", "NoSuchBucket")
 - **Check:** `kubectl -n logging get pods -l app=loki` and `kubectl -n logging logs
