@@ -206,103 +206,22 @@ spec:
         image: python:3.12-slim
         command: [python3]
         source: |
-          import json, os, pathlib, sys, urllib.request
-
-          OWNED = "{{workflow.parameters.owned-image-prefix}}"
-          WEBHOOK = "{{workflow.parameters.n8n-webhook}}"
-          ALERT_SEVERITIES = {"CRITICAL", "HIGH"}
-
-          findings, scanned, failed = [], [], []
-          # rglob("*.json") rather than "report.json": Argo lays artifacts out
-          # under the repository keyFormat, and the leaf filename is not
-          # guaranteed to survive as report.json. Matching any .json under the
-          # prefix is robust to that without depending on the exact layout.
-          for p in sorted(pathlib.Path("/reports").rglob("*.json")):
-              try:
-                  data = json.loads(p.read_text())
-              except Exception as e:
-                  failed.append(f"{p}: {e}")
-                  continue
-              artifact = data.get("ArtifactName", str(p))
-              scanned.append(artifact)
-              for result in data.get("Results") or []:
-                  for v in result.get("Vulnerabilities") or []:
-                      findings.append({
-                          "image": artifact,
-                          "id": v.get("VulnerabilityID"),
-                          "pkg": v.get("PkgName"),
-                          "installed": v.get("InstalledVersion"),
-                          "fixed": v.get("FixedVersion"),
-                          "severity": v.get("Severity"),
-                          "title": (v.get("Title") or "")[:200],
-                      })
-
-          # The full picture goes to S3 — every image, every severity, fixable
-          # or not. This is the queryable inventory, not the alert.
-          pathlib.Path("/tmp/out").mkdir(parents=True, exist_ok=True)
-          pathlib.Path("/tmp/out/full-report.json").write_text(json.dumps({
-              "scanned": scanned, "failed": failed, "findings": findings,
-          }, indent=2))
-
-          # The alert is deliberately much narrower: our own images only,
-          # CRITICAL/HIGH only, and only where a fix actually exists. A CVE with
-          # no available patch is something to know, not something to do — it
-          # stays in the S3 report above.
-          actionable = [
-              f for f in findings
-              if f["image"].startswith(OWNED)
-              and f["severity"] in ALERT_SEVERITIES
-              and f["fixed"]
+          import runpy, sys
+          sys.argv = [
+              "render.py",
+              "--reports", "/reports",
+              "--out", "/tmp/out",
+              "--owned-prefix", "{{workflow.parameters.owned-image-prefix}}",
+              "--webhook", "{{workflow.parameters.n8n-webhook}}",
+              "--workflow-name", "{{workflow.name}}",
           ]
-
-          print(f"scanned {len(scanned)} images, {len(failed)} failed")
-          print(f"{len(findings)} total findings, {len(actionable)} actionable")
-
-          if actionable or failed:
-              by_image = {}
-              for f in actionable:
-                  by_image.setdefault(f["image"], []).append(f)
-              lines = []
-              for image, items in sorted(by_image.items()):
-                  short = image.split("/")[-1]
-                  crit = sum(1 for i in items if i["severity"] == "CRITICAL")
-                  high = sum(1 for i in items if i["severity"] == "HIGH")
-                  lines.append(f"*{short}* — {crit} critical, {high} high (all fixable)")
-                  for i in sorted(items, key=lambda x: x["id"])[:5]:
-                      lines.append(
-                          f"  • {i['id']} {i['pkg']} {i['installed']} → {i['fixed']}"
-                      )
-                  if len(items) > 5:
-                      lines.append(f"  • …and {len(items) - 5} more")
-              if failed:
-                  lines.append(f"_{len(failed)} image(s) could not be scanned_")
-
-              payload = {
-                  "scanned": len(scanned),
-                  "actionable": len(actionable),
-                  "failed": len(failed),
-                  "workflow": "{{workflow.name}}",
-                  "text": "\n".join(lines),
-              }
-              try:
-                  req = urllib.request.Request(
-                      WEBHOOK,
-                      data=json.dumps(payload).encode(),
-                      headers={"Content-Type": "application/json"},
-                  )
-                  urllib.request.urlopen(req, timeout=30).read()
-                  print("posted to n8n")
-              except Exception as e:
-                  # A webhook failure must not hide the finding. Surface it and
-                  # still fail below, so the Argo run is red either way.
-                  print(f"WARNING: n8n post failed: {e}", file=sys.stderr)
-
-          # Red run iff something is actionable. Unscanned images alone do not
-          # fail the run, but they are named in the alert above.
-          sys.exit(1 if actionable else 0)
+          runpy.run_path("/app/render.py", run_name="__main__")
         volumeMounts:
           - name: out
             mountPath: /tmp/out
+          - name: script
+            mountPath: /app
+            readOnly: true
         resources:
           requests: {cpu: 100m, memory: 256Mi}
           limits: {cpu: 500m, memory: 1Gi}
@@ -310,6 +229,9 @@ spec:
         - name: out
           emptyDir:
             sizeLimit: 1Gi
+        - name: script
+          configMap:
+            name: cve-report
       outputs:
         artifacts:
           - name: full-report
