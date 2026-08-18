@@ -122,10 +122,17 @@ spec:
         source: |
           set -eo pipefail
           IMAGE="{{inputs.parameters.image}}"
+          # Trivy does NOT create parent directories for --output and fails with
+          # "no such file or directory" if they are missing. The emptyDir mounts
+          # at /tmp, so /tmp/out has to be made here.
+          mkdir -p /tmp/out
           echo "scanning ${IMAGE}" >&2
           # Full severity set here; filtering to what we alert on happens at
           # aggregate time so the S3 report keeps everything.
+          # --quiet suppresses the DB-download progress bar, which otherwise
+          # buries real errors under megabytes of carriage returns in the logs.
           trivy image \
+            --quiet \
             --format json \
             --output /tmp/out/report.json \
             --scanners vuln \
@@ -169,6 +176,10 @@ spec:
             # Absent on scan failure; the aggregate step treats a missing
             # report as "unscanned" rather than "clean".
             optional: true
+            # Argo tar+gzips artifacts by default. The aggregate step reads
+            # these as plain JSON, so store them raw.
+            archive:
+              none: {}
 
     # --------------------------------------------------------------- aggregate
     - name: aggregate
@@ -192,7 +203,11 @@ spec:
           ALERT_SEVERITIES = {"CRITICAL", "HIGH"}
 
           findings, scanned, failed = [], [], []
-          for p in sorted(pathlib.Path("/reports").rglob("report.json")):
+          # rglob("*.json") rather than "report.json": Argo lays artifacts out
+          # under the repository keyFormat, and the leaf filename is not
+          # guaranteed to survive as report.json. Matching any .json under the
+          # prefix is robust to that without depending on the exact layout.
+          for p in sorted(pathlib.Path("/reports").rglob("*.json")):
               try:
                   data = json.loads(p.read_text())
               except Exception as e:
