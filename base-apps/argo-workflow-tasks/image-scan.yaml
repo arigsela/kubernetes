@@ -43,6 +43,10 @@ spec:
         value: "852893458518.dkr.ecr."
       - name: n8n-webhook
         value: "http://n8n.n8n.svc.cluster.local:5678/webhook/image-scan-report"
+      - name: report-bucket
+        value: "asela-argo-workflows-artifacts"
+      - name: report-prefix
+        value: "cve-reports/"
 
   templates:
     - name: main
@@ -206,7 +210,22 @@ spec:
         image: python:3.12-slim
         command: [python3]
         source: |
-          import runpy, sys
+          import subprocess, sys
+          # python:3.12-slim has no boto3. Guarded: an install failure here must
+          # not fail this step, because render.py's own S3 block only degrades
+          # to a warning if `import boto3` fails -- but check_call raises, and
+          # this runs before that try/except, outside its protection. Unguarded,
+          # a PyPI outage would kill the whole aggregate step and take the Slack
+          # alert POST down with it, which is exactly the failure mode publish()
+          # is designed to survive (see the comment above that block).
+          try:
+              subprocess.check_call([sys.executable, "-m", "pip", "install",
+                                     "--quiet", "--disable-pip-version-check", "boto3"])
+          except Exception as exc:
+              print(f"WARNING: boto3 install failed, S3 publish will be skipped: {exc}",
+                    file=sys.stderr)
+
+          import runpy
           sys.argv = [
               "render.py",
               "--reports", "/reports",
@@ -214,8 +233,27 @@ spec:
               "--owned-prefix", "{{workflow.parameters.owned-image-prefix}}",
               "--webhook", "{{workflow.parameters.n8n-webhook}}",
               "--workflow-name", "{{workflow.name}}",
+              "--bucket", "{{workflow.parameters.report-bucket}}",
+              "--prefix", "{{workflow.parameters.report-prefix}}",
+              "--date", "{{workflow.creationTimestamp.Y}}-{{workflow.creationTimestamp.m}}-{{workflow.creationTimestamp.d}}",
           ]
           runpy.run_path("/app/render.py", run_name="__main__")
+        env:
+          # Already has write on asela-argo-workflows-artifacts: it is the
+          # artifact repository credential from base-apps/argo-workflows.yaml.
+          # Keys are username / attribute.secret -- there is no attribute.id.
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: argo-workflows-s3-creds
+                key: username
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: argo-workflows-s3-creds
+                key: attribute.secret
+          - name: AWS_DEFAULT_REGION
+            value: "us-east-1"
         volumeMounts:
           - name: out
             mountPath: /tmp/out
