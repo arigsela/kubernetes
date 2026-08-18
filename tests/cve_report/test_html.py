@@ -27,12 +27,36 @@ def test_html_is_a_complete_document(render):
 
 def test_html_is_self_contained(render):
     """No CDN, no external fonts, no @import - it is opened from a presigned
-    S3 URL where no external fetch is guaranteed to succeed."""
+    S3 URL where no external fetch is guaranteed to succeed.
+
+    Asserts on FETCHES, not on the mere presence of a URL. Vulnerability titles
+    come from an external feed and routinely contain them - the real 2026-08-18
+    report carries five, e.g. "An integer overflow exists in the FTS5
+    https://sqlite.org/fts5.html". Those are escaped <td> text and fetch
+    nothing. A blanket `no https?:// anywhere` assertion passes on synthetic
+    fixtures and fails on the first real report, which is the wrong way round.
+    """
     html = _doc(render)
-    assert not re.search(r"\bhttps?://", html), \
-        "external URL reference in a self-contained report"
+    assert not re.search(r"""(src|href)\s*=\s*['"]https?://""", html), \
+        "external resource reference in a self-contained report"
     assert "@import" not in html.lower(), \
         "@import can pull an external stylesheet"
+
+
+def test_html_allows_urls_inside_vulnerability_titles(render):
+    """A URL in a title must not trip the self-containment check.
+
+    Regression guard for the assertion above: the strict form of it failed
+    against the first real report for exactly this reason.
+    """
+    findings = [{"image": "i", "id": "CVE-Y", "pkg": "libsqlite3-0",
+                 "installed": "3.40.1", "fixed": "3.40.2", "severity": "HIGH",
+                 "title": "integer overflow in FTS5 https://sqlite.org/fts5.html"}]
+    act = render.actionable(findings, OWNED)
+    html = render.render_html(
+        render.summarise(findings, act), findings, act, "2026-08-18")
+    assert "sqlite.org/fts5.html" in html, "the title text should survive"
+    assert not re.search(r"""(src|href)\s*=\s*['"]https?://""", html)
 
 
 def test_html_reports_the_actionable_count(render):
