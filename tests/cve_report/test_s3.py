@@ -137,3 +137,49 @@ def test_main_posts_to_slack_and_keeps_exit_code_when_publish_raises(
 
     assert posted, "publish() raising must not suppress the Slack/n8n POST"
     assert rc == 1, "exit-code contract (1 iff actionable findings) must survive a publish failure"
+
+
+def test_main_publishes_generated_and_summary_but_leaves_full_report_untouched(
+        render, tmp_path, monkeypatch):
+    """The published S3 copy (dated + latest) must carry 'generated' and
+    'summary' so a consumer of latest.json can tell how fresh the pointer is
+    and read the actionable count without re-deriving it from thousands of
+    raw findings. full-report.json -- the Argo artifact -- is a separate
+    dict built earlier in main() and must not gain these keys.
+    """
+    reports = tmp_path / "reports"
+    _write_actionable_report(reports)
+    out = tmp_path / "out"
+
+    s3 = FakeS3()
+
+    class FakeBoto3Module:
+        def client(self, *a, **kw):
+            return s3
+    monkeypatch.setitem(sys.modules, "boto3", FakeBoto3Module())
+
+    posted = _patch_urlopen(monkeypatch)
+
+    rc = render.main([
+        "--reports", str(reports),
+        "--out", str(out),
+        "--owned-prefix", OWNED,
+        "--webhook", "http://n8n.example.invalid/hook",
+        "--bucket", "some-bucket",
+        "--date", "2026-08-18",
+    ])
+
+    assert rc == 1
+    assert posted
+
+    by_key = {p["key"]: p["body"] for p in s3.puts}
+    for key in ("cve-reports/2026-08-18.json", "cve-reports/latest.json"):
+        body = json.loads(by_key[key])
+        assert body["generated"] == "2026-08-18"
+        assert body["summary"]["actionable"] == 1
+        assert "scanned" in body and "findings" in body
+
+    full_report = json.loads((out / "full-report.json").read_text())
+    assert "generated" not in full_report, \
+        "full-report.json is the Argo artifact; only the published copy gains fields"
+    assert "summary" not in full_report
