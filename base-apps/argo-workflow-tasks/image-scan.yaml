@@ -304,6 +304,12 @@ spec:
         artifacts:
           - name: full-report
             path: /tmp/out/full-report.json
+            # Raw JSON, not a tarball. This is the artifact a human or a
+            # notebook fetches from S3 to answer "what is the posture of
+            # everything" (design §3.2); shipping it gzipped would mean
+            # unpacking before every query for no benefit.
+            archive:
+              none: {}
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: CronWorkflow
