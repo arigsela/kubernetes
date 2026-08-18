@@ -16,6 +16,18 @@ spec:
   entrypoint: main
   serviceAccountName: argo-workflow
 
+  # Without this, a wedged step (missing ConfigMap, a hung pip install, a
+  # registry pull that never times out) never fails, never alerts, and never
+  # turns the run red -- it just sits. Because the CronWorkflow below sets
+  # concurrencyPolicy: Forbid, that also blocks every subsequent weekly run
+  # from starting, silently, which is exactly the failure mode design §3.6
+  # calls out as the one worth avoiding -- worse here because this workflow
+  # is red by design most weeks (§3.6), so "red" alone carries no signal.
+  # This converts a hang into a failed run instead of an indefinite block.
+  # The first full measured run (design §5.1) took ~40 minutes for 78 images
+  # at parallelism 4; 5400s (90m) leaves better than 2x headroom over that.
+  activeDeadlineSeconds: 5400
+
   # Bounds concurrent scan pods. Peak temp disk is roughly four scans' worth
   # rather than seventy-five. See sizeLimit on the emptyDir below.
   parallelism: 4
@@ -220,7 +232,9 @@ spec:
           # is designed to survive (see the comment above that block).
           try:
               subprocess.check_call([sys.executable, "-m", "pip", "install",
-                                     "--quiet", "--disable-pip-version-check", "boto3"])
+                                     "--quiet", "--disable-pip-version-check",
+                                     "--timeout", "30", "--retries", "2",
+                                     "boto3==1.35.99"])
           except Exception as exc:
               print(f"WARNING: boto3 install failed, S3 publish will be skipped: {exc}",
                     file=sys.stderr)
