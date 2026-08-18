@@ -28,9 +28,11 @@ spec:
   # at parallelism 4; 5400s (90m) leaves better than 2x headroom over that.
   activeDeadlineSeconds: 5400
 
-  # Bounds concurrent scan pods. Peak temp disk is roughly four scans' worth
-  # rather than seventy-five. See sizeLimit on the emptyDir below.
-  parallelism: 4
+  # Bounds concurrent scan pods. Raised from 4 to 8 on 2026-08-18 after
+  # measuring a real run: 115 pod-minutes through a 4-wide pipe was ~34 minutes
+  # of wall clock. Worst-case concurrent disk is unchanged, because the scan
+  # emptyDir halved to 4Gi once the vulnerability DB moved to the daemon.
+  parallelism: 8
 
   # Keep a quarter's worth of history for trend, then let them go.
   ttlStrategy:
@@ -64,20 +66,81 @@ spec:
     - name: main
       dag:
         tasks:
+          # The DB server and image discovery are independent; run them at the
+          # same time so the server's one-off ~16s DB download overlaps with
+          # listing pods rather than adding to the critical path.
+          - name: trivy-server
+            template: trivy-server
           - name: discover
             template: discover-images
           - name: scan
             template: scan-image
-            dependencies: [discover]
+            dependencies: [discover, trivy-server]
             # Fan out: one scan pod per distinct image.
             withParam: "{{tasks.discover.outputs.result}}"
             arguments:
               parameters:
                 - name: image
                   value: "{{item}}"
+                # Argo exposes a daemon pod's address as .ip. Scans reach the
+                # shared DB here instead of each downloading their own.
+                - name: server
+                  value: "{{tasks.trivy-server.ip}}"
           - name: report
             template: aggregate
             dependencies: [scan]
+
+    # ------------------------------------------------------------ trivy server
+    # Holds the vulnerability database for the whole run.
+    #
+    # Measured 2026-08-18 on this cluster: a cold scan of alpine:3.19 takes 16s,
+    # of which 15s is the DB download and 1s is the actual scan; the unpacked DB
+    # is 1.2GB on disk. Every one of ~79 scan pods paid that, which is ~20 of the
+    # run's 115 pod-minutes spent fetching the same file 79 times.
+    #
+    # Against a server, a client scan takes 1-2s and creates NO local cache
+    # directory at all - only vulnerability MATCHING moves server-side, so the
+    # client still pulls and analyses the image itself (hence it still needs the
+    # ECR credential below).
+    #
+    # daemon: true means Argo keeps this alive alongside the DAG and tears it
+    # down when the workflow finishes. The readiness probe gates the scans, so
+    # none of them start against a server that is still downloading.
+    #
+    # THE TRADE-OFF: this is a single point of failure for every scan. If it
+    # dies, all of them fail. That is tolerable only because the aggregate step
+    # treats a missing report as *unscanned* rather than clean, names the
+    # unscanned images, and still fires the Slack alert - so the failure is
+    # loud. Do not "simplify" that behaviour away.
+    - name: trivy-server
+      daemon: true
+      container:
+        image: aquasec/trivy:0.74.0
+        command: [trivy]
+        args:
+          - server
+          - --listen
+          - "0.0.0.0:4954"
+          - --cache-dir
+          - /tmp/cache
+        volumeMounts:
+          - name: db
+            mountPath: /tmp
+        readinessProbe:
+          tcpSocket:
+            port: 4954
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 30
+        resources:
+          requests: {cpu: 200m, memory: 512Mi}
+          limits: {cpu: "1", memory: 2Gi}
+      volumes:
+        # Sized for the unpacked DB (1.2GB measured) with headroom. Enforced by
+        # kubelet, unlike a local-path PVC's size request.
+        - name: db
+          emptyDir:
+            sizeLimit: 4Gi
 
     # ---------------------------------------------------------------- discover
     - name: discover-images
@@ -133,6 +196,7 @@ spec:
       inputs:
         parameters:
           - name: image
+          - name: server
       # A flaky registry pull must not lose the whole run. Individual failures
       # are tolerated by the aggregate step, which reports them as unscanned —
       # silence about an unscanned image is the failure mode worth avoiding.
@@ -157,8 +221,11 @@ spec:
           # aggregate time so the S3 report keeps everything.
           # --quiet suppresses the DB-download progress bar, which otherwise
           # buries real errors under megabytes of carriage returns in the logs.
+          # --server: vulnerability matching happens on the shared daemon,
+          # so this pod downloads no database. Measured 16s -> 1-2s per scan.
           trivy image \
             --quiet \
+            --server "http://{{inputs.parameters.server}}:4954" \
             --format json \
             --output /tmp/out/report.json \
             --scanners vuln \
@@ -170,8 +237,6 @@ spec:
           # base-apps/ecr-auth/cronjobs.yaml, so no new credential is minted.
           - name: DOCKER_CONFIG
             value: /docker
-          - name: TRIVY_CACHE_DIR
-            value: /tmp/cache
         volumeMounts:
           - name: scratch
             mountPath: /tmp
@@ -188,7 +253,11 @@ spec:
         # it is why no node pinning is needed here.
         - name: scratch
           emptyDir:
-            sizeLimit: 8Gi
+            # 4Gi, down from 8Gi: the 1.2GB vulnerability DB now lives on the
+            # trivy-server daemon, so this holds only image layers. Worst-case
+            # concurrent disk is unchanged (8 x 4Gi = the old 4 x 8Gi) while
+            # throughput doubles.
+            sizeLimit: 4Gi
         - name: ecr
           secret:
             secretName: ecr-registry
