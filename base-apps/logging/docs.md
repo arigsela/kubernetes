@@ -35,7 +35,8 @@ under `base-apps/logging/`.
 
 ## Pipeline
 1. **Alloy** (`alloy-daemonset.yaml`, image `grafana/alloy:v1.4.3`) runs as a DaemonSet on
-   every `node.kubernetes.io/workload: application` node, using a cluster-wide RBAC
+   **every** node including `k3s-control-01` (no `nodeSelector`; the `NoSchedule` toleration
+   covers the control-plane taint), using a cluster-wide RBAC
    ClusterRole/ClusterRoleBinding (`alloy-rbac.yaml`) to discover pods. It collects **logs
    only** (`alloy-config.yaml`): `discovery.kubernetes` lists pods on its own node (field
    selector `spec.nodeName=` + `sys.env("HOSTNAME")`, where the DaemonSet injects `HOSTNAME`
@@ -48,6 +49,8 @@ under `base-apps/logging/`.
    Alloy pod scraped all three nodes plus every annotated pod and tailed every pod in the
    cluster. That duplicated collection was ~160MB of the ~240MB live heap per pod and
    OOM-killed them in a loop; see `runbook.md`.
+   Because discovery is node-scoped, a node with no Alloy pod gets no log collection at
+   all — which is why the DaemonSet must stay unrestricted by `nodeSelector`.
    Because tailing goes through the API, the `varlog`/`varlibdockercontainers` `hostPath`
    mounts and `privileged: true`/`runAsUser: 0` in `alloy-daemonset.yaml` are vestigial from
    an earlier file-tailing config and are not read by the current pipeline.
