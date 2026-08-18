@@ -14,8 +14,12 @@ spec:
       labels:
         app: alloy
     spec:
-      nodeSelector:
-        node.kubernetes.io/workload: application
+      # No nodeSelector on purpose: pod discovery is scoped to the local node
+      # (alloy-config.yaml), so a node without an Alloy pod has no log collection at all.
+      # Restricting this to workload=application silently dropped every pod on
+      # k3s-control-01 - argo-cd, kyverno, kube-system, cert-manager, external-secrets,
+      # dex, falco and atlantis among them. The toleration below already covers the
+      # control-plane NoSchedule taint.
       serviceAccountName: alloy
       tolerations:
       - effect: NoSchedule

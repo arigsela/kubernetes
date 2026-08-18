@@ -56,6 +56,25 @@ sources:
 
   Since Alloy is a DaemonSet, an OOMKilled pod only breaks log collection on that one node.
 
+### Symptom: no logs in Loki from a whole node, or from a namespace that only runs there
+- **Check:** `kubectl -n logging get pods -l app=alloy -o wide` and confirm there is one
+  Alloy pod **per node** (`kubectl get nodes`). Then confirm the missing namespace's pods
+  actually run on a node that has one:
+  `kubectl get pods -A -o wide --field-selector status.phase=Running | grep <namespace>`.
+  To see what a given Alloy is tailing:
+  `kubectl -n logging port-forward <alloy-pod> 12345:12345` then
+  `curl -s localhost:12345/api/v0/web/components/discovery.relabel.pods` — every target
+  should carry the local node's `__meta_kubernetes_pod_node_name`.
+- **Fix:** log discovery is scoped to the local node (`spec.nodeName` field selector in
+  `alloy-config.yaml`), so **a node without an Alloy pod has no log collection at all** —
+  the two settings are coupled. Don't add a `nodeSelector` to `alloy-daemonset.yaml` while
+  that filter is in place. This bit us on 2026-08-18: the DaemonSet was pinned to
+  `node.kubernetes.io/workload: application`, and when discovery became node-scoped every
+  pod on `k3s-control-01` (argo-cd, kyverno, kube-system, cert-manager, external-secrets,
+  dex, falco, atlantis) silently stopped shipping logs. If a new node is tainted such that
+  the existing `NoSchedule`/`Exists` toleration doesn't cover it, widen the toleration
+  rather than narrowing where Alloy runs.
+
 ### Symptom: Loki can't write logs / storage errors ("AccessDenied", "NoSuchBucket")
 - **Check:** `kubectl -n logging get pods -l app=loki` and `kubectl -n logging logs
   deploy/loki` for S3 errors. Then confirm the credentials chain: `kubectl -n logging get
