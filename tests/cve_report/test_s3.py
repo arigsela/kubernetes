@@ -100,7 +100,9 @@ def test_main_posts_to_slack_and_keeps_exit_code_when_render_html_raises(
     ])
 
     assert posted, "render_html() raising must not suppress the Slack/n8n POST"
-    assert rc == 1, "exit-code contract (1 iff actionable findings) must survive a render_html failure"
+    assert rc == 0, \
+        "the scan succeeded, so it must stay green - a publish/render failure is\n"\
+        " a warning, and findings alone never fail the run (contract changed 2026-08-18)"
 
 
 def test_main_posts_to_slack_and_keeps_exit_code_when_publish_raises(
@@ -136,7 +138,9 @@ def test_main_posts_to_slack_and_keeps_exit_code_when_publish_raises(
     ])
 
     assert posted, "publish() raising must not suppress the Slack/n8n POST"
-    assert rc == 1, "exit-code contract (1 iff actionable findings) must survive a publish failure"
+    assert rc == 0, \
+        "the scan succeeded, so it must stay green - a publish failure is a\n"\
+        " warning, not a red run (contract changed 2026-08-18)"
 
 
 def test_main_publishes_generated_and_summary_but_leaves_full_report_untouched(
@@ -169,7 +173,7 @@ def test_main_publishes_generated_and_summary_but_leaves_full_report_untouched(
         "--date", "2026-08-18",
     ])
 
-    assert rc == 1
+    assert rc == 0, "scan succeeded: green"
     assert posted
 
     by_key = {p["key"]: p["body"] for p in s3.puts}
