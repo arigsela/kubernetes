@@ -23,8 +23,18 @@ spec:
   # Keep a quarter's worth of history for trend, then let them go.
   ttlStrategy:
     secondsAfterCompletion: 7776000
+  # OnWorkflowCompletion, NOT OnWorkflowSuccess. This workflow fails by design
+  # whenever there is anything actionable (§3.6), which — at 386 findings on the
+  # first run — means every week until those images are rebuilt. Collecting pods
+  # only on success would therefore never collect them: ~79 pods per run against
+  # a 90-day TTL is over a thousand pods before anything reaps them.
+  #
+  # Safe because the chart sets artifactRepository.archiveLogs: true, so each
+  # pod's logs are in S3 and stay readable from the Argo UI after the pod is
+  # gone. Do not "fix" this back to OnWorkflowSuccess to make failed runs
+  # debuggable — the logs outlive the pods already.
   podGC:
-    strategy: OnWorkflowSuccess
+    strategy: OnWorkflowCompletion
 
   arguments:
     parameters:
