@@ -1,3 +1,5 @@
+import re
+
 OWNED = "852893458518.dkr.ecr."
 
 
@@ -24,16 +26,20 @@ def test_html_is_a_complete_document(render):
 
 
 def test_html_is_self_contained(render):
-    """No CDN, no external fonts - it is opened from a presigned S3 URL."""
-    html = _doc(render).lower()
-    for forbidden in ["http://", "https://cdn", "<script src=", "<link rel=\"stylesheet\" href="]:
-        assert forbidden not in html, f"external reference found: {forbidden}"
+    """No CDN, no external fonts, no @import - it is opened from a presigned
+    S3 URL where no external fetch is guaranteed to succeed."""
+    html = _doc(render)
+    assert not re.search(r"\bhttps?://", html), \
+        "external URL reference in a self-contained report"
+    assert "@import" not in html.lower(), \
+        "@import can pull an external stylesheet"
 
 
 def test_html_reports_the_actionable_count(render):
     html = _doc(render)
-    assert "1" in html
-    assert "actionable" in html.lower()
+    m = re.search(r'class="big act">(\d+)<', html)
+    assert m and m.group(1) == "1", \
+        f"actionable count not rendered as 1: {m and m.group(1)}"
 
 
 def test_html_includes_every_finding(render):
