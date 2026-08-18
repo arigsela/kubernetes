@@ -33,10 +33,17 @@ spec:
           name: http
           protocol: TCP
         env:
+        # Node name, used by alloy-config.yaml to scope pod discovery to this node.
         - name: HOSTNAME
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        # Without this, Go sizes its heap target from the host's memory, not the cgroup:
+        # next_gc sat at 527MB against this 512Mi limit, so the kernel OOM-killed Alloy
+        # before the GC ever ran (86-97 restarts). Keep at ~85% of limits.memory below,
+        # leaving room for non-heap RSS.
+        - name: GOMEMLIMIT
+          value: 440MiB
         volumeMounts:
         - name: config
           mountPath: /etc/alloy
