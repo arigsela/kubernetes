@@ -43,7 +43,7 @@ spec:
   # Pinned, not a channel. A channel resolves to "latest stable" via HTTP redirect,
   # which would silently retarget this Plan when upstream cuts a release — the walk
   # must move one deliberate minor at a time (§V.3).
-  version: v1.35.6+k3s1
+  version: v1.36.4+k3s1
 
   # One node at a time. With two workers, concurrency 2 would take both out together.
   concurrency: 1
