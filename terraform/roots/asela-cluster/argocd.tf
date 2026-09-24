@@ -18,6 +18,8 @@
 #
 # Learned the hard way on PR #547 (admin.enabled=false merged unapplied, so
 # password login stayed live), which is what this very block is fixing.
+# Happened again on PR #581 (Argo CD v3.5.3 merged while the cluster stayed on
+# v3.5.0-rc2); the PR that added this line re-planned and applied it.
 
 module "argocd" {
   source    = "../../modules/argocd"
