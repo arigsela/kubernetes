@@ -6,6 +6,7 @@ weaken the gate rather than break it loudly.
 """
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -152,6 +153,45 @@ def test_hop_verify_master_app_cascade_is_not_a_blanket_excuse():
     assert "leftover" in t, (
         "the cascade must be excused only when no non-allow-listed child is flagged"
     )
+
+
+def test_hop_verify_gate_runs_every_check_on_a_clean_cluster(tmp_path):
+    """The gate runs under `set -euo pipefail`. A check whose last statement is a false
+    test (`[ -n "$x" ] && note ...` with $x empty) returns 1 and kills the gate on the spot.
+    Until 2026-09-24 that happened exactly when the cluster was healthy: nothing tolerated
+    and no stale CNI events, so everything after the Argo check silently never ran.
+
+    Run the real script against a kubectl that reports nothing and require every check to
+    speak and the verdict line to print. The stub makes checks FAIL; that is fine. What
+    matters is that none of them aborts the run."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "kubectl"
+    stub.write_text("#!/usr/bin/env bash\nexit 0\n")
+    stub.chmod(0o755)
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    # Only kubectl is stubbed. Keep the interpreter running this test on PATH: CI's python3
+    # comes from actions/setup-python, not /usr/bin, and the gate shells out to it.
+    py_dir = Path(sys.executable).parent
+    env = {"PATH": f"{bin_dir}:{py_dir}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+           "HOME": str(tmp_path)}
+    r = subprocess.run(["bash", str(HOP_VERIFY), "gate", "--artifacts", str(artifacts)],
+                       capture_output=True, text=True, env=env, timeout=120)
+    out = r.stdout + r.stderr
+    assert "GATE FAILED" in out or "GATE PASSED" in out, (
+        f"gate aborted before its verdict (exit {r.returncode}):\n{out}")
+    for tag in ("§V.5/§V.47", "§V.14 CNPG", "§V.14 Vault", "§V.11", "§V.49", "§V.50",
+                "§V.51", "§V.22", "§T.72"):
+        assert tag in out, f"check {tag} never ran:\n{out}"
+
+
+def test_hop_verify_checks_kyverno_admission():
+    """§T.72: kyverno v1.19 is untested on k8s 1.36 and was accepted on condition that every
+    hop re-proves the admission path, not just that the pods are Running."""
+    t = HOP_VERIFY.read_text()
+    assert "check_kyverno" in t and "--dry-run=server" in t, (
+        "gate must exercise the admission webhooks with a server-side dry-run create")
 
 
 # --- §T.28 / §V.35 ------------------------------------------------------------------
