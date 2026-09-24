@@ -9,11 +9,13 @@ data:
     /*     LOGS COLLECTION (Loki)              */
     /********************************************/
 
-    // Logs only, by design. Metrics collection lives in Prometheus: prometheus-config.yaml
-    // already scrapes the API server, nodes, cAdvisor and annotated pods directly. Alloy used
-    // to scrape those same targets and remote-write them, which duplicated every series and
-    // accounted for ~160MB of the ~240MB live heap per pod. See runbook.md, "Alloy DaemonSet
-    // pods CrashLooping / OOMKilled".
+    // Logs, plus host metrics (see the end of this file) and nothing else. Metrics collection
+    // lives in Prometheus: prometheus-config.yaml already scrapes the API server, nodes,
+    // cAdvisor and annotated pods directly. Alloy used to scrape those same targets and
+    // remote-write them, which duplicated every series and accounted for ~160MB of the
+    // ~240MB live heap per pod. See runbook.md, "Alloy DaemonSet pods CrashLooping /
+    // OOMKilled". The host metrics below are the one exception, because nothing else
+    // collects them.
 
     // Discover Kubernetes pods for logs.
     // The field selector pins each DaemonSet pod to its own node. Without it every Alloy pod
@@ -135,5 +137,60 @@ data:
       external_labels = {
         cluster = "homelab",
         source  = "alloy",
+      }
+    }
+
+    /********************************************/
+    /*     HOST METRICS (node-exporter)        */
+    /********************************************/
+
+    // The only metrics Alloy collects, because nothing else does: there is no node-exporter,
+    // and cAdvisor sees containers, not the host (root disk, load, PSI). They feed the
+    // "Cluster Overview" dashboard (grafana-dashboard-cluster-overview.yaml).
+    //
+    // Kept small on purpose (see the heap note at the top): only the collectors that
+    // dashboard uses, not node_exporter's ~40 defaults. netdev/netstat are left out because
+    // without hostNetwork they would report this pod's network namespace, not the node's.
+    // The host's /proc, /sys and / are mounted read-only by alloy-daemonset.yaml.
+    prometheus.exporter.unix "host" {
+      procfs_path    = "/host/proc"
+      sysfs_path     = "/host/sys"
+      rootfs_path    = "/host/root"
+      set_collectors = ["cpu", "diskstats", "filesystem", "loadavg", "meminfo", "pressure", "stat", "uname"]
+
+      filesystem {
+        fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|" +
+                               "iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|" +
+                               "squashfs|sysfs|tracefs|tmpfs)$"
+        mount_points_exclude = "^/(dev|proc|run|sys|var/lib/kubelet/.+|var/lib/rancher/k3s/agent/containerd/.+)($|/)"
+      }
+    }
+
+    // One series set per node, labelled with the node name so dashboards can join on it.
+    discovery.relabel "host" {
+      targets = prometheus.exporter.unix.host.targets
+
+      rule {
+        target_label = "node"
+        replacement  = sys.env("HOSTNAME")
+      }
+
+      rule {
+        target_label = "instance"
+        replacement  = sys.env("HOSTNAME")
+      }
+    }
+
+    prometheus.scrape "host" {
+      targets         = discovery.relabel.host.output
+      job_name        = "node-exporter"
+      scrape_interval = "30s"
+      forward_to      = [prometheus.remote_write.prometheus.receiver]
+    }
+
+    // Prometheus runs with --web.enable-remote-write-receiver (prometheus-statefulset.yaml).
+    prometheus.remote_write "prometheus" {
+      endpoint {
+        url = "http://prometheus.logging.svc.cluster.local:9090/api/v1/write"
       }
     }
