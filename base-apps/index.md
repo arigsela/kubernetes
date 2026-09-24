@@ -24,7 +24,7 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | argo-workflows-aws-infrastructure |  |  |  |  |  |
 | atlantis | Terraform/OpenTofu PR automation (Atlantis, GitHub + AWS auth via Vault, Infracost) | atlantis | [docs.md](atlantis/docs.md) | [runbook.md](atlantis/runbook.md) | [catalog-info.yaml](atlantis/catalog-info.yaml) |
 | backstage | Internal developer portal / software catalog (Backstage, shared PostgreSQL, Vault, kubernetes-ingestor) | backstage | [docs.md](backstage/docs.md) | [runbook.md](backstage/runbook.md) | [catalog-info.yaml](backstage/catalog-info.yaml) |
-| cert-manager | TLS via Let's Encrypt (HTTP-01 via nginx; Route 53 DNS-01 issuer) | cert-manager | [docs.md](cert-manager/docs.md) | [runbook.md](cert-manager/runbook.md) | [catalog-info.yaml](cert-manager/catalog-info.yaml) |
+| cert-manager | TLS via Let's Encrypt (Route 53 DNS-01) | cert-manager | [docs.md](cert-manager/docs.md) | [runbook.md](cert-manager/runbook.md) | [catalog-info.yaml](cert-manager/catalog-info.yaml) |
 | coroot | eBPF-based observability/APM (Coroot operator + instance, node/cluster agents, ClickHouse) | coroot | [docs.md](coroot/docs.md) | [runbook.md](coroot/runbook.md) | [catalog-info.yaml](coroot/catalog-info.yaml) |
 | crossplane-aws-provider |  |  |  |  |  |
 | crossplane-compositions |  |  |  |  |  |

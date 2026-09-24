@@ -92,7 +92,7 @@ git status
 
 ### Application Examples
 - **Chores Tracker**: FastAPI/Python backend with PostgreSQL (CloudNativePG), JWT auth, HTMX frontend
-- **Cert-Manager**: TLS via Let's Encrypt — HTTP-01 via nginx for prod/staging, plus a Route 53 DNS-01 issuer
+- **Cert-Manager**: TLS via Let's Encrypt — a single Route 53 DNS-01 issuer (`letsencrypt-route53`); one explicit `Certificate` per host
 - **External Secrets**: Vault integration for secure secret management
 
 ## Architecture Decision Records
