@@ -6,7 +6,7 @@ app: istio-waf
 catalog_entity: istio-waf
 kind: docs
 namespace: istio-ingress
-last_reviewed: 2026-08-11
+last_reviewed: 2026-09-24
 status: current
 tags: [waf, security, istio, coraza]
 sources:
@@ -85,6 +85,19 @@ error anywhere is the signature. The fix is a scoped exclusion after the CRS
 include (`SecRuleUpdateTargetById 930110 "!ARGS_POST:json.file"`), never raising
 the anomaly threshold — that would weaken every rule at once.
 
+**Body-inspection exclusion: `/webhook/newsletter-digest` (rule `9013`).** The
+email-digest webhook (the newsletter/feed digest skills posting to n8n's
+"Newsletter Digest — Send" workflow) carries a full HTML email plus the prose of
+a dozen-plus third-party articles. Measured 2026-09-24 on a real 17.5 KB digest,
+it scored 75: the `<html><body style=…>` shell tripped the XSS rules
+(`941100`/`941160`, plus `921130`), and ordinary article text tripped the RCE
+(`932xxx`) and SQLi (`942360`) families. That produced a `403` on every run since
+enforcement began, hidden by the skill's Gmail-draft fallback. The text changes
+daily, so per-rule target exclusions would never converge. Instead `9013`
+switches body inspection back off for that one anchored path, using the same
+`ctl:requestBodyAccess` action as `9010`. Every other webhook stays
+body-inspected, and the endpoint remains gated by n8n Header Auth.
+
 Enforcement was enabled **without** the 7-day observation window the plan calls
 for. The window's job is to surface false positives from real traffic rather
 than invented payloads, and it has not run — so treat unexplained breakage on
@@ -131,7 +144,7 @@ first panel watches Wasm load errors rather than only rule hits. An empty
 |---|---|
 | Which hosts are inspected | rule `9000` scope regex, `wasmplugin.yaml` |
 | Whether a host blocks or logs | rules `9001`–`9003` (present = log only) |
-| Body inspection | rules `9010` (n8n, path-scoped), `9011` (oncall) |
+| Body inspection | rules `9010` (n8n, path-scoped), `9011` (oncall); `9013` switches it back off for `/webhook/newsletter-digest` only |
 | CRS tuning (allow-lists) | rule `9100`, between the two `Include` lines |
 | CRS exclusions | end of the `default` directives list |
 | Log verbosity | `SecDebugLogLevel` |
