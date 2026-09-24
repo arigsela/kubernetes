@@ -59,6 +59,19 @@ spec:
           readOnly: true
         - name: data
           mountPath: /var/lib/alloy/data
+        # Host metrics (prometheus.exporter.unix in alloy-config.yaml) read the node's own
+        # /proc, /sys and root filesystem. All read-only; HostToContainer so filesystems
+        # mounted on the host after start (new local-path volumes) stay visible.
+        - name: host-proc
+          mountPath: /host/proc
+          readOnly: true
+        - name: host-sys
+          mountPath: /host/sys
+          readOnly: true
+        - name: host-root
+          mountPath: /host/root
+          readOnly: true
+          mountPropagation: HostToContainer
         resources:
           requests:
             cpu: 100m
@@ -81,3 +94,12 @@ spec:
           path: /var/lib/docker/containers
       - name: data
         emptyDir: {}
+      - name: host-proc
+        hostPath:
+          path: /proc
+      - name: host-sys
+        hostPath:
+          path: /sys
+      - name: host-root
+        hostPath:
+          path: /

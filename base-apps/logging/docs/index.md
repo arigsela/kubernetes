@@ -21,6 +21,7 @@ sources:
   - base-apps/logging/httproute.yaml
   - base-apps/logging/grafana-dashboard-configmap.yaml
   - base-apps/logging/istio-ambient-dashboard.yaml
+  - base-apps/logging/grafana-dashboard-cluster-overview.yaml
   - base-apps/logging/prometheus-config.yaml
   - base-apps/logging/prometheus-statefulset.yaml
 ---
@@ -37,14 +38,21 @@ under `base-apps/logging/`.
 1. **Alloy** (`alloy-daemonset.yaml`, image `grafana/alloy:v1.4.3`) runs as a DaemonSet on
    **every** node including `k3s-control-01` (no `nodeSelector`; the `NoSchedule` toleration
    covers the control-plane taint), using a cluster-wide RBAC
-   ClusterRole/ClusterRoleBinding (`alloy-rbac.yaml`) to discover pods. It collects **logs
-   only** (`alloy-config.yaml`): `discovery.kubernetes` lists pods on its own node (field
+   ClusterRole/ClusterRoleBinding (`alloy-rbac.yaml`) to discover pods. It collects **logs,
+   plus host metrics** (`alloy-config.yaml`). Logs: `discovery.kubernetes` lists pods on its own node (field
    selector `spec.nodeName=` + `sys.env("HOSTNAME")`, where the DaemonSet injects `HOSTNAME`
    from `spec.nodeName`), `loki.source.kubernetes` tails those containers **through the
    Kubernetes API**, and the pipeline parses JSON fields, drops nginx health-check and
    non-`development` `[DEBUG]` lines, then pushes to
    `http://loki.logging.svc.cluster.local:3100/loki/api/v1/push`.
-   Alloy deliberately collects **no metrics** — Prometheus scrapes those itself (step 3).
+   Alloy collects **no Kubernetes metrics** — Prometheus scrapes those itself (step 3).
+   The one exception (2026-09-24) is **host metrics**, which nothing else collects:
+   `prometheus.exporter.unix` (node-exporter built into Alloy) reads the node's own
+   `/proc`, `/sys` and `/`, mounted **read-only** at `/host/*`, with only the collectors
+   the Cluster Overview dashboard uses (cpu, diskstats, filesystem, loadavg, meminfo,
+   pressure, stat, uname). It labels every series `node=<node name>` and remote-writes to
+   Prometheus as `job="node-exporter"`. netdev/netstat are left out because without
+   `hostNetwork` they would report the pod's network namespace, not the node's.
    Until 2026-08-18 it did both, and neither half was scoped to the local node, so every
    Alloy pod scraped all three nodes plus every annotated pod and tailed every pod in the
    cluster. That duplicated collection was ~160MB of the ~240MB live heap per pod and
@@ -52,8 +60,9 @@ under `base-apps/logging/`.
    Because discovery is node-scoped, a node with no Alloy pod gets no log collection at
    all — which is why the DaemonSet must stay unrestricted by `nodeSelector`.
    Because tailing goes through the API, the `varlog`/`varlibdockercontainers` `hostPath`
-   mounts and `privileged: true`/`runAsUser: 0` in `alloy-daemonset.yaml` are vestigial from
-   an earlier file-tailing config and are not read by the current pipeline.
+   mounts in `alloy-daemonset.yaml` are vestigial from an earlier file-tailing config and are
+   not read by the current pipeline. `runAsUser: 0` is now used: the host-metrics exporter
+   reads root-owned host files.
 2. **Loki** (`loki-deployment.yaml`, single-replica Deployment, image `grafana/loki:3.2.1`,
    `-target=all` monolithic mode) receives log pushes and stores chunks/index in **S3**
    (`loki-config.yaml`: `common.storage.s3` and `storage_config.aws.s3` both point at bucket
@@ -70,16 +79,21 @@ under `base-apps/logging/`.
    Whichever limit trips first wins, so sustained ingest growth shortens the retention
    window rather than filling the node. `prometheus-config.yaml` has it scrape the Kubernetes
    API server, nodes, cAdvisor, and any pod/service annotated `prometheus.io/scrape: "true"`.
-   Since Alloy stopped forwarding metrics (2026-08-18) this service discovery is the only
-   path into the TSDB; `--web.enable-remote-write-receiver` is still enabled but nothing
-   writes to it.
+   Since Alloy stopped forwarding Kubernetes metrics (2026-08-18) this service discovery is
+   their only path into the TSDB. `--web.enable-remote-write-receiver` carries exactly one
+   stream: Alloy's host metrics (`job="node-exporter"`, step 1).
 4. **Grafana** (`grafana-deployment.yaml`, single-replica Deployment, image
-   `grafana/grafana:11.3.1`, 10Gi `local-path` PVC) is provisioned with two datasources
+   `grafana/grafana:11.3.9`, 10Gi `local-path` PVC) is provisioned with two datasources
    (`grafana-datasources` ConfigMap): `Loki` at `http://loki.logging.svc.cluster.local:3100`
    and `Prometheus` (default) at `http://prometheus.logging.svc.cluster.local:9090`.
-   Dashboards are file-provisioned (`grafana-dashboard-provider` ConfigMap) from two folders:
-   `Kubernetes` (`grafana-dashboard-configmap.yaml`, a basic cluster dashboard) and `Istio`
-   (`istio-ambient-dashboard.yaml`, the Istio ambient mesh dashboard).
+   Dashboards are file-provisioned (`grafana-dashboard-provider` ConfigMap) into folders:
+   `Kubernetes` — **Cluster Overview** (`grafana-dashboard-cluster-overview.yaml`, uid
+   `cluster-overview`: k3s version per node and API server, version skew, node
+   Ready/cordoned, host CPU/memory/root-disk/load/PSI, namespace CPU and memory, PVC fill,
+   API server errors, Argo sync/health). Its ConfigMap keeps the historical name
+   `grafana-dashboard-k8s-basic`, which until 2026-09-24 existed only in the cluster with an
+   empty placeholder. Also `Istio` (`istio-ambient-dashboard.yaml`) and `Security`
+   (`grafana-dashboard-coraza.yaml`, Coraza WAF).
 
 ## External access
 Grafana is exposed via `grafana-ingress.yaml`: nginx `Ingress` at host `grafana.arigsela.com`,
