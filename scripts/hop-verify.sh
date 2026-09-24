@@ -29,8 +29,17 @@ ARGO_NS="${ARGO_NAMESPACE:-argo-cd}"
 #   DIAGNOSED : cause documented in docs/plans/argocd-drift-diagnosis.md
 #   TOLERATED : workload verified running, cause NOT yet diagnosed (§T.45). Warned about
 #               on every run so it stays visible rather than becoming permanent.
-KNOWN_DRIFT_DIAGNOSED="${KNOWN_DRIFT_DIAGNOSED:-kagent-secrets kyverno}"
-KNOWN_DRIFT_TOLERATED="${KNOWN_DRIFT_TOLERATED:-atlantis}"
+#
+# 2026-09-24: kagent-secrets and atlantis are clean (§T.42 closed), so neither is excused
+# any more. kyverno stays only for master-app's cascade: Argo CD adds its own
+# pre-delete-finalizer.argocd.argoproj.io finalizers to Application/kyverno (the chart has
+# a PreDelete hook) and master-app diffs them against git. Drop it once master-app ignores
+# those finalizers.
+KNOWN_DRIFT_DIAGNOSED="${KNOWN_DRIFT_DIAGNOSED:-kyverno}"
+KNOWN_DRIFT_TOLERATED="${KNOWN_DRIFT_TOLERATED:-}"
+# Namespaces labelled istio.io/dataplane-mode. 0 since chores-tracker was removed; raise it
+# when a namespace is enrolled again so the hop notices a lost enrolment.
+AMBIENT_MIN="${AMBIENT_MIN:-0}"
 TIMEOUT=1800
 SINCE=""
 ACTION="${1:-}"; shift || true
@@ -44,6 +53,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Every check must end on a statement that succeeds. Under `set -e` a function whose last
+# command is a false test (`[ -n "$x" ] && note ...` with $x empty) returns 1, and the gate
+# dies there without a word - which is exactly what it did on a clean cluster until
+# 2026-09-24. Use `if ...; then ...; fi` for optional notes.
 FAIL=0
 ok()   { printf "  \033[32mPASS\033[0m  %s\n" "$*"; }
 bad()  { printf "  \033[31mFAIL\033[0m  %s\n" "$*"; FAIL=1; }
@@ -89,8 +102,10 @@ check_istio() {                                 # §V.49 — deferred Istio need
   done
   local amb
   amb=$(kubectl get ns -l istio.io/dataplane-mode --no-headers 2>/dev/null | wc -l | tr -d ' ')
-  [ "$amb" -gt 0 ] && ok "§V.49 $amb namespace(s) still enrolled in ambient" \
-                   || bad "§V.49 no namespaces enrolled in ambient — was that intended?"
+  # The expected count is explicit: "more than zero" stopped being true on purpose when
+  # chores-tracker (the only ambient workload) was removed in 7996557.
+  if [ "$amb" -ge "$AMBIENT_MIN" ]; then ok "§V.49 $amb namespace(s) enrolled in ambient (expected >= $AMBIENT_MIN)"
+  else bad "§V.49 only $amb namespace(s) enrolled in ambient, expected >= $AMBIENT_MIN — enrolment lost?"; fi
 }
 
 # §V.50 — a k3s hop rotates data/<hash> and repoints data/current, orphaning any CNI
@@ -136,7 +151,7 @@ print("HIST " + " ".join(sorted(hist)))' $stuck 2>/dev/null)
     bad "§V.50 → restart the istio-cni-node pod on each affected node (§B.7), then re-gate"
   else
     ok "§V.50 no live missing-CNI-plugin sandbox failures"
-    [ -n "$hist" ] && note "§V.50 resolved earlier this hour: $hist (events not yet expired)"
+    if [ -n "$hist" ]; then note "§V.50 resolved earlier this hour: $hist (events not yet expired)"; fi
   fi
 
   # §V.51 — the delayed half of §B.7. Every sandbox attempt that failed at the istio-cni
@@ -170,7 +185,7 @@ print("HIST " + " ".join(sorted(hist)))' $stuck 2>/dev/null)
     bad "§V.51 → compare /var/lib/cni/networks/cbr0 against live sandboxes and prune the orphans"
   else
     ok "§V.51 no live pod-CIDR exhaustion"
-    [ -n "$xhist" ] && note "§V.51 resolved earlier this hour on: $xhist (events not yet expired)"
+    if [ -n "$xhist" ]; then note "§V.51 resolved earlier this hour on: $xhist (events not yet expired)"; fi
   fi
 }
 
@@ -213,15 +228,26 @@ print(" ".join(bad))' 2>/dev/null || echo "READ-FAILED")
 }
 
 check_nodes_and_apps() {                        # §V.5 with §V.47's exception
-  local notready
-  notready=$(kubectl get nodes --no-headers 2>/dev/null | awk '$2!="Ready"{print $1}')
-  [ -z "$notready" ] && ok "§V.5 all nodes Ready" || bad "§V.5 nodes not Ready: $notready"
+  # An empty answer from the API must FAIL, not read as "nothing is wrong": no nodes
+  # listed is not the same as no nodes NotReady, and mid-hop the API does go away.
+  local nodes notready
+  nodes=$(kubectl get nodes --no-headers 2>/dev/null || true)
+  notready=$(printf "%s\n" "$nodes" | awk 'NF && $2!="Ready"{print $1}')
+  if [ -z "$nodes" ]; then bad "§V.5 no nodes returned — API unreachable?"
+  elif [ -z "$notready" ]; then ok "§V.5 all nodes Ready"
+  else bad "§V.5 nodes not Ready: $notready"; fi
   local drift
   drift=$(kubectl get app -n "$ARGO_NS" -o json 2>/dev/null | python3 -c '
 import sys, json
-d = json.load(sys.stdin)["items"]
+try: d = json.load(sys.stdin)["items"]
+except Exception: print("__UNREADABLE__"); sys.exit(0)
 print(" ".join(sorted(a["metadata"]["name"] for a in d
-      if a["status"]["sync"]["status"] != "Synced" or a["status"]["health"]["status"] != "Healthy")))')
+      if a.get("status", {}).get("sync", {}).get("status") != "Synced"
+      or a.get("status", {}).get("health", {}).get("status") != "Healthy")))' || true)
+  if [ "$drift" = "__UNREADABLE__" ]; then
+    bad "§V.5/§V.47 could not read Argo applications — API unreachable?"
+    return 0
+  fi
   local unexpected="" tolerated="" cascade=""
   for a in $drift; do
     case " $KNOWN_DRIFT_DIAGNOSED " in *" $a "*) continue;; esac
@@ -251,10 +277,45 @@ print(" ".join(sorted(r.get("name","") for r in rs if r.get("status") != "Synced
     fi
     unexpected="$unexpected $a"
   done
-  [ -n "$cascade" ] && note "§V.47 master-app OutOfSync is a CASCADE of allow-listed children:$cascade — not independent drift"
+  if [ -n "$cascade" ]; then note "§V.47 master-app OutOfSync is a CASCADE of allow-listed children:$cascade — not independent drift"; fi
   if [ -z "$unexpected" ]; then ok "§V.5/§V.47 no unexplained drift (diagnosed: ${KNOWN_DRIFT_DIAGNOSED})"
   else bad "§V.5/§V.47 UNEXPLAINED drift:$unexpected"; fi
-  [ -n "$tolerated" ] && note "§T.45 tolerated but UNDIAGNOSED:$tolerated — workloads Running; diagnose before this becomes permanent"
+  if [ -n "$tolerated" ]; then note "§T.45 tolerated but UNDIAGNOSED:$tolerated — workloads Running; diagnose before this becomes permanent"; fi
+}
+
+check_kyverno() {                               # §T.72 — kyverno v1.19 is untested on 1.36
+  # Accepted risk (2026-09-24): kyverno states k8s 1.33-1.35 only. Every hop re-proves the
+  # admission path instead of assuming it: controllers available, policies Ready, and a
+  # server-side dry-run pod create, which runs the webhooks without persisting anything.
+  # Emergency lever if admission breaks: delete kyverno's webhook configurations
+  #   kubectl delete validatingwebhookconfigurations,mutatingwebhookconfigurations \
+  #     -l webhook.kyverno.io/managed-by=kyverno
+  local notavail
+  notavail=$(kubectl get deploy -n kyverno -o json 2>/dev/null | python3 -c '
+import sys, json
+try: items = json.load(sys.stdin)["items"]
+except Exception: items = []
+bad = [d["metadata"]["name"] for d in items
+       if d["status"].get("availableReplicas", 0) < d["spec"].get("replicas", 1)]
+print(" ".join(bad) if items else "NO-DEPLOYMENTS")' || true)
+  if [ -z "$notavail" ]; then ok "§T.72 kyverno controllers available"
+  else bad "§T.72 kyverno controllers not available: $notavail"; fi
+  local notready
+  notready=$(kubectl get clusterpolicy -o json 2>/dev/null | python3 -c '
+import sys, json
+try: items = json.load(sys.stdin)["items"]
+except Exception: items = []
+print(" ".join(p["metadata"]["name"] for p in items
+      if not any(c.get("type") == "Ready" and c.get("status") == "True"
+                 for c in p.get("status", {}).get("conditions", []))))' || true)
+  if [ -z "$notready" ]; then ok "§T.72 kyverno ClusterPolicies Ready"
+  else bad "§T.72 kyverno ClusterPolicies not Ready: $notready"; fi
+  if kubectl run hop-verify-admission --image=busybox:1.36 --restart=Never -n default \
+       --dry-run=server -o name >/dev/null 2>&1; then
+    ok "§T.72 admission path: server-side dry-run pod create accepted"
+  else
+    bad "§T.72 admission path: dry-run pod create REJECTED — see the emergency lever in check_kyverno"
+  fi
 }
 
 check_pg() {                                    # §V.14 data path
@@ -286,6 +347,7 @@ case "$ACTION" in
     check_istio
     check_cni_plugin
     check_ingress
+    check_kyverno
     note "§V.2/§V.27 component matrix — operator judgement, see docs/plans/k3s-1.36-upgrade-plan.md"
     note "§V.10 removed-API scan — run: pytest tests/k3s-upgrade/test_api_scan.py"
     note "§V.16 restore drill — proven by tests/k3s-upgrade/ in CI"
@@ -304,7 +366,7 @@ case "$ACTION" in
       FAIL=0
       check_nodes_and_apps >/dev/null 2>&1 || true
       # recompute cleanly
-      FAIL=0; out=$(check_nodes_and_apps 2>&1); echo "$out" | grep -q FAIL || FAIL=0
+      FAIL=0; out=$(check_nodes_and_apps 2>&1) || true; echo "$out" | grep -q FAIL || FAIL=0
       if ! echo "$out" | grep -q "FAIL"; then
         elapsed=$(( $(date +%s) - SINCE ))
         echo "$out"
