@@ -38,7 +38,7 @@ entries:
     reference: >-
       The kagent control plane (kagent-controller, kagent-ui, kagent-tools) plus
       the declarative agents (k8s-agent, istio-agent, homelab-knowledge,
-      observability-agent, build-orchestrator, k8s-reader, skill-suggester,
+      build-orchestrator, k8s-reader, skill-suggester,
       dungeon-crawler-carl-agent).
     source: "base-apps/kagent/ and base-apps/kagent/agents/"
     tags: [factual, inventory]
