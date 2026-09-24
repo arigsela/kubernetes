@@ -29,7 +29,7 @@ the `managed-apps` ApplicationSet from configs in `appsets/managed-apps/` — se
   - Secrets managed via Vault + External Secrets Operator
 
 ### Policy Engine (Kyverno)
-- **kyverno** - Kubernetes policy engine (Helm chart v3.7.1) for validating, mutating, and generating resources
+- **kyverno** - Kubernetes policy engine (Helm chart v3.9.1) for validating, mutating, and generating resources
 - **kyverno-policies** (managed) - Custom ClusterPolicies:
   - `inject-ecr-pull-secret` - Automatically injects `imagePullSecrets` into pods referencing ECR images
   - `generate-ecr-secret` - Clones `ecr-registry` secret into new namespaces on creation
