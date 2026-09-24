@@ -10,11 +10,9 @@ variable "helm_services" {
     {
       name         = "argo-cd"
       release_name = "argo-cd"
-      # Latest GA argo-helm chart (appVersion v3.4.5). No chart packages Argo CD
-      # 3.5 yet; the 3.5.0-rc2 binaries are pinned via global.image.tag in the
-      # root module (terraform/roots/asela-cluster/argocd.tf). Bump this to the
-      # real 3.5 chart once argo-helm publishes it after 3.5 GA (~2026-08-04).
-      chart_version = "10.1.4"
+      # appVersion v3.5.3 (GA). Replaces 10.1.4 + a v3.5.0-rc2 global.image.tag
+      # override, so the chart's CRDs and manifests now match the binaries.
+      chart_version = "10.9.2"
       settings      = {}
     }
   ]

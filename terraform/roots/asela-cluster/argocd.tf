@@ -42,21 +42,10 @@ module "argocd" {
       # Set via global.domain rather than overriding configs.cm.url directly so
       # the chart's other domain-derived values stay consistent with it.
       domain = "argocd.arigsela.com"
-      # Run the Argo CD 3.5.0-rc2 release candidate. No argo-helm chart packages
-      # 3.5 yet (chart 10.1.4 ships appVersion v3.4.5), so we override the image
-      # tag on the latest GA chart. global.image.tag applies to the core Argo CD
-      # components (server, repo-server, application-controller,
-      # applicationset-controller); dex and redis keep their chart-default images.
-      # 3.4->3.5 adds no new CRDs and mTLS is opt-in/off by default, so the 3.4.x
-      # chart manifests are compatible with the 3.5-rc2 binaries.
-      # Remove this override once chart_version points at a real 3.5 chart.
-      image = {
-        tag = "v3.5.0-rc2"
-      }
-      # Chart 10.0.0 flipped global.networkPolicy.create false->true. Pin it back
-      # to false to keep this upgrade behavior-preserving (no new NetworkPolicies
-      # introduced alongside the RC binary swap). Enabling netpols should be a
-      # separate, deliberate change once 3.5-rc is confirmed healthy.
+      # Chart 10.0.0 flipped global.networkPolicy.create false->true. Pinned back
+      # to false so chart upgrades stay behavior-preserving (no NetworkPolicies
+      # appear as a side effect). Enabling netpols should be a separate,
+      # deliberate change.
       networkPolicy = {
         create = false
       }
@@ -198,6 +187,11 @@ module "argocd" {
         # chart default `false`. Do not "fix" either by reflex - enabling pod
         # exec is a security decision, and narrowing resource.exclusions is a
         # performance one. Both deserve their own change.
+        #
+        # Chart 10.5.0+ removes that trap: configs.cm.resourceExclusionsAdditional
+        # APPENDS to the chart's default list instead of replacing it, so these
+        # two groups can move there without losing any default. Still a behavior
+        # change (they start taking effect), so still its own PR.
         #
         # The agent-docs framework therefore does NOT rely on a
         # global backstage.io exclusion; each app's Argo CD Application instead
