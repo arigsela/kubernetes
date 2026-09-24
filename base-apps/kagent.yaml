@@ -91,13 +91,9 @@ spec:
         # argoproj/argo-cd#8970 / #9678, reproduced on this cluster. Owning the
         # CRs makes both fields declarative and self-healed by Argo.
         #
-        # observability-agent WAS left chart-managed on the belief that it is
-        # "read-only, so it needs no approval gates". That was wrong. It binds 34
-        # kagent-grafana-mcp tools, three of which mutate (update_dashboard,
-        # create_incident, add_activity_to_incident), with no requireApproval at
-        # all — and it delegated to promql-agent, which is disabled below and does
-        # not exist. It is now owned in git like the other two, gated, and declared
-        # class `write`. See base-apps/kagent/agents/observability-agent.yaml.
+        # observability-agent is gone entirely: 34 of its 36 tools came from
+        # grafana-mcp, which is disabled below. Its chart copy stays off too, or
+        # the chart would render it straight back.
         k8s-agent:
           enabled: false
         istio-agent:
@@ -122,6 +118,12 @@ spec:
         cilium-policy-agent:
           enabled: false
         observability-agent:
+          enabled: false
+
+        # grafana-mcp never worked here: it ran on chart defaults, pointed at
+        # grafana.kagent:3000 (Grafana lives in `logging`) with no service-account
+        # token, so every initialize returned Forbidden.
+        grafana-mcp:
           enabled: false
 
         # OpenTelemetry tracing → Coroot OTLP receiver

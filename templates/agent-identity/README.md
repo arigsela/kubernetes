@@ -23,7 +23,7 @@ boundary (ModelConfig), and the capability boundary (`Agent.spec.declarative.too
 3. **Declared capability surface.** Every `Agent.spec.declarative.tools`
    `McpServer` ref names an MCP server that exists in git and lists non-empty
    `toolNames` (no implicit bind-all). MCP servers rendered by the kagent Helm
-   chart (`kagent-tool-server`, `kagent-grafana-mcp`) are exempt from the
+   chart (`kagent-tool-server`) are exempt from the
    "exists in git" half, for the same reason `default-model-config` is: they are
    still declarative — versioned by the chart's `targetRevision` — and adopting
    them as standalone manifests would put the chart and the `kagent-secrets`

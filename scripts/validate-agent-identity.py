@@ -53,7 +53,7 @@ CHART_GENERATED_MODELCONFIGS = {"default-model-config"}
 # mode that silently stripped the agents' HITL requireApproval gates on every
 # sync. Invariant 3's real teeth are the explicit toolNames check below, which
 # still applies to these refs.
-CHART_PROVIDED_MCPSERVERS = {"kagent-tool-server", "kagent-grafana-mcp"}
+CHART_PROVIDED_MCPSERVERS = {"kagent-tool-server"}
 
 
 def _load_docs(path: Path) -> list[dict]:
