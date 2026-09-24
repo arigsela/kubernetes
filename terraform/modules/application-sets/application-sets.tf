@@ -21,9 +21,22 @@ resource "kubectl_manifest" "master_app" {
       repoURL: https://github.com/arigsela/kubernetes
       targetRevision: main
 
+    # Argo CD adds its own pre-/post-delete finalizers to any Application whose chart
+    # has PreDelete/PostDelete hooks (kyverno today). They are not in git, so
+    # master-app read them as drift and self-healed in a loop (SPEC.md T85).
+    # RespectIgnoreDifferences keeps a master-app sync from applying git's finalizer
+    # list over them: Applications are CRs, so the list is replaced, not merged.
+    ignoreDifferences:
+      - group: argoproj.io
+        kind: Application
+        jqPathExpressions:
+          - '.metadata.finalizers[] | select(startswith("pre-delete-finalizer.argocd.argoproj.io") or startswith("post-delete-finalizer.argocd.argoproj.io"))'
+
     syncPolicy:
       automated:
         prune: true
         selfHeal: true
+      syncOptions:
+        - RespectIgnoreDifferences=true
   YAML
 }

@@ -30,12 +30,10 @@ ARGO_NS="${ARGO_NAMESPACE:-argo-cd}"
 #   TOLERATED : workload verified running, cause NOT yet diagnosed (§T.45). Warned about
 #               on every run so it stays visible rather than becoming permanent.
 #
-# 2026-09-24: kagent-secrets and atlantis are clean (§T.42 closed), so neither is excused
-# any more. kyverno stays only for master-app's cascade: Argo CD adds its own
-# pre-delete-finalizer.argocd.argoproj.io finalizers to Application/kyverno (the chart has
-# a PreDelete hook) and master-app diffs them against git. Drop it once master-app ignores
-# those finalizers.
-KNOWN_DRIFT_DIAGNOSED="${KNOWN_DRIFT_DIAGNOSED:-kyverno}"
+# 2026-09-24: both lists are empty. kagent-secrets and atlantis came clean with §T.42, and
+# kyverno's last reason (master-app diffing Argo's own pre-delete finalizers) went with
+# §T.85. Every app must now be Synced+Healthy; add a name here only with its cause.
+KNOWN_DRIFT_DIAGNOSED="${KNOWN_DRIFT_DIAGNOSED:-}"
 KNOWN_DRIFT_TOLERATED="${KNOWN_DRIFT_TOLERATED:-}"
 # Namespaces labelled istio.io/dataplane-mode. 0 since chores-tracker was removed; raise it
 # when a namespace is enrolled again so the hop notices a lost enrolment.
