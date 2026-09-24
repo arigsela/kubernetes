@@ -1,0 +1,54 @@
+# master-app: the root app-of-apps. It creates an Application for every
+# top-level base-apps/*.yaml (it does not recurse; see managed-apps.yaml for
+# the ApplicationSet that covers the rest), and since 2026-09-24 that includes
+# this file, so master-app manages itself.
+#
+# History: Terraform created it (terraform/modules/application-sets) until
+# 37ed838 (2026-03) dropped the module "because master-app is managed via
+# base-apps/ GitOps", but no manifest was ever added. For six months the root
+# of the tree existed only in the cluster, changed by kubectl edit/patch. Its
+# spec below is a faithful copy of the live object plus the T85 fix.
+#
+# Handle with care, because this file points the whole tree:
+#   - NO finalizers, ever. With resources-finalizer.argocd.argoproj.io,
+#     deleting master-app would cascade-delete every Application under it.
+#     Without one, deleting it leaves every child app running.
+#   - A bad source.path/targetRevision here re-points the root at once. Recover
+#     with `kubectl -n argo-cd edit application master-app`, then fix git.
+#   - Deleting this file makes master-app prune its own Application
+#     (prune: true). The children survive (see above), but the root is gone
+#     until re-created by hand.
+#   - scripts/argo-sync-window.sh suspends master-app by removing
+#     syncPolicy.automated. A suspended root cannot sync itself back, so the
+#     window holds until `resume`.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: master-app
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-cd
+  # T85: Argo CD adds its own pre-/post-delete finalizers to any Application
+  # whose chart has PreDelete/PostDelete hooks (kyverno today). They are not in
+  # git, so master-app read them as drift and self-healed in a loop.
+  # RespectIgnoreDifferences keeps a master-app sync from applying git's
+  # finalizer list over them: Applications are CRs, so the list is replaced,
+  # not merged.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jqPathExpressions:
+        - '.metadata.finalizers[] | select(startswith("pre-delete-finalizer.argocd.argoproj.io") or startswith("post-delete-finalizer.argocd.argoproj.io"))'
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - RespectIgnoreDifferences=true

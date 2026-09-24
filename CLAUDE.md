@@ -14,7 +14,7 @@ This is a GitOps-based Kubernetes infrastructure repository that manages applica
 
 ### GitOps Workflow
 - **ArgoCD** monitors this repository and automatically syncs changes to the cluster
-- **Master App Pattern**: A master ArgoCD app-of-apps, defined in `terraform/modules/application-sets/`, watches the `base-apps/` directory and creates an Application for each `.yaml` file
+- **Master App Pattern**: A master ArgoCD app-of-apps, defined in `base-apps/master-app.yaml` (it manages itself), watches the `base-apps/` directory and creates an Application for each top-level `.yaml` file
 - **Auto-sync**: All applications have `prune: true` and `selfHeal: true` enabled
 - **External Secrets Operator**: Manages secrets from Vault using Kubernetes authentication
 
