@@ -113,6 +113,28 @@ spec:
         # matches out of ordinary payloads. Both of the hosts that get body
         # inspection here (n8n webhooks, oncall/Slack) send JSON.
         - SecRule REQUEST_HEADERS:Content-Type "@rx ^application/json" "id:9012,phase:1,pass,nolog,t:lowercase,ctl:requestBodyProcessor=JSON"
+        # 9013 turns body inspection back OFF for exactly one webhook: the email
+        # digest sender (newsletter-digest / feed-digest skills -> n8n workflow
+        # "Newsletter Digest - Send"). Its payload IS an HTML email carrying the
+        # prose of ~16 third-party articles, so it scores far past the threshold
+        # on every run. Measured 2026-09-24 on the real 17.5 KB digest: 941100 +
+        # 941160 (the <html><body style=...> shell), 921130, 932130/932230/
+        # 932235/932250/932260/932370 (prose like "SSH key", <code>config.py</code>)
+        # and 942360 ("as CSV from") -> anomaly score 75 -> 403, and the skill
+        # silently fell back to a Gmail draft, every day since enforcement began.
+        # The article text changes daily, so per-rule SecRuleUpdateTargetById
+        # exclusions would never converge; this is the scoped alternative.
+        #
+        # Scope: the exact path only - anchored, so a ?query is the only allowed
+        # suffix (a trailing /../x does not match and stays inspected). Must sit
+        # AFTER 9010, which it overrides. Every other /webhook* keeps body
+        # inspection; headers and URI on this path are still inspected.
+        # The endpoint is gated by n8n Header Auth (bearer token), which runs
+        # after this filter - so an uninspected body still has to pass n8n's
+        # auth check before any workflow sees it.
+        # Uses ctl:requestBodyAccess, the same action 9010 proves works in this
+        # parser (Gate B4) - not ctl:ruleRemoveTarget*, which is unproven here.
+        - SecRule REQUEST_URI "@rx ^/webhook/newsletter-digest(\?|$)" "id:9013,phase:1,pass,nolog,t:lowercase,ctl:requestBodyAccess=Off"
 
         # ── LOGGING ────────────────────────────────────────────────────────
         # 3 logs rule matches. Upstream's example uses 9 = every internal
