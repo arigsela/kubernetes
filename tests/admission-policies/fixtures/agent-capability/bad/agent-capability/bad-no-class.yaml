@@ -1,0 +1,14 @@
+# rule 1: no capability.homelab/class label. (from tests/agent-capability/kyverno/bad-agents.yaml)
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-no-class
+  namespace: kagent
+spec:
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        name: kagent-tool-server
+        toolNames:
+        - k8s_get_resources
