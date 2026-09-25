@@ -44,6 +44,11 @@ data:
       # Prometheus for metrics
       - name: Prometheus
         type: prometheus
+        # Pinned to the uid Grafana derived from this name when it was first
+        # provisioned without one, so pinning is a no-op. It is load-bearing: the
+        # cluster-health alert rules (grafana-alerting.yaml) and two UI-created
+        # dashboards ("K3S Monitoring", "Istio Workload Dashboard") reference it.
+        uid: PBFA97CFB590B2093
         access: proxy
         url: http://prometheus.logging.svc.cluster.local:9090
         jsonData:
@@ -62,6 +67,11 @@ metadata:
     app: grafana
 spec:
   replicas: 1
+  # Recreate, not RollingUpdate: Grafana's state is SQLite on an RWO local-path
+  # volume, and a rolling update briefly runs two Grafana processes on the same
+  # database file. A rollout now costs ~20s of Grafana downtime instead.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: grafana
@@ -73,6 +83,11 @@ spec:
         # Exclude Grafana storage from Velero backup - SQLite journal files cause backup failures
         # Dashboards are provisioned from ConfigMaps, so no data loss
         backup.velero.io/backup-volumes-excludes: storage
+        # Grafana reads alerting provisioning only at startup, so a rule change in
+        # grafana-alerting.yaml must restart it. sha256 of that ConfigMap's `data`
+        # (json.dumps, sort_keys); tests/dashboards/test_grafana_alerting.py fails if
+        # it is stale. Before this, rule changes needed a manual rollout restart.
+        checksum/alerting: 3e1e039d77b4e292e09efd0851bfc1d6d7025b33af9ae0c74b87ed0ec72e39ef
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application

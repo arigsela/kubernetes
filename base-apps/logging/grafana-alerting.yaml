@@ -213,3 +213,123 @@ data:
                         type: gt
                         params:
                           - 0
+
+      # ----------------------------------------------------------------------
+      # Cluster health, from Prometheus (docs/plans/k8s-136-features-implementation-plan.md,
+      # Phase 1). These catch the two capacity failures that were invisible until the
+      # per-pod pressure panels existed: a pod starved of CPU by its own limit, and a
+      # container about to be OOM-killed. Both fire per pod (one alert per series).
+      #
+      # datasourceUid PBFA97CFB590B2093 is the Prometheus datasource's uid, pinned in
+      # grafana-deployment.yaml. It is the uid Grafana derived from the name
+      # "Prometheus" when the datasource was first provisioned without one; UI-created
+      # dashboards reference it, so it must not be renamed.
+      - orgId: 1
+        name: cluster-health
+        folder: Cluster Health
+        interval: 1m
+        rules:
+          # Backstage sat at ~23-24% CPU stall and ~61% CFS throttling on 2026-09-25: its
+          # CPU limit, not the node, was the bottleneck. Nothing alerted. Threshold 20%
+          # (not the planned 25%) because 25% sat just above that clearly-starved pod;
+          # the next-highest pods (coroot node agents) are ~10%.
+          - uid: pod-cpu-starved
+            title: Pod CPU starved
+            condition: threshold
+            for: 30m
+            annotations:
+              summary: >-
+                {{ $labels.namespace }}/{{ $labels.pod }} spent {{ $values.query.Value | printf "%.0f" }}%
+                of the last 5m waiting for CPU (PSI "some").
+              runbook: >-
+                Grafana: Cluster Overview → Pod pressure. If "Pods most CPU-throttled"
+                is also high, the pod's own CPU limit is too low: raise it (git, or
+                in place for stateful pods — docs/troubleshooting/in-place-resize.md).
+                If throttling is low, the node is contended: check "CPU used %".
+            labels:
+              severity: warning
+              pillar: capacity
+            noDataState: OK
+            execErrState: Error
+            data:
+              - refId: query
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: PBFA97CFB590B2093
+                model:
+                  refId: query
+                  datasource:
+                    type: prometheus
+                    uid: PBFA97CFB590B2093
+                  instant: true
+                  range: false
+                  expr: >-
+                    100 * sum by (namespace, pod)
+                    (rate(container_pressure_cpu_waiting_seconds_total{container!=""}[5m]))
+              - refId: threshold
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: query
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 20
+
+          # prometheus-0 peaked at 99.8% of its 2Gi limit (15-day max, 2026-09-25) with
+          # no warning. Working set / limit is the right ratio: it is what the kernel
+          # compares against when it OOM-kills. Containers with no limit (0) are skipped.
+          - uid: container-near-memory-limit
+            title: Container near memory limit
+            condition: threshold
+            for: 15m
+            annotations:
+              summary: >-
+                {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) is at
+                {{ $values.query.Value | printf "%.0f" }}% of its memory limit.
+              runbook: >-
+                Grafana: Cluster Overview → Pod pressure → Memory used vs limit. Raise the
+                limit (git, or in place for stateful pods —
+                docs/troubleshooting/in-place-resize.md), or find the leak.
+            labels:
+              severity: warning
+              pillar: capacity
+            noDataState: OK
+            execErrState: Error
+            data:
+              - refId: query
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: PBFA97CFB590B2093
+                model:
+                  refId: query
+                  datasource:
+                    type: prometheus
+                    uid: PBFA97CFB590B2093
+                  instant: true
+                  range: false
+                  expr: >-
+                    100 * max by (namespace, pod, container)
+                    (container_memory_working_set_bytes{container!="",image!=""}
+                    / (container_spec_memory_limit_bytes{container!="",image!=""} > 0))
+              - refId: threshold
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: query
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 90
