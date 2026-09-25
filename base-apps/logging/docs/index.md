@@ -51,7 +51,9 @@ under `base-apps/logging/`.
    `/proc`, `/sys` and `/`, mounted **read-only** at `/host/*`, with only the collectors
    the Cluster Overview dashboard uses (cpu, diskstats, filesystem, loadavg, meminfo,
    pressure, stat, uname). It labels every series `node=<node name>` and remote-writes to
-   Prometheus as `job="node-exporter"`. netdev/netstat are left out because without
+   Prometheus as `job="node-exporter"`. Alloy's `--storage.path` (`/var/lib/alloy/data`: log read positions and the
+   remote_write WAL) is a **hostPath**, so a restart resumes where it left off instead of
+   re-reading every log on the node. netdev/netstat are left out because without
    `hostNetwork` they would report the pod's network namespace, not the node's.
    Until 2026-08-18 it did both, and neither half was scoped to the local node, so every
    Alloy pod scraped all three nodes plus every annotated pod and tailed every pod in the

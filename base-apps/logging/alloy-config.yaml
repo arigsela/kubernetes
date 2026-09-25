@@ -179,6 +179,14 @@ data:
         target_label = "instance"
         replacement  = sys.env("HOSTNAME")
       }
+
+      // The exporter's targets carry job="integrations/unix", which overrides
+      // prometheus.scrape's job_name. Set it explicitly so the series really are
+      // job="node-exporter", as documented.
+      rule {
+        target_label = "job"
+        replacement  = "node-exporter"
+      }
     }
 
     prometheus.scrape "host" {
