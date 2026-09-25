@@ -1,0 +1,18 @@
+# An existing pull secret is kept; ecr-registry is added next to it (keyed-list merge).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ecr-keeps-other
+  namespace: admission-test
+  annotations:
+    test.homelab/expect-pull-secrets: other,ecr-registry
+spec:
+  containers:
+  - name: app
+    resources:
+      limits:
+        cpu: 10m
+        memory: 16Mi
+    image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/app:1.0.0
+  imagePullSecrets:
+  - name: other

@@ -8,11 +8,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from conftest import FIXTURES, policy_docs, policy_files, real_agent_files
+from conftest import (FIXTURES, api_server_panics, expected_pull_secrets, policy_docs,
+                      policy_files, real_agent_files)
 
 SUITES = sorted(p.name for p in FIXTURES.iterdir() if p.is_dir() and p.name != "crds")
 GOOD = sorted(FIXTURES.glob("*/good/*.yaml"))
 BAD = sorted(FIXTURES.glob("*/bad/*/*.yaml"))
+MUTATE = sorted(FIXTURES.glob("*/mutate/*/*.yaml"))
 
 
 def _id(p: Path) -> str:
@@ -45,6 +47,17 @@ def test_real_agents_update_without_warnings(cluster, path):
     assert verdict == "allow", f"real agent {path.stem} got {verdict} from {fired}:\n{out}"
 
 
+@pytest.mark.parametrize("path", MUTATE, ids=_id)
+def test_mutation_fixture_gets_expected_pull_secrets(cluster, path):
+    """A real Pod: the imagePullSecrets it is admitted with must be exactly the expected set,
+    with no duplicates. Order is not asserted: a keyed-list merge may append or re-sort."""
+    text = path.read_text()
+    expected = expected_pull_secrets(text)
+    got = cluster.admitted_pull_secrets(text)
+    assert len(got) == len(set(got)), f"{_id(path)}: duplicate pull secrets {got}"
+    assert sorted(got) == expected, f"{_id(path)}: got {got}, expected {expected}"
+
+
 def test_api_server_service_is_exempt(cluster):
     """default/kubernetes belongs to the API server and cannot move, so
     disallow-default-namespace must not flag it. It already exists, so no create fixture can
@@ -55,12 +68,21 @@ def test_api_server_service_is_exempt(cluster):
     assert "ValidatingAdmissionPolicy" not in r.stderr, r.stderr
 
 
-def test_no_type_checking_warnings(cluster):
-    r = cluster.kubectl("get", "validatingadmissionpolicies", "-o", "json")
+@pytest.mark.parametrize("kind", ["validatingadmissionpolicies", "mutatingadmissionpolicies"])
+def test_no_type_checking_warnings(cluster, kind):
+    r = cluster.kubectl("get", kind, "-o", "json")
     assert r.returncode == 0, r.stderr
-    for vap in json.loads(r.stdout)["items"]:
-        warnings = (vap.get("status", {}).get("typeChecking") or {}).get("expressionWarnings") or []
-        assert not warnings, f"{vap['metadata']['name']}: {warnings}"
+    for p in json.loads(r.stdout)["items"]:
+        warnings = (p.get("status", {}).get("typeChecking") or {}).get("expressionWarnings") or []
+        assert not warnings, f"{p['metadata']['name']}: {warnings}"
+
+
+def test_api_server_did_not_panic(cluster):
+    """Runs after the tests above (definition order). A policy expression can panic the API
+    server's request handler, e.g. a JSONPatch whose value is a list of typed objects; the
+    request then fails with a 500 whatever the failurePolicy. Catch any such panic by name."""
+    panics = api_server_panics()
+    assert not panics, "\n".join(panics)
 
 
 # --- static: no cluster needed ----------------------------------------------------------------
@@ -73,10 +95,24 @@ def test_policy_files_exist():
     assert policy_files(), "base-apps/admission-policies/ has no policy manifests"
 
 
-def test_every_policy_has_a_binding():
-    vaps = _by_kind("ValidatingAdmissionPolicy")
-    bound = {b["spec"]["policyName"] for b in _by_kind("ValidatingAdmissionPolicyBinding").values()}
-    assert set(vaps) <= bound, f"policies with no binding: {set(vaps) - bound}"
+@pytest.mark.parametrize("kind", ["ValidatingAdmissionPolicy", "MutatingAdmissionPolicy"])
+def test_every_policy_has_a_binding(kind):
+    policies = _by_kind(kind)
+    bound = {b["spec"]["policyName"] for b in _by_kind(kind + "Binding").values()}
+    assert set(policies) <= bound, f"{kind}s with no binding: {set(policies) - bound}"
+
+
+def test_mutations_fail_open():
+    """A mutating policy with failurePolicy Fail turns one CEL error into 'no pod can be
+    created' cluster-wide. Ignore degrades to one pod missing the mutation instead."""
+    for name, map_ in _by_kind("MutatingAdmissionPolicy").items():
+        assert map_["spec"].get("failurePolicy") == "Ignore", f"{name} can block every pod"
+
+
+def test_every_mutating_policy_has_fixtures():
+    covered = {p.parent.name for p in MUTATE}
+    missing = set(_by_kind("MutatingAdmissionPolicy")) - covered
+    assert not missing, f"no mutate fixtures for: {missing}"
 
 
 def test_failure_policy_matches_rollout_stage():

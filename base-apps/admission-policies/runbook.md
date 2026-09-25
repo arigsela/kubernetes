@@ -11,6 +11,7 @@ status: current
 tags: [admission, cel, policy, security]
 sources:
   - base-apps/admission-policies/agent-identity.yaml
+  - base-apps/admission-policies/inject-ecr-pull-secret.yaml
   - tests/admission-policies/test_admission_policies.py
 ---
 
@@ -37,6 +38,24 @@ sources:
   `require-resource-limits`, `require-labels`, `disallow-default-namespace`) flagged it. These
   are audit-only permanently and never block. The message names the offending images or
   containers; fix them in the app's manifests when convenient.
+
+### Symptom: a Pod pulling from ECR is in `ImagePullBackOff` with `no basic auth credentials` / 401
+- **Check:** `kubectl get pod -n <ns> <pod> -o jsonpath='{.spec.imagePullSecrets}'`. It must
+  list `ecr-registry`; `inject-ecr-pull-secret` adds it at pod creation.
+- **Check:** the pod's namespace is matched by the `inject-ecr-pull-secret` binding (currently
+  only `admission-test`; Kyverno's `inject-ecr-pull-secret` still covers the rest) and that
+  `kubectl get mutatingadmissionpolicy inject-ecr-pull-secret -o jsonpath='{.status}'` shows
+  no type-checking warnings. `failurePolicy` is `Ignore`, so a policy error yields a pod
+  without the secret rather than a rejected pod.
+- **Check:** the `ecr-registry` Secret exists in the namespace and is fresh (ecr-auth
+  CronJob; ECR tokens last 12h).
+
+### Symptom: Pod creation fails with a 500 / `stream error ... INTERNAL_ERROR`
+- A mutating policy expression may be panicking the API server. That fails the request
+  **whatever the failurePolicy** (see docs.md gotchas). Look for `Observed a panic` in the
+  k3s journal on the control plane (`journalctl -u k3s | grep -A5 'Observed a panic'`).
+- **Emergency:** `kubectl delete mutatingadmissionpolicybinding <name>`, then fix git (Argo
+  re-creates the binding at the next sync).
 
 ### Symptom: a policy silently never fires
 - **Check:** `kubectl get validatingadmissionpolicy <name> -o jsonpath='{.status.typeChecking}'`.

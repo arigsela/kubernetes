@@ -1,0 +1,16 @@
+# ECR app container, no pull secrets: gains ecr-registry.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ecr-container
+  namespace: admission-test
+  annotations:
+    test.homelab/expect-pull-secrets: ecr-registry
+spec:
+  containers:
+  - name: app
+    resources:
+      limits:
+        cpu: 10m
+        memory: 16Mi
+    image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/app:1.0.0
