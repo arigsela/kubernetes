@@ -92,8 +92,16 @@ spec:
       - name: varlibdockercontainers
         hostPath:
           path: /var/lib/docker/containers
+      # hostPath, not emptyDir: this is where Alloy keeps its log read positions
+      # (loki.source.kubernetes.pods/positions.yml) and the remote_write WAL. With an
+      # emptyDir every restart forgot the positions and re-read every container log on
+      # the node from the start; Loki rejected the old lines as "entry too far behind"
+      # (400s, nothing duplicated), but the re-read pinned Alloy at its CPU limit for
+      # 10+ minutes on worker-01 (2026-09-25). ~100K per node.
       - name: data
-        emptyDir: {}
+        hostPath:
+          path: /var/lib/alloy/data
+          type: DirectoryOrCreate
       - name: host-proc
         hostPath:
           path: /proc

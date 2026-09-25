@@ -46,15 +46,30 @@ sources:
      the kernel kills the process before a GC runs. That was the 2026-08-18 crashloop:
      `next_gc` 527MB against a 512Mi limit, 86-97 restarts per pod.
   2. **Has Alloy's workload widened?** It should tail only pods on its own node (the
-     `spec.nodeName` field selector in `alloy-config.yaml`) and collect no metrics at all.
-     Removing the node filter, or re-adding `prometheus.scrape`/`remote_write` components,
-     multiplies memory by the node count and makes every pod ship duplicate data — visible
+     `spec.nodeName` field selector in `alloy-config.yaml`), and its only metrics are its
+     own node's host metrics (`prometheus.exporter.unix "host"` → `remote_write`, about 1.5K
+     series per node, `job="node-exporter"`). Removing the node filter, or adding scrapes of
+     Kubernetes targets that Prometheus already collects, multiplies memory by the node
+     count and makes every pod ship duplicate data — visible
      as Loki `entry too old` drops (`loki_write_dropped_entries_total`) and Prometheus
      `out of order sample` rejections (`prometheus_remote_storage_samples_failed_total`).
   3. **Only if neither holds** and live heap (`inuse_space`) is genuinely growing, raise
      `requests`/`limits` and `GOMEMLIMIT` together, keeping the ~85% ratio.
 
   Since Alloy is a DaemonSet, an OOMKilled pod only breaks log collection on that one node.
+
+### Symptom: an Alloy pod pinned at its CPU limit after a restart, logging `final error sending batch` / `entry too far behind`
+- **Check:** `kubectl -n logging logs <alloy-pod> | grep 'final error'`. HTTP 400s whose
+  reason is `entry too far behind` mean Alloy is re-reading old container logs and Loki is
+  rejecting lines it already has. Nothing is duplicated or lost; current lines still flow
+  (confirm with a recent `{namespace="<ns>"}` query in Grafana).
+- **Cause:** Alloy lost its read positions
+  (`/var/lib/alloy/data/loki.source.kubernetes.pods/positions.yml`). Since 2026-09-25 that
+  directory is a hostPath, so an ordinary restart keeps them. It still happens on a pod's
+  first start on a node, or if the node's `/var/lib/alloy/data` was wiped.
+- **Fix:** none needed; it stops once the node's logs have been re-read (minutes to tens of
+  minutes on the busiest node). If it never stops, check that the hostPath volume is
+  mounted at `--storage.path`.
 
 ### Symptom: no logs in Loki from a whole node, or from a namespace that only runs there
 - **Check:** `kubectl -n logging get pods -l app=alloy -o wide` and confirm there is one
