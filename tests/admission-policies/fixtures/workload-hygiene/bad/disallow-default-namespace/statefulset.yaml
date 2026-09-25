@@ -1,0 +1,24 @@
+# StatefulSet in the default namespace (otherwise compliant).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: in-default-statefulset
+  namespace: default
+  labels:
+    app.kubernetes.io/name: in-default-statefulset
+spec:
+  selector:
+    matchLabels:
+      app: in-default-statefulset
+  template:
+    metadata:
+      labels:
+        app: in-default-statefulset
+    spec:
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi

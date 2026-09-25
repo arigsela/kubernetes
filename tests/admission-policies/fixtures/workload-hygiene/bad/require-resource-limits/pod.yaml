@@ -1,0 +1,12 @@
+# Pod: no resources at all.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: limits-pod
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: limits-pod
+spec:
+  containers:
+  - name: app
+    image: registry.local:5000/app:1.2.3

@@ -1,0 +1,22 @@
+# CronJob: untagged image.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: latest-cronjob
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: latest-cronjob
+spec:
+  schedule: 0 3 * * *
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: app
+            image: alpine
+            resources:
+              limits:
+                cpu: 100m
+                memory: 64Mi
+          restartPolicy: Never

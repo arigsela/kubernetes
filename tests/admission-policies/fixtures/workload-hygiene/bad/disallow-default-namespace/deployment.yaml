@@ -1,0 +1,24 @@
+# Deployment in the default namespace (otherwise compliant).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: in-default-deployment
+  namespace: default
+  labels:
+    app.kubernetes.io/name: in-default-deployment
+spec:
+  selector:
+    matchLabels:
+      app: in-default-deployment
+  template:
+    metadata:
+      labels:
+        app: in-default-deployment
+    spec:
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi

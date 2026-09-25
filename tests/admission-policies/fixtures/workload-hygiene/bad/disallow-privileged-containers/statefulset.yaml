@@ -1,0 +1,26 @@
+# StatefulSet: privileged app container.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: priv-statefulset
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: priv-statefulset
+spec:
+  selector:
+    matchLabels:
+      app: priv-statefulset
+  template:
+    metadata:
+      labels:
+        app: priv-statefulset
+    spec:
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          privileged: true

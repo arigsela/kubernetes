@@ -96,6 +96,11 @@ def cluster():
         _wait(lambda: c.kubectl("get", "--raw", "/readyz").stdout.strip() == "ok", 180, "API server ready")
         for ns in NAMESPACES:
             c.apply(f"apiVersion: v1\nkind: Namespace\nmetadata:\n  name: {ns}\n")
+        # A Pod is admitted only once its namespace's default ServiceAccount exists; the
+        # controller creates it a moment after the namespace.
+        for ns in NAMESPACES + ["default", "kube-system"]:
+            _wait(lambda: c.kubectl("get", "serviceaccount", "default", "-n", ns).returncode == 0,
+                  60, f"default ServiceAccount in {ns}")
         for crd in sorted((FIXTURES / "crds").glob("*.yaml")):
             c.apply(crd.read_text())
         _wait(lambda: c.kubectl("wait", "--for=condition=established", "crd", "--all",
@@ -115,10 +120,12 @@ def cluster():
         for p in real_agent_files():
             c.apply(p.read_text())
         # A new policy takes a moment to reach the admission plugin. Wait until every policy
-        # that has a bad fixture actually fires on one.
+        # that has a bad fixture fires on at least one: ANY one, so a policy broken for one
+        # kind still starts and that fixture fails by name instead of the whole session.
         for pdir in sorted(FIXTURES.glob("*/bad/*")):
-            sample = sorted(pdir.glob("*.yaml"))[0].read_text()
-            _wait(lambda: pdir.name in c.verdict(sample)[1], 90, f"policy {pdir.name} active")
+            samples = [p.read_text() for p in sorted(pdir.glob("*.yaml"))]
+            _wait(lambda: any(pdir.name in c.verdict(s)[1] for s in samples), 90,
+                  f"policy {pdir.name} active")
         yield c
     finally:
         _docker("rm", "-f", NAME)

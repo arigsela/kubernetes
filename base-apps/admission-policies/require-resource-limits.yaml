@@ -1,0 +1,61 @@
+# Every container sets CPU and memory limits. AUDIT ONLY, permanently.
+#
+# Native replacement for the Kyverno ClusterPolicy require-resource-limits
+# (docs/plans/k8s-136-features-implementation-plan.md, Task 3.4). Same scope: app containers
+# (not initContainers); kube-system, argo-cd and kyverno excluded.
+#
+# Kyverno generated controller rules from its Pod rule (autogen); native policies do not, so the
+# `pod` variable extracts the pod spec per kind. Variables are NOT type-checked by the API
+# server: tests/admission-policies has a fixture per kind to cover that extraction.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: require-resource-limits
+spec:
+  failurePolicy: Ignore   # audit-only: never block on an evaluation error
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, argo-cd, kyverno]
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        resources: ["deployments", "statefulsets", "daemonsets"]
+        operations: ["CREATE", "UPDATE"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        resources: ["jobs", "cronjobs"]
+        operations: ["CREATE", "UPDATE"]
+  variables:
+    - name: pod
+      expression: >-
+        object.kind == 'Pod' ? object.spec
+        : object.kind == 'CronJob' ? object.spec.jobTemplate.spec.template.spec
+        : object.spec.template.spec
+    - name: unlimited
+      expression: >-
+        variables.pod.containers.filter(c,
+          !has(c.resources) || !has(c.resources.limits)
+          || !('cpu' in c.resources.limits) || !('memory' in c.resources.limits))
+        .map(c, c.name)
+  validations:
+    - expression: size(variables.unlimited) == 0
+      message: "All containers must have CPU and memory limits defined."
+      messageExpression: >-
+        "All containers must have CPU and memory limits defined. Missing on: "
+        + variables.unlimited.join(", ")
+      reason: Invalid
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: require-resource-limits
+spec:
+  policyName: require-resource-limits
+  validationActions: [Warn, Audit]   # audit-only, permanently

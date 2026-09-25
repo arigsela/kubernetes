@@ -30,8 +30,13 @@ sources:
   and Argo re-creates it at the next sync, so fix git first.
 
 ### Symptom: `Warning: Validation failed for ValidatingAdmissionPolicy '<name>'` on apply
-- A policy in **shadow** flagged the object. Nothing was blocked. Once that policy moves to
-  enforcing, the same object will be **denied**, so fix it now.
+- An agent policy (`agent-identity-*`, `agent-capability*`) in **shadow** flagged the object.
+  Nothing was blocked. Once that policy moves to enforcing, the same object will be
+  **denied**, so fix it now.
+- A workload-hygiene policy (`disallow-latest-tag`, `disallow-privileged-containers`,
+  `require-resource-limits`, `require-labels`, `disallow-default-namespace`) flagged it. These
+  are audit-only permanently and never block. The message names the offending images or
+  containers; fix them in the app's manifests when convenient.
 
 ### Symptom: a policy silently never fires
 - **Check:** `kubectl get validatingadmissionpolicy <name> -o jsonpath='{.status.typeChecking}'`.
@@ -41,11 +46,18 @@ sources:
   `matchResources` / the policy's `matchConstraints` cover the resource and namespace.
 
 ## How-to
+### List current workload-hygiene violations
+- Dry-run the live object back through the API server; each violation prints as a warning.
+  One object per call, because kubectl de-duplicates identical warnings:
+  `kubectl get deploy -n <ns> <name> -o yaml | kubectl replace --dry-run=server -f -`
+- `kubectl get policyreports -A`: native results carry `source: ValidatingAdmissionPolicy`,
+  if Kyverno's reports controller (`--validatingAdmissionPolicyReports=true`) has scanned them.
+
 ### Add or change a policy
 1. Write the policy and binding in `base-apps/admission-policies/`. New policies start in
    shadow (`[Warn, Audit]`, `failurePolicy: Ignore`).
-2. Add fixtures: at least one `bad/<policy-name>/` case and a `good/` case, in
-   `tests/admission-policies/fixtures/<suite>/`.
+2. Add fixtures: at least one `bad/<policy-name>/` case **per kind the policy matches** (the
+   static tests enforce it) and a `good/` case, in `tests/admission-policies/fixtures/<suite>/`.
 3. `python3 -m pytest tests/admission-policies/` (needs Docker; CI runs it too).
 4. After merge, check `status.typeChecking` on the cluster, and compare the shadow warnings
    against the Kyverno policy it replaces (`kubectl get policyreports -A`).

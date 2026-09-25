@@ -1,0 +1,21 @@
+# CronJob: CPU limit only.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: limits-cronjob
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: limits-cronjob
+spec:
+  schedule: 0 3 * * *
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: app
+            image: registry.local:5000/app:1.2.3
+            resources:
+              limits:
+                cpu: 100m
+          restartPolicy: Never

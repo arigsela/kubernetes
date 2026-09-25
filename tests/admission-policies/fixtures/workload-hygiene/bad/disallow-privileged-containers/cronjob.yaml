@@ -1,0 +1,24 @@
+# CronJob: privileged app container.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: priv-cronjob
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: priv-cronjob
+spec:
+  schedule: 0 3 * * *
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: app
+            image: registry.local:5000/app:1.2.3
+            resources:
+              limits:
+                cpu: 100m
+                memory: 64Mi
+            securityContext:
+              privileged: true
+          restartPolicy: Never

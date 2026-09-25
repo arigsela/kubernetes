@@ -1,0 +1,14 @@
+# kube-system is excluded, as in Kyverno: latest, privileged, no limits, all allowed.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: exempt
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: exempt
+spec:
+  containers:
+  - name: app
+    image: nginx:latest
+    securityContext:
+      privileged: true

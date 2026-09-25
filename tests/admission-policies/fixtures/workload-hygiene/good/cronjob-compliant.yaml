@@ -1,0 +1,22 @@
+# CronJob path of the pod-spec extraction, clean.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: compliant-cron
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: compliant-cron
+spec:
+  schedule: 0 3 * * *
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: app
+            image: registry.local:5000/app:1.2.3
+            resources:
+              limits:
+                cpu: 100m
+                memory: 64Mi
+          restartPolicy: Never

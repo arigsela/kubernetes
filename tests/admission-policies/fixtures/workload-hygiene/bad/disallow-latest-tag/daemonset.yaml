@@ -1,0 +1,24 @@
+# DaemonSet: untagged image from a registry with a port; Kyverno's '?*:?*' passed this.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: latest-daemonset
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: latest-daemonset
+spec:
+  selector:
+    matchLabels:
+      app: latest-daemonset
+  template:
+    metadata:
+      labels:
+        app: latest-daemonset
+    spec:
+      containers:
+      - name: app
+        image: registry.local:5000/agent
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi

@@ -1,0 +1,24 @@
+# StatefulSet whose app.kubernetes.io/name is empty.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: empty-name
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: ''
+spec:
+  selector:
+    matchLabels:
+      app: empty-name
+  template:
+    metadata:
+      labels:
+        app: empty-name
+    spec:
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
