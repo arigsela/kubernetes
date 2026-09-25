@@ -16,6 +16,9 @@ spec:
     modelConfig: default-model-config
     memory:
       modelConfig: embedding-model-config
+    # Pinned: kagent 0.10 changed the CRD default runtime from python to go,
+    # and the go runtime ignores context.compaction below (kagent-dev/kagent#2728).
+    runtime: python
     context:
       compaction:
         compactionInterval: 5

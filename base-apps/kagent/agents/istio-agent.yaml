@@ -10,7 +10,8 @@
 # DETECTION, and RespectIgnoreDifferences is ignored during sync when combined with
 # ServerSideApply (argoproj/argo-cd#8970, #9678) - verified failing on this cluster.
 #
-# systemMessage below is upstream's, captured from chart 0.9.11. On a chart bump,
+# systemMessage below is upstream's, captured from chart 0.9.11 (unchanged through
+# 0.10.2, as are its tools). On a chart bump,
 # diff it against the new rendered agent and re-merge intentionally.
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
