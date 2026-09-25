@@ -1,0 +1,18 @@
+# ecr-registry already listed: no duplicate.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ecr-already-present
+  namespace: admission-test
+  annotations:
+    test.homelab/expect-pull-secrets: ecr-registry
+spec:
+  containers:
+  - name: app
+    resources:
+      limits:
+        cpu: 10m
+        memory: 16Mi
+    image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/app:1.0.0
+  imagePullSecrets:
+  - name: ecr-registry

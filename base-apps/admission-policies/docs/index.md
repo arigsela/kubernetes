@@ -15,6 +15,7 @@ sources:
   - base-apps/admission-policies/agent-capability.yaml
   - base-apps/admission-policies/disallow-latest-tag.yaml
   - base-apps/admission-policies/require-resource-limits.yaml
+  - base-apps/admission-policies/inject-ecr-pull-secret.yaml
   - scripts/gen-agent-capability-policy.py
   - tests/admission-policies/conftest.py
   - tests/admission-policies/test_admission_policies.py
@@ -85,11 +86,19 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   extract the pod spec per kind in a `pod` variable, because native policies have no Kyverno
   "autogen". ReplicaSets are deliberately not matched: Kyverno's autogen reported every old
   revision-history ReplicaSet as a duplicate of its Deployment (54 of its 112 limits failures).
+- `inject-ecr-pull-secret.yaml`: a **MutatingAdmissionPolicy** that adds the `ecr-registry`
+  pull secret to any Pod pulling from ECR (container, initContainer or **image volume**). It
+  replaces Kyverno's mutation, which needed Kyverno's webhook pod and ignored image volumes.
+  A mutation has no shadow mode, so the binding is **limited to the `admission-test`
+  namespace** (declared in the same file) until verified live. The next change widens it to
+  every non-system namespace and deletes the Kyverno policy.
 - Tests: `tests/admission-policies/` boots a real k3s of the cluster's version in Docker,
   creates the cluster's real Agents (`base-apps/kagent/agents/`: the delegation policy's
   parameters, and each must also re-apply with zero warnings), and server-side dry-runs
   `fixtures/<suite>/good/*.yaml` (must pass clean against EVERY policy) and
-  `fixtures/<suite>/bad/<policy>/*.yaml` (must be flagged by that policy). CI job
+  `fixtures/<suite>/bad/<policy>/*.yaml` (must be flagged by that policy). Mutation fixtures,
+  `fixtures/<suite>/mutate/<policy>/*.yaml`, are created as **real Pods**, and their admitted
+  `imagePullSecrets` must equal the `test.homelab/expect-pull-secrets` annotation. CI job
   `admission-policies-validate`.
 
 ## Gotchas & tribal knowledge
@@ -104,6 +113,15 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   after a variable shows up only in fixtures. That is why the per-kind pod-spec extraction
   lives in a variable, and why `test_every_matched_kind_has_a_bad_fixture` requires a bad
   fixture for every kind each policy matches.
+- **MutatingAdmissionPolicy on 1.36: two traps**, both caught by the harness:
+  - `ApplyConfiguration` cannot add to `imagePullSecrets`. Its entries are
+    `LocalObjectReference`, an atomic struct, so the result is "may not mutate atomic arrays,
+    maps or structs". With `failurePolicy: Ignore` that is a **silent no-op**.
+  - A JSONPatch whose `value` is a **list of typed objects**
+    (`value: [Object.spec.imagePullSecrets{...}]`) **panics** the API server's request handler
+    (cel-go `ConvertToNative`). The create fails with a 500 **whatever the failurePolicy**.
+    Add an empty list, then append one object. `test_api_server_did_not_panic` greps the
+    harness API server's log for recovered panics.
 - **The harness uses minimal typed CRDs** (`fixtures/crds/`), copied from the real schemas for
   the paths the policies read. A policy reading a new field needs that field added there, or
   type checking fails with `undefined field`.

@@ -1,0 +1,18 @@
+# No ECR reference: untouched, existing secret kept, nothing added.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: no-ecr-untouched
+  namespace: admission-test
+  annotations:
+    test.homelab/expect-pull-secrets: other
+spec:
+  containers:
+  - name: app
+    resources:
+      limits:
+        cpu: 10m
+        memory: 16Mi
+    image: busybox:1.37
+  imagePullSecrets:
+  - name: other

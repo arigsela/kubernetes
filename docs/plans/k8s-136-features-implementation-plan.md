@@ -79,7 +79,7 @@ independent; it goes last but could move earlier.
   - **Deployments:** any template change is a rollout. No workload-controller in-place resize exists as of 1.36.
 - **Native policies:**
   - **VAP:** 7 of 9 policies map to it. agent-capability rules 6–7 (delegation) work with `paramKind` Agent and `paramRef.selector: {}`; the draft was accepted server-side and passes all 9 real agents plus both escalation fixtures.
-  - **MAP:** `inject-ecr-pull-secret` maps to one using ApplyConfiguration on the keyed list `PodSpec.imagePullSecrets`. How that merges on a real API server is **unverified**.
+  - **MAP:** `inject-ecr-pull-secret` maps to one using ApplyConfiguration on the keyed list `PodSpec.imagePullSecrets`. How that merges on a real API server is **unverified**. *(Verified in 3D: it does not work, see Task 3.5.)*
   - **Not native:** `generate-ecr-secret` cannot be done natively.
   - **Today's weaknesses:** the Kyverno webhook fails open, and `disallow-latest-tag`'s `?*:?*` pattern does not catch `:latest`.
   - **MAP requirements:** `reinvocationPolicy` is required, and a MAP binding has no `validationActions`.
@@ -297,6 +297,7 @@ Move enforcement into the API server, retire every `kyverno.io/v1` ClusterPolicy
 **Steps:**
 1. MAP on Pod CREATE. `matchConditions`: any container, initContainer **or `volumes[].image.reference`** contains `.dkr.ecr.`.
 2. Mutation: `patchType: ApplyConfiguration` adding `{name: "ecr-registry"}` to `spec.imagePullSecrets` (a keyed list, so it merges by name). Set `reinvocationPolicy: Never`.
+   - **Finding (3D, real 1.36 API server):** ApplyConfiguration is refused, because the list entries are `LocalObjectReference`, an atomic struct. With `failurePolicy: Ignore` that is a silent no-op. A JSONPatch whose value is a *list* of typed objects panics the API server's request handler, and the pod create fails whatever the failurePolicy. **Used instead:** a JSONPatch that adds an empty list if the field is missing, then appends one object unless it is already there.
 3. Bind to a test namespace (`matchResources.namespaceSelector`), verify, widen to all non-system namespaces, then delete the Kyverno policy. Both mutate idempotently by name while both are active.
 
 **Testing (real API server — harness plus on-cluster test namespace):**
@@ -464,7 +465,7 @@ After all phases, one failure drill per critical path:
 ## Risks and Mitigations
 - **A native Deny policy blocks legitimate changes.** Mitigation: shadow bindings first, the real-API-server harness, `failurePolicy` chosen per policy, and instant rollback by editing the binding or `git revert`.
 - **Delegation-VAP cost scales with the number of Agents.** Mitigation: 9 agents today; watch admission latency and `typeChecking`; fallback is a Kyverno ValidatingPolicy with `resource.Get`.
-- **MAP merge semantics are unverified.** Mitigation: test-namespace binding first, plus explicit real-server tests (Task 3.5).
+- **MAP merge semantics are unverified.** Mitigation: test-namespace binding first, plus explicit real-server tests (Task 3.5). *(Resolved in 3D: ApplyConfiguration cannot mutate the atomic entries, and a list-valued JSONPatch panics the API server; the policy uses the working JSONPatch form, and the harness guards both.)*
 - **A bad authentication config prevents the API server from starting.** Mitigation: throwaway-container validation, a two-stage rollout, atomic writes, the break-glass kubeconfig, and hypervisor console access (`virsh console k3s-control-01` on 10.0.1.101).
 - **A hot-reload-rejected file on disk becomes a startup failure at the next reboot or upgrade.** Mitigation: the installer only writes validated files; add a check of the reload-failure metric to the gate.
 - **Planned restarts of Prometheus and Vault.** Mitigation: one short window each; Vault auto-unseals via KMS.

@@ -1,0 +1,24 @@
+# Only an image volume (GA 1.36) pulls from ECR; the Kyverno policy missed this.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ecr-image-volume-only
+  namespace: admission-test
+  annotations:
+    test.homelab/expect-pull-secrets: ecr-registry
+spec:
+  containers:
+  - name: app
+    resources:
+      limits:
+        cpu: 10m
+        memory: 16Mi
+    image: busybox:1.37
+    volumeMounts:
+    - name: w
+      mountPath: /w
+  volumes:
+  - name: w
+    image:
+      reference: 852893458518.dkr.ecr.us-east-2.amazonaws.com/models/w:v1
+      pullPolicy: IfNotPresent
