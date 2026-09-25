@@ -51,10 +51,15 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
+        # Raised 2026-09-25 (plan Task 2.5) from 250m/256Mi -> 1/512Mi. Over 15 days the
+        # container ran at CPU p95 696m / max 732m against a 1-core limit, and was
+        # CFS-throttled in 60% of periods: its limit, not the node, was the bottleneck
+        # (Grafana Cluster Overview -> Pod pressure: ~24% CPU stall, the "Pod CPU starved"
+        # alert). Memory peaked at 468Mi = 91% of the old 512Mi limit.
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
             memory: "512Mi"
-            cpu: "1000m"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "2000m"
