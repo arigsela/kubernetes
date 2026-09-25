@@ -68,9 +68,10 @@ def test_api_server_service_is_exempt(cluster):
     assert "ValidatingAdmissionPolicy" not in r.stderr, r.stderr
 
 
-@pytest.mark.parametrize("kind", ["validatingadmissionpolicies", "mutatingadmissionpolicies"])
-def test_no_type_checking_warnings(cluster, kind):
-    r = cluster.kubectl("get", kind, "-o", "json")
+def test_no_type_checking_warnings(cluster):
+    """VAPs only: on 1.36 a MutatingAdmissionPolicy gets no status at all (no typeChecking),
+    so a MAP is checked only by its mutate fixtures and test_api_server_did_not_panic."""
+    r = cluster.kubectl("get", "validatingadmissionpolicies", "-o", "json")
     assert r.returncode == 0, r.stderr
     for p in json.loads(r.stdout)["items"]:
         warnings = (p.get("status", {}).get("typeChecking") or {}).get("expressionWarnings") or []

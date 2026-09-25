@@ -1,0 +1,16 @@
+# kube-system is excluded (as in Kyverno): an ECR pod there is left alone.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ecr-excluded-namespace
+  namespace: kube-system
+  annotations:
+    test.homelab/expect-pull-secrets: ''
+spec:
+  containers:
+  - name: app
+    resources:
+      limits:
+        cpu: 10m
+        memory: 16Mi
+    image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/app:1.0.0
