@@ -89,9 +89,10 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
 - `inject-ecr-pull-secret.yaml`: a **MutatingAdmissionPolicy** that adds the `ecr-registry`
   pull secret to any Pod pulling from ECR (container, initContainer or **image volume**). It
   replaces Kyverno's mutation, which needed Kyverno's webhook pod and ignored image volumes.
-  A mutation has no shadow mode, so the binding is **limited to the `admission-test`
-  namespace** (declared in the same file) until verified live. The next change widens it to
-  every non-system namespace and deletes the Kyverno policy.
+  It applies to every namespace except `kube-system`, `kube-public`, `kube-node-lease` and
+  `kyverno`. A mutation has no shadow mode, so it was first bound to a test namespace and
+  verified live before being widened. Kyverno's `inject-ecr-pull-secret` still runs alongside
+  it until deleted (both add the secret idempotently by name).
 - Tests: `tests/admission-policies/` boots a real k3s of the cluster's version in Docker,
   creates the cluster's real Agents (`base-apps/kagent/agents/`: the delegation policy's
   parameters, and each must also re-apply with zero warnings), and server-side dry-runs
@@ -122,6 +123,8 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
     (cel-go `ConvertToNative`). The create fails with a 500 **whatever the failurePolicy**.
     Add an empty list, then append one object. `test_api_server_did_not_panic` greps the
     harness API server's log for recovered panics.
+- **A MutatingAdmissionPolicy has no `status` on 1.36**, so no `typeChecking` either. Only its
+  mutate fixtures (real pods) and the panic check test it.
 - **The harness uses minimal typed CRDs** (`fixtures/crds/`), copied from the real schemas for
   the paths the policies read. A policy reading a new field needs that field added there, or
   type checking fails with `undefined field`.

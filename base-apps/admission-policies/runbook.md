@@ -42,11 +42,12 @@ sources:
 ### Symptom: a Pod pulling from ECR is in `ImagePullBackOff` with `no basic auth credentials` / 401
 - **Check:** `kubectl get pod -n <ns> <pod> -o jsonpath='{.spec.imagePullSecrets}'`. It must
   list `ecr-registry`; `inject-ecr-pull-secret` adds it at pod creation.
-- **Check:** the pod's namespace is matched by the `inject-ecr-pull-secret` binding (currently
-  only `admission-test`; Kyverno's `inject-ecr-pull-secret` still covers the rest) and that
-  `kubectl get mutatingadmissionpolicy inject-ecr-pull-secret -o jsonpath='{.status}'` shows
-  no type-checking warnings. `failurePolicy` is `Ignore`, so a policy error yields a pod
-  without the secret rather than a rejected pod.
+- **Check:** the pod's namespace is not one the policy excludes (`kube-system`, `kube-public`,
+  `kube-node-lease`, `kyverno`), and the pod was created after the policy existed (it acts
+  only at creation). Reproduce with a dry run:
+  `kubectl run probe -n <ns> --image=<the ECR image> --dry-run=server -o jsonpath='{.spec.imagePullSecrets}'`.
+  `failurePolicy` is `Ignore`, so a policy error yields a pod without the secret rather than
+  a rejected pod.
 - **Check:** the `ecr-registry` Secret exists in the namespace and is fresh (ecr-auth
   CronJob; ECR tokens last 12h).
 
