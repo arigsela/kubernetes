@@ -1,0 +1,33 @@
+# Labelled, tagged (registry with a port), limits set, privileged explicitly false.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compliant
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: compliant
+spec:
+  selector:
+    matchLabels:
+      app: compliant
+  template:
+    metadata:
+      labels:
+        app: compliant
+    spec:
+      initContainers:
+      - name: init
+        image: busybox:1.37
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          privileged: false
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi

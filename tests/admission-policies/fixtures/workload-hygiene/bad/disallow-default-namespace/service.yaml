@@ -1,0 +1,11 @@
+# Service in the default namespace (not the API server's own).
+apiVersion: v1
+kind: Service
+metadata:
+  name: in-default
+  namespace: default
+spec:
+  selector:
+    app: x
+  ports:
+  - port: 80

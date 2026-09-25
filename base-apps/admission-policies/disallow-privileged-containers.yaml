@@ -1,0 +1,63 @@
+# No privileged containers. AUDIT ONLY, permanently: a few system workloads (CNI, CSI, node
+# agents) need privilege, so this reports rather than blocks.
+#
+# Native replacement for the Kyverno ClusterPolicy disallow-privileged-containers
+# (docs/plans/k8s-136-features-implementation-plan.md, Task 3.4). Same scope: containers,
+# initContainers and ephemeralContainers; kube-system, argo-cd and kyverno excluded.
+#
+# Kyverno generated controller rules from its Pod rule (autogen); native policies do not, so the
+# `pod` variable extracts the pod spec per kind. Variables are NOT type-checked by the API
+# server: tests/admission-policies has a fixture per kind to cover that extraction.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: disallow-privileged-containers
+spec:
+  failurePolicy: Ignore   # audit-only: never block on an evaluation error
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, argo-cd, kyverno]
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        resources: ["deployments", "statefulsets", "daemonsets"]
+        operations: ["CREATE", "UPDATE"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        resources: ["jobs", "cronjobs"]
+        operations: ["CREATE", "UPDATE"]
+  variables:
+    - name: pod
+      expression: >-
+        object.kind == 'Pod' ? object.spec
+        : object.kind == 'CronJob' ? object.spec.jobTemplate.spec.template.spec
+        : object.spec.template.spec
+    - name: privileged
+      expression: >-
+        (variables.pod.containers
+         + (has(variables.pod.initContainers) ? variables.pod.initContainers : [])
+         + (has(variables.pod.ephemeralContainers) ? variables.pod.ephemeralContainers : []))
+          .filter(c, has(c.securityContext) && has(c.securityContext.privileged)
+                     && c.securityContext.privileged)
+          .map(c, c.name)
+  validations:
+    - expression: size(variables.privileged) == 0
+      message: "Privileged containers are not allowed."
+      messageExpression: >-
+        "Privileged containers are not allowed: " + variables.privileged.join(", ")
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: disallow-privileged-containers
+spec:
+  policyName: disallow-privileged-containers
+  validationActions: [Warn, Audit]   # audit-only, permanently

@@ -1,0 +1,15 @@
+# Job: no resources at all.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: limits-job
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: limits-job
+spec:
+  template:
+    spec:
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+      restartPolicy: Never

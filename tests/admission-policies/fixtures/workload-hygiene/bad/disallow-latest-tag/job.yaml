@@ -1,0 +1,19 @@
+# Job: ':latest' with a registry path.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: latest-job
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: latest-job
+spec:
+  template:
+    spec:
+      containers:
+      - name: app
+        image: ghcr.io/org/tool:latest
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+      restartPolicy: Never

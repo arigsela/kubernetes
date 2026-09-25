@@ -1,0 +1,24 @@
+# Image volume (GA 1.36) on ':latest'.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: image-volume-latest
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: image-volume-latest
+spec:
+  containers:
+  - name: app
+    image: registry.local:5000/app:1.2.3
+    resources:
+      limits:
+        cpu: 100m
+        memory: 64Mi
+    volumeMounts:
+    - name: w
+      mountPath: /w
+  volumes:
+  - name: w
+    image:
+      reference: registry.local:5000/weights:latest
+      pullPolicy: IfNotPresent

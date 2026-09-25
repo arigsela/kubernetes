@@ -1,0 +1,22 @@
+# Digest-pinned images, with and without a tag, count as versioned.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: digest-pinned
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: digest-pinned
+spec:
+  containers:
+  - name: app
+    image: nginx@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    resources:
+      limits:
+        cpu: 100m
+        memory: 64Mi
+  - name: b
+    image: nginx:1.27@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    resources:
+      limits:
+        cpu: 100m
+        memory: 64Mi

@@ -1,0 +1,37 @@
+# Deployments and StatefulSets carry app.kubernetes.io/name. AUDIT ONLY, permanently.
+#
+# Native replacement for the Kyverno ClusterPolicy require-labels
+# (docs/plans/k8s-136-features-implementation-plan.md, Task 3.4). Same scope; kube-system,
+# argo-cd and kyverno excluded.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: require-labels
+spec:
+  failurePolicy: Ignore   # audit-only: never block on an evaluation error
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, argo-cd, kyverno]
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        resources: ["deployments", "statefulsets"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        has(object.metadata.labels)
+        && 'app.kubernetes.io/name' in object.metadata.labels
+        && object.metadata.labels['app.kubernetes.io/name'] != ''
+      message: "The label 'app.kubernetes.io/name' is required."
+      reason: Invalid
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: require-labels
+spec:
+  policyName: require-labels
+  validationActions: [Warn, Audit]   # audit-only, permanently

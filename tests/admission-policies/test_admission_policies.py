@@ -45,6 +45,16 @@ def test_real_agents_update_without_warnings(cluster, path):
     assert verdict == "allow", f"real agent {path.stem} got {verdict} from {fired}:\n{out}"
 
 
+def test_api_server_service_is_exempt(cluster):
+    """default/kubernetes belongs to the API server and cannot move, so
+    disallow-default-namespace must not flag it. It already exists, so no create fixture can
+    cover it: dry-run an UPDATE instead."""
+    r = cluster.kubectl("label", "service", "kubernetes", "-n", "default", "probe=1",
+                        "--dry-run=server")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "ValidatingAdmissionPolicy" not in r.stderr, r.stderr
+
+
 def test_no_type_checking_warnings(cluster):
     r = cluster.kubectl("get", "validatingadmissionpolicies", "-o", "json")
     assert r.returncode == 0, r.stderr
@@ -87,6 +97,26 @@ def test_every_policy_has_bad_fixtures():
     covered = {p.parent.name for p in BAD}
     missing = set(_by_kind("ValidatingAdmissionPolicy")) - covered
     assert not missing, f"no bad fixtures for: {missing}"
+
+
+# Resource (plural) -> kind, for the resources the policies match. Extend with a new policy.
+KINDS = {"pods": "Pod", "deployments": "Deployment", "statefulsets": "StatefulSet",
+         "daemonsets": "DaemonSet", "jobs": "Job", "cronjobs": "CronJob", "services": "Service",
+         "agents": "Agent", "externalsecrets": "ExternalSecret"}
+
+
+def test_every_matched_kind_has_a_bad_fixture():
+    """The API server does not type-check `variables`, so a policy that extracts the pod spec
+    per kind (Deployment: spec.template.spec, CronJob: spec.jobTemplate...) is only checked by
+    fixtures. Each kind a policy matches needs a bad fixture of that kind."""
+    for name, vap in _by_kind("ValidatingAdmissionPolicy").items():
+        matched = set()
+        for rule in vap["spec"]["matchConstraints"]["resourceRules"]:
+            for res in rule["resources"]:
+                assert res in KINDS, f"{name}: add {res!r} to KINDS"
+                matched.add(KINDS[res])
+        covered = {yaml.safe_load(p.read_text())["kind"] for p in BAD if p.parent.name == name}
+        assert matched <= covered, f"{name}: no bad fixture for kinds {matched - covered}"
 
 
 def test_every_policy_has_a_message():

@@ -1,0 +1,24 @@
+# Deployment labelled, but not with app.kubernetes.io/name.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: other-labels
+  namespace: team-a
+  labels:
+    app: other-labels
+spec:
+  selector:
+    matchLabels:
+      app: other-labels
+  template:
+    metadata:
+      labels:
+        app: other-labels
+    spec:
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi

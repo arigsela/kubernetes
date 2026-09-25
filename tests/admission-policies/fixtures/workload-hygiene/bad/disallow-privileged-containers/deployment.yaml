@@ -1,0 +1,33 @@
+# Deployment: privileged init container.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: priv-deployment
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: priv-deployment
+spec:
+  selector:
+    matchLabels:
+      app: priv-deployment
+  template:
+    metadata:
+      labels:
+        app: priv-deployment
+    spec:
+      initContainers:
+      - name: init
+        image: registry.local:5000/app:1.2.3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          privileged: true
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi

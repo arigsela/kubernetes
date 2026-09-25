@@ -1,0 +1,26 @@
+# DaemonSet: privileged app container.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: priv-daemonset
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: priv-daemonset
+spec:
+  selector:
+    matchLabels:
+      app: priv-daemonset
+  template:
+    metadata:
+      labels:
+        app: priv-daemonset
+    spec:
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          privileged: true

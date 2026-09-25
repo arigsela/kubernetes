@@ -1,0 +1,23 @@
+# DaemonSet: memory limit only.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: limits-daemonset
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: limits-daemonset
+spec:
+  selector:
+    matchLabels:
+      app: limits-daemonset
+  template:
+    metadata:
+      labels:
+        app: limits-daemonset
+    spec:
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+        resources:
+          limits:
+            memory: 64Mi

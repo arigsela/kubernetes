@@ -1,0 +1,76 @@
+# Every image names a version: a tag other than 'latest', or a digest. AUDIT ONLY, permanently.
+#
+# Native replacement for the Kyverno ClusterPolicy disallow-latest-tag
+# (docs/plans/k8s-136-features-implementation-plan.md, Task 3.4), with its bug fixed: Kyverno's
+# pattern "?*:?*" matched any image containing a ':', so it passed "nginx:latest" and an untagged
+# image from a registry with a port ("registry:5000/app"). It never flagged anything.
+#
+# Rule, per image reference:
+#   contains '@'                           digest-pinned            ok
+#   last path segment has no ':'           untagged (= latest)      flagged
+#   ends with ':latest'                                             flagged
+# Checked: containers, initContainers, ephemeralContainers, and image volumes (GA 1.36).
+#
+# Kyverno generated controller rules from its Pod rule (autogen); native policies do not, so the
+# `pod` variable extracts the pod spec per kind. Variables are NOT type-checked by the API
+# server: tests/admission-policies has a fixture per kind to cover that extraction.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: disallow-latest-tag
+spec:
+  failurePolicy: Ignore   # audit-only: never block on an evaluation error
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, argo-cd, kyverno]
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        resources: ["deployments", "statefulsets", "daemonsets"]
+        operations: ["CREATE", "UPDATE"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        resources: ["jobs", "cronjobs"]
+        operations: ["CREATE", "UPDATE"]
+  variables:
+    - name: pod
+      expression: >-
+        object.kind == 'Pod' ? object.spec
+        : object.kind == 'CronJob' ? object.spec.jobTemplate.spec.template.spec
+        : object.spec.template.spec
+    - name: images
+      expression: >-
+        (variables.pod.containers
+         + (has(variables.pod.initContainers) ? variables.pod.initContainers : [])
+         + (has(variables.pod.ephemeralContainers) ? variables.pod.ephemeralContainers : []))
+          .filter(c, has(c.image)).map(c, c.image)
+        + (has(variables.pod.volumes)
+           ? variables.pod.volumes.filter(v, has(v.image) && has(v.image.reference))
+               .map(v, v.image.reference)
+           : [])
+    - name: unpinned
+      expression: >-
+        variables.images.filter(i, !i.contains('@')
+          && (!i.substring(i.lastIndexOf('/') + 1).contains(':') || i.endsWith(':latest')))
+  validations:
+    - expression: size(variables.unpinned) == 0
+      message: "Images must name a version: a tag other than 'latest', or a digest."
+      messageExpression: >-
+        "Images must name a version (a tag other than 'latest', or a digest). Unpinned: "
+        + variables.unpinned.join(", ")
+      reason: Invalid
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: disallow-latest-tag
+spec:
+  policyName: disallow-latest-tag
+  validationActions: [Warn, Audit]   # audit-only, permanently

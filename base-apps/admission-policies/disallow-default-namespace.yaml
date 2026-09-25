@@ -1,0 +1,43 @@
+# Workloads and Services do not live in the default namespace. AUDIT ONLY, permanently.
+#
+# Native replacement for the Kyverno ClusterPolicy disallow-default-namespace
+# (docs/plans/k8s-136-features-implementation-plan.md, Task 3.4). Same kinds: Deployment,
+# StatefulSet, Service. One deliberate difference: the API server's own Service
+# default/kubernetes is exempt. Kyverno reported it as a permanent failure nobody can fix.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: disallow-default-namespace
+spec:
+  failurePolicy: Ignore   # audit-only: never block on an evaluation error
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: default
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        resources: ["deployments", "statefulsets"]
+        operations: ["CREATE", "UPDATE"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["services"]
+        operations: ["CREATE", "UPDATE"]
+  matchConditions:
+    - name: not-the-api-server-service
+      expression: "!(object.kind == 'Service' && object.metadata.name == 'kubernetes')"
+  validations:
+    - expression: "false"
+      message: "Resources should not be deployed to the 'default' namespace."
+      messageExpression: >-
+        object.kind + " '" + object.metadata.name
+        + "' should not be deployed to the 'default' namespace. Give the app its own namespace."
+      reason: Invalid
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: disallow-default-namespace
+spec:
+  policyName: disallow-default-namespace
+  validationActions: [Warn, Audit]   # audit-only, permanently

@@ -1,0 +1,16 @@
+# Pod: ':latest' on an app container.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: latest-pod
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: latest-pod
+spec:
+  containers:
+  - name: app
+    image: nginx:latest
+    resources:
+      limits:
+        cpu: 100m
+        memory: 64Mi

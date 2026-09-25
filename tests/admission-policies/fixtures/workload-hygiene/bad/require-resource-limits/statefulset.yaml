@@ -1,0 +1,24 @@
+# StatefulSet: requests but no limits.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: limits-statefulset
+  namespace: team-a
+  labels:
+    app.kubernetes.io/name: limits-statefulset
+spec:
+  selector:
+    matchLabels:
+      app: limits-statefulset
+  template:
+    metadata:
+      labels:
+        app: limits-statefulset
+    spec:
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi

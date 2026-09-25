@@ -1,0 +1,22 @@
+# Deployment with no labels at all.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: no-labels
+  namespace: team-a
+spec:
+  selector:
+    matchLabels:
+      app: no-labels
+  template:
+    metadata:
+      labels:
+        app: no-labels
+    spec:
+      containers:
+      - name: app
+        image: registry.local:5000/app:1.2.3
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
