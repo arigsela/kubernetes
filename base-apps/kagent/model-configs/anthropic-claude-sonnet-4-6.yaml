@@ -1,11 +1,16 @@
-# The name still says 4-6; the model is claude-sonnet-5. Renaming is not a
-# one-line change: the apiKeySecret below was created by the kagent UI with an
-# ownerReference to THIS ModelConfig, and it is not in Vault. Renaming means
-# Argo prunes this object, the garbage collector deletes that Secret, and the
-# dedicated API key is gone. Move the key into Vault + ESO first, then rename.
+# Stays on claude-sonnet-4-6: claude-sonnet-5 does NOT work with kagent's
+# python runtime (0.10.2, google-adk 1.38.0). Sonnet 5 runs adaptive thinking
+# by default and kagent cannot turn it off (the Anthropic ModelConfig has no
+# thinking/extra-body field). ADK parses the thinking block into a thought Part,
+# drops its signature, then cannot serialize it back on the next tool-loop
+# request: _part_to_message_block raises NotImplementedError("Not supported yet:
+# ... thought=True thought_signature=None"). Every multi-step question fails.
+# Tried and reverted 2026-09-25 (#603). Re-test on each kagent bump.
 #
-# Requires kagent >= 0.10: 0.9.11's google-adk raises NotImplementedError on
-# thinking blocks in non-streaming calls, and claude-sonnet-5 thinks by default.
+# Renaming is not a one-line change: the apiKeySecret below was created by the
+# kagent UI with an ownerReference to THIS ModelConfig, and it is not in Vault.
+# Renaming means Argo prunes this object, the garbage collector deletes that
+# Secret, and the dedicated API key is gone. Move the key into Vault + ESO first.
 apiVersion: kagent.dev/v1alpha2
 kind: ModelConfig
 metadata:
@@ -16,4 +21,4 @@ spec:
   anthropic: {}
   apiKeySecret: anthropic-claude-sonnet-4-6
   apiKeySecretKey: ANTHROPIC_API_KEY
-  model: claude-sonnet-5
+  model: claude-sonnet-4-6
