@@ -142,6 +142,21 @@ jobs:
       - name: Check TechDocs scaffolding is in sync with docs.md/runbook.md
         run: python scripts/gen-techdocs.py --repo-root . --check
 
+  dashboards-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run dashboard generator tests
+        run: python -m pytest tests/dashboards/ -q
+      - name: Check the Cluster Overview dashboard is in sync with its generator
+        run: python scripts/gen-cluster-overview-dashboard.py --repo-root . --check
+
   wan-ip-validate:
     runs-on: ubuntu-latest
     steps:

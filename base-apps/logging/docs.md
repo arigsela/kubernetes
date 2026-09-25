@@ -90,10 +90,22 @@ under `base-apps/logging/`.
    `Kubernetes` — **Cluster Overview** (`grafana-dashboard-cluster-overview.yaml`, uid
    `cluster-overview`: k3s version per node and API server, version skew, node
    Ready/cordoned, host CPU/memory/root-disk/load/PSI, namespace CPU and memory, PVC fill,
-   API server errors, Argo sync/health). Its ConfigMap keeps the historical name
+   API server errors, Argo sync/health, and a **Pod pressure** section: per-pod PSI CPU,
+   memory and IO stall, CPU throttling, and memory used vs limit). The JSON is
+   **generated** by `scripts/gen-cluster-overview-dashboard.py` (CI runs it with
+   `--check`; never hand-edit it). Its ConfigMap keeps the historical name
    `grafana-dashboard-k8s-basic`, which until 2026-09-24 existed only in the cluster with an
    empty placeholder. Also `Istio` (`istio-ambient-dashboard.yaml`) and `Security`
    (`grafana-dashboard-coraza.yaml`, Coraza WAF).
+   Alert rules (`grafana-alerting.yaml`, delivered to n8n → Slack) cover agent guardrails
+   and Falco from Loki, and cluster health from Prometheus: **Pod CPU starved** (PSI CPU
+   stall > 20% for 30m) and **Container near memory limit** (working set > 90% of the
+   limit for 15m). Prometheus rules reference the datasource by its pinned uid
+   `PBFA97CFB590B2093`. Grafana reads alerting provisioning only at startup, so its pod
+   template carries a `checksum/alerting` annotation of that ConfigMap
+   (`tests/dashboards/test_grafana_alerting.py` fails when it is stale) — a merged rule
+   change restarts Grafana. The Deployment uses `Recreate`, because a rolling update would
+   run two Grafana processes on the same SQLite file.
 
 ## External access
 Grafana is exposed via `grafana-ingress.yaml`: nginx `Ingress` at host `grafana.arigsela.com`,
