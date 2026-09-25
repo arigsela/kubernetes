@@ -42,7 +42,7 @@ Every Declarative agent in git sets `spec.declarative.runtime: python` explicitl
 
 ## Model configs
 - **`default-model-config`** — the chart's default `ModelConfig`, generated from the `providers` block in `kagent.yaml` (Anthropic, `claude-haiku-4-5-20251001`). Used by simple/low-context agents (e.g. `agents/dungeon-crawler-carl-agent.yaml`, `agents/skill-suggester.yaml`, `build-orchestrator.yaml`).
-- **`anthropic-claude-sonnet-4-6`** — a sonnet-tier `ModelConfig` referenced by `agents/homelab-knowledge.yaml` (it needs larger context/more reliable tool-calling for multi-step delegation); its manifest is git-tracked at `model-configs/anthropic-claude-sonnet-4-6.yaml` (adopted into GitOps per the agent-identity contract) and uses its own dedicated `apiKeySecret` (`anthropic-claude-sonnet-4-6`), not the shared `kagent-anthropic` key.
+- **`anthropic-claude-sonnet-4-6`** — a sonnet-tier `ModelConfig` (serving `claude-sonnet-5` despite the name — renaming it would garbage-collect its UI-created API-key Secret, see the manifest header) referenced by `agents/homelab-knowledge.yaml` (it needs larger context/more reliable tool-calling for multi-step delegation); its manifest is git-tracked at `model-configs/anthropic-claude-sonnet-4-6.yaml` (adopted into GitOps per the agent-identity contract) and uses its own dedicated `apiKeySecret` (`anthropic-claude-sonnet-4-6`), not the shared `kagent-anthropic` key.
 - **`embedding-model-config`** (`embedding-model-config.yaml`) — points at **Ollama** (`http://ollama.ollama.svc.cluster.local:11434`, model `nomic-embed-text`), used as every declarative agent's `memory.modelConfig` for RAG/embedding recall. This is why the `kagent` component depends on `ollama`.
 
 ## Tools via MCP servers
