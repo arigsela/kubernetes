@@ -157,6 +157,19 @@ jobs:
       - name: Check the Cluster Overview dashboard is in sync with its generator
         run: python scripts/gen-cluster-overview-dashboard.py --repo-root . --check
 
+  ops-scripts-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pytest==8.3.3
+      - name: Run resize-pod.sh tests (stub kubectl, no cluster)
+        run: python -m pytest tests/resize/ -q
+
   wan-ip-validate:
     runs-on: ubuntu-latest
     steps:
