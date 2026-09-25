@@ -1,0 +1,18 @@
+# vault-backend is a legitimate store OUTSIDE kagent (~30 healthy ExternalSecrets use it).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: app-secret
+  namespace: team-a
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-backend
+    kind: SecretStore
+  target:
+    name: app-secret
+  data:
+    - secretKey: pw
+      remoteRef:
+        key: team-a
+        property: pw

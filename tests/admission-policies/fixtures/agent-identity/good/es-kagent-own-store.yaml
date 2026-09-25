@@ -1,0 +1,18 @@
+# A kagent credential through its own scoped store and per-consumer key: the contract.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: kagent-anthropic
+  namespace: kagent
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: kagent-anthropic-store
+    kind: SecretStore
+  target:
+    name: kagent-anthropic
+  data:
+    - secretKey: token
+      remoteRef:
+        key: kagent-anthropic
+        property: api-key

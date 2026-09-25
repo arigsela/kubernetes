@@ -1,0 +1,73 @@
+# Minimal stand-in for the real agents.kagent.dev CRD. Field names and types are copied from the
+# real schema (kagent 0.9.11, v1alpha2) for exactly the paths the admission policies read, so a
+# misspelled path fails CEL type checking here; everything else is preserved as unknown
+# fields. The live cluster's status.typeChecking remains the authority on the full schema.
+# When a policy starts reading a new field, add it here from the real CRD.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: agents.kagent.dev
+spec:
+  group: kagent.dev
+  scope: Namespaced
+  names:
+    kind: Agent
+    listKind: AgentList
+    plural: agents
+    singular: agent
+  versions:
+  - name: v1alpha2
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          apiVersion: &id001
+            type: string
+          kind: *id001
+          metadata:
+            type: object
+          spec:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+            properties:
+              type: *id001
+              description: *id001
+              declarative:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+                properties:
+                  modelConfig: *id001
+                  systemMessage: *id001
+                  tools:
+                    type: array
+                    items:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                      properties:
+                        type: *id001
+                        mcpServer:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                          properties:
+                            apiGroup: *id001
+                            kind: *id001
+                            name: *id001
+                            namespace: *id001
+                            toolNames: &id002
+                              type: array
+                              items:
+                                type: string
+                            requireApproval: *id002
+                        agent:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                          properties:
+                            apiGroup: *id001
+                            kind: *id001
+                            name: *id001
+                            namespace: *id001
+          status:
+            type: object
+            x-kubernetes-preserve-unknown-fields: true

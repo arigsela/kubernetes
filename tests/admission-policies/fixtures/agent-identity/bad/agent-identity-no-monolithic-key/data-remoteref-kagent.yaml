@@ -1,0 +1,18 @@
+# The original Kyverno rule's case, in a namespace other than kagent (cluster-wide rule).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: kagent-db-credentials
+  namespace: postgresql
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: postgresql-store
+    kind: SecretStore
+  target:
+    name: kagent-db-credentials
+  data:
+    - secretKey: url
+      remoteRef:
+        key: kagent
+        property: db-url

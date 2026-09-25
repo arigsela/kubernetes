@@ -1,0 +1,130 @@
+# Agent identity contract, natively in the API server (templates/agent-identity/README.md).
+#
+# Native replacement for the Kyverno ClusterPolicy base-apps/kyverno-policies/agent-identity.yaml
+# (docs/plans/k8s-136-features-implementation-plan.md, Task 3.2). One ValidatingAdmissionPolicy
+# per Kyverno rule, so each can move from shadow to Deny on its own.
+#
+# WHY NATIVE: the Kyverno webhook runs with forceFailurePolicyIgnore and one replica, so these
+# "Enforce" rules stop enforcing whenever Kyverno is down. A ValidatingAdmissionPolicy runs
+# inside the API server: no webhook, no pod to be down.
+#
+# ROLLOUT STATE: SHADOW. Bindings are [Warn, Audit] next to the still-enforcing Kyverno policy:
+# violations show up as kubectl warnings and in Kyverno's PolicyReports (its reports controller
+# runs with --validatingAdmissionPolicyReports=true), and block nothing. failurePolicy is Ignore
+# during shadow so a CEL evaluation error can never block an admission before these policies are
+# trusted. PR 3E flips each binding to [Deny], failurePolicy to Fail, and deletes the Kyverno
+# policy. Tested against a real API server: tests/admission-policies/.
+#
+# Two gaps in the Kyverno rules are closed here, deliberately:
+#   * scoped store: Kyverno checked only spec.secretStoreRef. An ExternalSecret can also
+#     reach a store per item (data[].sourceRef.storeRef / dataFrom[].sourceRef.storeRef).
+#   * monolithic key: Kyverno checked only data[].remoteRef.key. dataFrom[].extract.key reads
+#     a whole Vault key the same way.
+
+# ---- Invariant 1a: no broad SecretStore in the kagent namespace ------------------------------
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agent-identity-scoped-store
+spec:
+  failurePolicy: Ignore   # shadow; Fail at the Deny flip
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kagent
+    resourceRules:
+      - apiGroups: ["external-secrets.io"]
+        apiVersions: ["v1"]
+        resources: ["externalsecrets"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        !(has(object.spec.secretStoreRef) && object.spec.secretStoreRef.name == 'vault-backend')
+        && (!has(object.spec.data) || object.spec.data.all(d,
+              !(has(d.sourceRef) && has(d.sourceRef.storeRef) && d.sourceRef.storeRef.name == 'vault-backend')))
+        && (!has(object.spec.dataFrom) || object.spec.dataFrom.all(d,
+              !(has(d.sourceRef) && has(d.sourceRef.storeRef) && d.sourceRef.storeRef.name == 'vault-backend')))
+      messageExpression: >-
+        "ExternalSecret '" + object.metadata.name + "' must not resolve through the broad
+        'vault-backend' SecretStore. Give it a dedicated ESO ServiceAccount + SecretStore backed
+        by a Vault role that reads only its own path. See templates/agent-identity/README.md
+        (invariant 1)."
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agent-identity-scoped-store
+spec:
+  policyName: agent-identity-scoped-store
+  validationActions: [Warn, Audit]   # shadow
+---
+# ---- Invariant 1b: nothing reads the destroyed monolithic Vault key 'kagent' -----------------
+# Cluster-wide on purpose: a kagent credential does not stop being kagent's because it is
+# declared in another namespace (postgresql/kagent-db-credentials was exactly that case).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agent-identity-no-monolithic-key
+spec:
+  failurePolicy: Ignore   # shadow; Fail at the Deny flip
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["external-secrets.io"]
+        apiVersions: ["v1"]
+        resources: ["externalsecrets"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        (!has(object.spec.data) || object.spec.data.all(d,
+            !(has(d.remoteRef) && has(d.remoteRef.key) && d.remoteRef.key == 'kagent')))
+        && (!has(object.spec.dataFrom) || object.spec.dataFrom.all(d,
+            !(has(d.extract) && has(d.extract.key) && d.extract.key == 'kagent')))
+      messageExpression: >-
+        "ExternalSecret '" + object.metadata.name + "' must not read the monolithic Vault key
+        'kagent' — it held every consumer's credential and has been DESTROYED. Use a
+        per-consumer key (k8s-secrets/<consumer>) with its own ESO ServiceAccount, SecretStore
+        and Vault role. See templates/agent-identity/README.md (invariant 1)."
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agent-identity-no-monolithic-key
+spec:
+  policyName: agent-identity-no-monolithic-key
+  validationActions: [Warn, Audit]   # shadow
+---
+# ---- Invariant 3: an McpServer tool ref must list its tools ----------------------------------
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agent-identity-mcp-toolnames
+spec:
+  failurePolicy: Ignore   # shadow; Fail at the Deny flip
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["kagent.dev"]
+        apiVersions: ["v1alpha2"]
+        resources: ["agents"]
+        operations: ["CREATE", "UPDATE"]
+  validations:
+    - expression: >-
+        !has(object.spec.declarative) || !has(object.spec.declarative.tools)
+        || object.spec.declarative.tools.all(t,
+             !has(t.type) || t.type != 'McpServer'
+             || (has(t.mcpServer) && has(t.mcpServer.toolNames) && size(t.mcpServer.toolNames) > 0))
+      messageExpression: >-
+        "Agent '" + object.metadata.name + "' has an McpServer tool ref with no toolNames. An
+        empty list is an implicit bind-all: the agent silently gains every tool the server
+        exposes, including any added by a future upgrade. List the tools explicitly. See
+        templates/agent-identity/README.md (invariant 3)."
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agent-identity-mcp-toolnames
+spec:
+  policyName: agent-identity-mcp-toolnames
+  validationActions: [Warn, Audit]   # shadow
