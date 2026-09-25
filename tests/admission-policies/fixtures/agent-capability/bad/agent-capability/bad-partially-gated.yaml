@@ -1,0 +1,19 @@
+# rule 5: one mutating tool gated, another not. (from tests/agent-capability/kyverno/bad-agents.yaml)
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-partially-gated
+  namespace: kagent
+  labels:
+    capability.homelab/class: admin
+spec:
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        name: kagent-tool-server
+        toolNames:
+        - k8s_delete_resource
+        - k8s_label_resource
+        requireApproval:
+        - k8s_delete_resource

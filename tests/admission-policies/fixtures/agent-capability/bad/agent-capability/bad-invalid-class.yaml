@@ -1,0 +1,16 @@
+# rule 1: class is not read/write/admin. (from tests/agent-capability/kyverno/bad-agents.yaml)
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-invalid-class
+  namespace: kagent
+  labels:
+    capability.homelab/class: superuser
+spec:
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        name: kagent-tool-server
+        toolNames:
+        - k8s_get_resources

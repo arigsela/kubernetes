@@ -1,0 +1,14 @@
+# rule 7: write agent delegates to admin k8s-agent. (from tests/agent-capability/kyverno/bad-agents.yaml)
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-write-delegates-to-admin
+  namespace: kagent
+  labels:
+    capability.homelab/class: write
+spec:
+  declarative:
+    tools:
+    - type: Agent
+      agent:
+        name: k8s-agent

@@ -4,6 +4,9 @@ kind: Agent
 metadata:
   name: good-agent
   namespace: kagent
+  labels:
+    # Good fixtures must pass EVERY policy, not just the one their suite is named after.
+    capability.homelab/class: read
 spec:
   type: Declarative
   declarative:

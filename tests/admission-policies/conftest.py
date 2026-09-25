@@ -41,6 +41,10 @@ def policy_files():
     return sorted(p for p in POLICIES.glob("*.yaml") if p.name not in NOT_MANIFESTS)
 
 
+def real_agent_files():
+    return sorted((REPO / "base-apps" / "kagent" / "agents").glob("*.yaml"))
+
+
 def policy_docs():
     return [d for p in policy_files() for d in yaml.safe_load_all(p.read_text()) if d]
 
@@ -57,9 +61,11 @@ class Cluster:
         r = self.kubectl("apply", "-f", "-", input=text)
         assert r.returncode == 0, r.stdout + r.stderr
 
-    def verdict(self, text):
-        """(verdict, {policy names that fired}, raw output) for a server-side dry-run create."""
-        r = self.kubectl("create", "--dry-run=server", "-f", "-", input=text)
+    def verdict(self, text, update=False):
+        """(verdict, {policy names that fired}, raw output) for a server-side dry run: a
+        create, or with update=True an apply over the existing object (the UPDATE path)."""
+        verb = ("apply",) if update else ("create",)
+        r = self.kubectl(*verb, "--dry-run=server", "-f", "-", input=text)
         out = r.stdout + r.stderr
         fired = set(re.findall(r"ValidatingAdmissionPolicy '([^']+)'", out))
         if r.returncode != 0:
@@ -103,6 +109,10 @@ def cluster():
             _wait(lambda: c.kubectl("explain", f"{plural_group}.spec").returncode == 0, 60,
                   f"OpenAPI schema for {plural_group}")
         for p in policy_files():
+            c.apply(p.read_text())
+        # The cluster's real Agents, created for real: they are the delegation policy's
+        # parameters (a delegate must exist to be judged), and each must itself be clean.
+        for p in real_agent_files():
             c.apply(p.read_text())
         # A new policy takes a moment to reach the admission plugin. Wait until every policy
         # that has a bad fixture actually fires on one.
