@@ -11,6 +11,8 @@ apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: require-resource-limits
+  labels:
+    reports.kyverno.io/enabled: "true"   # opt in to Kyverno PolicyReports (docs.md)
 spec:
   failurePolicy: Ignore   # audit-only: never block on an evaluation error
   matchConstraints:

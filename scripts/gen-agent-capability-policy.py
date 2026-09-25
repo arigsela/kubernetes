@@ -318,11 +318,18 @@ NATIVE_HEADER = """\
 #
 # ROLLOUT STATE: SHADOW. [Warn, Audit] with failurePolicy Ignore, next to the still-enforcing
 # Kyverno policy. The Deny flip (plan 3E) sets [Deny] + Fail and deletes the Kyverno policy.
+#
+# REPORTING: agent-capability carries reports.kyverno.io/enabled=true, so Kyverno's reports
+# controller writes its results to PolicyReports (native policies are opt-in there).
+# agent-capability-delegation deliberately does not: it is parameterised (paramKind Agent), and
+# Kyverno's engine mis-evaluates parameterised policies, so its report rows would be wrong.
 """
 
 AGENT_RULE = {"apiGroups": ["kagent.dev"], "apiVersions": ["v1alpha2"],
               "resources": ["agents"], "operations": ["CREATE", "UPDATE"]}
 SHADOW = {"failurePolicy": "Ignore", "validationActions": ["Warn", "Audit"]}
+# Kyverno's reports controller only reports native policies that opt in with this label.
+REPORTING = {"reports.kyverno.io/enabled": "true"}
 
 
 def _cel_list(items: list[str]) -> str:
@@ -346,7 +353,7 @@ def build_native(read: list[str], write: list[str], destructive: list[str]) -> l
     capability = {
         "apiVersion": "admissionregistration.k8s.io/v1",
         "kind": "ValidatingAdmissionPolicy",
-        "metadata": {"name": "agent-capability"},
+        "metadata": {"name": "agent-capability", "labels": REPORTING},
         "spec": {
             "failurePolicy": SHADOW["failurePolicy"],
             "matchConstraints": {"resourceRules": [AGENT_RULE]},

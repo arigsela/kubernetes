@@ -24,10 +24,17 @@
 #
 # ROLLOUT STATE: SHADOW. [Warn, Audit] with failurePolicy Ignore, next to the still-enforcing
 # Kyverno policy. The Deny flip (plan 3E) sets [Deny] + Fail and deletes the Kyverno policy.
+#
+# REPORTING: agent-capability carries reports.kyverno.io/enabled=true, so Kyverno's reports
+# controller writes its results to PolicyReports (native policies are opt-in there).
+# agent-capability-delegation deliberately does not: it is parameterised (paramKind Agent), and
+# Kyverno's engine mis-evaluates parameterised policies, so its report rows would be wrong.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: agent-capability
+  labels:
+    reports.kyverno.io/enabled: 'true'
 spec:
   failurePolicy: Ignore
   matchConstraints:
