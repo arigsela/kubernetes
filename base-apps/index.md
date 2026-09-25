@@ -15,6 +15,7 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 
 | app | description | namespace | docs | runbook | catalog |
 |---|---|---|---|---|---|
+| admission-policies | Native API-server admission policies (ValidatingAdmissionPolicy / MutatingAdmissionPolicy) replacing the Kyverno webhook | kube-system | [docs.md](admission-policies/docs.md) | [runbook.md](admission-policies/runbook.md) | [catalog-info.yaml](admission-policies/catalog-info.yaml) |
 | agent-audit-aws-infrastructure | S3 bucket + write-only IAM for the durable, redacted agent action record (Crossplane) | postgresql |  |  |  |
 | agent-sandbox-crds |  |  |  |  |  |
 | argo-cd | GitOps control plane | argo-cd | [docs.md](argo-cd/docs.md) | [runbook.md](argo-cd/runbook.md) | [catalog-info.yaml](argo-cd/catalog-info.yaml) |

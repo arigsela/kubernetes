@@ -1,0 +1,16 @@
+# Gap the Kyverno rule missed: dataFrom.extract reads the whole destroyed key.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: bad-extract
+  namespace: team-a
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: team-a-store
+    kind: SecretStore
+  target:
+    name: bad-extract
+  dataFrom:
+    - extract:
+        key: kagent

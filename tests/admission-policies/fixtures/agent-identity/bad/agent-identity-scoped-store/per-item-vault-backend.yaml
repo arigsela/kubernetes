@@ -1,0 +1,21 @@
+# Gap the Kyverno rule missed: the broad store reached per item via sourceRef.storeRef.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: bad-broad-item
+  namespace: kagent
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: kagent-anthropic-store
+    kind: SecretStore
+  target:
+    name: bad-broad-item
+  data:
+    - secretKey: token
+      remoteRef:
+        key: kagent-anthropic
+      sourceRef:
+        storeRef:
+          name: vault-backend
+          kind: SecretStore

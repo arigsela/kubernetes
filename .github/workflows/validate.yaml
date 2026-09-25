@@ -170,6 +170,21 @@ jobs:
       - name: Run resize-pod.sh tests (stub kubectl, no cluster)
         run: python -m pytest tests/resize/ -q
 
+  admission-policies-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      # Boots rancher/k3s (the cluster's version) in Docker and server-side dry-runs the
+      # policy fixtures against it. Static tools cannot be trusted for these policies.
+      - name: Run admission-policy tests against a real API server
+        run: python -m pytest tests/admission-policies/ -v
+
   wan-ip-validate:
     runs-on: ubuntu-latest
     steps:

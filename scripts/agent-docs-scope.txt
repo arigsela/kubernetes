@@ -20,3 +20,4 @@ homepage
 istio-waf
 wan-ip-monitor
 jupyter
+admission-policies

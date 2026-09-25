@@ -1,0 +1,16 @@
+# An empty list is the same bind-all.
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-empty-toolnames
+  namespace: kagent
+spec:
+  type: Declarative
+  declarative:
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+          toolNames: []

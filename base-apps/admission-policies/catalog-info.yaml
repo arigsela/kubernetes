@@ -1,0 +1,15 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: admission-policies
+  namespace: kube-system
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+  tags: [admission, cel, policy, security]
+spec:
+  type: infrastructure
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-security
+  dependsOn: []

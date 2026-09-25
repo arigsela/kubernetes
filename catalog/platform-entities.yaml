@@ -61,6 +61,15 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: System
 metadata:
+  name: platform-security
+  description: Admission and runtime security controls (native admission policies, Kyverno reporting, Falco, the Coraza WAF).
+spec:
+  owner: platform
+  domain: platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
   name: platform-gitops
   description: GitOps and continuous delivery capabilities (Argo CD, Atlantis).
 spec:
