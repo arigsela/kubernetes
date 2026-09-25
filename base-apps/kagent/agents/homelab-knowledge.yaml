@@ -23,7 +23,8 @@ spec:
   description: Answers questions about the homelab GitOps repo, base-apps deployments, and live cluster state by delegating to k8s and helm specialists
   type: Declarative
   declarative:
-    # Sonnet (claude-sonnet-5; not the default haiku): this agent ingests k8s-agent/helm-agent
+    # Sonnet (claude-sonnet-4-6 — sonnet-5 breaks kagent's python runtime, see
+    # the ModelConfig header; not the default haiku): this agent ingests k8s-agent/helm-agent
     # live-state replies on top of its doc reads, so it needs the larger context
     # headroom and more reliable tool-calling for the atlas→index→app traversal.
     modelConfig: anthropic-claude-sonnet-4-6
