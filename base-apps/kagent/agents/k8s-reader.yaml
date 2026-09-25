@@ -40,6 +40,8 @@ spec:
     logs to diagnose problems. Cannot create, modify, or delete anything.
   declarative:
     modelConfig: default-model-config
+    # Pinned: kagent 0.10 changed the CRD default runtime from python to go.
+    runtime: python
     a2aConfig:
       skills:
       - id: cluster-inspection

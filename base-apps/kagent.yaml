@@ -15,7 +15,7 @@ spec:
   source:
     chart: kagent
     repoURL: ghcr.io/kagent-dev/kagent/helm
-    targetRevision: 0.9.11
+    targetRevision: 0.10.2
     helm:
       valuesObject:
         # Database: use existing PostgreSQL with pgvector
@@ -53,12 +53,12 @@ spec:
             apiKeySecretKey: ANTHROPIC_API_KEY
 
         # UI image override: custom Node-20 build for older HP server CPUs.
-        # Upstream cr.kagent.dev/kagent-dev/kagent/ui ships Node 24, which needs
+        # Upstream ghcr.io/kagent-dev/kagent/ui ships Node 24, which needs
         # the x86-64-v2 instruction baseline → SIGILL on this hardware.
         #
         # This is a PERMANENT fork, not temporary scaffolding: upstream closed
         # https://github.com/kagent-dev/kagent/issues/1505 as `not_planned`
-        # (2026-05-23), and v0.9.11 still builds on Node 24. Every chart bump
+        # (2026-05-23), and v0.10.2 still builds on Node 24. Every chart bump
         # therefore requires a matching image rebuild.
         #
         # NOTE: Image must be built via base-apps/kagent/build/build.sh BEFORE
@@ -67,7 +67,7 @@ spec:
           image:
             registry: "852893458518.dkr.ecr.us-east-2.amazonaws.com"
             repository: "kagent-ui"
-            tag: "0.9.11-node20"
+            tag: "0.10.2-node20"
             pullPolicy: IfNotPresent
 
         # Agent enablement.
