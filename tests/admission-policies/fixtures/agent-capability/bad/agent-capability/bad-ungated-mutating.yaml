@@ -1,0 +1,17 @@
+# rule 5: mutating tool with no requireApproval. (from tests/agent-capability/kyverno/bad-agents.yaml)
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-ungated-mutating
+  namespace: kagent
+  labels:
+    capability.homelab/class: write
+spec:
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        name: kagent-grafana-mcp
+        toolNames:
+        - search_dashboards
+        - update_dashboard

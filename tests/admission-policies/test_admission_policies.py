@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from conftest import FIXTURES, policy_docs, policy_files
+from conftest import FIXTURES, policy_docs, policy_files, real_agent_files
 
 SUITES = sorted(p.name for p in FIXTURES.iterdir() if p.is_dir() and p.name != "crds")
 GOOD = sorted(FIXTURES.glob("*/good/*.yaml"))
@@ -35,6 +35,14 @@ def test_bad_fixture_is_flagged_by_its_policy(cluster, path):
     verdict, fired, out = cluster.verdict(path.read_text())
     assert verdict in ("warn", "deny"), f"{_id(path)} was {verdict}:\n{out}"
     assert expected in fired, f"{_id(path)} fired {fired}, expected {expected}:\n{out}"
+
+
+@pytest.mark.parametrize("path", real_agent_files(), ids=lambda p: p.stem)
+def test_real_agents_update_without_warnings(cluster, path):
+    """Every Agent actually deployed must pass every policy — on UPDATE, the path a sync
+    takes. A policy that flags a real agent would block that agent the day it enforces."""
+    verdict, fired, out = cluster.verdict(path.read_text(), update=True)
+    assert verdict == "allow", f"real agent {path.stem} got {verdict} from {fired}:\n{out}"
 
 
 def test_no_type_checking_warnings(cluster):

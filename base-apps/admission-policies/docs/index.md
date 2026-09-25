@@ -12,6 +12,8 @@ tags: [admission, cel, policy, security]
 sources:
   - base-apps/admission-policies.yaml
   - base-apps/admission-policies/agent-identity.yaml
+  - base-apps/admission-policies/agent-capability.yaml
+  - scripts/gen-agent-capability-policy.py
   - tests/admission-policies/conftest.py
   - tests/admission-policies/test_admission_policies.py
 ---
@@ -53,8 +55,22 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   wide), `agent-identity-mcp-toolnames` (McpServer tool refs must list `toolNames`). Currently
   **shadow**. Compared with the Kyverno version it also covers per-item
   `sourceRef.storeRef` and `dataFrom[].extract`, which the Kyverno rules missed.
-- Tests: `tests/admission-policies/` boots a real k3s of the cluster's version in Docker and
-  server-side dry-runs `fixtures/<suite>/good/*.yaml` (must pass clean) and
+- `agent-capability.yaml` is **generated** by `scripts/gen-agent-capability-policy.py` from
+  `base-apps/kyverno-policies/agent-capability-taxonomy.yaml`. That is the same script and
+  taxonomy that generate the Kyverno version, so the two cannot drift; CI runs it with
+  `--check`. It holds two policies:
+  - `agent-capability` (rules 1-5): declared class, every bound tool classified, the class
+    permits the tools, and mutating tools sit behind `requireApproval`.
+  - `agent-capability-delegation` (rules 6-7): no delegating to a higher class. The policy
+    uses the **Agent kind as its parameter** with `paramRef.selector: {}`, so the API server
+    evaluates it once per Agent in the request's namespace, each one a potential delegate. A
+    delegate whose class label is missing or not read/write counts as admin.
+
+  Currently **shadow**.
+- Tests: `tests/admission-policies/` boots a real k3s of the cluster's version in Docker,
+  creates the cluster's real Agents (`base-apps/kagent/agents/`: the delegation policy's
+  parameters, and each must also re-apply with zero warnings), and server-side dry-runs
+  `fixtures/<suite>/good/*.yaml` (must pass clean against EVERY policy) and
   `fixtures/<suite>/bad/<policy>/*.yaml` (must be flagged by that policy). CI job
   `admission-policies-validate`.
 

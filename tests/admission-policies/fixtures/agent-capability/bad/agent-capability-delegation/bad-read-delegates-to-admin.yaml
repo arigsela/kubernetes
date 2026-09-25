@@ -1,0 +1,19 @@
+# rule 6: read agent delegates to admin k8s-agent. (from tests/agent-capability/kyverno/bad-agents.yaml)
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: bad-read-delegates-to-admin
+  namespace: kagent
+  labels:
+    capability.homelab/class: read
+spec:
+  declarative:
+    tools:
+    - type: McpServer
+      mcpServer:
+        name: agent-docs
+        toolNames:
+        - get_file_contents
+    - type: Agent
+      agent:
+        name: k8s-agent
