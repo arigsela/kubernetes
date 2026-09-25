@@ -155,6 +155,22 @@ def test_every_matched_kind_has_a_bad_fixture():
         assert matched <= covered, f"{name}: no bad fixture for kinds {matched - covered}"
 
 
+REPORTING_LABEL = "reports.kyverno.io/enabled"
+
+
+def test_kyverno_reporting_opt_in():
+    """Kyverno's reports controller (v1.19) skips a native policy unless it is labelled
+    reports.kyverno.io/enabled=true: opt-in, the reverse of Kyverno's own policies. Without it
+    a policy's violations appear in no PolicyReport. A parameterised policy must NOT opt in:
+    Kyverno's engine mis-evaluates paramKind policies, so its report rows would be wrong."""
+    for name, vap in _by_kind("ValidatingAdmissionPolicy").items():
+        labelled = (vap["metadata"].get("labels") or {}).get(REPORTING_LABEL) == "true"
+        if "paramKind" in vap["spec"]:
+            assert not labelled, f"{name} is parameterised: Kyverno would misreport it"
+        else:
+            assert labelled, f"{name} lacks {REPORTING_LABEL}=true: reported nowhere"
+
+
 def test_every_policy_has_a_message():
     for name, vap in _by_kind("ValidatingAdmissionPolicy").items():
         for v in vap["spec"]["validations"]:

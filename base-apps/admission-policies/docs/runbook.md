@@ -69,8 +69,9 @@ sources:
 - Dry-run the live object back through the API server; each violation prints as a warning.
   One object per call, because kubectl de-duplicates identical warnings:
   `kubectl get deploy -n <ns> <name> -o yaml | kubectl replace --dry-run=server -f -`
-- `kubectl get policyreports -A`: native results carry `source: ValidatingAdmissionPolicy`,
-  if Kyverno's reports controller (`--validatingAdmissionPolicyReports=true`) has scanned them.
+- `kubectl get policyreports -A`: native results carry `source: ValidatingAdmissionPolicy`.
+  A policy appears there only if labelled `reports.kyverno.io/enabled: "true"`; a new or
+  changed policy triggers a rescan of all resources.
 
 ### Add or change a policy
 1. Write the policy and binding in `base-apps/admission-policies/`. New policies start in

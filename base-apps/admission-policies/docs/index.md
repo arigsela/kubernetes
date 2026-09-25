@@ -47,9 +47,14 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
     then deleted.
   `tests/admission-policies` fails if a binding's actions and its policy's failurePolicy
   disagree (a shadow policy that could block, or an enforcing one that fails open).
-- **Reporting**: Kyverno's reports controller runs with `--validatingAdmissionPolicyReports=true`,
-  so native policies show up in `kubectl get policyreports -A` like Kyverno's did. Kyverno's
-  end state is reporting only.
+- **Reporting**: Kyverno's reports controller runs with `--validatingAdmissionPolicyReports=true`
+  and writes native results to `kubectl get policyreports -A` (`source:
+  ValidatingAdmissionPolicy`), but **only for policies labelled
+  `reports.kyverno.io/enabled: "true"`**. That is opt-in, the reverse of Kyverno's own
+  policies, and the Kyverno docs do not mention it; found in the v1.19.1 source. Every policy
+  carries the label except `agent-capability-delegation`: it is parameterised, and Kyverno's
+  engine mis-evaluates parameterised policies. `test_kyverno_reporting_opt_in` enforces both.
+  Kyverno's end state is reporting only.
 
 ## Where config lives
 - `agent-identity.yaml`: the agent identity contract (templates/agent-identity/README.md), as
