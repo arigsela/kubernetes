@@ -145,7 +145,25 @@ spec:
             periodSeconds: 5
             successThreshold: 1
             timeoutSeconds: 10
-          resources: {}
+          # Until 2026-09-25 this was `resources: {}`: vault-0 was BestEffort, first to be
+          # evicted under node pressure, and impossible to resize in place (a resize
+          # may not change the QoS class). Sized from 15 days of data: RSS max 111Mi,
+          # CPU p95 95m. The working set reaches ~830Mi, but that is page cache the
+          # kernel reclaims under the 512Mi limit, not heap.
+          # updateStrategy is OnDelete: this takes effect at the next deliberate
+          # `kubectl delete pod vault-0` (auto-unseals via KMS).
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          resizePolicy:
+            - resourceName: cpu
+              restartPolicy: NotRequired
+            - resourceName: memory
+              restartPolicy: NotRequired
           securityContext:
             allowPrivilegeEscalation: false
           terminationMessagePath: /dev/termination-log

@@ -47,6 +47,17 @@ metadata:
 spec:
   serviceName: prometheus
   replicas: 1
+  # OnDelete: a template change (e.g. resources) does not restart Prometheus by itself.
+  # Resize the running pod in place first (scripts/resize-pod.sh), then merge the same
+  # values here: git and the pod agree with no restart. A real restart is a deliberate
+  # `kubectl delete pod prometheus-0` (docs/troubleshooting/in-place-resize.md).
+  updateStrategy:
+    type: OnDelete
+    # Explicit null: the live object carries a defaulted rollingUpdate.partition, and
+    # a client-side apply of type OnDelete alone keeps it and fails validation
+    # ("only allowed for updateStrategy 'RollingUpdate'"). Deployments clear it via
+    # retainKeys; StatefulSets do not.
+    rollingUpdate: null
   selector:
     matchLabels:
       app: prometheus
@@ -88,13 +99,25 @@ spec:
           mountPath: /etc/prometheus
         - name: storage
           mountPath: /prometheus
+        # Sized from 15 days of cAdvisor data (2026-09-25): working set peaked at 1982Mi
+        # (97% of the old 2Gi limit), RSS 1688Mi, CPU p95 247m / max 557m. Prometheus
+        # sets GOMEMLIMIT once at startup to 0.9 x limit, so a memory raise only takes
+        # full effect after a restart; an in-place raise alone removes the OOM risk but
+        # not the GC pressure.
         resources:
           requests:
-            cpu: 200m
-            memory: 1Gi
+            cpu: 250m
+            memory: 2Gi
           limits:
             cpu: 1000m
-            memory: 2Gi
+            memory: 3Gi
+        # Resize in place without restarting the container (the default, stated so the
+        # intent is explicit). In-place resize is GA in k8s 1.35.
+        resizePolicy:
+        - resourceName: cpu
+          restartPolicy: NotRequired
+        - resourceName: memory
+          restartPolicy: NotRequired
         livenessProbe:
           httpGet:
             path: /-/healthy
