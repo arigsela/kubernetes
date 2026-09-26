@@ -42,8 +42,8 @@ spec:
       values: |
         crds:
           # Bound the PreSync Job so it cannot schedule unconstrained. The chart
-          # defaults these to {}, and ClusterPolicy/require-resource-limits is
-          # Audit rather than Enforce, so nothing else would catch it.
+          # defaults these to {}, and the require-resource-limits admission policy
+          # is audit-only, so nothing else would catch it.
           upgradeJob:
             resources:
               requests:

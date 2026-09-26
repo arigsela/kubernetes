@@ -88,11 +88,11 @@ entries:
       must_include: ["agent-identity", "agent-capability", "Enforce", "Audit"]
       behavior: answer
     reference: >-
-      Yes. agent-identity and agent-capability are Enforce (the agent-principal and
-      capability-class contracts). Most others are Audit: disallow-latest-tag,
-      disallow-privileged-containers, require-labels, require-resource-limits,
-      disallow-default-namespace. Plus a generate policy for the ECR secret; the ECR
-      pull-secret mutation is a native MutatingAdmissionPolicy in base-apps/admission-policies.
+      Yes. The Kyverno ClusterPolicies left are agent-identity and agent-capability, both
+      Enforce (the agent-principal and capability-class contracts), and generate-ecr-secret.
+      The Audit policies (disallow-latest-tag, disallow-privileged-containers, require-labels,
+      require-resource-limits, disallow-default-namespace) and the ECR pull-secret mutation
+      now run natively in the API server (base-apps/admission-policies); Kyverno reports on them.
     source: "base-apps/kyverno-policies/"
     tags: [factual, security, inventory]
 
