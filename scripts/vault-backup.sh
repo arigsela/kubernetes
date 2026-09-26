@@ -161,7 +161,7 @@ else
     # §V.34 / §B.3 — the PV is pinned to k3s-control-01, which carries
     # node-role.kubernetes.io/control-plane:NoSchedule, and the two workers do not match
     # the PV's node affinity. Without the toleration this pod is Pending forever and the
-    # backup aborts. Resource limits satisfy kyverno's require-resource-limits (Audit).
+    # backup aborts. Resource limits satisfy the require-resource-limits admission policy (audit-only).
     kubectl run vault-backup-helper -n "$NAMESPACE" --restart=Never --quiet \
       --image=alpine:3.20 \
       --overrides="{\"spec\":{\"tolerations\":[{\"key\":\"node-role.kubernetes.io/control-plane\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}],\"containers\":[{\"name\":\"helper\",\"image\":\"alpine:3.20\",\"command\":[\"sleep\",\"600\"],\"resources\":{\"requests\":{\"cpu\":\"50m\",\"memory\":\"64Mi\"},\"limits\":{\"cpu\":\"500m\",\"memory\":\"256Mi\"}},\"volumeMounts\":[{\"name\":\"d\",\"mountPath\":\"$DATA_PATH\"}]}],\"volumes\":[{\"name\":\"d\",\"persistentVolumeClaim\":{\"claimName\":\"$PVC\"}}]}}" \

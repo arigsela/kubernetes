@@ -86,7 +86,7 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   - `disallow-default-namespace` flags Deployments, StatefulSets and Services in `default`. The
     API server's own `default/kubernetes` Service is exempt.
 
-  The first four exclude `kube-system`, `argo-cd` and `kyverno`, as the Kyverno versions did.
+  The first four exclude `kube-system`, `argo-cd` and `kyverno`, as the Kyverno versions (now deleted) did.
   The pod-level ones match Pod, Deployment, StatefulSet, DaemonSet, Job and CronJob, and
   extract the pod spec per kind in a `pod` variable, because native policies have no Kyverno
   "autogen". ReplicaSets are deliberately not matched: Kyverno's autogen reported every old

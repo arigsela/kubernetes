@@ -32,12 +32,13 @@ the `managed-apps` ApplicationSet from configs in `appsets/managed-apps/` — se
 - **kyverno** - Kubernetes policy engine (Helm chart v3.9.1) for validating, mutating, and generating resources
 - **kyverno-policies** (managed) - Custom ClusterPolicies:
   - `generate-ecr-secret` - Clones `ecr-registry` secret into new namespaces on creation
-  - `require-labels`, `disallow-privileged-containers`, `require-resource-limits`,
-    `disallow-default-namespace`, `disallow-latest-tag` (Audit) - being replaced by native
-    policies of the same names in `admission-policies` (below)
+  - `agent-identity`, `agent-capability` (Enforce) - being replaced by the native policies below
 - **admission-policies** - Native ValidatingAdmissionPolicies evaluated in the API server (no
-  webhook): the agent-identity and agent-capability contracts (shadow, moving to Deny) and the
-  five workload-hygiene audits above (audit-only). See `admission-policies/docs.md`
+  webhook): the agent-identity and agent-capability contracts (shadow, moving to Deny); the
+  five workload-hygiene audits `require-labels`, `disallow-privileged-containers`,
+  `require-resource-limits`, `disallow-default-namespace`, `disallow-latest-tag` (audit-only;
+  results in `kubectl get policyreports -A`); and the `inject-ecr-pull-secret` mutation. See
+  `admission-policies/docs.md`
 
 ### Service Mesh (Istio Ambient)
 - **istio-gateway-api** - Kubernetes Gateway API CRDs (sync-wave: -3)

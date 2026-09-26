@@ -111,8 +111,8 @@ spec:
               cpu: 50m
               memory: 128Mi
             limits:
-              # cpu is required alongside memory: the repo's Kyverno
-              # ClusterPolicy require-resource-limits (Audit mode) flags any
+              # cpu is required alongside memory: the repo's native
+              # require-resource-limits admission policy (audit-only) flags any
               # container missing either limit as a PolicyReport violation.
               cpu: 500m
               memory: 512Mi

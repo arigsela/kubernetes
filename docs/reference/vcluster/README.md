@@ -136,7 +136,7 @@ Common: `InvalidClientTokenId` → the access key in `vault://k8s-secrets/cert-m
 If you wrote your own Ingress, make sure these are set.
 
 ### vcluster pod won't start
-Check Kyverno PolicyReports in the vcluster namespace. The Helm chart's Deployment fails the `require-labels` audit rule (no `app.kubernetes.io/name` label), but this is **Audit mode** and doesn't block. Anything other than that is a real issue worth investigating.
+Check PolicyReports in the vcluster namespace. The Helm chart's Deployment fails the native `require-labels` audit policy (no `app.kubernetes.io/name` label), but this is **Audit mode** and doesn't block. Anything other than that is a real issue worth investigating.
 
 ## Known limitations (v1)
 
