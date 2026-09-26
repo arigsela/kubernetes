@@ -63,24 +63,26 @@ capability regression. `scripts/agent-identity-scope.txt` is deleted.
 - **CI** (`scripts/validate-agent-identity.py`, `agent-identity-validate` job)
   checks all three invariants against **git**. It is the only gate that can see
   the "exists in git" half of invariants 2 and 3.
-- **Admission** (`base-apps/kyverno-policies/agent-identity.yaml`, Kyverno
-  ClusterPolicy, `Enforce`) checks the structural invariants against **anything
-  applied to the cluster** — including a hand-run `kubectl apply`, a Helm chart,
-  or an operator writing an `Agent`. CI never sees those.
+- **Admission** (`base-apps/admission-policies/agent-identity.yaml`, native
+  ValidatingAdmissionPolicies, `[Deny]` with failurePolicy `Fail`, evaluated inside
+  the API server) checks the structural invariants against **anything applied to
+  the cluster** — including a hand-run `kubectl apply`, a Helm chart, or an
+  operator writing an `Agent`. CI never sees those.
 
 Neither subsumes the other. CI catches what git says; admission catches what the
 cluster is actually asked to run.
 
-The Kyverno policy denies: an `ExternalSecret` in `kagent` using the broad
-`vault-backend` store, one reading the monolithic `kagent` Vault key, and an
+The admission policies deny: an `ExternalSecret` in `kagent` using the broad
+`vault-backend` store (top-level or per-item `sourceRef.storeRef`), one reading the
+monolithic `kagent` Vault key (`data[].remoteRef` or `dataFrom[].extract`), and an
 `Agent` whose `McpServer` tool ref lists no `toolNames` (implicit bind-all).
-**It carries no exclusions.**
+**They carry no exclusions.**
 
 ## What this contract does NOT cover
 
 Identity says *who an agent is*. It says nothing about what an agent may **do** —
 that is the capability contract
-(`base-apps/kyverno-policies/agent-capability.yaml`,
+(`base-apps/admission-policies/agent-capability.yaml`,
 `scripts/validate-agent-capability.py`), which classifies every tool and forbids
 an agent from binding above its class or delegating above it. The two are
 complements; read both before onboarding an agent.
@@ -92,7 +94,7 @@ complements; read both before onboarding an agent.
   which agent is burning tokens.
 - **Egress control.** No `NetworkPolicy` or Istio `AuthorizationPolicy` anywhere
   in `base-apps/kagent/`; agent pods have unrestricted egress.
-- Invariant 2 has no admission-time equivalent (Kyverno cannot read git). A
+- Invariant 2 has no admission-time equivalent (admission cannot read git). A
   cluster-existence check on the referenced `ModelConfig` would be the closest
   analogue if it proves worth the moving parts.
 
@@ -109,7 +111,13 @@ complements; read both before onboarding an agent.
 - **Increment 3** — the broad `vault-backend` store, the `kagent` Vault role and
   policy, and the monolithic `k8s-secrets/kagent` key are all destroyed. Kyverno
   enforces the contract at admission with no exclusions.
-- **Increment 4 (this one)** — the contract is closed. No pilot staging: every
+- **Increment 5** — admission moved from the Kyverno ClusterPolicy to native
+  ValidatingAdmissionPolicies (plan `docs/plans/k8s-136-features-implementation-plan.md`,
+  Phase 3E). Kyverno's webhook failed OPEN whenever its single pod was down
+  (`forceFailurePolicyIgnore`); the native policies run inside the API server with
+  failurePolicy `Fail`. They also close two gaps the Kyverno rules had (per-item
+  `sourceRef.storeRef`, `dataFrom[].extract`).
+- **Increment 4** — the contract is closed. No pilot staging: every
   agent and credential is held to all three invariants as a hard failure. Agents
   are discovered by `kind` rather than by directory, so one placed outside
   `agents/` can no longer slip through unvalidated. A dangling `type: Agent`

@@ -4,20 +4,17 @@
 #
 # Three consumers, all reading this exact content:
 #
-#   - scripts/gen-agent-capability-policy.py  compiles it INTO
-#     ClusterPolicy/agent-capability. CI fails if that policy drifts from this
-#     file (`--check`).
+#   - scripts/gen-agent-capability-policy.py  compiles it INTO the native admission
+#     policy base-apps/admission-policies/agent-capability.yaml. CI fails if that
+#     policy drifts from this file (`--check`).
 #   - scripts/validate-agent-capability.py    the CI contract gate.
 #   - humans, in-cluster: `kubectl get cm -n kyverno agent-capability-taxonomy`
 #
-# NOTE: Kyverno does NOT read this ConfigMap at admission time. The policy embeds
-# the lists inline instead. A `context.configMap` lookup would be DRYer but is a
-# runtime dependency at rule level — evaluated for EVERY Agent — and if it failed
-# for any reason (RBAC, sync ordering, schema) every rule would error and Kyverno's
-# default failurePolicy=Fail would deny ALL Agent writes, wedging the kagent app.
-# It is also unresolvable by the kyverno CLI, so that riskiest path would have been
-# the one path never covered by tests. Inlining makes the artifact we test
-# byte-for-byte the artifact that ships. See the generator for the full rationale.
+# NOTE: nothing reads this ConfigMap at admission time. The policy embeds the lists
+# inline instead. A runtime lookup would be DRYer but is a dependency evaluated for
+# EVERY Agent, and with failurePolicy Fail any lookup failure (RBAC, sync ordering,
+# schema) would deny ALL Agent writes, wedging the kagent app. Inlining makes the
+# artifact we test byte-for-byte the artifact that ships. See the generator.
 #
 # Three classifications, ordered read < write < destructive:
 #

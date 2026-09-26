@@ -1,19 +1,17 @@
 # Agent identity contract, natively in the API server (templates/agent-identity/README.md).
 #
-# Native replacement for the Kyverno ClusterPolicy base-apps/kyverno-policies/agent-identity.yaml
-# (docs/plans/k8s-136-features-implementation-plan.md, Task 3.2). One ValidatingAdmissionPolicy
-# per Kyverno rule, so each can move from shadow to Deny on its own.
+# Replaced the Kyverno ClusterPolicy agent-identity (docs/plans/k8s-136-features-implementation-plan.md,
+# Tasks 3.2 and 3E), one ValidatingAdmissionPolicy per former Kyverno rule.
 #
-# WHY NATIVE: the Kyverno webhook runs with forceFailurePolicyIgnore and one replica, so these
-# "Enforce" rules stop enforcing whenever Kyverno is down. A ValidatingAdmissionPolicy runs
+# WHY NATIVE: the Kyverno webhook ran with forceFailurePolicyIgnore and one replica, so these
+# "Enforce" rules stopped enforcing whenever Kyverno was down. A ValidatingAdmissionPolicy runs
 # inside the API server: no webhook, no pod to be down.
 #
-# ROLLOUT STATE: SHADOW. Bindings are [Warn, Audit] next to the still-enforcing Kyverno policy:
-# violations show up as kubectl warnings and in Kyverno's PolicyReports (its reports controller
-# runs with --validatingAdmissionPolicyReports=true), and block nothing. failurePolicy is Ignore
-# during shadow so a CEL evaluation error can never block an admission before these policies are
-# trusted. PR 3E flips each binding to [Deny], failurePolicy to Fail, and deletes the Kyverno
-# policy. Tested against a real API server: tests/admission-policies/.
+# ROLLOUT STATE: ENFORCING. Bindings are [Deny] and failurePolicy is Fail, so a CEL evaluation
+# error denies too instead of silently admitting. They ran in shadow ([Warn, Audit]) next to the
+# Kyverno policy first, with every live ExternalSecret and Agent passing. Violations also land in
+# Kyverno's PolicyReports (reports.kyverno.io/enabled). Emergency: delete the binding (runbook).
+# Tested against a real API server: tests/admission-policies/.
 #
 # Two gaps in the Kyverno rules are closed here, deliberately:
 #   * scoped store: Kyverno checked only spec.secretStoreRef. An ExternalSecret can also
@@ -29,7 +27,7 @@ metadata:
   labels:
     reports.kyverno.io/enabled: "true"   # opt in to Kyverno PolicyReports (docs.md)
 spec:
-  failurePolicy: Ignore   # shadow; Fail at the Deny flip
+  failurePolicy: Fail   # enforcing: an evaluation error denies
   matchConstraints:
     namespaceSelector:
       matchLabels:
@@ -59,7 +57,7 @@ metadata:
   name: agent-identity-scoped-store
 spec:
   policyName: agent-identity-scoped-store
-  validationActions: [Warn, Audit]   # shadow
+  validationActions: [Deny]   # enforcing
 ---
 # ---- Invariant 1b: nothing reads the destroyed monolithic Vault key 'kagent' -----------------
 # Cluster-wide on purpose: a kagent credential does not stop being kagent's because it is
@@ -71,7 +69,7 @@ metadata:
   labels:
     reports.kyverno.io/enabled: "true"   # opt in to Kyverno PolicyReports (docs.md)
 spec:
-  failurePolicy: Ignore   # shadow; Fail at the Deny flip
+  failurePolicy: Fail   # enforcing: an evaluation error denies
   matchConstraints:
     resourceRules:
       - apiGroups: ["external-secrets.io"]
@@ -97,7 +95,7 @@ metadata:
   name: agent-identity-no-monolithic-key
 spec:
   policyName: agent-identity-no-monolithic-key
-  validationActions: [Warn, Audit]   # shadow
+  validationActions: [Deny]   # enforcing
 ---
 # ---- Invariant 3: an McpServer tool ref must list its tools ----------------------------------
 apiVersion: admissionregistration.k8s.io/v1
@@ -107,7 +105,7 @@ metadata:
   labels:
     reports.kyverno.io/enabled: "true"   # opt in to Kyverno PolicyReports (docs.md)
 spec:
-  failurePolicy: Ignore   # shadow; Fail at the Deny flip
+  failurePolicy: Fail   # enforcing: an evaluation error denies
   matchConstraints:
     resourceRules:
       - apiGroups: ["kagent.dev"]
@@ -133,4 +131,4 @@ metadata:
   name: agent-identity-mcp-toolnames
 spec:
   policyName: agent-identity-mcp-toolnames
-  validationActions: [Warn, Audit]   # shadow
+  validationActions: [Deny]   # enforcing

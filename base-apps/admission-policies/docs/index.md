@@ -60,12 +60,13 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
 - `agent-identity.yaml`: the agent identity contract (templates/agent-identity/README.md), as
   three policies: `agent-identity-scoped-store` (no `vault-backend` SecretStore in `kagent`),
   `agent-identity-no-monolithic-key` (nothing reads the destroyed Vault key `kagent`, cluster
-  wide), `agent-identity-mcp-toolnames` (McpServer tool refs must list `toolNames`). Currently
-  **shadow**. Compared with the Kyverno version it also covers per-item
-  `sourceRef.storeRef` and `dataFrom[].extract`, which the Kyverno rules missed.
+  wide), `agent-identity-mcp-toolnames` (McpServer tool refs must list `toolNames`).
+  **Enforcing** (`[Deny]`, `failurePolicy: Fail`); the Kyverno ClusterPolicy it replaced is
+  deleted. Compared with the Kyverno version it also covers per-item `sourceRef.storeRef` and
+  `dataFrom[].extract`, which the Kyverno rules missed.
 - `agent-capability.yaml` is **generated** by `scripts/gen-agent-capability-policy.py` from
   `base-apps/kyverno-policies/agent-capability-taxonomy.yaml`. That is the same script and
-  taxonomy that generate the Kyverno version, so the two cannot drift; CI runs it with
+  taxonomy that generated the Kyverno version (now deleted); CI runs it with
   `--check`. It holds two policies:
   - `agent-capability` (rules 1-5): declared class, every bound tool classified, the class
     permits the tools, and mutating tools sit behind `requireApproval`.
@@ -74,7 +75,9 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
     evaluates it once per Agent in the request's namespace, each one a potential delegate. A
     delegate whose class label is missing or not read/write counts as admin.
 
-  Currently **shadow**.
+  **Enforcing** (`[Deny]`, `failurePolicy: Fail`); the Kyverno ClusterPolicy is deleted. Both
+  agent files ran in shadow first, and before the flip every live Agent and ExternalSecret was
+  replayed against the enforcing policies (with the real CRDs) and admitted.
 - Five **audit-only** workload-hygiene policies, one file each. They are `[Warn, Audit]` and
   `failurePolicy: Ignore` **permanently**; they report, never block:
   - `disallow-latest-tag` flags an image with no tag or `:latest` (a digest counts as pinned).

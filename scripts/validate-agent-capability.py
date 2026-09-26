@@ -13,8 +13,9 @@ Four invariants, checked against the manifests in git:
   4. No escalation     for every type: Agent delegation, the delegate's class is
                        <= this agent's class. Effective capability is transitive.
 
-This is the authoritative gate for all four. Kyverno enforces 1-3 at admission;
-invariant 4 needs a cross-object lookup, so CI is where it is actually decided.
+This is the authoritative gate for all four. The native admission policies
+(base-apps/admission-policies/agent-capability.yaml) enforce 1-3 and one hop of 4;
+the transitive closure of 4 needs the whole graph, so CI is where it is decided.
 The whole agent graph is in git, which is what makes that sound.
 
 Exit 0 clean, 1 on any error.
@@ -55,7 +56,7 @@ def _load_docs(path: Path) -> list[dict]:
 
 
 def load_taxonomy(repo_root: Path) -> dict[str, str]:
-    """Return {tool_name: classification}. Same content Kyverno reads."""
+    """Return {tool_name: classification}. Same content the admission policy embeds."""
     path = repo_root / TAXONOMY_PATH
     if not path.exists():
         raise SystemExit(f"taxonomy not found: {TAXONOMY_PATH}")

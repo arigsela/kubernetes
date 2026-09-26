@@ -88,11 +88,12 @@ entries:
       must_include: ["agent-identity", "agent-capability", "Enforce", "Audit"]
       behavior: answer
     reference: >-
-      Yes. The Kyverno ClusterPolicies left are agent-identity and agent-capability, both
-      Enforce (the agent-principal and capability-class contracts), and generate-ecr-secret.
-      The Audit policies (disallow-latest-tag, disallow-privileged-containers, require-labels,
-      require-resource-limits, disallow-default-namespace) and the ECR pull-secret mutation
-      now run natively in the API server (base-apps/admission-policies); Kyverno reports on them.
+      The only Kyverno ClusterPolicy left is generate-ecr-secret. The policies moved into the
+      API server as native admission policies (base-apps/admission-policies): agent-identity
+      and agent-capability Enforce (Deny) the agent-principal and capability-class contracts;
+      disallow-latest-tag, disallow-privileged-containers, require-labels,
+      require-resource-limits and disallow-default-namespace are Audit-only; plus the ECR
+      pull-secret mutation. Kyverno's reports controller still reports on them.
     source: "base-apps/kyverno-policies/"
     tags: [factual, security, inventory]
 

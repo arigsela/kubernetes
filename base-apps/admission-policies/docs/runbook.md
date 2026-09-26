@@ -1,7 +1,7 @@
 ---
 type: "Kubernetes App Runbook"
 title: "admission-policies — Runbook"
-description: "Operational runbook for the native admission policies: blocked changes, shadow warnings, rollout."
+description: "Operational runbook for the native admission policies: blocked changes, audit warnings, rollout."
 app: admission-policies
 catalog_entity: admission-policies
 kind: runbook
@@ -24,16 +24,18 @@ sources:
 - **Fix:** fix the object, not the policy; the policies encode the contracts in
   `templates/agent-identity/README.md` and the capability taxonomy. If the policy itself is
   wrong: set its binding back to shadow (`validationActions: [Warn, Audit]` plus
-  `failurePolicy: Ignore` on the policy) in git, or `git revert` the flip. Add a fixture that
+  `failurePolicy: Ignore` on the policy) in git, or `git revert` the flip. For
+  `agent-capability*` that means the `ENFORCE` constant in
+  `scripts/gen-agent-capability-policy.py`, then regenerate (the YAML is generated). Add a fixture that
   reproduces the false positive to `tests/admission-policies/fixtures/<suite>/good/`.
 - **Emergency (a policy blocks everything and git can't sync):**
   `kubectl delete validatingadmissionpolicybinding <name>`. That disables the policy at once,
   and Argo re-creates it at the next sync, so fix git first.
 
 ### Symptom: `Warning: Validation failed for ValidatingAdmissionPolicy '<name>'` on apply
-- An agent policy (`agent-identity-*`, `agent-capability*`) in **shadow** flagged the object.
-  Nothing was blocked. Once that policy moves to enforcing, the same object will be
-  **denied**, so fix it now.
+- A policy in **shadow** (`[Warn, Audit]`) flagged the object. Nothing was blocked. Once it
+  moves to enforcing, the same object will be **denied**, so fix it now. (The agent policies,
+  `agent-identity-*` and `agent-capability*`, are enforcing: they deny rather than warn.)
 - A workload-hygiene policy (`disallow-latest-tag`, `disallow-privileged-containers`,
   `require-resource-limits`, `require-labels`, `disallow-default-namespace`) flagged it. These
   are audit-only permanently and never block. The message names the offending images or

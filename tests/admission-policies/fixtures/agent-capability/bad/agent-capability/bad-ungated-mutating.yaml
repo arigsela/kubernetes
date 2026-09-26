@@ -1,4 +1,4 @@
-# rule 5: mutating tool with no requireApproval. (from tests/agent-capability/kyverno/bad-agents.yaml)
+# rule 5: mutating tool with no requireApproval. (ported from the retired Kyverno CLI suite)
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:
