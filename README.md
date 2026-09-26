@@ -129,10 +129,11 @@ Production-grade GitOps infrastructure managing containerized applications with 
                         └─────────────────────┘     └─────────────────┘
                                                             │
 ┌─────────────────┐     ┌─────────────────────┐             │
-│   Pod with ECR  │     │      Kyverno        │     ┌───────▼─────────┐
-│   Image Created │ ──▶ │ inject-ecr-pull-secret│     │  All Namespaces │
-└─────────────────┘     │ (auto imagePullSecrets)│    │  Secrets Fresh  │
-                        └─────────────────────┘     └─────────────────┘
+│   Pod with ECR  │     │  API server (native  │     ┌───────▼─────────┐
+│   Image Created │ ──▶ │  MutatingAdmission-  │     │  All Namespaces │
+└─────────────────┘     │  Policy) inject-ecr- │     │  Secrets Fresh  │
+                        │  pull-secret         │     └─────────────────┘
+                        └─────────────────────┘
 ```
 
 - **Zero-touch ECR access** - No manual `imagePullSecrets` or namespace configuration

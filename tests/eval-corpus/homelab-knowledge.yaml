@@ -91,7 +91,8 @@ entries:
       Yes. agent-identity and agent-capability are Enforce (the agent-principal and
       capability-class contracts). Most others are Audit: disallow-latest-tag,
       disallow-privileged-containers, require-labels, require-resource-limits,
-      disallow-default-namespace. Plus generate/mutate policies for ECR secrets.
+      disallow-default-namespace. Plus a generate policy for the ECR secret; the ECR
+      pull-secret mutation is a native MutatingAdmissionPolicy in base-apps/admission-policies.
     source: "base-apps/kyverno-policies/"
     tags: [factual, security, inventory]
 
