@@ -96,8 +96,8 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   replaces Kyverno's mutation, which needed Kyverno's webhook pod and ignored image volumes.
   It applies to every namespace except `kube-system`, `kube-public`, `kube-node-lease` and
   `kyverno`. A mutation has no shadow mode, so it was first bound to a test namespace and
-  verified live before being widened. Kyverno's `inject-ecr-pull-secret` still runs alongside
-  it until deleted (both add the secret idempotently by name).
+  verified live before being widened. It is the only mechanism: Kyverno's
+  `inject-ecr-pull-secret` ClusterPolicy has been deleted.
 - Tests: `tests/admission-policies/` boots a real k3s of the cluster's version in Docker,
   creates the cluster's real Agents (`base-apps/kagent/agents/`: the delegation policy's
   parameters, and each must also re-apply with zero warnings), and server-side dry-runs

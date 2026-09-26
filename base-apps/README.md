@@ -31,7 +31,6 @@ the `managed-apps` ApplicationSet from configs in `appsets/managed-apps/` — se
 ### Policy Engine (Kyverno)
 - **kyverno** - Kubernetes policy engine (Helm chart v3.9.1) for validating, mutating, and generating resources
 - **kyverno-policies** (managed) - Custom ClusterPolicies:
-  - `inject-ecr-pull-secret` - Automatically injects `imagePullSecrets` into pods referencing ECR images
   - `generate-ecr-secret` - Clones `ecr-registry` secret into new namespaces on creation
   - `require-labels`, `disallow-privileged-containers`, `require-resource-limits`,
     `disallow-default-namespace`, `disallow-latest-tag` (Audit) - being replaced by native
@@ -176,7 +175,7 @@ Every Hour            ──▶ CronJob refreshes ECR tokens in all namespaces
 
 ### How It Works
 - **`generate-ecr-secret`** (Kyverno ClusterPolicy) — Clones the `ecr-registry` secret from `kube-system` into any new namespace on creation
-- **`inject-ecr-pull-secret`** (Kyverno ClusterPolicy) — Mutates pods that reference `.dkr.ecr.` images to add `imagePullSecrets: [{name: ecr-registry}]`
+- **`inject-ecr-pull-secret`** (native MutatingAdmissionPolicy in `admission-policies`, no webhook) — Mutates pods that reference `.dkr.ecr.` images (containers, initContainers or image volumes) to add `imagePullSecrets: [{name: ecr-registry}]`
 - **`ecr-credentials-sync`** (CronJob) — Runs hourly, refreshes ECR tokens in all non-system namespaces via dynamic discovery
 
 ## Ingress Configuration
