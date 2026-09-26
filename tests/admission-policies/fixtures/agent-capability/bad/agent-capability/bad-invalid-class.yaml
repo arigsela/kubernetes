@@ -1,4 +1,4 @@
-# rule 1: class is not read/write/admin. (from tests/agent-capability/kyverno/bad-agents.yaml)
+# rule 1: class is not read/write/admin. (ported from the retired Kyverno CLI suite)
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:

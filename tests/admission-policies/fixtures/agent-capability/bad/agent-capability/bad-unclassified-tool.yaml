@@ -1,4 +1,4 @@
-# rule 2: binds a tool absent from the taxonomy (fail-closed). (from tests/agent-capability/kyverno/bad-agents.yaml)
+# rule 2: binds a tool absent from the taxonomy (fail-closed). (ported from the retired Kyverno CLI suite)
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:

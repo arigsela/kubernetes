@@ -1,63 +1,22 @@
----
 # Lets Kyverno's REPORTS controller — and only that one — read kagent Agents.
 #
-# Why any grant is needed at all
-# ------------------------------
-# ClusterPolicy/agent-identity has declared `background: true` since it shipped
-# and has produced ZERO PolicyReports for Agents, because the reports controller
-# cannot list them:
+# Why: Kyverno's reports controller writes the PolicyReports for the native agent admission
+# policies (base-apps/admission-policies: agent-capability, agent-identity-mcp-toolnames). To
+# evaluate them in the background it must LIST and WATCH the Agents. Without this grant it
+# asks for it by name and reports nothing for Agents:
 #
-#   $ kubectl auth can-i list agents.kagent.dev \
-#       --as=system:serviceaccount:kyverno:kyverno-reports-controller
-#   no
+#     Warning: system:serviceaccount:kyverno:kyverno-reports-controller
+#     requires permissions get,list,watch for resource kagent.dev/v1alpha2/Agent
 #
-# So the identity policy enforces correctly at admission while its background scan
-# quietly does nothing: no report, and no visibility into the agents that already
-# exist. Applying either agent policy makes Kyverno say so itself:
+# The admission controller used to be granted this too: the Kyverno ClusterPolicy
+# agent-capability made an `apiCall` to read a delegate Agent's class, and when that call was
+# denied Kyverno SKIPPED the rule, so delegation escalations were silently ADMITTED. That
+# policy is gone (plan Phase 3E); the native agent-capability-delegation reads delegates as
+# policy PARAMETERS inside the API server and needs no RBAC. The admission grant was removed
+# with it. Admission never needed RBAC to validate an object: the API server sends it.
 #
-#   Warning: system:serviceaccount:kyverno:kyverno-reports-controller requires
-#   permissions get,list,watch for resource kagent.dev/v1alpha2/Agent
-#
-# Which controllers, and why — each one demonstrated, none granted on a hunch
-# --------------------------------------------------------------------------
-#
-#   admission controller  — REQUIRED, and this was learned the hard way.
-#
-#       Validating an object needs no RBAC: the API server hands the object to the
-#       webhook in the AdmissionReview payload. That is why agent-identity has
-#       enforced correctly at admission all along with no RBAC at all.
-#
-#       But agent-capability rules 6-7 (delegation) make a Kyverno `apiCall` to
-#       READ THE DELEGATE Agent's class. That is an outbound API request made BY
-#       THE ADMISSION CONTROLLER, and it needs RBAC. Without this grant:
-#
-#           kubectl logs -n kyverno deploy/kyverno-admission-controller
-#           ERR failed to load data  error="failed to fetch ..."
-#           TRC validation passed
-#
-#       Note the second line. When a context entry fails to load, Kyverno SKIPS
-#       the rule — it does NOT deny. The delegation rules therefore fail OPEN, and
-#       a read-class Agent delegating to an admin agent is ADMITTED. Verified: the
-#       escalation probe was allowed until this aggregation was added back.
-#
-#   reports controller    — REQUIRED. It LISTs and WATCHes to produce PolicyReports
-#       and re-scan existing objects, and it makes the same apiCall during
-#       background scans. Kyverno asks for it by name when either agent policy is
-#       applied:
-#
-#           Warning: system:serviceaccount:kyverno:kyverno-reports-controller
-#           requires permissions get,list,watch for resource kagent.dev/v1alpha2/Agent
-#
-#       Without it, `background: true` is silently a no-op for Agents — which is
-#       exactly what agent-identity has been doing since it shipped: enforcing at
-#       admission while producing ZERO PolicyReports.
-#
-#   background controller — NOT granted. It reconciles `generate` and
-#       `mutate-existing` rules; both agent policies are validate-only (zero
-#       generate or mutate rules), so it has no work to do on Agents. Add it here
-#       only if such a rule is ever introduced for this kind.
-#
-# Read-only verbs: Kyverno never needs to mutate an Agent.
+# The background controller is not granted: it reconciles generate/mutate-existing rules, and
+# nothing generates or mutates Agents. Read-only verbs: nothing here writes an Agent.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -65,7 +24,6 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
   labels:
-    rbac.kyverno.io/aggregate-to-admission-controller: "true"
     rbac.kyverno.io/aggregate-to-reports-controller: "true"
 rules:
   - apiGroups: ["kagent.dev"]

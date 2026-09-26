@@ -17,7 +17,7 @@ Hence: generate it from the one true file, and let CI fail if the committed mani
 falls behind. Same pattern, and the same reasoning, as
 gen-agent-capability-policy.py.
 
-The taxonomy is embedded the same way, from the same file Kyverno's policy is
+The taxonomy is embedded the same way, from the same file the admission policy is
 generated from — so "which tools should have been gated" has one definition across
 the admission gate, the CI validator, and this alert.
 """

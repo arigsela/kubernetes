@@ -13,7 +13,9 @@ Fixture layout encodes the expectation:
                                                  imagePullSecrets must equal the annotation
                                                  test.homelab/expect-pull-secrets
 The verdict is mode-agnostic, so the same fixtures keep passing when a binding moves from
-[Warn, Audit] to [Deny].
+[Warn, Audit] to [Deny], with one rule: a bad fixture must violate ONLY its own policy. In
+warn mode every violated policy is reported; with [Deny] the API server reports just the first
+policy that denies, so a fixture that also broke another policy would be credited to it.
 """
 import json
 import re

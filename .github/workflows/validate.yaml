@@ -282,9 +282,9 @@ jobs:
 
   # The agent-capability contract (L03 Security guardrails). This is the
   # AUTHORITATIVE gate for all four invariants — in particular "delegation does
-  # not escalate", which Kyverno cannot check at admission because it needs a
-  # transitive closure over the whole agent graph. That graph lives in git, so
-  # this is where it is decided.
+  # not escalate" in full: admission checks one hop, but the transitive closure
+  # needs the whole agent graph. That graph lives in git, so this is where it is
+  # decided.
   # Spec: docs/superpowers/specs/2026-07-13-agent-capability-classes-design.md
   agent-capability-validate:
     runs-on: ubuntu-latest
@@ -300,23 +300,15 @@ jobs:
         run: python -m pytest tests/agent-capability/ -q
       - name: Validate agent-capability contract
         run: python scripts/validate-agent-capability.py --repo-root .
-      # ClusterPolicy/agent-capability is GENERATED from the taxonomy. If someone
-      # edits the taxonomy without regenerating (or hand-edits the policy), the
-      # admission gate and the CI gate would silently disagree about what a tool
-      # is allowed to do. Fail loudly instead.
-      - name: Check the Kyverno policy is in sync with the taxonomy
+      # The admission policy base-apps/admission-policies/agent-capability.yaml is
+      # GENERATED from the taxonomy. If someone edits the taxonomy without
+      # regenerating (or hand-edits the policy), the admission gate and the CI gate
+      # would silently disagree about what a tool is allowed to do. Fail loudly
+      # instead. The shipped policy itself is verified against a real API server
+      # (every real Agent passes, every violating fixture is denied) in the
+      # admission-policies-validate job.
+      - name: Check the admission policy is in sync with the taxonomy
         run: python scripts/gen-agent-capability-policy.py --check --repo-root .
-      # Verify the SHIPPED policy file verbatim: every real Agent passes (a false
-      # positive would wedge the kagent app on next sync), and every violating
-      # fixture is denied (a false negative is a hole). One fixture per rule.
-      - name: Install Kyverno CLI
-        run: |
-          curl -sSL -o kyverno.tar.gz \
-            https://github.com/kyverno/kyverno/releases/download/v1.13.4/kyverno-cli_v1.13.4_linux_x86_64.tar.gz
-          tar -xzf kyverno.tar.gz kyverno
-          sudo install -m 0755 kyverno /usr/local/bin/kyverno
-      - name: Verify agent-capability Kyverno policy
-        run: ./tests/agent-capability/kyverno/run.sh
 
   # The agent action record (Observability O1). The redaction tests are the point:
   # event.data contains full tool RESPONSES, and k8s_get_resource_yaml against a

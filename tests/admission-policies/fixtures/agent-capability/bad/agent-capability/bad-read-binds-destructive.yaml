@@ -1,4 +1,4 @@
-# rule 3: read agent binds a destructive tool. (from tests/agent-capability/kyverno/bad-agents.yaml)
+# rule 3: read agent binds a destructive tool. (ported from the retired Kyverno CLI suite)
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:

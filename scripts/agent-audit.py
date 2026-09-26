@@ -176,7 +176,7 @@ def summarize_response(resp) -> dict:
 def load_gated_tools(repo_root: Path, taxonomy_path: Path | None = None) -> set[str]:
     """Tools the capability contract says MUST be behind requireApproval.
 
-    Single source of truth: the same taxonomy Kyverno enforces at admission. If a
+    Single source of truth: the same taxonomy admission enforces. If a
     tool is write/destructive there, an invocation of it with no approval event is
     a finding here. The two cannot drift.
 

@@ -35,7 +35,7 @@ The repository as a whole is **not** a strictly conformant OKF bundle, and does 
 - **Human authentication:** Dex OIDC (`base-apps/dex/`, `dex.arigsela.com`) fronting GitHub, used for Vault UI login. See `docs/superpowers/plans/` for the Dex/OIDC phase.
 - **TLS/certs:** cert-manager (`base-apps/cert-manager/`) issuing from Let's Encrypt through a single `letsencrypt-route53` issuer (Route 53 DNS-01). Each host has an explicit `Certificate` in its app directory, served by the Istio Gateway.
 - **Ingress/mesh:** nginx-ingress and Istio ambient mesh.
-- **Agent guardrails (L03):** kagent agents run under two admission-enforced contracts — **identity** (`ClusterPolicy/agent-identity`, scoped credentials) and **capability** (`ClusterPolicy/agent-capability`, per-agent `read`/`write`/`admin` classes, a fail-closed tool taxonomy, HITL approval on mutating tools, and no delegation escalation). Both are Kyverno `Enforce`, mirrored by CI validators (`scripts/validate-agent-*.py`). See `docs/adp-engineering-deep-dive.md`.
+- **Agent guardrails (L03):** kagent agents run under two admission-enforced contracts — **identity** (`agent-identity-*`, scoped credentials) and **capability** (`agent-capability*`, per-agent `read`/`write`/`admin` classes, a fail-closed tool taxonomy, HITL approval on mutating tools, and no delegation escalation). Both are native ValidatingAdmissionPolicies in the API server (`[Deny]`, failurePolicy `Fail`; `base-apps/admission-policies/`), mirrored by CI validators (`scripts/validate-agent-*.py`). See `docs/adp-engineering-deep-dive.md`.
 - **Observability:** Loki (logs, S3-backed) + Grafana + Coroot (eBPF traces/metrics). Plus the **agent action record** — kagent's tool-call history (who called what, with what args, approved or not) surfaced read-only, redacted, exported daily to S3, and checked by a scheduled job (`base-apps/postgresql/agent-audit-cronjob.yaml`, `scripts/agent-audit.py`). **Alerting:** Falco → Loki and Grafana alert rules → an n8n webhook. See `docs/adp-resources-and-observability.md` for where to look.
 - **Agent evaluation:** a golden-answer corpus (`tests/eval-corpus/`) + scorer (`scripts/score-eval.py`) grade agent answers, including that they refuse to leak secrets.
 
@@ -54,7 +54,7 @@ The repository as a whole is **not** a strictly conformant OKF bundle, and does 
 | Argo CD Applications | `base-apps/<app>.yaml` (most apps), or `appsets/managed-apps/<app>.yaml` via the `managed-apps` ApplicationSet (12 apps — see `docs/managed-apps-appset.md`); app-of-apps master-app in `terraform/modules/application-sets/` |
 | Infrastructure | `terraform/roots/asela-cluster/`, `terraform/modules/` |
 | Secret wiring | per-app `secret-store.yaml` / `external-secret*.yaml` |
-| Agent guardrails | `base-apps/kyverno-policies/agent-identity.yaml`, `agent-capability.yaml` (generated from `agent-capability-taxonomy.yaml`), `templates/agent-identity/README.md`, `scripts/validate-agent-*.py` |
+| Agent guardrails | `base-apps/admission-policies/agent-identity.yaml`, `agent-capability.yaml` (generated from `base-apps/kyverno-policies/agent-capability-taxonomy.yaml`), `templates/agent-identity/README.md`, `scripts/validate-agent-*.py` |
 | Agent audit & eval | `scripts/agent-audit.py`, `base-apps/postgresql/agent-audit-cronjob.yaml`, `tests/eval-corpus/`, `scripts/score-eval.py` |
 | Doc contract & index | `templates/agent-docs/README.md`, `base-apps/index.md`, `scripts/gen-okf.py` |
 

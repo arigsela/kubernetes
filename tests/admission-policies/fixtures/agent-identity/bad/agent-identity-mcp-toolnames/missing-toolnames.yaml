@@ -4,6 +4,8 @@ kind: Agent
 metadata:
   name: bad-no-toolnames
   namespace: kagent
+  labels:
+    capability.homelab/class: read   # valid class: violate ONLY the toolNames rule
 spec:
   type: Declarative
   declarative:
