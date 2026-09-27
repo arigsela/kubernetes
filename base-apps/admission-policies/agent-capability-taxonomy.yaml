@@ -8,7 +8,7 @@
 #     policy base-apps/admission-policies/agent-capability.yaml. CI fails if that
 #     policy drifts from this file (`--check`).
 #   - scripts/validate-agent-capability.py    the CI contract gate.
-#   - humans, in-cluster: `kubectl get cm -n kyverno agent-capability-taxonomy`
+#   - humans, in-cluster: `kubectl get cm -n kube-system agent-capability-taxonomy`
 #
 # NOTE: nothing reads this ConfigMap at admission time. The policy embeds the lists
 # inline instead. A runtime lookup would be DRYer but is a dependency evaluated for
@@ -38,7 +38,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: agent-capability-taxonomy
-  namespace: kyverno
+  namespace: kube-system
   labels:
     app.kubernetes.io/part-of: agent-guardrails
 data:

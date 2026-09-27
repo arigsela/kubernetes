@@ -41,7 +41,6 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | jupyter | Single-workspace JupyterLab for interactive Python, served to a browser and to Claude Code via /api/kernels. | jupyter | [docs.md](jupyter/docs.md) | [runbook.md](jupyter/runbook.md) | [catalog-info.yaml](jupyter/catalog-info.yaml) |
 | jupyter-aws-infrastructure |  |  |  |  |  |
 | kagent | Kubernetes-native AI agent platform (kagent Helm controller, declarative agents, MCP tool servers) | kagent | [docs.md](kagent/docs.md) | [runbook.md](kagent/runbook.md) | [catalog-info.yaml](kagent/catalog-info.yaml) |
-| kyverno-policies |  |  |  |  |  |
 | logging | Observability stack (Alloy collector, Loki logs on S3, Prometheus metrics, Grafana) | logging | [docs.md](logging/docs.md) | [runbook.md](logging/runbook.md) | [catalog-info.yaml](logging/catalog-info.yaml) |
 | loki-aws-infrastructure |  |  |  |  |  |
 | n8n | Workflow automation platform (shared PostgreSQL, Vault, admin UI + public webhooks) | n8n | [docs.md](n8n/docs.md) | [runbook.md](n8n/runbook.md) | [catalog-info.yaml](n8n/catalog-info.yaml) |

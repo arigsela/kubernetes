@@ -26,8 +26,11 @@ sources:
 ## What it is
 Admission rules that run **inside the Kubernetes API server**, as CEL expressions in
 `ValidatingAdmissionPolicy` (GA 1.30) and `MutatingAdmissionPolicy` (GA 1.36) objects. They
-are replacing the Kyverno ClusterPolicies in `base-apps/kyverno-policies/`, one policy at a
-time (docs/plans/k8s-136-features-implementation-plan.md, Phase 3).
+replaced every Kyverno ClusterPolicy (docs/plans/k8s-136-features-implementation-plan.md,
+Phase 3); the `kyverno-policies` app is retired. This app also holds the capability taxonomy
+ConfigMap (`agent-capability-taxonomy.yaml`, source for the generated `agent-capability.yaml`)
+and `kyverno-reports-rbac.yaml`, the Agent read access Kyverno's reports controller needs to
+report on these policies.
 
 Why: Kyverno enforces through an admission **webhook** served by a single pod, and runs with
 `forceFailurePolicyIgnore=true`. So whenever that pod is down or slow, its "Enforce" policies
@@ -65,7 +68,7 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   deleted. Compared with the Kyverno version it also covers per-item `sourceRef.storeRef` and
   `dataFrom[].extract`, which the Kyverno rules missed.
 - `agent-capability.yaml` is **generated** by `scripts/gen-agent-capability-policy.py` from
-  `base-apps/kyverno-policies/agent-capability-taxonomy.yaml`. That is the same script and
+  `base-apps/admission-policies/agent-capability-taxonomy.yaml`. That is the same script and
   taxonomy that generated the Kyverno version (now deleted); CI runs it with
   `--check`. It holds two policies:
   - `agent-capability` (rules 1-5): declared class, every bound tool classified, the class

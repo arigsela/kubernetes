@@ -11,8 +11,9 @@ spec:
     repoURL: https://kyverno.github.io/kyverno/
     chart: kyverno
     # 3.9.1 = Kyverno v1.19.1. v1.19 deprecates kyverno.io/v1 ClusterPolicy and
-    # Policy (still served; removed in v1.20) — all 9 in base-apps/kyverno-policies/
-    # use it, so they must move to policies.kyverno.io before the next minor.
+    # Policy (removed in v1.20). None are left: every policy moved to native admission
+    # policies (base-apps/admission-policies/, SPEC T80) and Kyverno only reports, so
+    # v1.20's removal no longer blocks a bump.
     targetRevision: 3.9.1
     helm:
       releaseName: kyverno

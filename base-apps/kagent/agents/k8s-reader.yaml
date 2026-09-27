@@ -14,7 +14,7 @@
 # k8s-agent remains the `admin` operator agent for humans who need to act.
 #
 # Contract: templates/agent-identity/README.md (identity) and the capability
-# taxonomy at base-apps/kyverno-policies/agent-capability-taxonomy.yaml.
+# taxonomy at base-apps/admission-policies/agent-capability-taxonomy.yaml.
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:

@@ -54,7 +54,7 @@ The repository as a whole is **not** a strictly conformant OKF bundle, and does 
 | Argo CD Applications | `base-apps/<app>.yaml` (most apps), or `appsets/managed-apps/<app>.yaml` via the `managed-apps` ApplicationSet (12 apps — see `docs/managed-apps-appset.md`); app-of-apps master-app in `terraform/modules/application-sets/` |
 | Infrastructure | `terraform/roots/asela-cluster/`, `terraform/modules/` |
 | Secret wiring | per-app `secret-store.yaml` / `external-secret*.yaml` |
-| Agent guardrails | `base-apps/admission-policies/agent-identity.yaml`, `agent-capability.yaml` (generated from `base-apps/kyverno-policies/agent-capability-taxonomy.yaml`), `templates/agent-identity/README.md`, `scripts/validate-agent-*.py` |
+| Agent guardrails | `base-apps/admission-policies/agent-identity.yaml`, `agent-capability.yaml` (generated from `base-apps/admission-policies/agent-capability-taxonomy.yaml`), `templates/agent-identity/README.md`, `scripts/validate-agent-*.py` |
 | Agent audit & eval | `scripts/agent-audit.py`, `base-apps/postgresql/agent-audit-cronjob.yaml`, `tests/eval-corpus/`, `scripts/score-eval.py` |
 | Doc contract & index | `templates/agent-docs/README.md`, `base-apps/index.md`, `scripts/gen-okf.py` |
 
