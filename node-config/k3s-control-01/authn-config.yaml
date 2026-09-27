@@ -3,9 +3,16 @@
 # /etc/rancher/k3s/authn-config.yaml by scripts/install-authn-config.sh, NEVER by hand:
 # the installer validates it in a throwaway k3s first. docs/troubleshooting/kubectl-oidc.md.
 #
-# STAGE A (plan docs/plans/k8s-136-features-implementation-plan.md, Task 5.3): no JWT
-# issuers yet. This file only moves authentication config from flags into a file the API
-# server hot-reloads, so Stage B can add Dex without another restart.
+# STAGE B (plan docs/plans/k8s-136-features-implementation-plan.md, Task 5.4): Dex is a JWT
+# issuer. Stage A (installed 2026-09-27, one k3s restart) moved authentication into this
+# file; this JWT entry arrives by HOT RELOAD, no restart. A reload the API server rejects is
+# ignored (the previous config keeps working) and counted as a failure.
+#
+# Who may log in: Dex admits ANY GitHub account (no `orgs:`, SPEC V68), so the allow-list is
+# HERE: claims.sub is pinned to the owner's Dex identity (GitHub user id 2475907 via the
+# `github` connector; Dex encodes {user_id, conn_id} as protobuf, base64url). A wrong value
+# fails CLOSED (nobody gets in), never open. Tokens minted for Dex's other clients (vault,
+# argocd) carry a different audience and are rejected by `audiences`.
 #
 # The `anonymous` block is MANDATORY. When k3s is given an authentication config file it
 # stops passing its default --anonymous-auth=false ("Not setting kube-apiserver
@@ -17,4 +24,19 @@ apiVersion: apiserver.config.k8s.io/v1
 kind: AuthenticationConfiguration
 anonymous:
   enabled: false
-jwt: []
+jwt:
+  - issuer:
+      url: https://dex.arigsela.com
+      audiences:
+        - kubernetes
+    claimValidationRules:
+      - expression: 'claims.sub == "CgcyNDc1OTA3EgZnaXRodWI"'
+        message: "only the cluster owner's GitHub identity may authenticate with Dex tokens"
+    claimMappings:
+      username:
+        expression: '"oidc:" + claims.preferred_username'
+      uid:
+        claim: sub
+    userValidationRules:
+      - expression: "!user.username.startsWith('system:')"
+        message: "OIDC usernames may not use the reserved system: prefix"

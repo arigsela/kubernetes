@@ -1,0 +1,21 @@
+# Cluster-wide RBAC for humans who log in with kubectl through Dex (plan
+# docs/plans/k8s-136-features-implementation-plan.md, Task 5.5;
+# docs/troubleshooting/kubectl-oidc.md). The API server's JWT authenticator
+# (node-config/k3s-control-01/authn-config.yaml) maps a Dex token to the user
+# `oidc:<GitHub login>` and admits only the owner's pinned identity, so this binding
+# can only ever match that one person. cluster-admin to start; narrow it later.
+# The x509 admin kubeconfig stays as break-glass and does not depend on this.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oidc-cluster-admins
+  labels:
+    app.kubernetes.io/name: cluster-rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: oidc:arigsela
