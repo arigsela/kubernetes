@@ -66,6 +66,25 @@ data:
           - https://argocd.arigsela.com/auth/callback
           - http://localhost:8085/auth/callback
 
+      # kubectl, added 2026-09-27 (docs/plans/k8s-136-features-implementation-plan.md,
+      # Phase 5): kubelogin (`kubectl oidc-login`) gets an ID token for the API
+      # server's structured authentication config. PUBLIC + PKCE for the same
+      # reason as argocd: the token is minted on the laptop, so a client secret
+      # could not stay secret. The redirects are kubelogin's local callback ports
+      # (8000, and 18000 when 8000 is busy). No trustedPeers: nothing else may
+      # mint tokens with this audience.
+      #
+      # Dex admits ANY GitHub account (no `orgs:`, SPEC V68), so this client
+      # grants nothing by itself. The allow-list lives in the API server: its
+      # JWT authenticator pins claims.sub to one GitHub ID, and RBAC binds only
+      # oidc:arigsela.
+      - id: kubernetes
+        name: Kubernetes (kubectl)
+        public: true
+        redirectURIs:
+          - http://localhost:8000
+          - http://localhost:18000
+
     connectors:
       - type: github
         id: github
