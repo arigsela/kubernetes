@@ -32,6 +32,14 @@ sources:
   `kubectl delete validatingadmissionpolicybinding <name>`. That disables the policy at once,
   and Argo re-creates it at the next sync, so fix git first.
 
+### Symptom: an Agent write is denied with `failed to configure binding: paramKind ... not yet synced`
+- `agent-capability-delegation` could not evaluate yet: the API server has not synced its
+  Agent informer, which happens for a few seconds after the policy is (re)created and after
+  every API-server restart (k3s restart, upgrade). With `failurePolicy: Fail` that denies.
+- **Fix:** retry (Argo does on its own). If it persists beyond a minute, check the API server
+  is healthy (`kubectl get --raw /readyz`) and the Agent CRD is served
+  (`kubectl get agents -A`).
+
 ### Symptom: `Warning: Validation failed for ValidatingAdmissionPolicy '<name>'` on apply
 - A policy in **shadow** (`[Warn, Audit]`) flagged the object. Nothing was blocked. Once it
   moves to enforcing, the same object will be **denied**, so fix it now. (The agent policies,

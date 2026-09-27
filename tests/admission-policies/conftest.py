@@ -68,6 +68,20 @@ class Cluster:
         r = self.kubectl("apply", "-f", "-", input=text)
         assert r.returncode == 0, r.stdout + r.stderr
 
+    def apply_when_params_synced(self, text, timeout=90):
+        """apply, retrying ONLY the transient denial of a parameterised policy whose param
+        informer the API server has not synced yet ("failed to configure binding: paramKind
+        ... not yet synced to use for admission"). With failurePolicy Fail that denies for a
+        moment after the policy is created; it failed a whole CI session once. Any other
+        failure is final."""
+        deadline = time.time() + timeout
+        while True:
+            r = self.kubectl("apply", "-f", "-", input=text)
+            if r.returncode == 0:
+                return
+            assert "not yet synced" in r.stderr and time.time() < deadline, r.stdout + r.stderr
+            time.sleep(2)
+
     def verdict(self, text, update=False):
         """(verdict, {policy names that fired}, raw output) for a server-side dry run: a
         create, or with update=True an apply over the existing object (the UPDATE path)."""
@@ -166,7 +180,7 @@ def cluster():
         # The cluster's real Agents, created for real: they are the delegation policy's
         # parameters (a delegate must exist to be judged), and each must itself be clean.
         for p in real_agent_files():
-            c.apply(p.read_text())
+            c.apply_when_params_synced(p.read_text())
         # A new policy takes a moment to reach the admission plugin. Wait until every policy
         # that has a bad fixture fires on at least one: ANY one, so a policy broken for one
         # kind still starts and that fixture fails by name instead of the whole session.
