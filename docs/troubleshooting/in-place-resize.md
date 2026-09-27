@@ -7,7 +7,7 @@
 ## When to use it
 
 For a pod where a restart is an outage, change its CPU or memory while it runs. This matters
-most for the single-instance stateful pods: Prometheus, Vault, Ollama and qwen. Typical reasons:
+most for the single-instance stateful pods: Prometheus, Vault and Ollama. Typical reasons:
 
 - **"Container near memory limit"** fired (Grafana → Cluster Health). The working set is above
   90% of the limit, and an OOM kill is next.
@@ -43,7 +43,7 @@ This depends on the owner. The script tells you.
 |---|---|
 | StatefulSet with `updateStrategy: OnDelete` (**Vault, Prometheus**) | **No restart.** The template changes and the running pod already matches it. This is the clean path: resize, then merge. |
 | StatefulSet with `RollingUpdate` | Restarts the pod. Switch it to OnDelete first; `updateStrategy` is not part of the pod template, so the switch itself doesn't restart anything. It needs `rollingUpdate: null` in the manifest, because a client-side apply otherwise keeps the defaulted `partition` and fails validation. |
-| Deployment (**Ollama, qwen, pgvector Postgres**, …) | **Starts a rollout** (new ReplicaSet). Kubernetes 1.36 has no in-place rollout for workload controllers. Here the resize is a stop-gap: merge at a planned time. |
+| Deployment (**Ollama, pgvector Postgres**, …) | **Starts a rollout** (new ReplicaSet). Kubernetes 1.36 has no in-place rollout for workload controllers. Here the resize is a stop-gap: merge at a planned time. |
 | CloudNativePG `Cluster` | **Refused by the script.** CNPG 1.30 treats any resource change as a rolling update, which with one instance is an outage. Revisit when cloudnative-pg#11116 (`resourcesUpdateStrategy: inPlace`) ships. |
 
 ## Rules the API enforces
