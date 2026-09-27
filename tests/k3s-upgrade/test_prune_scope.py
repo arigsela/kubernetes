@@ -46,13 +46,15 @@ def test_pvc_manifests_exist():
     PVCs must exist.
 
     Was 9 until 2026-08-12, when oncall-crewai, openclaw-qwen and openshell were
-    removed and took three PVC manifests with them. If this fails after an app
+    removed and took three PVC manifests with them. Was 6 until 2026-09-27, when
+    qwen and ollama moved their model weights to image volumes (plan Phase 4) and
+    their PVCs were retired. If this fails after an app
     deletion, confirm the deletion was intended and lower it; if it fails
     without one, the glob or the manifests are the problem, which is exactly
     what it exists to catch.
     """
     found = list(_pvc_docs())
-    assert len(found) >= 6, f"expected the known PVC manifests, found {len(found)}"
+    assert len(found) >= 5, f"expected the known PVC manifests, found {len(found)}"
 
 
 @pytest.mark.parametrize(

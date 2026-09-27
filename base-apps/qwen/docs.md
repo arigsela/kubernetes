@@ -38,7 +38,7 @@ The main container (`ghcr.io/ggml-org/llama.cpp:server`) runs `llama-server` wit
 
 ## Where config lives
 - Workload, image, model/mmproj filenames, server flags, resource requests/limits: `deployments.yaml`.
-- Model weights: the image volume `models` in `deployments.yaml` (ECR digest), built by `scripts/build-model-image.sh qwen`; the pinned revision and file hashes live in that script. The old `pvc.yaml` (`qwen-models`) is no longer mounted and is removed in plan Task 4.4.
+- Model weights: the image volume `models` in `deployments.yaml` (ECR digest), built by `scripts/build-model-image.sh qwen`; the pinned revision and file hashes live in that script. There is no PVC: the node-pinned `qwen-models` volume was retired in plan Task 4.4.
 - Network exposure: `services.yaml` — ClusterIP Service `qwen` on port `8080`.
 
 ## Resources
