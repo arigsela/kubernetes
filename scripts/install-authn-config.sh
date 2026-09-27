@@ -115,6 +115,25 @@ changed_authn=0; changed_dropin=0
 echo "3. node preflight: ok (changed: $AUTHN=$changed_authn $DROPIN=$changed_dropin)"
 if [ "$changed_authn" -eq 0 ] && [ "$changed_dropin" -eq 0 ]; then echo "already installed; nothing to do"; exit 0; fi
 
+metric() {  # metric <status> → current automatic_reloads_total{status=...}, summed
+  kubectl get --raw /metrics 2>/dev/null \
+    | awk -v s="status=\"$1\"" '/^apiserver_authentication_config_controller_automatic_reloads_total/ && index($0, s) {n += $NF} END {print n + 0}'
+}
+wait_ready() {
+  for _ in $(seq 1 $((READY_TIMEOUT / 3))); do
+    [ "$(kubectl get --raw /readyz 2>/dev/null)" = ok ] && return 0
+    sleep 3
+  done
+  return 1
+}
+
+# Hot-reload path: take the counter baseline BEFORE installing. A file with no JWT issuers
+# reloads in well under a second, i.e. before a post-install read: the rollback rehearsal
+# (jwt: []) reported "no reload observed" for a reload that had already happened.
+if [ "$changed_dropin" -eq 0 ] && [ "$DRY" -eq 0 ]; then
+  before_ok=$(metric success); before_fail=$(metric failure)
+fi
+
 # ---- 4. back up, then install by rename ------------------------------------------------------
 BK="$DEST/authn-backup/$(date -u +%Y%m%dT%H%M%SZ)"
 act "sudo mkdir -p $BK/config.yaml.d $DEST/config.yaml.d && \
@@ -127,18 +146,6 @@ install_file() {  # install_file <relpath>
 [ "$changed_authn" -eq 1 ] && install_file "$AUTHN"
 [ "$changed_dropin" -eq 1 ] && install_file "$DROPIN"
 if [ "$DRY" -eq 1 ]; then echo "4. (dry run) would back up to $BK and install"; else echo "4. backed up to $BK; installed"; fi
-
-metric() {  # metric <status> → current automatic_reloads_total{status=...}, summed
-  kubectl get --raw /metrics 2>/dev/null \
-    | awk -v s="status=\"$1\"" '/^apiserver_authentication_config_controller_automatic_reloads_total/ && index($0, s) {n += $NF} END {print n + 0}'
-}
-wait_ready() {
-  for _ in $(seq 1 $((READY_TIMEOUT / 3))); do
-    [ "$(kubectl get --raw /readyz 2>/dev/null)" = ok ] && return 0
-    sleep 3
-  done
-  return 1
-}
 
 # ---- 5. restart (drop-in changed) or hot reload (config only) --------------------------------
 if [ "$changed_dropin" -eq 1 ]; then
@@ -158,8 +165,7 @@ if [ "$changed_dropin" -eq 1 ]; then
   fi
 elif [ "$DRY" -eq 1 ]; then echo "  DRY: would wait up to 90s for the API server to hot-reload $AUTHN"
 else
-  before_ok=$(metric success); before_fail=$(metric failure)
-  echo "5. waiting for the hot reload (success counter now $before_ok)..."
+  echo "5. waiting for the hot reload (success counter was $before_ok before the install)..."
   for _ in $(seq 1 30); do
     [ "$(metric failure)" -gt "$before_fail" ] && die "the API server REJECTED the new file on reload (it keeps the old config). Check its log." 6
     [ "$(metric success)" -gt "$before_ok" ] && { echo "   reloaded (success counter $(metric success))"; break; }
@@ -170,6 +176,6 @@ fi
 
 # ---- 6. post-check ---------------------------------------------------------------------------
 if [ "$DRY" -eq 1 ]; then echo "  DRY: would check anonymous https://$NODE_IP:6443/api → 401"; exit 0; fi
-code=$(curl -sk -o /dev/null -w '%{http_code}' "https://$NODE_IP:6443/api" || true)
+code=$(curl -sk -o /dev/null -w '%{http_code}' "${API_URL:-https://$NODE_IP:6443}/api" || true)
 [ "$code" = 401 ] || die "POST-CHECK FAILED: anonymous /api answered $code, want 401" 7
 echo "6. anonymous still denied (401). Done."

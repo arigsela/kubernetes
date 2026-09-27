@@ -111,3 +111,46 @@ def test_an_oidc_flag_already_on_the_node_is_refused(tmp_path):
         "".join(f"extra-setting-{i:06d}: padding padding padding\n" for i in range(8000))
     r, log = run(tmp_path, "--dry-run", node_cfg=cfg)
     assert r.returncode == 2 and "already sets an --oidc-*" in r.stderr, r.stdout + r.stderr
+
+
+INSTANT_RELOAD_SSH = """#!/usr/bin/env bash
+# stub ssh for a hot-reload install whose reload is INSTANT: writing the file bumps the counter.
+echo "$*" >> "$STUB_LOG"
+case "$*" in
+  *"sha256sum /etc/rancher/k3s/config.yaml.d/10-authn.yaml"*) echo "$DROPIN_SHA" ;;
+  *"sha256sum"*) ;;
+  *"cat /etc/rancher/k3s/config.yaml"*) echo "disable: [traefik]" ;;
+  *tee*) cat >/dev/null; echo $(( $(cat "$COUNTER") + 1 )) > "$COUNTER" ;;
+esac
+"""
+KUBECTL_STUB = """#!/usr/bin/env bash
+case "$*" in
+  *"get --raw /metrics"*) echo "apiserver_authentication_config_controller_automatic_reloads_total{apiserver_id_hash=\\"x\\",status=\\"success\\"} $(cat "$COUNTER")" ;;
+  *"get --raw /readyz"*) echo ok ;;
+esac
+"""
+CURL_STUB = """#!/usr/bin/env bash
+for a in "$@"; do case "$a" in https://stub-api*) printf 401; exit 0 ;; esac; done
+exec /usr/bin/curl "$@"
+"""
+
+
+@needs_docker
+def test_an_instant_hot_reload_is_seen(tmp_path):
+    """Regression: the rollback rehearsal (jwt: []) reported "no reload observed" for a reload
+    that had already happened. A config with no issuers reloads in under a second, before the
+    installer read its baseline AFTER writing the file. The baseline must come first."""
+    import hashlib
+    bin_dir = tmp_path / "bin"; bin_dir.mkdir()
+    for name, body in (("ssh", INSTANT_RELOAD_SSH), ("kubectl", KUBECTL_STUB), ("curl", CURL_STUB)):
+        (bin_dir / name).write_text(body); (bin_dir / name).chmod(0o755)
+    (tmp_path / "counter").write_text("5\n")
+    env = {"PATH": f"{bin_dir}:{Path(sys.executable).parent}:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
+           "HOME": str(Path.home()), "AUTHN_SRC": str(SRC), "NODE_SSH": str(bin_dir / "ssh"),
+           "STUB_LOG": str(tmp_path / "ssh.log"), "COUNTER": str(tmp_path / "counter"),
+           "DROPIN_SHA": hashlib.sha256((SRC / "config.yaml.d" / "10-authn.yaml").read_bytes()).hexdigest(),
+           "API_URL": "https://stub-api.invalid"}
+    r = subprocess.run(["bash", str(SCRIPT)], capture_output=True, text=True, env=env, timeout=300)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "reloaded (success counter 6)" in r.stdout, r.stdout
+    assert "restart" not in (tmp_path / "ssh.log").read_text(), "a config-only change must not restart k3s"

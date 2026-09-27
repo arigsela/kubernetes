@@ -42,10 +42,15 @@ waits for the hot-reload counter. A broken file never reaches the node.
 ## Status (2026-09-27)
 - **Stage A installed** on `k3s-control-01` (one k3s restart; API back in 21 s; anonymous
   still 401 on `/api`, `/version`, `/healthz`, `/readyz`).
-- **Stage B** (Dex JWT authenticator) and the `oidc:arigsela` binding (`base-apps/cluster-rbac/`)
-  are in git and installed by hot reload. The pinned `sub` is the value Dex's encoding gives
-  for GitHub user id 2475907; **it still has to be confirmed from a real token** (below). A
-  wrong value fails closed.
+- **Stage B installed** by hot reload (no restart). **Verified with a real login:** the token's
+  `sub` equals the pinned value; `kubectl --context homelab-oidc auth whoami` →
+  `oidc:arigsela` (UID = sub); `auth can-i --list` works (cluster-admin via
+  `base-apps/cluster-rbac/`). A genuine Dex token for the **same identity** minted for client
+  `argocd` is rejected (401): only `aud=kubernetes` is accepted. Forged tokens (unsigned,
+  bad signature) are rejected.
+- **Rollback rehearsed:** hot reload to `jwt: []` → the OIDC context gets `Unauthorized`, the
+  admin context keeps working; restoring from git brings `oidc:arigsela` back. (It exposed an
+  installer race, since fixed: see the regression test `test_an_instant_hot_reload_is_seen`.)
 
 ## Laptop setup and first login (the owner, once)
 ```bash
