@@ -169,6 +169,8 @@ jobs:
         run: pip install pytest==8.3.3
       - name: Run resize-pod.sh tests (stub kubectl, no cluster)
         run: python -m pytest tests/resize/ -q
+      - name: Run build-model-image.sh tests (stub docker/aws/curl, no network)
+        run: python -m pytest tests/models/ -q
 
   admission-policies-validate:
     runs-on: ubuntu-latest
