@@ -56,6 +56,8 @@ def policy_docs():
     return [d for p in policy_files() for d in yaml.safe_load_all(p.read_text()) if d]
 
 
+# Always `rm -fv`: the k3s image declares VOLUMEs, so every run otherwise leaves ~4 anonymous
+# volumes behind (1602 had piled up locally by 2026-09-27, ~14 GB).
 def _docker(*args, input=None):
     return subprocess.run(["docker", *args], capture_output=True, text=True, input=input)
 
@@ -148,7 +150,7 @@ def _wait(cond, timeout, what, soft=False):
 def cluster():
     if not docker_available():
         pytest.skip("needs a running Docker daemon for the real-API-server harness")
-    _docker("rm", "-f", NAME)
+    _docker("rm", "-fv", NAME)
     r = _docker("run", "-d", "--name", NAME, "--privileged", K3S_IMAGE, "server",
                 "--disable", "traefik", "--disable", "metrics-server",
                 "--disable", "local-storage", "--disable", "servicelb")
@@ -198,4 +200,4 @@ def cluster():
                               for s in samples), 90, f"policy {pdir.name} active", soft=True)
         yield c
     finally:
-        _docker("rm", "-f", NAME)
+        _docker("rm", "-fv", NAME)
