@@ -133,6 +133,14 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
     harness API server's log for recovered panics.
 - **A MutatingAdmissionPolicy has no `status` on 1.36**, so no `typeChecking` either. Only its
   mutate fixtures (real pods) and the panic check test it.
+- **A parameterised policy denies until its param informer syncs.** After
+  `agent-capability-delegation` is created, and after every **API-server restart** (k3s restart
+  or upgrade), the API server needs a moment to sync its informer for the param kind (Agent).
+  Until then the policy cannot evaluate, and with `failurePolicy: Fail` it **denies**
+  read/write-class Agent writes: `failed to configure binding: paramKind ... not yet synced to
+  use for admission`. Seconds, self-healing; an Argo sync in that window fails once and
+  retries. Admin-class Agents are not matched, and nothing else is affected. The harness waits
+  it out before creating Agents (it once failed a whole CI run).
 - **The harness uses minimal typed CRDs** (`fixtures/crds/`), copied from the real schemas for
   the paths the policies read. A policy reading a new field needs that field added there, or
   type checking fails with `undefined field`.
