@@ -47,7 +47,7 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | ollama | Local LLM/embedding model server (Ollama, CPU-only, PVC-backed) | ollama | [docs.md](ollama/docs.md) | [runbook.md](ollama/runbook.md) | [catalog-info.yaml](ollama/catalog-info.yaml) |
 | oncall-agent | AI on-call/incident-response agent (Anthropic Claude, Slack, GitOps PRs) | oncall-agent | [docs.md](oncall-agent/docs.md) | [runbook.md](oncall-agent/runbook.md) | [catalog-info.yaml](oncall-agent/catalog-info.yaml) |
 | postgresql | Shared PostgreSQL + pgvector instance (root DB, kagent DB) + CNPG cluster for chores-tracker (daily S3 backups) | postgresql | [docs.md](postgresql/docs.md) | [runbook.md](postgresql/runbook.md) | [catalog-info.yaml](postgresql/catalog-info.yaml) |
-| qwen | Self-hosted multimodal (text+vision) LLM server via llama.cpp, CPU-only, PVC-backed | qwen | [docs.md](qwen/docs.md) | [runbook.md](qwen/runbook.md) | [catalog-info.yaml](qwen/catalog-info.yaml) |
+| qwen | Self-hosted multimodal (text+vision) LLM server via llama.cpp, CPU-only, weights from a pinned OCI image volume | qwen | [docs.md](qwen/docs.md) | [runbook.md](qwen/runbook.md) | [catalog-info.yaml](qwen/catalog-info.yaml) |
 | system-upgrade-controller |  |  |  |  |  |
 | vault | In-cluster secret backend (KV v2) | vault | [docs.md](vault/docs.md) | [runbook.md](vault/runbook.md) | [catalog-info.yaml](vault/catalog-info.yaml) |
 | wan-ip-monitor | CronJob that reconciles the home WAN address into Route 53 and the Istio allow-list, opening a PR for the security-sensitive half | wan-ip-monitor | [docs.md](wan-ip-monitor/docs.md) | [runbook.md](wan-ip-monitor/runbook.md) | [catalog-info.yaml](wan-ip-monitor/catalog-info.yaml) |

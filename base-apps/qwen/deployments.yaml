@@ -5,12 +5,17 @@ metadata:
   namespace: qwen
   labels:
     app: qwen
+    app.kubernetes.io/name: qwen
 spec:
   replicas: 1
-  # Single writer to a ReadWriteOnce PVC; Recreate avoids two pods contending for
-  # the model volume during a rollout (same pattern as the ollama app).
+  # The weights are a read-only image volume (below), not a ReadWriteOnce PVC, so a new
+  # pod can start next to the old one: a rollout (new model digest, new llama.cpp) keeps
+  # serving until the replacement is Ready.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: qwen
@@ -21,41 +26,6 @@ spec:
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
-      initContainers:
-        # Pre-fetch the GGUF weights + vision projector (mmproj) onto the PVC so the
-        # server starts from local files. Idempotent: the PVC persists across pod
-        # restarts, so re-downloads only happen when a file is missing.
-        - name: download-model
-          image: curlimages/curl:8.11.1
-          command:
-            - sh
-            - -c
-            - |
-              set -eu
-              BASE="https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main"
-              MODEL="Qwen3.5-0.8B-UD-Q4_K_XL.gguf"
-              MMPROJ="mmproj-F16.gguf"
-              cd /models
-              if [ ! -f "$MODEL" ]; then
-                echo "Downloading $MODEL ..."
-                curl -fSL -o "$MODEL.part" "$BASE/$MODEL" && mv "$MODEL.part" "$MODEL"
-              fi
-              if [ ! -f "$MMPROJ" ]; then
-                echo "Downloading $MMPROJ (vision projector) ..."
-                curl -fSL -o "$MMPROJ.part" "$BASE/$MMPROJ" && mv "$MMPROJ.part" "$MMPROJ"
-              fi
-              echo "Model assets ready:"
-              ls -lh /models
-          volumeMounts:
-            - name: models
-              mountPath: /models
-          resources:
-            requests:
-              cpu: 200m
-              memory: 256Mi
-            limits:
-              cpu: "2"
-              memory: 512Mi
       containers:
         - name: llama-server
           # CPU-only llama.cpp OpenAI-compatible server (the :server tag is the CPU
@@ -96,6 +66,7 @@ spec:
           volumeMounts:
             - name: models
               mountPath: /models
+              readOnly: true
           resources:
             requests:
               cpu: "1"
@@ -119,6 +90,12 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 30
       volumes:
+        # The GGUF + vision projector as an OCI image, mounted read-only at /models
+        # (image volumes, GA in k8s 1.36). Built by scripts/build-model-image.sh qwen from a
+        # pinned Hugging Face revision with sha256-verified files; pinned here by digest, so
+        # the weights change only through a PR. Pulled from ECR with the ecr-registry secret
+        # the native inject-ecr-pull-secret policy adds. Update: runbook "Model update".
         - name: models
-          persistentVolumeClaim:
-            claimName: qwen-models
+          image:
+            reference: 852893458518.dkr.ecr.us-east-2.amazonaws.com/models/qwen3.5-0.8b@sha256:c46700a737b05e38c9b228efd05e3cc4accdf2ddd42b800491911f967cef7a22
+            pullPolicy: IfNotPresent
