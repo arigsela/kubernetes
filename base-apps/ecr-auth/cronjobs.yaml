@@ -4,7 +4,10 @@ metadata:
   name: ecr-credentials-sync
   namespace: kube-system
 spec:
-  schedule: "0 * * * *"
+  # Every 15 min: this is also how a NEW namespace gets ecr-registry (Kyverno's
+  # generate-ecr-secret used to clone it at creation; deleted in plan Task 3.6). ECR tokens
+  # last 12h. Need it now? kubectl create job -n kube-system --from=cronjob/ecr-credentials-sync ecr-sync-now
+  schedule: "*/15 * * * *"
   successfulJobsHistoryLimit: 3  # Keep last 3 successful jobs
   failedJobsHistoryLimit: 3       # Keep last 3 failed jobs
   concurrencyPolicy: Forbid        # Don't run concurrent jobs
@@ -47,8 +50,9 @@ spec:
               DOCKER_SERVER="852893458518.dkr.ecr.$AWS_REGION.amazonaws.com"
               EXCLUDE="kube-public kube-node-lease default kyverno"
 
-              # Update kube-system first (Kyverno clone source for new namespaces)
-              echo "Syncing ECR credentials in kube-system (Kyverno clone source)"
+              # kube-system first (excluded by the pull-secret policy, kept fresh for
+              # anything there that references it)
+              echo "Syncing ECR credentials in kube-system"
               kubectl create secret docker-registry ecr-registry \
                 --docker-server=$DOCKER_SERVER \
                 --docker-username=AWS \
@@ -71,4 +75,3 @@ spec:
                   --dry-run=client -o yaml | kubectl apply -f -
               done
           restartPolicy: OnFailure
-

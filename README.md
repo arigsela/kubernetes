@@ -119,27 +119,19 @@ Production-grade GitOps infrastructure managing containerized applications with 
 - **Grafana Dashboards** - Istio Ambient Mesh L4/L7 visualization
 - **Structured logging** - JSON format for queryability
 
-### ECR Image Pull Automation (Kyverno)
+### ECR Image Pull Automation
 
 ```
-┌─────────────────┐     ┌─────────────────────┐     ┌─────────────────┐
-│   New Namespace  │     │      Kyverno        │     │   ECR CronJob   │
-│   Created       │ ──▶ │  generate-ecr-secret │     │  (hourly token  │
-└─────────────────┘     │  (instant clone)     │     │   refresh)      │
-                        └─────────────────────┘     └─────────────────┘
-                                                            │
-┌─────────────────┐     ┌─────────────────────┐             │
-│   Pod with ECR  │     │  API server (native  │     ┌───────▼─────────┐
-│   Image Created │ ──▶ │  MutatingAdmission-  │     │  All Namespaces │
-└─────────────────┘     │  Policy) inject-ecr- │     │  Secrets Fresh  │
-                        │  pull-secret         │     └─────────────────┘
-                        └─────────────────────┘
+Every 15 minutes  ──▶  ecr-credentials-sync CronJob writes a fresh ecr-registry
+                       secret into every non-system namespace (new ones included)
+Pod with ECR image ──▶ API server (native MutatingAdmissionPolicy
+                       inject-ecr-pull-secret) adds imagePullSecrets
 ```
 
 - **Zero-touch ECR access** - No manual `imagePullSecrets` or namespace configuration
-- **Instant secret provisioning** - Kyverno clones ECR credentials on namespace creation
+- **Secret provisioning** - a new namespace gets the ECR secret within 15 minutes (or at once via `kubectl create job --from=cronjob/ecr-credentials-sync`)
 - **Automatic injection** - Pods referencing ECR images get `imagePullSecrets` at admission
-- **Dynamic namespace discovery** - CronJob refreshes tokens across all namespaces hourly
+- **Dynamic namespace discovery** - the CronJob refreshes tokens across all namespaces every 15 minutes
 
 ### Security Implementation
 

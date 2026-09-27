@@ -88,7 +88,7 @@ entries:
       must_include: ["agent-identity", "agent-capability", "Enforce", "Audit"]
       behavior: answer
     reference: >-
-      The only Kyverno ClusterPolicy left is generate-ecr-secret. The policies moved into the
+      No Kyverno ClusterPolicies are left; Kyverno only reports now. The policies moved into the
       API server as native admission policies (base-apps/admission-policies): agent-identity
       and agent-capability Enforce (Deny) the agent-principal and capability-class contracts;
       disallow-latest-tag, disallow-privileged-containers, require-labels,
