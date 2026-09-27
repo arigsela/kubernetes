@@ -1,5 +1,8 @@
 # Lets Kyverno's REPORTS controller — and only that one — read kagent Agents.
 #
+# Lives in admission-policies because it serves those policies' PolicyReports (moved here
+# when the kyverno-policies app was retired, SPEC T90).
+#
 # Why: Kyverno's reports controller writes the PolicyReports for the native agent admission
 # policies (base-apps/admission-policies: agent-capability, agent-identity-mcp-toolnames). To
 # evaluate them in the background it must LIST and WATCH the Agents. Without this grant it

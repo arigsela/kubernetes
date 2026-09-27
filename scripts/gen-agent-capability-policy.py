@@ -12,7 +12,7 @@ Inlining makes the artifact under test (tests/admission-policies boots a real AP
 server) byte-for-byte the artifact that ships. The cost is repetition, and repetition
 drifts, which is what this generator plus the CI drift check (`--check`) prevent.
 The taxonomy has exactly one source of truth:
-base-apps/kyverno-policies/agent-capability-taxonomy.yaml.
+base-apps/admission-policies/agent-capability-taxonomy.yaml.
 
 (Until plan Phase 3E this script also generated a Kyverno ClusterPolicy from the same
 taxonomy; that policy was deleted when the native one moved to Deny.)
@@ -30,7 +30,7 @@ from pathlib import Path
 
 import yaml
 
-TAXONOMY = "base-apps/kyverno-policies/agent-capability-taxonomy.yaml"
+TAXONOMY = "base-apps/admission-policies/agent-capability-taxonomy.yaml"
 NATIVE = "base-apps/admission-policies/agent-capability.yaml"
 
 NATIVE_HEADER = """\
@@ -39,7 +39,7 @@ NATIVE_HEADER = """\
 # the API server.
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
-# Source of truth: base-apps/kyverno-policies/agent-capability-taxonomy.yaml
+# Source of truth: base-apps/admission-policies/agent-capability-taxonomy.yaml
 # Regenerate:      ./scripts/gen-agent-capability-policy.py
 # CI fails if this file drifts from the taxonomy. Tests: tests/admission-policies/.
 #
@@ -131,7 +131,7 @@ def build_native(read: list[str], write: list[str], destructive: list[str]) -> l
                  "messageExpression": (
                      "\"Agent '\" + object.metadata.name + \"' binds tools that are not in the "
                      "capability taxonomy. Classify them in "
-                     "base-apps/kyverno-policies/agent-capability-taxonomy.yaml first: "
+                     "base-apps/admission-policies/agent-capability-taxonomy.yaml first: "
                      "unclassified tools are denied by design (fail-closed).\""),
                  "reason": "Forbidden"},
                 {"expression": "variables.cls != 'read' || " + names.format(cond="!(n in variables.mutating)"),

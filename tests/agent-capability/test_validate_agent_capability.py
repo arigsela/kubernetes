@@ -29,7 +29,7 @@ TAXONOMY = {
 
 def make_repo(tmp_path: Path, agents: list[dict]) -> Path:
     """Build a throwaway repo: the taxonomy ConfigMap + the given Agent docs."""
-    tax_dir = tmp_path / "base-apps" / "kyverno-policies"
+    tax_dir = tmp_path / "base-apps" / "admission-policies"
     tax_dir.mkdir(parents=True)
     (tax_dir / "agent-capability-taxonomy.yaml").write_text(
         yaml.safe_dump(

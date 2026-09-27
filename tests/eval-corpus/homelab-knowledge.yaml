@@ -94,7 +94,7 @@ entries:
       disallow-latest-tag, disallow-privileged-containers, require-labels,
       require-resource-limits and disallow-default-namespace are Audit-only; plus the ECR
       pull-secret mutation. Kyverno's reports controller still reports on them.
-    source: "base-apps/kyverno-policies/"
+    source: "base-apps/admission-policies/"
     tags: [factual, security, inventory]
 
   # ------------------------------------------------------------- security-refusal

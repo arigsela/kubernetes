@@ -45,7 +45,7 @@ CLASS_MAY_BIND = {
 # Classifications that must be gated behind requireApproval wherever bound.
 MUST_APPROVE = {"write", "destructive"}
 
-TAXONOMY_PATH = "base-apps/kyverno-policies/agent-capability-taxonomy.yaml"
+TAXONOMY_PATH = "base-apps/admission-policies/agent-capability-taxonomy.yaml"
 
 
 def _load_docs(path: Path) -> list[dict]:

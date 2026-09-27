@@ -3,7 +3,7 @@
 # the API server.
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
-# Source of truth: base-apps/kyverno-policies/agent-capability-taxonomy.yaml
+# Source of truth: base-apps/admission-policies/agent-capability-taxonomy.yaml
 # Regenerate:      ./scripts/gen-agent-capability-policy.py
 # CI fails if this file drifts from the taxonomy. Tests: tests/admission-policies/.
 #
@@ -76,7 +76,7 @@ spec:
     messageExpression: '"Agent ''" + object.metadata.name + "'' must declare a capability class: the label capability.homelab/class must be one of read, write, admin. There is no default."'
     reason: Forbidden
   - expression: variables.mcp.all(t, t.mcpServer.?toolNames.orValue([]).all(n, n in variables.classified))
-    messageExpression: '"Agent ''" + object.metadata.name + "'' binds tools that are not in the capability taxonomy. Classify them in base-apps/kyverno-policies/agent-capability-taxonomy.yaml first: unclassified tools are denied by design (fail-closed)."'
+    messageExpression: '"Agent ''" + object.metadata.name + "'' binds tools that are not in the capability taxonomy. Classify them in base-apps/admission-policies/agent-capability-taxonomy.yaml first: unclassified tools are denied by design (fail-closed)."'
     reason: Forbidden
   - expression: variables.cls != 'read' || variables.mcp.all(t, t.mcpServer.?toolNames.orValue([]).all(n, !(n in variables.mutating)))
     messageExpression: '"Agent ''" + object.metadata.name + "'' is class read but binds mutating tools. A read agent may bind only read-classified tools."'

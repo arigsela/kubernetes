@@ -26,7 +26,7 @@ and Evaluation.
 | `agent-ready-docs-review.md` | Research review: docs-as-code for agents |
 
 The enforced contracts themselves: `templates/agent-identity/README.md`, the
-Kyverno policies in `base-apps/kyverno-policies/agent-*.yaml`, and the validators
+native admission policies in `base-apps/admission-policies/agent-*.yaml`, and the validators
 in `scripts/validate-agent-*.py`.
 
 ## Platform guides & plans

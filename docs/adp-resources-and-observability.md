@@ -44,7 +44,7 @@ Source of truth: `base-apps/agent-audit-aws-infrastructure/`.
 | **Coroot** | https://coroot.arigsela.com | Agent traces (kagent OTel spans), service maps. |
 | **kagent UI** | https://kagent.arigsela.com | The agents themselves — chat, sessions. |
 | **n8n** | https://n8n.arigsela.com | The alert-delivery workflow (`grafana-alerts` webhook). |
-| **Argo CD** | https://argocd.arigsela.com | Every app we created: `kagent`, `kyverno-policies`, `agent-audit-aws-infrastructure`, … |
+| **Argo CD** | https://argocd.arigsela.com | Every app we created: `kagent`, `admission-policies`, `agent-audit-aws-infrastructure`, … |
 
 ### Grafana → Explore → Loki, three queries to try
 
@@ -113,7 +113,7 @@ python scripts/agent-audit.py --cost       # per-agent token spend
 | Pillar | Path |
 |---|---|
 | Identity | `base-apps/kagent/*secret-store*.yaml`, `templates/agent-identity/`, `scripts/validate-agent-identity.py` |
-| Security / Capability | `base-apps/kyverno-policies/agent-capability*.yaml`, `scripts/gen-agent-capability-policy.py`, `scripts/validate-agent-capability.py` |
+| Security / Capability | `base-apps/admission-policies/agent-capability*.yaml`, `scripts/gen-agent-capability-policy.py`, `scripts/validate-agent-capability.py` |
 | Observability | `base-apps/postgresql/agent-audit-cronjob.yaml`, `base-apps/agent-audit-aws-infrastructure/`, `base-apps/logging/grafana-alerting.yaml`, `scripts/agent-audit.py` |
 | Evaluation | `tests/eval-corpus/`, `scripts/mine-eval-corpus.py`, `scripts/validate-eval-corpus.py`, `scripts/score-eval.py` |
 | Roadmap / specs | `docs/superpowers/specs/2026-07-14-adp-remaining-pillars-roadmap.md` |

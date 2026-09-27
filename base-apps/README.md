@@ -30,10 +30,8 @@ the `managed-apps` ApplicationSet from configs in `appsets/managed-apps/` — se
 
 ### Policy Engine (Kyverno)
 - **kyverno** - Kubernetes policy engine (Helm chart v3.9.1) for validating, mutating, and generating resources
-- **kyverno-policies** (managed) - Custom ClusterPolicies:
-  - none left: every policy moved to `admission-policies` (below) or was deleted. Kyverno
-    now only reports (PolicyReports). The directory still holds the capability taxonomy
-    ConfigMap and the reports controller's Agent read RBAC.
+  It has no policies left: every policy moved to `admission-policies` (below) or was deleted,
+  and the `kyverno-policies` app is retired. Kyverno now only reports (PolicyReports).
 - **admission-policies** - Native ValidatingAdmissionPolicies evaluated in the API server (no
   webhook): the agent-identity and agent-capability contracts (enforcing: Deny); the
   five workload-hygiene audits `require-labels`, `disallow-privileged-containers`,
@@ -220,19 +218,13 @@ kubectl get clusterpolicyreports
 kubectl describe policyreport -n <namespace>
 ```
 
-### Adding a New Policy
-1. Create a `ClusterPolicy` YAML file in `base-apps/kyverno-policies/`
-2. Set `validationFailureAction: Audit` initially
-3. Exclude system namespaces (`kube-system`, `argo-cd`, `kyverno`)
-4. Commit and push — ArgoCD will auto-deploy the policy
-
-### Moving a Policy from Audit to Enforce
-1. Edit the policy file in `base-apps/kyverno-policies/`
-2. Change `validationFailureAction: Audit` to `validationFailureAction: Enforce`
-3. Commit and push — the policy will now block non-compliant resources
-
-### Namespace Exclusions
-All policies exclude `kube-system`, `argo-cd`, and `kyverno` namespaces to avoid interfering with critical system components. The Kyverno webhook is also configured with `failurePolicy: Ignore` to prevent cluster disruption.
+### Adding or changing a policy
+Policies are native `ValidatingAdmissionPolicy` / `MutatingAdmissionPolicy` objects in
+`base-apps/admission-policies/`, tested against a real API server (`tests/admission-policies/`).
+New policies start in shadow (`[Warn, Audit]`, `failurePolicy: Ignore`), move to `[Deny]` +
+`failurePolicy: Fail` once proven, and opt in to PolicyReports with the label
+`reports.kyverno.io/enabled: "true"`. See `base-apps/admission-policies/runbook.md`
+("Add or change a policy").
 
 ## Atlantis (Terraform PR Automation)
 

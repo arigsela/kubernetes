@@ -31,7 +31,7 @@ from pathlib import Path
 import yaml
 
 SCRIPT = "scripts/agent-audit.py"
-TAXONOMY = "base-apps/kyverno-policies/agent-capability-taxonomy.yaml"
+TAXONOMY = "base-apps/admission-policies/agent-capability-taxonomy.yaml"
 OUT = "base-apps/postgresql/agent-audit-cronjob.yaml"
 
 HEADER = """\
@@ -40,7 +40,7 @@ HEADER = """\
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Sources:    scripts/agent-audit.py
-#             base-apps/kyverno-policies/agent-capability-taxonomy.yaml
+#             base-apps/admission-policies/agent-capability-taxonomy.yaml
 # Regenerate: ./scripts/gen-agent-audit-cronjob.py
 # CI fails if this file drifts from either source.
 #

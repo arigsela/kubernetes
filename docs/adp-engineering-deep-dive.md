@@ -347,7 +347,7 @@ from the outside, on demand.
 | Concern | Files |
 |---|---|
 | Identity admission | `base-apps/admission-policies/agent-identity.yaml` (native VAPs; the Kyverno ClusterPolicy was deleted) |
-| Capability admission | `base-apps/admission-policies/agent-capability.yaml` (generated), `base-apps/kyverno-policies/agent-capability-taxonomy.yaml` |
+| Capability admission | `base-apps/admission-policies/agent-capability.yaml` (generated), `base-apps/admission-policies/agent-capability-taxonomy.yaml` |
 | Admission tests | `tests/admission-policies/` (real API server) |
 | Capability generator + CI | `scripts/gen-agent-capability-policy.py`, `scripts/validate-agent-capability.py` |
 | Identity CI | `scripts/validate-agent-identity.py` |

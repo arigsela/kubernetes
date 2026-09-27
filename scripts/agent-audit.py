@@ -63,7 +63,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-TAXONOMY = "base-apps/kyverno-policies/agent-capability-taxonomy.yaml"
+TAXONOMY = "base-apps/admission-policies/agent-capability-taxonomy.yaml"
 
 # The tool kagent uses to request a human confirmation for a gated call.
 CONFIRM_TOOL = "adk_request_confirmation"
