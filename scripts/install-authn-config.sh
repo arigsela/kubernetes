@@ -76,7 +76,8 @@ echo "1. static guards: ok"
 VAL="install-authn-validate-$$"
 # colima/Docker Desktop only share $HOME with the VM: stage the files there.
 STAGE="$HOME/.cache/install-authn-config/$$"
-cleanup() { docker rm -f "$VAL" >/dev/null 2>&1 || true; rm -rf "$STAGE"; }
+# -v: the k3s image declares VOLUMEs; without it each validation leaks anonymous volumes.
+cleanup() { docker rm -fv "$VAL" >/dev/null 2>&1 || true; rm -rf "$STAGE"; }
 trap cleanup EXIT
 mkdir -p "$STAGE/config.yaml.d"
 cp "$SRC/$AUTHN" "$STAGE/$AUTHN"; cp "$SRC/$DROPIN" "$STAGE/$DROPIN"
