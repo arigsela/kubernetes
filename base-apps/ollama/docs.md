@@ -30,7 +30,7 @@ The main container exposes port `11434` (`services.yaml`, Service `ollama`, `Clu
 
 ## Where config lives
 - Workload, image, model volume (ECR digest), resource requests/limits: `deployments.yaml`.
-- The model's pinned tag and digest: `scripts/build-model-image.sh`. The old `pvc.yaml` (`ollama-pvc`) is no longer mounted and is removed in plan Task 4.4.
+- The model's pinned tag and digest: `scripts/build-model-image.sh`. There is no PVC: the node-pinned `ollama-pvc` volume was retired in plan Task 4.4.
 - Network exposure: `services.yaml` — ClusterIP Service `ollama` on port `11434`.
 
 ## Resources
