@@ -50,8 +50,10 @@ sources:
   `kubectl run probe -n <ns> --image=<the ECR image> --dry-run=server -o jsonpath='{.spec.imagePullSecrets}'`.
   `failurePolicy` is `Ignore`, so a policy error yields a pod without the secret rather than
   a rejected pod.
-- **Check:** the `ecr-registry` Secret exists in the namespace and is fresh (ecr-auth
-  CronJob; ECR tokens last 12h).
+- **Check:** the `ecr-registry` Secret exists in the namespace and is fresh. The
+  `ecr-credentials-sync` CronJob (`base-apps/ecr-auth/`) writes it into every non-system
+  namespace every 15 minutes, so a brand-new namespace can lack it for up to 15 minutes.
+  To create it at once: `kubectl create job -n kube-system --from=cronjob/ecr-credentials-sync ecr-sync-now`.
 
 ### Symptom: Pod creation fails with a 500 / `stream error ... INTERNAL_ERROR`
 - A mutating policy expression may be panicking the API server. That fails the request

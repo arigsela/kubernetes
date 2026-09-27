@@ -31,7 +31,9 @@ the `managed-apps` ApplicationSet from configs in `appsets/managed-apps/` — se
 ### Policy Engine (Kyverno)
 - **kyverno** - Kubernetes policy engine (Helm chart v3.9.1) for validating, mutating, and generating resources
 - **kyverno-policies** (managed) - Custom ClusterPolicies:
-  - `generate-ecr-secret` - Clones `ecr-registry` secret into new namespaces on creation
+  - none left: every policy moved to `admission-policies` (below) or was deleted. Kyverno
+    now only reports (PolicyReports). The directory still holds the capability taxonomy
+    ConfigMap and the reports controller's Agent read RBAC.
 - **admission-policies** - Native ValidatingAdmissionPolicies evaluated in the API server (no
   webhook): the agent-identity and agent-capability contracts (enforcing: Deny); the
   five workload-hygiene audits `require-labels`, `disallow-privileged-containers`,
@@ -160,23 +162,24 @@ spec:
 
 ## ECR Authentication
 
-ECR image pull authentication is fully automated via Kyverno and a CronJob:
+ECR image pull authentication is fully automated by a CronJob and a native admission policy:
 
 ```
-New Namespace Created ──▶ Kyverno clones ecr-registry secret instantly
-Pod with ECR Image    ──▶ Kyverno injects imagePullSecrets automatically
-Every Hour            ──▶ CronJob refreshes ECR tokens in all namespaces
+Every 15 minutes      ──▶ CronJob writes a fresh ecr-registry secret into every namespace
+                          (a new namespace has it within 15 min)
+Pod with ECR Image    ──▶ API server (native MutatingAdmissionPolicy) adds imagePullSecrets
 ```
 
 **No manual steps required.** When deploying a new application that pulls from ECR:
 1. Create your deployment manifests (no `imagePullSecrets` needed)
 2. Create the ArgoCD Application with `CreateNamespace=true`
-3. Commit and push — Kyverno handles the rest
+3. Commit and push. A brand-new namespace gets `ecr-registry` within 15 minutes (pods retry
+   the pull until then); to have it at once:
+   `kubectl create job -n kube-system --from=cronjob/ecr-credentials-sync ecr-sync-now`
 
 ### How It Works
-- **`generate-ecr-secret`** (Kyverno ClusterPolicy) — Clones the `ecr-registry` secret from `kube-system` into any new namespace on creation
 - **`inject-ecr-pull-secret`** (native MutatingAdmissionPolicy in `admission-policies`, no webhook) — Mutates pods that reference `.dkr.ecr.` images (containers, initContainers or image volumes) to add `imagePullSecrets: [{name: ecr-registry}]`
-- **`ecr-credentials-sync`** (CronJob) — Runs hourly, refreshes ECR tokens in all non-system namespaces via dynamic discovery
+- **`ecr-credentials-sync`** (CronJob, `base-apps/ecr-auth/`) — Every 15 minutes, writes a fresh ECR token as `ecr-registry` into every non-system namespace via dynamic discovery, new namespaces included (ECR tokens last 12h)
 
 ## Ingress Configuration
 
