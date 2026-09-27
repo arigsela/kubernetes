@@ -68,11 +68,13 @@ jobs:
           sudo mv kubeconform /usr/local/bin/
       - name: Validate changed Kubernetes manifests
         run: |
-          # base-apps/<app>/mkdocs.yml is Backstage TechDocs config and
-          # appsets/*/*.yaml are ApplicationSet generator configs. Neither is a
-          # Kubernetes manifest (no kind), so kubeconform would fail them. Drop
-          # both before validating; yamllint still covers them.
-          FILES=$(echo "${{ needs.changed-files.outputs.yaml_files }}" | tr ' ' '\n' | grep -v -e '/mkdocs\.yml$' -e '^appsets/' || true)
+          # base-apps/<app>/mkdocs.yml is Backstage TechDocs config,
+          # appsets/*/*.yaml are ApplicationSet generator configs, and
+          # node-config/** are k3s node files (a config drop-in, an apiserver
+          # AuthenticationConfiguration). None is a Kubernetes manifest, so
+          # kubeconform would fail them. Drop them before validating; yamllint
+          # still covers them, and node-config has its own job.
+          FILES=$(echo "${{ needs.changed-files.outputs.yaml_files }}" | tr ' ' '\n' | grep -v -e '/mkdocs\.yml$' -e '^appsets/' -e '^node-config/' || true)
           if [ -z "$FILES" ]; then echo "No Kubernetes manifests to validate."; exit 0; fi
           echo "$FILES" | xargs kubeconform \
             -summary \
@@ -186,6 +188,22 @@ jobs:
       # policy fixtures against it. Static tools cannot be trusted for these policies.
       - name: Run admission-policy tests against a real API server
         run: python -m pytest tests/admission-policies/ -v
+
+  # The control plane's kube-apiserver authentication config (plan Phase 5). The installer
+  # validates every file in a throwaway k3s before it may touch the node; these tests prove a
+  # rejected file never reaches it, and that its refusal guards actually fire.
+  node-config-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run install-authn-config.sh tests (stub ssh, real k3s in Docker)
+        run: python -m pytest tests/node-config/ -v
 
   wan-ip-validate:
     runs-on: ubuntu-latest

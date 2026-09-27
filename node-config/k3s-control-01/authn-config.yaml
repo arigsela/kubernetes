@@ -1,0 +1,20 @@
+# Structured authentication configuration for k3s-control-01's kube-apiserver
+# (AuthenticationConfiguration, GA in Kubernetes 1.34). Installed to
+# /etc/rancher/k3s/authn-config.yaml by scripts/install-authn-config.sh, NEVER by hand:
+# the installer validates it in a throwaway k3s first. docs/troubleshooting/kubectl-oidc.md.
+#
+# STAGE A (plan docs/plans/k8s-136-features-implementation-plan.md, Task 5.3): no JWT
+# issuers yet. This file only moves authentication config from flags into a file the API
+# server hot-reloads, so Stage B can add Dex without another restart.
+#
+# The `anonymous` block is MANDATORY. When k3s is given an authentication config file it
+# stops passing its default --anonymous-auth=false ("Not setting kube-apiserver
+# 'anonymous-auth' flag due to user-provided 'authentication-config' file"), and the
+# Kubernetes default is anonymous ENABLED: without this block /version and /healthz answer
+# 200 to anyone. Tested in a throwaway k3s v1.36.4. Changing this block needs a k3s
+# restart; `jwt` changes hot-reload.
+apiVersion: apiserver.config.k8s.io/v1
+kind: AuthenticationConfiguration
+anonymous:
+  enabled: false
+jwt: []
