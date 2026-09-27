@@ -77,6 +77,14 @@ spec:
               # plus per-image tensors during multimodal requests.
               cpu: "6"
               memory: 8Gi
+          # On a rollout the old pod gets SIGTERM the moment the new one is Ready, and
+          # llama-server exits at once, but kube-proxy needs ~1s to drop it from the Service
+          # endpoints: the first rollout (4.2) lost exactly one request (1 of 164 probes).
+          # Keep serving through that window.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
           readinessProbe:
             httpGet:
               path: /health
