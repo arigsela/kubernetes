@@ -4,6 +4,7 @@ These scripts run at the moments where a mistake is most expensive — immediate
 and after a k3s hop — so the properties worth protecting are the ones that would silently
 weaken the gate rather than break it loudly.
 """
+import json
 import re
 import subprocess
 import sys
@@ -186,12 +187,90 @@ def test_hop_verify_gate_runs_every_check_on_a_clean_cluster(tmp_path):
         assert tag in out, f"check {tag} never ran:\n{out}"
 
 
-def test_hop_verify_checks_kyverno_admission():
-    """§T.72: kyverno v1.19 is untested on k8s 1.36 and was accepted on condition that every
-    hop re-proves the admission path, not just that the pods are Running."""
+def test_hop_verify_checks_native_admission():
+    """§T.72: admission is native (plan Phase 3). Every hop re-proves it with server-side
+    dry runs; Kyverno only reports, so its old check is gone."""
     t = HOP_VERIFY.read_text()
-    assert "check_kyverno" in t and "--dry-run=server" in t, (
-        "gate must exercise the admission webhooks with a server-side dry-run create")
+    assert "check_admission_policies" in t and "check_kyverno" not in t
+    assert "--dry-run=server" in t, "the gate must exercise admission with server-side dry runs"
+
+
+ROUTING_STUB = r"""#!/usr/bin/env bash
+# kubectl stub for check_admission_policies: answers from files in $STUB_DIR, else nothing.
+d="$STUB_DIR"; a="$*"
+case "$a" in
+  *"get validatingadmissionpolicies -o json"*)       cat "$d/vaps.json" ;;
+  *"get validatingadmissionpolicybindings -o json"*) cat "$d/vapbs.json" ;;
+  *"get mutatingadmissionpolicies -o json"*|*"get mutatingadmissionpolicybindings -o json"*)
+                                                     echo '{"items": []}' ;;
+  *"create --dry-run=server -f -"*)  cat >/dev/null; cat "$d/deny.out" ;;
+  *"get agents.kagent.dev"*)         cat "$d/agents.json" ;;
+  *"replace --dry-run=server -f -"*) cat >/dev/null; cat "$d/replace.out" ;;
+  *"run hop-verify-ecr"*)            cat "$d/ecr.out" ;;
+  *) exit 0 ;;
+esac
+"""
+
+
+def _vap(name, warn=False):
+    tc = {"expressionWarnings": [{"fieldRef": "x", "warning": "undefined field"}]} if warn else {}
+    return {"metadata": {"name": name}, "status": {"typeChecking": tc}}
+
+
+def _run_admission_check(tmp_path, files):
+    """Run the real gate against the routing stub; return its §T.72 lines."""
+    bin_dir, stub_dir = tmp_path / "bin", tmp_path / "stub"
+    bin_dir.mkdir(); stub_dir.mkdir(); (tmp_path / "artifacts").mkdir()
+    (bin_dir / "kubectl").write_text(ROUTING_STUB); (bin_dir / "kubectl").chmod(0o755)
+    for name, content in files.items():
+        (stub_dir / name).write_text(content if isinstance(content, str) else json.dumps(content))
+    env = {"PATH": f"{bin_dir}:{Path(sys.executable).parent}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+           "HOME": str(tmp_path), "STUB_DIR": str(stub_dir),
+           "HOP_VERIFY_SYNC_TRIES": "2", "HOP_VERIFY_SYNC_SLEEP": "0"}
+    r = subprocess.run(["bash", str(HOP_VERIFY), "gate", "--artifacts", str(tmp_path / "artifacts")],
+                       capture_output=True, text=True, env=env, timeout=120)
+    out = re.sub(r"\x1b\[[0-9;]*m", "", r.stdout + r.stderr)
+    assert "GATE FAILED" in out or "GATE PASSED" in out, out
+    return [l.strip() for l in out.splitlines() if "§T.72" in l]
+
+
+AGENT = {"items": [{"metadata": {"name": "k8s-reader", "namespace": "kagent"}, "spec": {}}]}
+
+
+def test_admission_check_passes_a_healthy_cluster(tmp_path):
+    lines = _run_admission_check(tmp_path, {
+        "vaps.json": {"items": [_vap("agent-capability"), _vap("require-labels")]},
+        "vapbs.json": {"items": [{"spec": {"policyName": "agent-capability"}},
+                                 {"spec": {"policyName": "require-labels"}}]},
+        "deny.out": "Error from server (Forbidden): ValidatingAdmissionPolicy "
+                    "'agent-identity-no-monolithic-key' with binding "
+                    "'agent-identity-no-monolithic-key' denied request: ...",
+        "agents.json": AGENT,
+        "replace.out": "agent.kagent.dev/k8s-reader replaced (server dry run)",
+        "ecr.out": "ecr-registry",
+    })
+    fails = [l for l in lines if l.startswith("FAIL")]
+    assert not fails, "\n".join(lines)
+    for want in ("typeChecking clean", "every policy has a binding", "is DENIED",
+                 "delegation policy synced", "gets ecr-registry"):
+        assert any(want in l and l.startswith("PASS") for l in lines), (want, lines)
+
+
+def test_admission_check_catches_each_failure(tmp_path):
+    """Each of the five checks must fail for its own reason, by name."""
+    lines = _run_admission_check(tmp_path, {
+        "vaps.json": {"items": [_vap("agent-capability", warn=True), _vap("orphan-policy")]},
+        "vapbs.json": {"items": [{"spec": {"policyName": "agent-capability"}}]},
+        "deny.out": "externalsecret.external-secrets.io/hop-verify-deny-probe created (server dry run)",
+        "agents.json": AGENT,
+        "replace.out": "The agents \"k8s-reader\" is invalid: failed to configure binding: "
+                       "paramKind kind Agent not yet synced to use for admission",
+        "ecr.out": "",
+    })
+    text = "\n".join(lines)
+    for want in ("typeChecking warnings: agent-capability", "WITHOUT a binding (inactive): orphan-policy",
+                 "ADMITTED", "still not synced after 2 tries", "got no ecr-registry"):
+        assert any(want in l and l.startswith("FAIL") for l in lines), (want, text)
 
 
 # --- §T.28 / §V.35 ------------------------------------------------------------------

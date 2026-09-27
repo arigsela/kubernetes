@@ -281,39 +281,109 @@ print(" ".join(sorted(r.get("name","") for r in rs if r.get("status") != "Synced
   if [ -n "$tolerated" ]; then note "§T.45 tolerated but UNDIAGNOSED:$tolerated — workloads Running; diagnose before this becomes permanent"; fi
 }
 
-check_kyverno() {                               # §T.72 — kyverno v1.19 is untested on 1.36
-  # Accepted risk (2026-09-24): kyverno states k8s 1.33-1.35 only. Every hop re-proves the
-  # admission path instead of assuming it: controllers available, policies Ready, and a
-  # server-side dry-run pod create, which runs the webhooks without persisting anything.
-  # Emergency lever if admission breaks: delete kyverno's webhook configurations
-  #   kubectl delete validatingwebhookconfigurations,mutatingwebhookconfigurations \
-  #     -l webhook.kyverno.io/managed-by=kyverno
-  local notavail
-  notavail=$(kubectl get deploy -n kyverno -o json 2>/dev/null | python3 -c '
+check_admission_policies() {                    # §T.72 — admission path re-proved every hop
+  # Admission is native since plan Phase 3 (base-apps/admission-policies): ValidatingAdmission-
+  # Policies and a MutatingAdmissionPolicy evaluated inside the API server. Kyverno only
+  # reports (PolicyReports); it has no ClusterPolicies and no resource webhook rules. Every hop
+  # re-proves the path with server-side dry runs, which evaluate admission without persisting.
+  # Emergency lever if a native policy blocks what it should not:
+  #   kubectl delete validatingadmissionpolicybinding <name>   (Argo re-creates it: fix git)
+  local out
+  # 1. every VAP type-checks clean (a MAP has no status on 1.36: its checks are 3-5 below)
+  out=$(kubectl get validatingadmissionpolicies -o json 2>/dev/null | python3 -c '
 import sys, json
 try: items = json.load(sys.stdin)["items"]
 except Exception: items = []
-bad = [d["metadata"]["name"] for d in items
-       if d["status"].get("availableReplicas", 0) < d["spec"].get("replicas", 1)]
-print(" ".join(bad) if items else "NO-DEPLOYMENTS")' || true)
-  if [ -z "$notavail" ]; then ok "§T.72 kyverno controllers available"
-  else bad "§T.72 kyverno controllers not available: $notavail"; fi
-  local notready
-  notready=$(kubectl get clusterpolicy -o json 2>/dev/null | python3 -c '
+warn = [p["metadata"]["name"] for p in items
+        if ((p.get("status") or {}).get("typeChecking") or {}).get("expressionWarnings")]
+print("NONE" if not items else " ".join(warn))' || true)
+  case "$out" in
+    "")   ok "§T.72 native policies: typeChecking clean" ;;
+    NONE) bad "§T.72 native policies: no ValidatingAdmissionPolicies found" ;;
+    *)    bad "§T.72 native policies with typeChecking warnings: $out" ;;
+  esac
+  # 2. every policy has a binding (a policy without one silently does nothing)
+  out=$(for k in validating mutating; do
+          kubectl get ${k}admissionpolicies -o json 2>/dev/null || echo '{"items":[]}'
+          kubectl get ${k}admissionpolicybindings -o json 2>/dev/null || echo '{"items":[]}'
+        done | python3 -c '
+import sys, json
+docs = []
+dec = json.JSONDecoder(); s = sys.stdin.read().strip()
+while s:
+    d, i = dec.raw_decode(s); docs.append(d.get("items", [])); s = s[i:].strip()
+unbound = []
+for pols, binds in zip(docs[0::2], docs[1::2]):
+    bound = {b["spec"]["policyName"] for b in binds}
+    unbound += [p["metadata"]["name"] for p in pols if p["metadata"]["name"] not in bound]
+print(" ".join(unbound))' || true)
+  if [ -z "$out" ]; then ok "§T.72 native policies: every policy has a binding"
+  else bad "§T.72 native policies WITHOUT a binding (inactive): $out"; fi
+  # 3. an enforcing policy actually denies: an ExternalSecret reading the destroyed Vault key
+  out=$(printf '%s\n' 'apiVersion: external-secrets.io/v1' 'kind: ExternalSecret' \
+          'metadata: {name: hop-verify-deny-probe, namespace: default}' \
+          'spec: {secretStoreRef: {name: hop-verify-probe, kind: SecretStore}, target: {name: hop-verify-deny-probe}, data: [{secretKey: x, remoteRef: {key: kagent, property: x}}]}' \
+        | kubectl create --dry-run=server -f - 2>&1 || true)
+  case "$out" in
+    *"agent-identity-no-monolithic-key"*denied*) ok "§T.72 enforcement: a violating ExternalSecret is DENIED" ;;
+    *"created (server dry run)"*) bad "§T.72 enforcement: a violating ExternalSecret was ADMITTED — policies not enforcing" ;;
+    *) bad "§T.72 enforcement probe inconclusive: $(printf '%s' "$out" | head -1 | cut -c1-140)" ;;
+  esac
+  # 4. the parameterised policy (agent-capability-delegation) DENIES until the API server has
+  #    synced its Agent informer, i.e. for a few seconds after every API-server restart. Re-apply
+  #    a real read/write Agent, riding out only that window (docs.md gotcha, runbook).
+  local agent tries=0
+  agent=$(kubectl get agents.kagent.dev -A -l 'capability.homelab/class in (read,write)' -o json 2>/dev/null | python3 -c '
 import sys, json
 try: items = json.load(sys.stdin)["items"]
 except Exception: items = []
-print(" ".join(p["metadata"]["name"] for p in items
-      if not any(c.get("type") == "Ready" and c.get("status") == "True"
-                 for c in p.get("status", {}).get("conditions", []))))' || true)
-  if [ -z "$notready" ]; then ok "§T.72 kyverno ClusterPolicies Ready"
-  else bad "§T.72 kyverno ClusterPolicies not Ready: $notready"; fi
-  if kubectl run hop-verify-admission --image=busybox:1.36 --restart=Never -n default \
+if items:
+    o = items[0]; o.pop("status", None)
+    for k in ("managedFields", "resourceVersion", "uid", "creationTimestamp", "generation"):
+        o["metadata"].pop(k, None)
+    print(json.dumps(o))' || true)
+  if [ -z "$agent" ]; then
+    note "§T.72 no read/write Agent to probe the delegation policy with"
+  else
+    while :; do
+      out=$(printf '%s' "$agent" | kubectl replace --dry-run=server -f - 2>&1 || true)
+      case "$out" in *"not yet synced"*) ;; *) break ;; esac
+      tries=$((tries + 1)); [ "$tries" -ge "${HOP_VERIFY_SYNC_TRIES:-45}" ] && break
+      sleep "${HOP_VERIFY_SYNC_SLEEP:-2}"
+    done
+    case "$out" in
+      *"not yet synced"*) bad "§T.72 delegation policy still not synced after ${tries} tries: Agent writes are being DENIED" ;;
+      *denied*|*forbidden*|*rror*) bad "§T.72 a live Agent is DENIED on update: $(printf '%s' "$out" | head -1 | cut -c1-140)" ;;
+      *) ok "§T.72 delegation policy synced: a live Agent updates cleanly (after $tries retries)" ;;
+    esac
+  fi
+  # 5. the ECR pull-secret mutation still mutates
+  out=$(kubectl run hop-verify-ecr --image=852893458518.dkr.ecr.us-east-2.amazonaws.com/hop-verify:probe \
+          --restart=Never -n default --dry-run=server -o jsonpath='{.spec.imagePullSecrets[*].name}' 2>/dev/null || true)
+  case " $out " in
+    *" ecr-registry "*) ok "§T.72 inject-ecr-pull-secret: a dry-run ECR pod gets ecr-registry" ;;
+    *) bad "§T.72 inject-ecr-pull-secret: a dry-run ECR pod got no ecr-registry (got '$out')" ;;
+  esac
+  # 6. plain admission still works
+  if kubectl run hop-verify-admission --image=busybox:1.37 --restart=Never -n default \
        --dry-run=server -o name >/dev/null 2>&1; then
     ok "§T.72 admission path: server-side dry-run pod create accepted"
   else
-    bad "§T.72 admission path: dry-run pod create REJECTED — see the emergency lever in check_kyverno"
+    bad "§T.72 admission path: dry-run pod create REJECTED — see the emergency lever in check_admission_policies"
   fi
+  # 7. Kyverno is reporting-only. A ClusterPolicy or resource webhook rule would put its webhook
+  #    (untested on 1.36, fails open) back in the admission path: say so, don't fail the hop.
+  out=$(kubectl get clusterpolicies.kyverno.io,policies.kyverno.io -A -o name 2>/dev/null | wc -l | tr -d ' ' || true)
+  if [ "${out:-0}" = 0 ]; then ok "§T.72 kyverno: no ClusterPolicies/Policies (reporting-only)"
+  else note "§T.72 kyverno has $out policies again: its webhook is back in the admission path"; fi
+  out=$(kubectl get deploy -n kyverno -o json 2>/dev/null | python3 -c '
+import sys, json
+try: items = json.load(sys.stdin)["items"]
+except Exception: items = []
+print(" ".join(d["metadata"]["name"] for d in items
+      if d["status"].get("availableReplicas", 0) < d["spec"].get("replicas", 1)))' || true)
+  if [ -n "$out" ]; then note "§T.72 kyverno controllers not available ($out): PolicyReports stall, admission unaffected"; fi
+  return 0
 }
 
 check_pg() {                                    # §V.14 data path
@@ -345,7 +415,7 @@ case "$ACTION" in
     check_istio
     check_cni_plugin
     check_ingress
-    check_kyverno
+    check_admission_policies
     note "§V.2/§V.27 component matrix — operator judgement, see docs/plans/k3s-1.36-upgrade-plan.md"
     note "§V.10 removed-API scan — run: pytest tests/k3s-upgrade/test_api_scan.py"
     note "§V.16 restore drill — proven by tests/k3s-upgrade/ in CI"
