@@ -39,6 +39,31 @@ waits for the hot-reload counter. A broken file never reaches the node.
 - After every API-server restart, writes to read/write-class Agents are denied for a few
   seconds (the delegation policy's param informer; `admission-policies` runbook).
 
+## Status (2026-09-27)
+- **Stage A installed** on `k3s-control-01` (one k3s restart; API back in 21 s; anonymous
+  still 401 on `/api`, `/version`, `/healthz`, `/readyz`).
+- **Stage B** (Dex JWT authenticator) and the `oidc:arigsela` binding (`base-apps/cluster-rbac/`)
+  are in git and installed by hot reload. The pinned `sub` is the value Dex's encoding gives
+  for GitHub user id 2475907; **it still has to be confirmed from a real token** (below). A
+  wrong value fails closed.
+
+## Laptop setup and first login (the owner, once)
+```bash
+brew install int128/kubelogin/kubelogin            # provides `kubectl oidc-login`
+kubectl config set-credentials homelab-oidc --exec-api-version=client.authentication.k8s.io/v1 \
+  --exec-command=kubectl --exec-interactive-mode=IfAvailable \
+  --exec-arg=oidc-login --exec-arg=get-token \
+  --exec-arg=--oidc-issuer-url=https://dex.arigsela.com --exec-arg=--oidc-client-id=kubernetes \
+  --exec-arg=--oidc-extra-scope=profile --exec-arg=--oidc-extra-scope=email \
+  --exec-arg=--oidc-extra-scope=offline_access
+kubectl config set-context homelab-oidc --cluster="$(kubectl config view --minify -o jsonpath='{.clusters[0].name}')" --user=homelab-oidc
+# Confirm the pinned sub from a real token BEFORE trusting the setup (opens the browser):
+kubectl oidc-login get-token --oidc-issuer-url=https://dex.arigsela.com --oidc-client-id=kubernetes \
+  --oidc-extra-scope=profile | python3 -c 'import sys,json,base64; t=json.load(sys.stdin)["status"]["token"].split(".")[1]; print(json.loads(base64.urlsafe_b64decode(t+"==")))'
+kubectl --context homelab-oidc auth whoami                # expect oidc:arigsela
+```
+The existing admin context stays the default and is the break-glass path.
+
 ## Stages
 - **Stage A (Task 5.3):** `anonymous: {enabled: false}` + `jwt: []` and the drop-in; one k3s
   restart (control-plane blip ~1-2 min; workloads keep running). Behaviour is unchanged: only
