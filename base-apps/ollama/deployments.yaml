@@ -5,13 +5,19 @@ metadata:
   namespace: ollama
   labels:
     app: ollama
+    app.kubernetes.io/name: ollama
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: ollama
+  # The model is a read-only image volume (below), not a ReadWriteOnce PVC, so a new pod
+  # starts next to the old one and kagent's embeddings keep working through a rollout.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   template:
     metadata:
       labels:
@@ -19,32 +25,6 @@ spec:
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
-      initContainers:
-        - name: pull-model
-          image: ollama/ollama:0.20.5
-          command:
-            - sh
-            - -c
-            - |
-              # Start ollama server in background, pull the model, then stop
-              ollama serve &
-              SERVER_PID=$!
-              sleep 5
-              echo "Pulling nomic-embed-text model..."
-              ollama pull nomic-embed-text
-              echo "Model pull complete"
-              kill $SERVER_PID
-              wait $SERVER_PID 2>/dev/null || true
-          volumeMounts:
-            - name: ollama-storage
-              mountPath: /root/.ollama
-          resources:
-            requests:
-              cpu: 200m
-              memory: 512Mi
-            limits:
-              cpu: 2000m
-              memory: 1Gi
       containers:
         - name: ollama
           image: ollama/ollama:0.20.5
@@ -59,8 +39,19 @@ spec:
             # period. The model is ~274MB, so pinning it fits within the limit below.
             - name: OLLAMA_KEEP_ALIVE
               value: "-1"
+            # Models come from the read-only image volume. NOPRUNE: ollama would otherwise try
+            # to prune "unused" blobs at startup. /api/pull fails (read-only), by design: a
+            # model changes only through a new image digest (runbook "Model update").
+            - name: OLLAMA_MODELS
+              value: /models
+            - name: OLLAMA_NOPRUNE
+              value: "1"
           volumeMounts:
-            - name: ollama-storage
+            - name: models
+              mountPath: /models
+              readOnly: true
+            # ollama writes its identity keypair here at startup; nothing else persists.
+            - name: ollama-home
               mountPath: /root/.ollama
           resources:
             requests:
@@ -73,6 +64,12 @@ spec:
               # model can't OOM the pod.
               cpu: "3"
               memory: 2Gi
+          # Keep serving for the ~1s kube-proxy needs to drop this pod from the Service when
+          # a rollout replaces it (qwen's first surge rollout lost one request without this).
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
           readinessProbe:
             httpGet:
               path: /
@@ -86,6 +83,14 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 30
       volumes:
-        - name: ollama-storage
-          persistentVolumeClaim:
-            claimName: ollama-pvc
+        # nomic-embed-text as an OCI image, mounted read-only at /models (image volumes, GA
+        # in k8s 1.36). Built by scripts/build-model-image.sh nomic-embed-text: Ollama tag
+        # v1.5 with its model digest ASSERTED (kagent's stored memory vectors depend on this
+        # exact model), manifest also named `latest` (what kagent asks for). Pinned by digest.
+        - name: models
+          image:
+            reference: 852893458518.dkr.ecr.us-east-2.amazonaws.com/models/nomic-embed-text@sha256:cdde66eda3d0429d19a3e6123de84e462de33097b8d64a7b51ae8188e1abaca8
+            pullPolicy: IfNotPresent
+        - name: ollama-home
+          emptyDir:
+            sizeLimit: 64Mi

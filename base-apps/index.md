@@ -44,7 +44,7 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | logging | Observability stack (Alloy collector, Loki logs on S3, Prometheus metrics, Grafana) | logging | [docs.md](logging/docs.md) | [runbook.md](logging/runbook.md) | [catalog-info.yaml](logging/catalog-info.yaml) |
 | loki-aws-infrastructure |  |  |  |  |  |
 | n8n | Workflow automation platform (shared PostgreSQL, Vault, admin UI + public webhooks) | n8n | [docs.md](n8n/docs.md) | [runbook.md](n8n/runbook.md) | [catalog-info.yaml](n8n/catalog-info.yaml) |
-| ollama | Local LLM/embedding model server (Ollama, CPU-only, PVC-backed) | ollama | [docs.md](ollama/docs.md) | [runbook.md](ollama/runbook.md) | [catalog-info.yaml](ollama/catalog-info.yaml) |
+| ollama | Local embedding model server (Ollama, CPU-only, model from a pinned OCI image volume) | ollama | [docs.md](ollama/docs.md) | [runbook.md](ollama/runbook.md) | [catalog-info.yaml](ollama/catalog-info.yaml) |
 | oncall-agent | AI on-call/incident-response agent (Anthropic Claude, Slack, GitOps PRs) | oncall-agent | [docs.md](oncall-agent/docs.md) | [runbook.md](oncall-agent/runbook.md) | [catalog-info.yaml](oncall-agent/catalog-info.yaml) |
 | postgresql | Shared PostgreSQL + pgvector instance (root DB, kagent DB) + CNPG cluster for chores-tracker (daily S3 backups) | postgresql | [docs.md](postgresql/docs.md) | [runbook.md](postgresql/runbook.md) | [catalog-info.yaml](postgresql/catalog-info.yaml) |
 | qwen | Self-hosted multimodal (text+vision) LLM server via llama.cpp, CPU-only, weights from a pinned OCI image volume | qwen | [docs.md](qwen/docs.md) | [runbook.md](qwen/runbook.md) | [catalog-info.yaml](qwen/catalog-info.yaml) |

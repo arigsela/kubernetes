@@ -6,35 +6,43 @@ app: ollama
 catalog_entity: ollama
 kind: runbook
 namespace: ollama
-last_reviewed: 2026-07-10
+last_reviewed: 2026-09-27
 status: current
 tags: [llm, embeddings, gpu-optional]
 sources:
   - base-apps/ollama/deployments.yaml
-  - base-apps/ollama/pvc.yaml
   - base-apps/ollama/services.yaml
+  - models/nomic-embed-text/Dockerfile
+  - scripts/build-model-image.sh
 ---
 
 # ollama runbook
 
 ## Failure modes
 
-### Symptom: pod stuck in `Init` / model requests fail with "model not found"
-- **Check:** `kubectl -n ollama logs deploy/ollama -c pull-model` (the `pull-model` init container runs `ollama pull nomic-embed-text` before the main container starts — a slow/failed pull blocks readiness). Also check `kubectl -n ollama get pods` for `Init:` status and `kubectl -n ollama exec deploy/ollama -c ollama -- ollama list` once running, to confirm `nomic-embed-text` is present.
-- **Fix:** if the pull fails due to network/registry issues, restart the pod (`kubectl -n ollama delete pod <pod>`) to retry the init container. If a different/larger model is needed, PR a change to the `pull-model` command in `deployments.yaml` and raise the PVC size in `pvc.yaml` accordingly (see PVC-full mode below).
+### Symptom: new pod stuck in `ContainerCreating` / `ErrImagePull` on the `models` volume
+- **Check:** `kubectl -n ollama describe pod -l app=ollama` events. The model is an image volume pulled from ECR (`models/nomic-embed-text@sha256:…`). `no basic auth credentials` / 401 → the pod lacks `imagePullSecrets: ecr-registry` or the namespace secret is stale (`admission-policies` runbook, ECR `ImagePullBackOff`). `not found` → the digest in `deployments.yaml` was never pushed.
+- **Fix:** fix the secret or push the image (`scripts/build-model-image.sh nomic-embed-text --push`). The old pod keeps serving meanwhile (`maxUnavailable: 0`).
+
+### Symptom: embeddings fail with "model not found"
+- **Check:** `kubectl -n ollama exec deploy/ollama -c ollama -- ollama list` must show `nomic-embed-text:latest` (and `:v1.5`). `OLLAMA_MODELS` must be `/models`.
+- **Fix:** the image must carry a manifest named after what kagent asks for (`nomic-embed-text` = `:latest`); `models/nomic-embed-text/Dockerfile` writes it. Rebuild rather than `ollama pull`: the models directory is read-only, so `/api/pull` fails by design.
 
 ### Symptom: OOMKilled or CrashLoopBackOff on the `ollama` container
-- **Check:** `kubectl -n ollama describe pod -l app=ollama` for `OOMKilled`/`Last State`, and `kubectl -n ollama top pod -l app=ollama`. The main container is limited to `memory: 1Gi` (`deployments.yaml`), which can be tight if a larger model than `nomic-embed-text` is loaded or concurrent requests are high.
+- **Check:** `kubectl -n ollama describe pod -l app=ollama` for `OOMKilled`/`Last State`, and `kubectl -n ollama top pod -l app=ollama`. The main container is limited to `memory: 2Gi` (`deployments.yaml`), sized for the resident `nomic-embed-text` plus concurrent requests.
 - **Fix:** PR to raise `resources.limits.memory` (and `requests.memory`) for the `ollama` container in `deployments.yaml`.
-
-### Symptom: `PersistentVolumeClaim` full / model pull fails with no space left on device
-- **Check:** `kubectl -n ollama exec deploy/ollama -c ollama -- df -h /root/.ollama` and `kubectl -n ollama get pvc ollama-pvc`. The PVC is only `2Gi` (`pvc.yaml`), sized for the small `nomic-embed-text` embedding model — pulling additional or larger models can exhaust it.
-- **Fix:** PR to increase `spec.resources.requests.storage` in `pvc.yaml` (note: expanding a bound PVC requires the underlying StorageClass to support volume expansion).
 
 ## How-to
 
 ### Deploy / update
-Edit manifests here and PR; Argo CD syncs on merge. The Deployment uses `strategy: Recreate` (not `RollingUpdate`), so updates cause a brief full outage while the old pod terminates and the new one (including the `pull-model` init container) starts.
+Edit manifests here and PR; Argo CD syncs on merge. `RollingUpdate` with `maxSurge: 1` / `maxUnavailable: 0`: the new pod starts next to the old one, which keeps serving embeddings until the new one is Ready. No outage.
+
+### Model update
+The model changes only through a new image digest, and **changing the embedding model invalidates every vector kagent has stored** (memories embedded with the old model are no longer comparable). Treat it as a migration, not a bump.
+1. Change `MODEL_TAG`/`MODEL_DIGEST` (and `TAG`) in `scripts/build-model-image.sh`; ECR tags are immutable, so a new model needs a new tag.
+2. `scripts/build-model-image.sh nomic-embed-text` (local, reproducible), then `--push`; it prints `…/models/nomic-embed-text@sha256:…`.
+3. PR that digest into the `models` volume in `deployments.yaml` (and kagent's `embedding-model-config.yaml` if the model name changes). Plan how existing kagent memory is re-embedded or dropped.
+4. **Rollback:** revert the PR; the old digest is still in ECR.
 
 ### Check current model inventory
 `kubectl -n ollama exec deploy/ollama -c ollama -- ollama list`
