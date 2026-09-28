@@ -132,11 +132,12 @@ An **explicit list**, in `cronjob.yaml`'s `MANAGED_HOSTNAMES` env var
 (comma-separated; trailing dots and case are normalised on both sides before
 comparing, so `Argocd.arigsela.com.` and `argocd.arigsela.com` are the same
 entry). Seeded with the 21 A records in zone `Z0524483LR4JCFNLS7N0` that point
-at the WAN address:
+at the WAN address; it now holds 22 (`oncall-crewai` came out with its app; `jupyter` and
+`agent-audit` were added with theirs):
 
-`agent`, `argo-workflows`, `argocd`, `atlantis`, `backstage`, `chores`,
-`coroot`, `dex`, `grafana`, `home`, `kagent-mcp`, `kagent`, `langflow`, `n8n`,
-`oncall-crewai`, `oncall`, `overseerr`, `rollouts`, `vault`,
+`agent-audit`, `agent`, `argo-workflows`, `argocd`, `atlantis`, `backstage`,
+`chores`, `coroot`, `dex`, `grafana`, `home`, `jupyter`, `kagent-mcp`,
+`kagent`, `langflow`, `n8n`, `oncall`, `overseerr`, `rollouts`, `vault`,
 `weather-kitchen`, `whoami` — each `<name>.arigsela.com`.
 
 **Adding a host to the homelab means adding it here.** A hostname absent from

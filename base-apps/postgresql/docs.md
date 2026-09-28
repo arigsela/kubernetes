@@ -22,6 +22,10 @@ sources:
   - base-apps/postgresql/external-secrets-cnpg-backup.yaml
   - base-apps/postgresql/donetick-database.yaml
   - base-apps/postgresql/external-secrets-donetick.yaml
+  - base-apps/postgresql/init-kagent-audit-role.yaml
+  - base-apps/postgresql/init-agent-audit-web-role.yaml
+  - base-apps/postgresql/external-secrets-kagent-audit.yaml
+  - base-apps/postgresql/external-secrets-agent-audit-web-db.yaml
 ---
 
 # postgresql
@@ -40,12 +44,22 @@ Two separate PostgreSQL instances share this namespace:
 - **`donetick` database** — the only database here declared through CloudNativePG's `Database` CRD (`donetick-database.yaml`), living in the CNPG cluster rather than the plain Deployment so it inherits the daily S3 backup. Its `donetick` role is declared in `cnpg-cluster.yaml` (`spec.managed.roles`) with its password supplied by `external-secrets-donetick.yaml`. Note that ExternalSecret's `template` block: CNPG requires a role's `passwordSecret` to be type `kubernetes.io/basic-auth` with `username`/`password` keys, and silently creates the role *without* a password if given anything else — the older `n8n` managed role above points at an Opaque `postgresql-credentials` and is an example of what not to copy. The psql-`Job` approach used for `kagent` is not available against this cluster: it has no superuser secret (`enableSuperuserAccess` is unset, defaulting to false), so only the operator can create roles and databases in it. `databaseReclaimPolicy: retain` keeps an Argo prune from dropping the database.
 - **`kagent` database** — provisioned by the `init-kagent-db` `Job` (`init-kagent-db.yaml`), which polls `pg_isready` against `postgresql.postgresql.svc.cluster.local:5432`, then idempotently `CREATE ROLE`/`CREATE DATABASE` for the `kagent` user/db (credentials from the `kagent-db-credentials` Secret) and runs `CREATE EXTENSION IF NOT EXISTS vector` inside it so `kagent` can store vector embeddings. The job is safe to re-run (existence checks before create/alter) and self-cleans after success (`ttlSecondsAfterFinished: 300`).
 
-## Credential flow (Vault)
-Two `SecretStore`-backed `ExternalSecret`s populate this namespace from the in-cluster Vault (`secret-store.yaml`: provider `vault`, `server: http://vault.vault.svc.cluster.local:8200`, KV v2 `path: k8s-secrets`, Kubernetes-auth `role: postgresql`):
-- `external-secrets.yaml` → `postgresql-credentials` Secret, from Vault key `postgresql` (`root-password`, `database-name`, `n8n-user`, `n8n-password`). Note `root-password` is synced but not referenced by any manifest in this directory — it is not consumed by the Deployment or the init Job.
-- `external-secrets-kagent.yaml` → `kagent-db-credentials` Secret, from Vault key `kagent` (`db-user`, `db-password`, `db-name`).
+- **Read-only audit roles on `kagent`** — `kagent_audit_ro` (the `agent-audit` CronJob, `agent-audit-cronjob.yaml`) and `kagent_audit_web_ro` (the `agent-audit-web` UI), each created by its own Sync-hook Job (`init-kagent-audit-role.yaml`, `init-agent-audit-web-role.yaml`) with identical SQL (`tests/agent-audit/test_audit_role_jobs.py` keeps it identical): revoke everything, then grant `CONNECT`/`USAGE`/`SELECT` only, plus `ALTER DEFAULT PRIVILEGES FOR ROLE <database owner>` so tables kagent creates later are readable too. Separate roles so either consumer's credential can be revoked alone.
 
-Both `ExternalSecret`s refresh hourly (`refreshInterval: 1h`) and use `creationPolicy: Owner`.
+## Credential flow (Vault)
+Each consumer's credential comes through its **own** ESO `SecretStore` (Vault Kubernetes auth, `k8s-secrets` KV v2) and Vault key — only the instance's own credentials use the broad `vault-backend` store (`secret-store.yaml`, role `postgresql`):
+
+| ExternalSecret file | Secret | SecretStore (Vault role) | Vault key |
+|---|---|---|---|
+| `external-secrets.yaml` | `postgresql-credentials` | `vault-backend` (`postgresql`) | `postgresql` |
+| `external-secrets-cnpg-backup.yaml` | `postgresql-backup-credentials` | `vault-backend` (`postgresql`) | `postgresql-backup` |
+| `external-secrets-kagent.yaml` | `kagent-db-credentials` | `vault-kagent-db` (`kagent-db`) | `kagent-db` |
+| `external-secrets-donetick.yaml` | `donetick-db-credentials` | `vault-donetick-db` (`donetick-db`) | `donetick-db` |
+| `homelab-agent-db-external-secret.yaml` | `homelab-agent-db-credentials` | `vault-homelab-agent-db` (`homelab-agent-db`) | `homelab-agent-db` |
+| `external-secrets-kagent-audit.yaml` | `kagent-audit-credentials` | `vault-kagent-audit-ro` (`kagent-audit-ro`) | `kagent-audit-ro` |
+| `external-secrets-agent-audit-web-db.yaml` | `agent-audit-web-db-credentials` | `vault-agent-audit-web-db` (`agent-audit-web-db`) | `agent-audit-web-db` |
+
+`postgresql-credentials` carries `root-password`, `database-name`, `n8n-user`, `n8n-password`; `root-password` is synced but not referenced by any manifest here.
 
 ## Storage
 Single 10Gi `local-path` PVC (`postgresql-pvc`) mounted at `/var/lib/postgresql/data`. There is no backup CronJob, replica, or standby in this directory — losing the PVC or its node loses all data for every database on this instance (the primary DB and `kagent`).

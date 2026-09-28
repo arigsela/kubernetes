@@ -29,7 +29,7 @@ kubectl -n wan-ip-monitor get externalsecret wan-ip-monitor
 A healthy steady-state run's log is exactly five lines:
 ```
 detected=<ip> dry_run=<True|False>
-route53: 21 managed hostname(s) already on <ip>
+route53: 22 managed hostname(s) already on <ip>
 allow-list: declared=<ip> detected=<ip>
 allow-list: already trusts <ip>, nothing to propose
 allow-list PR: None (new=False)
@@ -257,7 +257,7 @@ kubectl -n wan-ip-monitor logs job/manual-check
 ```
 A clean steady-state result proves **both** credentials work. The zone is
 listed on every run — that is not gated behind a detected rotation — so
-`route53: 21 managed hostname(s) already on <ip>` is itself evidence the AWS
+`route53: 22 managed hostname(s) already on <ip>` is itself evidence the AWS
 credentials are valid, and `allow-list: declared=...` is evidence
 `GITHUB_TOKEN` is. See docs.md, "DRY_RUN", for exactly what a dry run does
 and does not exercise.

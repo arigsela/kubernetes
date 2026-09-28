@@ -211,7 +211,11 @@ Three things about these rules are the real engineering story:
 The taxonomy ConfigMap is the **single source of truth** consumed by three things
 — the generated Kyverno policy (admission), the CI validator (Git), and the audit
 tool's "which tools should have been gated" (`agent-audit.py --ungated`). They
-structurally cannot drift.
+structurally cannot drift. A fourth consumer, the `agent-audit-web` UI
+(`base-apps/agent-audit-web/`), is the exception by design: it lives in its own repo
+and vendors a byte-identical copy of the taxonomy and `agent-audit.py` pinned to a
+commit here, so it lags until re-vendored - its daily `upstream-drift` job opens an
+issue when this repo moves ahead.
 
 ---
 

@@ -16,6 +16,14 @@
 
 ## Status and notes from Plan A (2026-09-27)
 
+**Outcome (2026-09-28): both phases complete and verified live.** agent-audit-web runs at
+https://agent-audit.arigsela.com (v0.1.1). PRs: Phase 1 #631, #632, #634, #633, #635
+(+ #636 from Plan A: OIDC subject); Phase 2 #637, #638, #639 (startup-probe timeout),
+#640 (gateway log strips query strings); follow-ups #641 (audit roles' default privileges
+`FOR ROLE`, applied by a manual `postgresql` sync - hook-only changes don't auto-sync),
+#642 (v0.1.1). The notes below are the pre-execution record; where they and the manifests
+disagree, the manifests win.
+
 **Start here: Phase 1 (Tasks 1–5).** Plan A Tasks 1–18 are done in `~/git/agent-audit-web` (`main`, 169 unit and 24 integration tests, a read-only run against the real database and archive passed). Plan A Task 19 is **blocked on this plan's Phase 1**: on 2026-09-27 the ECR repository `agent-audit-web` (us-east-2) and the role `github-actions-agent-audit-web-ecr` did not exist yet. The GitHub repo `arigsela/agent-audit-web` does not exist yet either; Plan A Task 19 creates it after Phase 1.
 
 **Phase 1 deviation (2026-09-27):** the S3 reader's `AccessKey` was taken out of Task 2 and now ships in Task 6. Aimed at namespace `agent-audit` before it existed, it left `agent-audit-aws-infrastructure` Degraded. No key had been created in AWS, so nothing was lost.

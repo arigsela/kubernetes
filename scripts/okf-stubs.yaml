@@ -6,5 +6,5 @@
 # drops a curated one-liner for a directory that has no docs.md yet. Delete an
 # entry here once the app is onboarded to the full contract.
 agent-audit-aws-infrastructure:
-  description: "S3 bucket + write-only IAM for the durable, redacted agent action record (Crossplane)"
+  description: "S3 bucket for the durable, redacted agent action record (write-only exporter + read-only agent-audit-web IAM) and agent-audit-web's ECR push role (Crossplane)"
   namespace: postgresql
