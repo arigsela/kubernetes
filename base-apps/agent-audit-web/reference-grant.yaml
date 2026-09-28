@@ -1,0 +1,14 @@
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: gateway-to-agent-audit-web-tls
+  namespace: agent-audit
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: istio-ingress
+  to:
+    - group: ""
+      kind: Secret
+      name: agent-audit-web-tls

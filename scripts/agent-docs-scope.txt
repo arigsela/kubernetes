@@ -20,3 +20,4 @@ istio-waf
 wan-ip-monitor
 jupyter
 admission-policies
+agent-audit-web

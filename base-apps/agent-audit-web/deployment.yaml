@@ -1,0 +1,170 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-audit-web
+  namespace: agent-audit
+  labels:
+    app: agent-audit-web
+    app.kubernetes.io/name: agent-audit-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-audit-web
+  template:
+    metadata:
+      labels:
+        app: agent-audit-web
+        app.kubernetes.io/name: agent-audit-web
+    spec:
+      serviceAccountName: agent-audit-web
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        # The app binds 127.0.0.1:8000 (image CMD). The ONLY way in is oauth2-proxy
+        # below, in the same pod. The Service targets 4180, never 8000.
+        # No command:/args: here - the image CMD carries the loopback bind and
+        # --no-access-log (request lines would put ?q= search text in Loki).
+        - name: app
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agent-audit-web:v0.1.0@sha256:c082cbb562b30ea19f980a229ec404d3f7660f7450051b2f96da4f35ff654e88
+          env:
+            - name: AUDIT_DB_HOST
+              value: postgresql.postgresql.svc.cluster.local
+            - name: AUDIT_DB_PORT
+              value: "5432"
+            - name: AUDIT_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: agent-audit-web-db
+                  key: db-name
+            - name: AUDIT_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: agent-audit-web-db
+                  key: db-user
+            - name: AUDIT_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: agent-audit-web-db
+                  key: db-password
+            - name: AUDIT_S3_BUCKET
+              value: asela-agent-audit-record
+            - name: AUDIT_S3_REGION
+              value: us-east-1
+            # Crossplane AccessKey connection secret (agent-audit-aws-infrastructure/web-s3-read-key.yaml).
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: agent-audit-web-s3-creds
+                  key: username
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-audit-web-s3-creds
+                  key: attribute.secret
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          # exec probes: the app listens on loopback, which kubelet cannot reach.
+          startupProbe:
+            exec:
+              command: ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            # /readyz is 200 while the database OR the archive works (503 raises).
+            exec:
+              command: ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"]
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.4@sha256:b1b2021fe8f4004573e8d690dec6c7bb29cc44364572cf8510a05bf3a0ae2ded
+          args:
+            - --http-address=0.0.0.0:4180
+            - --upstream=http://127.0.0.1:8000/
+            - --provider=oidc
+            - --provider-display-name=GitHub (via Dex)
+            - --oidc-issuer-url=https://dex.arigsela.com
+            - --client-id=agent-audit
+            - --client-secret-file=/etc/oauth2-proxy/secrets/client-secret
+            - --cookie-secret-file=/etc/oauth2-proxy/secrets/cookie-secret
+            - --code-challenge-method=S256
+            - --scope=openid email profile
+            - --redirect-url=https://agent-audit.arigsela.com/oauth2/callback
+            # THE access control: Dex admits any GitHub account. One email, from Vault.
+            - --authenticated-emails-file=/etc/oauth2-proxy/secrets/allowed-emails
+            - --cookie-name=_agent_audit
+            - --cookie-secure=true
+            - --cookie-samesite=lax
+            - --cookie-expire=8h
+            - --skip-provider-button=true
+            - --silence-ping-logging=true
+            # Request lines carry the query string (?q=<search text>) and would sit
+            # in Loki for 30 days (spec section 8). Login events stay logged
+            # (--auth-logging defaults to true).
+            - --request-logging=false
+          ports:
+            - containerPort: 4180
+              name: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            periodSeconds: 10
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: oauth2-secrets
+              mountPath: /etc/oauth2-proxy/secrets
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: oauth2-secrets
+          secret:
+            secretName: agent-audit-web-oauth2
+            defaultMode: 0444

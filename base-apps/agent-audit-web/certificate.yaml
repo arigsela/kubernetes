@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agent-audit-web-tls
+  namespace: agent-audit
+spec:
+  secretName: agent-audit-web-tls
+  dnsNames:
+    - agent-audit.arigsela.com
+  issuerRef:
+    name: letsencrypt-route53
+    kind: ClusterIssuer
