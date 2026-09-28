@@ -31,7 +31,7 @@ sources:
 
 ### Symptom: banner "Live database unavailable — showing archive only"
 - **Check:** `kubectl -n agent-audit logs deploy/agent-audit-web -c app | grep "database query failed"` (it logs only the error class); `kubectl -n agent-audit get externalsecret agent-audit-web-db`; in `postgresql`, the `init-agent-audit-web-role` hook result on the Argo app.
-- **Fix:** a wrong Vault key or role (the ExternalSecret is not `SecretSynced`), or the role/password drifted - re-run the Sync hook by syncing the `postgresql` app. If kagent recreated a table, note that the init Job's `ALTER DEFAULT PRIVILEGES` covers only objects created by the admin role, not by kagent's owner role; the next `postgresql` sync re-grants SELECT on existing tables.
+- **Fix:** a wrong Vault key or role (the ExternalSecret is not `SecretSynced`), or the role/password drifted - re-run the Sync hook by syncing the `postgresql` app. Tables kagent creates or recreates later stay readable: the init Job sets default privileges `FOR ROLE` the database owner (`kagent`), which is what creates them.
 
 ### Symptom: banner "Archive unavailable — showing live database only"
 - **Check:** `kubectl -n agent-audit logs deploy/agent-audit-web -c app | grep "archive refresh"`; `kubectl get accesskey.iam.aws.upbound.io agent-audit-web-s3-read-key`; `kubectl -n agent-audit get secret agent-audit-web-s3-creds`.
@@ -39,7 +39,7 @@ sources:
 
 ### Symptom: `ImagePullBackOff` on a first deploy or a new namespace
 - **Check:** `kubectl -n agent-audit get secret ecr-registry`.
-- **Fix:** none needed - `ecr-auth` copies `ecr-registry` into every namespace every 15 minutes. Wait.
+- **Fix:** none needed - the `ecr-auth` app's CronJob `kube-system/ecr-credentials-sync` copies `ecr-registry` into every namespace every 15 minutes. Wait.
 
 ## How-to
 
@@ -47,7 +47,7 @@ sources:
 Tag `vX.Y.Z` in `arigsela/agent-audit-web`; the `release` workflow prints `…/agent-audit-web:vX.Y.Z@sha256:…`. Put that exact reference into `deployment.yaml` in a PR.
 
 ### Rotate the oauth2 client secret
-Set `k8s-secrets/dex` → `agent-audit-client-secret` and `k8s-secrets/agent-audit-web` → `oauth2-client-secret` to the same new value. Force both ExternalSecrets to refresh (`dex-secrets` in `dex`, `agent-audit-web-oauth2` here), then restart Dex via a PR that bumps `checksum/config` - Dex reads env only at start.
+Set `k8s-secrets/dex` → `agent-audit-client-secret` and `k8s-secrets/agent-audit-web` → `oauth2-client-secret` to the same new value. Force both ExternalSecrets to refresh (`dex-secrets` in `dex`, `agent-audit-web-oauth2` here), then restart Dex via a PR that adds or bumps a **separate** pod-template annotation on `base-apps/dex/deployment.yaml` (for example `rotation/restarted-at: "<date>"`) - Dex reads env only at start. Do not hand-edit `checksum/config`: it must equal the hash of `config.yaml`, and the first failure mode above checks exactly that.
 
 ### Revoke access fast
 Remove the email from Vault `allowed-emails` and force-sync as above. For a full stop, delete the `agent-audit.arigsela.com` rule from `base-apps/istio-ingress/authorizationpolicy.yaml` in a PR (the gateway then denies the host).

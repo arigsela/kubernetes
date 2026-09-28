@@ -86,9 +86,14 @@ spec:
                 GRANT SELECT ON ALL TABLES IN SCHEMA public TO :"audit_user";
 
                 -- kagent's controller owns and migrates these tables; new ones must
-                -- also be readable, but still only SELECT.
-                ALTER DEFAULT PRIVILEGES IN SCHEMA public
-                  GRANT SELECT ON TABLES TO :"audit_user";
+                -- also be readable, but still only SELECT. Default privileges apply
+                -- to objects CREATED BY a given role, so they must name the role that
+                -- creates the tables - the database owner (kagent) - not the admin
+                -- running this Job. Without FOR ROLE they covered only tables the
+                -- admin creates, i.e. none. (The admin is a superuser, so it may.)
+                SELECT format('ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public GRANT SELECT ON TABLES TO %I',
+                  pg_get_userbyid(datdba), :'audit_user')
+                FROM pg_database WHERE datname = current_database()\gexec
               EOSQL
 
               echo "kagent audit role '$AUDIT_USER' created with SELECT-only access to '$AUDIT_DB'"
