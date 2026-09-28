@@ -1,0 +1,102 @@
+---
+# GitHub Actions in arigsela/agent-audit-web pushes its image to ECR through
+# GitHub OIDC - no long-lived AWS keys in GitHub. Trust is limited to v* TAG
+# builds of that one repo (its release.yml); the policy to that one repository.
+# Same OIDC provider as github-actions-backstage-ecr, tighter subject.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: github-actions-agent-audit-web-ecr
+  labels:
+    app: agent-audit-web
+    component: ci-role
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "GitHub Actions (arigsela/agent-audit-web, v* tags) pushes agent-audit-web to ECR"
+    maxSessionDuration: 3600
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Federated": "arn:aws:iam::852893458518:oidc-provider/token.actions.githubusercontent.com"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+              "StringEquals": {
+                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+              },
+              "StringLike": {
+                "token.actions.githubusercontent.com:sub": "repo:arigsela/agent-audit-web:ref:refs/tags/v*"
+              }
+            }
+          }
+        ]
+      }
+    tags:
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: agent-audit-web-ecr-push
+  labels:
+    app: agent-audit-web
+    component: ci-policy
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "Push to the agent-audit-web ECR repository only"
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "EcrLogin",
+            "Effect": "Allow",
+            "Action": ["ecr:GetAuthorizationToken"],
+            "Resource": "*"
+          },
+          {
+            "Sid": "PushThisRepositoryOnly",
+            "Effect": "Allow",
+            "Action": [
+              "ecr:BatchCheckLayerAvailability",
+              "ecr:BatchGetImage",
+              "ecr:CompleteLayerUpload",
+              "ecr:InitiateLayerUpload",
+              "ecr:PutImage",
+              "ecr:UploadLayerPart"
+            ],
+            "Resource": "arn:aws:ecr:us-east-2:852893458518:repository/agent-audit-web"
+          }
+        ]
+      }
+    tags:
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: RolePolicyAttachment
+metadata:
+  name: github-actions-agent-audit-web-ecr-push
+  labels:
+    app: agent-audit-web
+    component: ci-policy-attachment
+    managed-by: crossplane
+spec:
+  forProvider:
+    roleRef:
+      name: github-actions-agent-audit-web-ecr
+    policyArnRef:
+      name: agent-audit-web-ecr-push
+  providerConfigRef:
+    name: default

@@ -1,0 +1,103 @@
+---
+# agent-audit-web READS the durable agent action record: s3:ListBucket on the
+# bucket and s3:GetObject on its objects. Nothing else - no Put, no Delete.
+#
+# LABELS: app: agent-audit-web, NEVER app: agent-audit. The exporter's AccessKey
+# (userSelector) and UserPolicyAttachment (policyArnSelector) in this directory
+# select by app: agent-audit + component; reusing those labels here would make
+# them match these resources too. Cross-references below are by NAME.
+#
+# The records in the bucket are already redacted at extraction (scripts/agent-audit.py
+# --export), and the app re-redacts on load. See the agent-audit-web spec, section 6.2.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: User
+metadata:
+  name: agent-audit-web-s3-read
+  labels:
+    app: agent-audit-web
+    component: iam-user
+    managed-by: crossplane
+spec:
+  forProvider:
+    path: /serviceaccounts/
+    tags:
+      Name: "Agent Audit Web Reader"
+      Purpose: "Agent-Audit-S3-Read"
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: agent-audit-web-s3-read
+  labels:
+    app: agent-audit-web
+    component: iam-policy
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "Read-only (List/Get) access to the agent audit record bucket"
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "ListTheRecord",
+            "Effect": "Allow",
+            "Action": ["s3:ListBucket"],
+            "Resource": "arn:aws:s3:::asela-agent-audit-record"
+          },
+          {
+            "Sid": "ReadTheRecord",
+            "Effect": "Allow",
+            "Action": ["s3:GetObject"],
+            "Resource": "arn:aws:s3:::asela-agent-audit-record/*"
+          }
+        ]
+      }
+    tags:
+      Name: "Agent Audit Web S3 Read-Only Policy"
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: UserPolicyAttachment
+metadata:
+  name: agent-audit-web-s3-read-policy
+  labels:
+    app: agent-audit-web
+    component: iam-policy-attachment
+    managed-by: crossplane
+spec:
+  forProvider:
+    policyArnRef:
+      name: agent-audit-web-s3-read
+    userRef:
+      name: agent-audit-web-s3-read
+  providerConfigRef:
+    name: default
+---
+# The key lands directly in the app's namespace. Until Phase 2 creates namespace
+# agent-audit, Crossplane reports it cannot write the connection secret - expected,
+# and it retries on its own.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: AccessKey
+metadata:
+  name: agent-audit-web-s3-read-key
+  labels:
+    app: agent-audit-web
+    component: access-key
+    managed-by: crossplane
+spec:
+  forProvider:
+    userRef:
+      name: agent-audit-web-s3-read
+  writeConnectionSecretToRef:
+    name: agent-audit-web-s3-creds
+    namespace: agent-audit
+  providerConfigRef:
+    name: default
