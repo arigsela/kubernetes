@@ -25,7 +25,7 @@ spec:
         #   python3 -c "import hashlib,yaml; print(hashlib.sha256(
         #     yaml.safe_load(open('base-apps/dex/configmap.yaml'))
         #     ['data']['config.yaml'].encode()).hexdigest()[:16])"
-        checksum/config: "b1e6bf2f93ce6577"
+        checksum/config: "ddeba5494682443a"
     spec:
       serviceAccountName: dex
       nodeSelector:

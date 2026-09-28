@@ -5,7 +5,8 @@
 # (OIDC discovery) use — see the deployment/runbook for the in-cluster
 # reachability of dex.arigsela.com from the Vault pod.
 #
-# Secrets ($GITHUB_CLIENT_ID/$GITHUB_CLIENT_SECRET/$VAULT_CLIENT_SECRET) are
+# Secrets ($GITHUB_CLIENT_ID/$GITHUB_CLIENT_SECRET/$VAULT_CLIENT_SECRET/
+# $AGENT_AUDIT_CLIENT_SECRET) are
 # substituted from the dex-secrets Secret at startup (Dex expands $ENV refs when
 # the file is loaded via `dex serve`).
 apiVersion: v1
@@ -84,6 +85,21 @@ data:
         redirectURIs:
           - http://localhost:8000
           - http://localhost:18000
+
+      # agent-audit-web, added 2026-09-27
+      # (docs/superpowers/plans/2026-09-27-agent-audit-web-gitops.md).
+      # CONFIDENTIAL (secretEnv), unlike argocd/kubernetes above: the client is
+      # oauth2-proxy, a server-side sidecar that can keep a secret - the same
+      # reasoning as the vault client. It uses PKCE on top (S256).
+      #
+      # Dex admits ANY GitHub account (no orgs:), so this client grants nothing by
+      # itself: oauth2-proxy's authenticated-emails-file, sourced from Vault and
+      # never committed (this repo is public), is the allow-list.
+      - id: agent-audit
+        name: Agent audit
+        secretEnv: AGENT_AUDIT_CLIENT_SECRET
+        redirectURIs:
+          - https://agent-audit.arigsela.com/oauth2/callback
 
     connectors:
       - type: github
