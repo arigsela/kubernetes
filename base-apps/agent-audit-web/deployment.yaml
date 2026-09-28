@@ -79,6 +79,9 @@ spec:
             exec:
               command: ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
             periodSeconds: 5
+            # Spawning python for an exec probe takes 1.4-2.2 s on these nodes
+            # (measured in the pod); the 1 s default made this probe unpassable.
+            timeoutSeconds: 5
             failureThreshold: 24
           livenessProbe:
             exec:
