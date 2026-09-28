@@ -232,6 +232,19 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    - name: https-agent-audit
+      protocol: HTTPS
+      port: 443
+      hostname: agent-audit.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: agent-audit-web-tls
+            namespace: agent-audit
+      allowedRoutes:
+        namespaces:
+          from: All
     - name: https-homepage
       protocol: HTTPS
       port: 443

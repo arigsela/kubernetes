@@ -1,0 +1,24 @@
+# Structured facts for agent-audit-web. Authoritative for owner, dependencies,
+# namespace and lifecycle; the markdown docs do not restate them.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: agent-audit-web
+  namespace: agent-audit
+  description: Read-only web UI over the redacted agent action record (findings, calls, sessions, token trends)
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=agent-audit-web'
+    backstage.io/kubernetes-namespace: agent-audit
+    github.com/project-slug: arigsela/agent-audit-web
+  tags: [fastapi, audit, oauth2-proxy]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-observability
+  dependsOn:
+    - resource:vault/vault
+    - resource:postgresql/postgresql
+    - component:dex/dex

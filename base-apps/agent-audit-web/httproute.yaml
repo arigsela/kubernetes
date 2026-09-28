@@ -1,0 +1,27 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: agent-audit-web
+  namespace: agent-audit
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: Agent audit
+    gethomepage.dev/group: AI & Agents
+    gethomepage.dev/icon: mdi-shield-search
+    gethomepage.dev/description: Agent tool calls, findings and token use (redacted)
+    gethomepage.dev/pod-selector: app=agent-audit-web
+spec:
+  parentRefs:
+    - name: main
+      namespace: istio-ingress
+      sectionName: https-agent-audit
+  hostnames:
+    - agent-audit.arigsela.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: agent-audit-web
+          port: 4180

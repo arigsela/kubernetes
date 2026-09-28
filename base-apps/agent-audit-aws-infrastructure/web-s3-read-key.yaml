@@ -1,0 +1,25 @@
+---
+# The S3 reader's access key, written straight into the app's namespace as
+# agent-audit-web-s3-creds (keys: username, attribute.secret). It ships in the SAME
+# PR as the agent-audit-web Application that creates namespace agent-audit: aimed
+# at a namespace that does not exist, it fails to reconcile and turns
+# agent-audit-aws-infrastructure Degraded (that happened in Phase 1; see PR #635).
+# The two apps sync independently, so a Degraded blip of one reconcile is possible
+# here and clears on its own once the namespace exists.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: AccessKey
+metadata:
+  name: agent-audit-web-s3-read-key
+  labels:
+    app: agent-audit-web
+    component: access-key
+    managed-by: crossplane
+spec:
+  forProvider:
+    userRef:
+      name: agent-audit-web-s3-read
+  writeConnectionSecretToRef:
+    name: agent-audit-web-s3-creds
+    namespace: agent-audit
+  providerConfigRef:
+    name: default

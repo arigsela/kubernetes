@@ -241,6 +241,21 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
+    # agent-audit - restricted. Serves full (best-effort redacted) agent tool
+    # arguments. This allow-list is the first layer; oauth2-proxy + Dex with a
+    # one-email allow-list is the second (base-apps/agent-audit-web/).
+    - to:
+        - operation:
+            hosts:
+              - agent-audit.arigsela.com
+              - agent-audit.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 76.97.4.210/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
     # homepage — restricted. The dashboard enumerates every service in the
     # homelab and Homepage itself ships no authentication (upstream states none
     # is planned), so the allow-list is the ONLY control here.
