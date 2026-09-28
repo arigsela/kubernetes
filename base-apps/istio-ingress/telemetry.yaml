@@ -9,6 +9,13 @@
 # An internet-facing edge with no request log is not operable. It is also the
 # only direct way to observe what source address arrives, which V61 requires
 # knowing rather than assuming.
+#
+# FORMAT: the built-in `envoy` provider takes its line format from
+# meshConfig.accessLogFormat in base-apps/istio-istiod.yaml - Istio's default with
+# the query string stripped (%REQ_WITHOUT_QUERY%), because URLs carry search text
+# and OAuth codes and these lines live in Loki for 30 days. Keep the provider the
+# built-in `envoy` with no LogFormat of its own, or that format is bypassed
+# (tests/istio_logging/ checks both).
 apiVersion: telemetry.istio.io/v1
 kind: Telemetry
 metadata:
