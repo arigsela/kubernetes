@@ -21,7 +21,7 @@
 **Phase 1 deviation (2026-09-27):** the S3 reader's `AccessKey` was taken out of Task 2 and now ships in Task 6. Aimed at namespace `agent-audit` before it existed, it left `agent-audit-aws-infrastructure` Degraded. No key had been created in AWS, so nothing was lost.
 
 What Plan A's implementation means for this plan:
-- **Task 2 is correct as written.** The shipped `release.yml` runs on `push: tags: ["v*"]` with no `environment:`, so the OIDC subject is `repo:arigsela/agent-audit-web:ref:refs/tags/<tag>` and matches the trust policy. It pushes with `docker/build-push-action` (`provenance: false`, no registry cache), so the six ECR actions in the push policy are enough.
+- **Task 2's trust subject had to change after the first release (2026-09-28).** The shipped `release.yml` runs on `push: tags: ["v*"]` with no `environment:`. But GitHub gives new repos the *immutable* OIDC subject, so the token's `sub` is `repo:arigsela@2475907/agent-audit-web@1391584729:ref:refs/tags/<tag>`, not `repo:arigsela/agent-audit-web:...`. The first `v0.1.0` release failed with `Not authorized to perform sts:AssumeRoleWithWebIdentity` until the trust policy used that form (PR `fix/agent-audit-web-oidc-subject`). The ids are user `arigsela` (2475907) and repo `arigsela/agent-audit-web` (1391584729). The push itself uses `docker/build-push-action` (`provenance: false`, no registry cache), so the six ECR actions in the push policy are enough.
 - **The image CMD is final:** `uvicorn --factory agent_audit_web.app:create_app_from_env --host 127.0.0.1 --port 8000 --no-server-header --no-access-log`. Task 6 must not set `command:` or `args:` on the app container. Overriding them would drop the loopback bind and `--no-access-log`, and `agent_audit_web.app:app` does not exist.
 - **Readiness:** the app's database check now gives up after 1 s, so `/readyz` answers well within the probe's 3 s even when Postgres is down and the archive keeps the pod Ready. The probes in Task 6 are fine as written.
 - **Deep links use `days` and `until`** (for example `/?days=730`, `/calls?days=90&agent=...`), not `since`.
@@ -293,7 +293,7 @@ spec:
                 "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
               },
               "StringLike": {
-                "token.actions.githubusercontent.com:sub": "repo:arigsela/agent-audit-web:ref:refs/tags/v*"
+                "token.actions.githubusercontent.com:sub": "repo:arigsela@2475907/agent-audit-web@1391584729:ref:refs/tags/v*"
               }
             }
           }

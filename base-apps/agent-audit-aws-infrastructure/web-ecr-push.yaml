@@ -3,6 +3,13 @@
 # GitHub OIDC - no long-lived AWS keys in GitHub. Trust is limited to v* TAG
 # builds of that one repo (its release.yml); the policy to that one repository.
 # Same OIDC provider as github-actions-backstage-ecr, tighter subject.
+#
+# The subject is GitHub's IMMUTABLE form, repo:<owner>@<owner-id>/<repo>@<repo-id>,
+# not repo:arigsela/agent-audit-web: new repos get it by default
+# (GET repos/arigsela/agent-audit-web/actions/oidc/customization/sub shows
+# "use_immutable_subject": true). The ids pin the trust to this exact repo:
+# 2475907 = user arigsela, 1391584729 = arigsela/agent-audit-web. A deleted and
+# re-created repo of the same name gets a new id and is NOT trusted.
 apiVersion: iam.aws.upbound.io/v1beta1
 kind: Role
 metadata:
@@ -30,7 +37,7 @@ spec:
                 "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
               },
               "StringLike": {
-                "token.actions.githubusercontent.com:sub": "repo:arigsela/agent-audit-web:ref:refs/tags/v*"
+                "token.actions.githubusercontent.com:sub": "repo:arigsela@2475907/agent-audit-web@1391584729:ref:refs/tags/v*"
               }
             }
           }
