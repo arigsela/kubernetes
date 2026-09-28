@@ -9,6 +9,11 @@
 #
 # The records in the bucket are already redacted at extraction (scripts/agent-audit.py
 # --export), and the app re-redacts on load. See the agent-audit-web spec, section 6.2.
+#
+# The AccessKey is NOT here. It writes its connection secret into namespace
+# agent-audit, which only exists once the agent-audit-web app is deployed; aimed
+# at a missing namespace it fails to reconcile and leaves this whole app Degraded.
+# It arrives with the app (web-s3-read-key.yaml, plan Task 6).
 apiVersion: iam.aws.upbound.io/v1beta1
 kind: User
 metadata:
@@ -78,26 +83,5 @@ spec:
       name: agent-audit-web-s3-read
     userRef:
       name: agent-audit-web-s3-read
-  providerConfigRef:
-    name: default
----
-# The key lands directly in the app's namespace. Until Phase 2 creates namespace
-# agent-audit, Crossplane reports it cannot write the connection secret - expected,
-# and it retries on its own.
-apiVersion: iam.aws.upbound.io/v1beta1
-kind: AccessKey
-metadata:
-  name: agent-audit-web-s3-read-key
-  labels:
-    app: agent-audit-web
-    component: access-key
-    managed-by: crossplane
-spec:
-  forProvider:
-    userRef:
-      name: agent-audit-web-s3-read
-  writeConnectionSecretToRef:
-    name: agent-audit-web-s3-creds
-    namespace: agent-audit
   providerConfigRef:
     name: default

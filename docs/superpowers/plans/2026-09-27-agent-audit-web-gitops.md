@@ -18,6 +18,8 @@
 
 **Start here: Phase 1 (Tasks 1–5).** Plan A Tasks 1–18 are done in `~/git/agent-audit-web` (`main`, 169 unit and 24 integration tests, a read-only run against the real database and archive passed). Plan A Task 19 is **blocked on this plan's Phase 1**: on 2026-09-27 the ECR repository `agent-audit-web` (us-east-2) and the role `github-actions-agent-audit-web-ecr` did not exist yet. The GitHub repo `arigsela/agent-audit-web` does not exist yet either; Plan A Task 19 creates it after Phase 1.
 
+**Phase 1 deviation (2026-09-27):** the S3 reader's `AccessKey` was taken out of Task 2 and now ships in Task 6. Aimed at namespace `agent-audit` before it existed, it left `agent-audit-aws-infrastructure` Degraded. No key had been created in AWS, so nothing was lost.
+
 What Plan A's implementation means for this plan:
 - **Task 2 is correct as written.** The shipped `release.yml` runs on `push: tags: ["v*"]` with no `environment:`, so the OIDC subject is `repo:arigsela/agent-audit-web:ref:refs/tags/<tag>` and matches the trust policy. It pushes with `docker/build-push-action` (`provenance: false`, no registry cache), so the six ECR actions in the push policy are enough.
 - **The image CMD is final:** `uvicorn --factory agent_audit_web.app:create_app_from_env --host 127.0.0.1 --port 8000 --no-server-header --no-access-log`. Task 6 must not set `command:` or `args:` on the app container. Overriding them would drop the loopback bind and `--no-access-log`, and `agent_audit_web.app:app` does not exist.
@@ -179,6 +181,11 @@ Expected: the ECR call returns a `repositoryUri` ending in `/agent-audit-web`. T
 #
 # The records in the bucket are already redacted at extraction (scripts/agent-audit.py
 # --export), and the app re-redacts on load. See the agent-audit-web spec, section 6.2.
+#
+# The AccessKey is NOT here. It writes its connection secret into namespace
+# agent-audit, which only exists once the agent-audit-web app is deployed; aimed
+# at a missing namespace it fails to reconcile and leaves this whole app Degraded.
+# It arrives with the app (web-s3-read-key.yaml, plan Task 6).
 apiVersion: iam.aws.upbound.io/v1beta1
 kind: User
 metadata:
@@ -248,27 +255,6 @@ spec:
       name: agent-audit-web-s3-read
     userRef:
       name: agent-audit-web-s3-read
-  providerConfigRef:
-    name: default
----
-# The key lands directly in the app's namespace. Until Phase 2 creates namespace
-# agent-audit, Crossplane reports it cannot write the connection secret - expected,
-# and it retries on its own.
-apiVersion: iam.aws.upbound.io/v1beta1
-kind: AccessKey
-metadata:
-  name: agent-audit-web-s3-read-key
-  labels:
-    app: agent-audit-web
-    component: access-key
-    managed-by: crossplane
-spec:
-  forProvider:
-    userRef:
-      name: agent-audit-web-s3-read
-  writeConnectionSecretToRef:
-    name: agent-audit-web-s3-creds
-    namespace: agent-audit
   providerConfigRef:
     name: default
 ```
@@ -403,7 +389,7 @@ kubectl get accesskey.iam.aws.upbound.io agent-audit-s3-key -o jsonpath='{.spec.
 kubectl get userpolicyattachment.iam.aws.upbound.io agent-audit-s3-user-policy -o jsonpath='{.spec.forProvider.policyArn}{"\n"}'
 ```
 Expected:
-- every `READY` is `True`, with the `AccessKey` not yet Ready until Phase 2 creates the namespace;
+- every `READY` is `True` (there is no `AccessKey` yet; it arrives in Task 6);
 - the role ARN `arn:aws:iam::852893458518:role/github-actions-agent-audit-web-ecr`;
 - `agent-audit-s3-user`;
 - an ARN ending in `:policy/agent-audit-s3-write`.
@@ -614,6 +600,7 @@ Plan A Task 19 can now push. It needs the ECR repository (Task 2 Step 1) and the
 **Files:**
 - Create: `base-apps/agent-audit-web.yaml`
 - Create in `base-apps/agent-audit-web/`: `serviceaccounts.yaml`, `secret-stores.yaml`, `external-secrets.yaml`, `deployment.yaml`, `service.yaml`, `httproute.yaml`, `reference-grant.yaml`, `certificate.yaml`, `catalog-info.yaml`, `docs.md`, `runbook.md`, `mkdocs.yml`
+- Create: `base-apps/agent-audit-aws-infrastructure/web-s3-read-key.yaml` (the S3 reader's AccessKey, moved here from Task 2)
 - Modify: `base-apps/istio-ingress/gateway.yaml` (listener), `base-apps/istio-ingress/authorizationpolicy.yaml` (allow rule), `scripts/agent-docs-scope.txt`
 - Generated: `base-apps/index.md` and `base-apps/agent-audit-web/docs/` (via `gen-okf.py` and `gen-techdocs.py`)
 
@@ -773,6 +760,35 @@ spec:
       remoteRef:
         key: agent-audit-web-db
         property: db-name
+```
+
+`base-apps/agent-audit-aws-infrastructure/web-s3-read-key.yaml`:
+```yaml
+---
+# The S3 reader's access key, written straight into the app's namespace as
+# agent-audit-web-s3-creds (keys: username, attribute.secret). It ships in the SAME
+# PR as the agent-audit-web Application that creates namespace agent-audit: aimed
+# at a namespace that does not exist, it fails to reconcile and turns
+# agent-audit-aws-infrastructure Degraded (that happened in Phase 1; see PR #635).
+# The two apps sync independently, so a Degraded blip of one reconcile is possible
+# here and clears on its own once the namespace exists.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: AccessKey
+metadata:
+  name: agent-audit-web-s3-read-key
+  labels:
+    app: agent-audit-web
+    component: access-key
+    managed-by: crossplane
+spec:
+  forProvider:
+    userRef:
+      name: agent-audit-web-s3-read
+  writeConnectionSecretToRef:
+    name: agent-audit-web-s3-creds
+    namespace: agent-audit
+  providerConfigRef:
+    name: default
 ```
 
 - [ ] **Step 3: Workload, service, route, certificate**
