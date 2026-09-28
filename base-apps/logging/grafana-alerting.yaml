@@ -95,9 +95,12 @@ data:
                 An agent invoked a write/destructive tool with no approval request.
                 This is what a silently-stripped requireApproval gate looks like.
               runbook: >-
-                Run `scripts/agent-audit.py --ungated` against the kagent database
-                (SELECT-only role) to see WHICH agent, WHICH tool, and WITH WHAT
-                arguments. Arguments are deliberately absent from this alert.
+                Open https://agent-audit.arigsela.com/?days=730 (Findings, the
+                longest window - this alert covers all history) and click the
+                finding to see its session - which agent, which tool, and with what
+                (redacted) arguments, in order. Or run `scripts/agent-audit.py
+                --ungated` against the kagent database (SELECT-only role).
+                Arguments are deliberately absent from this alert.
             labels:
               severity: critical
               pillar: security

@@ -13,9 +13,9 @@ Pulled live from the cluster + Crossplane on 2026-07-15.
 
 ## 1. AWS resources created for this work
 
-Only the **O4 durable-export** increment touched AWS. Everything else — Identity,
-Security/Capability, Observability O1–O3, Evaluation — lives entirely in the
-cluster with no AWS footprint.
+The **O4 durable-export** increment and the **agent-audit-web** UI touched AWS.
+Everything else — Identity, Security/Capability, Observability O1–O3, Evaluation —
+lives entirely in the cluster with no AWS footprint.
 
 | Resource | Name / ARN | Console |
 |---|---|---|
@@ -23,8 +23,13 @@ cluster with no AWS footprint.
 | IAM user | `agent-audit-s3-user` (path `/serviceaccounts/`) | https://us-east-1.console.aws.amazon.com/iam/home#/users/details/agent-audit-s3-user |
 | IAM policy | `agent-audit-s3-write` — **`s3:PutObject` only** (write-only, append-only) | https://us-east-1.console.aws.amazon.com/iam/home#/policies/arn:aws:iam::852893458518:policy/agent-audit-s3-write |
 | Access key | `AKIA4NFDJMBLDJBXV5EP` (the write-only exporter key ID) | on the IAM user page |
+| IAM user | `agent-audit-web-s3-read` (path `/serviceaccounts/`) — agent-audit-web's reader | https://us-east-1.console.aws.amazon.com/iam/home#/users/details/agent-audit-web-s3-read |
+| IAM policy | `agent-audit-web-s3-read` — **`s3:ListBucket` + `s3:GetObject` only** on this bucket | https://us-east-1.console.aws.amazon.com/iam/home#/policies/arn:aws:iam::852893458518:policy/agent-audit-web-s3-read |
+| IAM role | `github-actions-agent-audit-web-ecr` — GitHub OIDC, `v*` tags of `arigsela/agent-audit-web` only; policy `agent-audit-web-ecr-push` (push to one repo) | https://us-east-1.console.aws.amazon.com/iam/home#/roles/details/github-actions-agent-audit-web-ecr |
+| ECR repository | `agent-audit-web` (us-east-2, immutable tags, scan on push) — **created by hand**, not in git | https://us-east-2.console.aws.amazon.com/ecr/repositories/private/852893458518/agent-audit-web |
+| Route 53 record | `agent-audit.arigsela.com` A → the WAN IP — **created by hand**; kept current by `wan-ip-monitor` | https://us-east-1.console.aws.amazon.com/route53/v2/hostedzones#ListRecordSets/Z0524483LR4JCFNLS7N0 |
 
-Source of truth: `base-apps/agent-audit-aws-infrastructure/`.
+Source of truth: `base-apps/agent-audit-aws-infrastructure/` (except the two hand-made rows).
 
 **In the bucket:** redacted JSONL records — safe to open.
 - `dt=YYYY-MM-DD/HHMMSS.jsonl` — the daily export
@@ -44,6 +49,7 @@ Source of truth: `base-apps/agent-audit-aws-infrastructure/`.
 | **Coroot** | https://coroot.arigsela.com | Agent traces (kagent OTel spans), service maps. |
 | **kagent UI** | https://kagent.arigsela.com | The agents themselves — chat, sessions. |
 | **n8n** | https://n8n.arigsela.com | The alert-delivery workflow (`grafana-alerts` webhook). |
+| **Agent audit** | https://agent-audit.arigsela.com | The agent action record: findings, calls, session timelines, token trends (read-only, redacted, SSO). |
 | **Argo CD** | https://argocd.arigsela.com | Every app we created: `kagent`, `admission-policies`, `agent-audit-aws-infrastructure`, … |
 
 ### Grafana → Explore → Loki, three queries to try
@@ -77,6 +83,8 @@ kubectl get cpol agent-identity agent-capability
 #   agent-identity     Enforce
 #   agent-capability   Enforce
 ```
+
+For browsing, use https://agent-audit.arigsela.com; the CLI below is still the way to script it.
 
 Run the audit tool by hand (read-only `kagent_audit_ro` role):
 
