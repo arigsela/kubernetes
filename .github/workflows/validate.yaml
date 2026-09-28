@@ -218,6 +218,19 @@ jobs:
       - name: Run wan-ip-monitor tests
         run: python -m pytest tests/wan_ip/ -q
 
+  istio-logging-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pytest==8.3.3 pyyaml==6.0.2
+      - name: Gateway access log strips query strings
+        run: python -m pytest tests/istio_logging/ -q
+
   cve-report-validate:
     runs-on: ubuntu-latest
     steps:

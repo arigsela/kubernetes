@@ -18,6 +18,23 @@ spec:
         profile: ambient
         global:
           platform: k3s
+        # Access-log format for the ingress gateway (enabled by
+        # base-apps/istio-ingress/telemetry.yaml via the built-in `envoy` provider,
+        # which reads this field). It is Istio 1.30's default with ONE change: the
+        # path is %REQ_WITHOUT_QUERY(...)%, not %REQ(...)%. Query strings carry
+        # search text (agent-audit-web's ?q=), OAuth ?code=&state= and other
+        # secrets-in-URLs, and these lines sit in Loki for 30 days. Path, status,
+        # source address and timing are all still logged.
+        # tests/istio_logging/ pins this against Istio's default format.
+        meshConfig:
+          accessLogFormat: >-
+            [%START_TIME%] "%REQ(:METHOD)% %REQ_WITHOUT_QUERY(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL%"
+            %RESPONSE_CODE% %RESPONSE_FLAGS% %RESPONSE_CODE_DETAILS% %CONNECTION_TERMINATION_DETAILS%
+            "%UPSTREAM_TRANSPORT_FAILURE_REASON%" %BYTES_RECEIVED% %BYTES_SENT% %DURATION%
+            %RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)% "%REQ(X-FORWARDED-FOR)%" "%REQ(USER-AGENT)%"
+            "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%" %UPSTREAM_CLUSTER_RAW%
+            %UPSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_REMOTE_ADDRESS%
+            %REQUESTED_SERVER_NAME% %ROUTE_NAME%
         pilot:
           nodeSelector:
             node.kubernetes.io/workload: infrastructure
