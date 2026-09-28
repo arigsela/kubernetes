@@ -15,6 +15,7 @@ sources:
   - base-apps/istio-ingress/gateway-options.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
   - base-apps/istio-ingress/telemetry.yaml
+  - base-apps/istio-istiod.yaml
 ---
 
 # istio-ingress
@@ -74,7 +75,10 @@ Instead: no hostNetwork. Envoy binds inside the pod network namespace where
 Istio's own sysctl applies, klipper performs the privileged bind on the host, and
 `externalTrafficPolicy: Local` carries the client address through. That last part
 is not assumed — the access log records the real client address (see
-`telemetry.yaml`).
+`telemetry.yaml`). Its line format is Istio's default with the query string
+stripped (`%REQ_WITHOUT_QUERY%`), set in `meshConfig.accessLogFormat` in
+`base-apps/istio-istiod.yaml`: URLs carry search text and OAuth codes, and these
+lines live in Loki for 30 days. `tests/istio_logging/` pins it.
 
 ## Access control
 

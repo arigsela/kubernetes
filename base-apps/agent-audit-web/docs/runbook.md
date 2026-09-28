@@ -35,7 +35,7 @@ sources:
 
 ### Symptom: banner "Archive unavailable — showing live database only"
 - **Check:** `kubectl -n agent-audit logs deploy/agent-audit-web -c app | grep "archive refresh"`; `kubectl get accesskey.iam.aws.upbound.io agent-audit-web-s3-read-key`; `kubectl -n agent-audit get secret agent-audit-web-s3-creds`.
-- **Fix:** the Crossplane AccessKey or the S3 read policy (`base-apps/agent-audit-aws-infrastructure/web-s3-read*.yaml`). Note the inverse failure too: if listing works but every file read fails, `/readyz` still says `"archive":"ok"` with zero archive records - the refresh log line shows the failed files.
+- **Fix:** the Crossplane AccessKey or the S3 read policy (`base-apps/agent-audit-aws-infrastructure/web-s3-read*.yaml`). Since v0.1.1 a bucket that can be listed but not read also lands here (archive down; the log says `archive refresh: N files listed, none readable: <ErrorClass>`) instead of passing for a healthy, empty archive.
 
 ### Symptom: `ImagePullBackOff` on a first deploy or a new namespace
 - **Check:** `kubectl -n agent-audit get secret ecr-registry`.
