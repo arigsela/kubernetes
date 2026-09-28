@@ -53,6 +53,7 @@ installed by the Helm chart rather than by a manifest here.
 |---|---|---|---|
 | Vault | confidential | `vault-client-secret` from Vault | `base-apps/vault/` |
 | Argo CD | public (PKCE) | none, by design | `terraform/roots/asela-cluster/argocd.tf` |
+| agent-audit-web (oauth2-proxy) | confidential + PKCE | `agent-audit-client-secret` from Vault | `base-apps/agent-audit-web/` |
 
 Because both depend on Dex, **Dex is a single point of failure for human login to
 both** — and the two relying parties handle that differently. Vault keeps its own
@@ -70,7 +71,7 @@ CRDs on first start. State (auth requests, refresh tokens) lives as CRs in-clust
 so no external database is required.
 
 ## Secrets
-`dex-secrets` (`external-secret.yaml`) resolves three values from Vault through the
+`dex-secrets` (`external-secret.yaml`) resolves four values from Vault through the
 namespace `SecretStore` (`secret-store.yaml`, Vault kubernetes-auth role `dex`,
 path `k8s-secrets`, key `dex`):
 
@@ -79,6 +80,7 @@ path `k8s-secrets`, key `dex`):
 | `github-client-id` | the GitHub OAuth app client ID (Dex's GitHub connector) |
 | `github-client-secret` | the GitHub OAuth app client secret |
 | `vault-client-secret` | the shared secret Vault uses to authenticate to Dex |
+| `agent-audit-client-secret` | the shared secret agent-audit-web's oauth2-proxy uses (also in `k8s-secrets/agent-audit-web`; rotate both) |
 
 No secret value is committed to Git — only the `ExternalSecret` mapping.
 
