@@ -50,10 +50,15 @@
     name: qemu-guest-agent
     state: present
   when: ansible_facts['virtualization_role'] == 'guest' and ansible_facts['virtualization_type'] == 'kvm'
+  register: common_qemu_ga
 
+# The unit is static (empty [Install]); udev starts it when the virtio port appears, so it is
+# never `enabled`. In check mode the install above is only simulated, so the unit does not exist
+# yet and the service module would fail looking for it: skip it then.
 - name: QEMU guest agent running
   ansible.builtin.service:
     name: qemu-guest-agent
-    enabled: true
     state: started
-  when: ansible_facts['virtualization_role'] == 'guest' and ansible_facts['virtualization_type'] == 'kvm'
+  when:
+    - ansible_facts['virtualization_role'] == 'guest' and ansible_facts['virtualization_type'] == 'kvm'
+    - not (ansible_check_mode and common_qemu_ga is changed)

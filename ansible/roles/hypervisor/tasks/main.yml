@@ -6,8 +6,10 @@
       - libvirt-daemon-system
       - libvirt-clients
       - python3-libvirt        # community.libvirt.virt runs on the host and needs it
+      - python3-lxml           # ...and this (it parses domain XML)
       - smartmontools
     state: present
+  register: hypervisor_pkgs
 
 - name: Admin user may manage VMs without sudo
   ansible.builtin.user:
@@ -17,9 +19,12 @@
       - kvm
     append: true
 
+# In check mode the package install above is only simulated; if python3-lxml or python3-libvirt
+# were missing the module would fail to import them, so skip the task then.
 - name: Every cluster VM starts with the host
   community.libvirt.virt:
     name: "{{ item }}"
     autostart: true
     uri: qemu:///system
   loop: "{{ hypervisor_vms }}"
+  when: not (ansible_check_mode and hypervisor_pkgs is changed)
