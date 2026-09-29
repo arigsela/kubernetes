@@ -172,7 +172,7 @@ A new `tests/ansible/test_lint.py` runs `ansible-lint` and `--syntax-check` on e
 All from the workstation, in this order. Each step is its own verification gate.
 
 1. `bootstrap.yml --ask-become-pass` against the hypervisor. Verify `sudo -n true` succeeds.
-2. `site.yml --check --diff`, then `site.yml`. Expect the worker netplan change and small drift only. Hypervisor last via `--limit`. Before the first run on the workers, reserve (or exclude) 10.0.1.5 and 10.0.1.108 in the router's DHCP server: once pinned, the workers stop renewing and the pool could hand those addresses to another device.
+2. `site.yml --check --diff`, then `site.yml`. Expect the worker netplan change and small drift only. Hypervisor last via `--limit`. No router change is needed: the role pins the address on the host itself. Optional hardening: reserve 10.0.1.5 and 10.0.1.108 in the DHCP server so it never hands them to another device. If that ever happens the worker flaps NotReady while the other device is online; move the worker to a free address then.
 3. `k3s-authn.yml`. Expect play 1 to pass; play 2 re-installs both files (only their comments changed in the 2026-09-29 move) and restarts k3s once (about 20 s of API blip); `--check` shows `DRY: would restart k3s` first. Requires colima running.
 4. `patch.yml --limit k3s-worker-02`, then the full run.
 5. `patch-hypervisor.yml -e confirm=yes` when a full lab restart is acceptable.
