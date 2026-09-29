@@ -37,7 +37,13 @@ Run every command from this directory (ansible.cfg lives here). `k3s-authn.yml` 
 | Patch and reboot the hypervisor (all VMs shut down in order, never forced) | `ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes` (`-e velero_backup=yes` to back up first) |
 | Change the API server's authn config | edit `roles/k3s_node/files/authn/`, then `ansible-playbook playbooks/k3s-authn.yml --check`, then without `--check`. The first run after the 2026-09-29 move re-installs both files (only their comments changed) and restarts k3s once (about 20 s of API blip); `--check` shows `DRY: would restart k3s` first. |
 
-Before the first `site.yml` on the workers, reserve (or exclude) 10.0.1.5 and 10.0.1.108 in the router's DHCP server: once pinned, the workers stop renewing and the pool could hand those addresses to another device.
+No router change is needed for the workers: `roles/k3s_node` pins each worker's current address on the host itself and
+disables cloud-init's network config, so they never renew again. The only residual risk is a collision, when the
+DHCP server later hands 10.0.1.5 or 10.0.1.108 to another device: the worker flaps NotReady while that device is
+online. Reserving the two addresses in the DHCP server is optional hardening against that. Note that on this LAN
+the workers' leases came from the BrosTrend extender at 10.0.1.54 (1-minute leases), not from pfSense at 10.0.1.1,
+so a lease may change before the first `site.yml`; the role then refuses with a message naming `k3s_node_static_ip`,
+and you update host_vars to the new lease and re-run.
 
 If `patch.yml` stops mid-way, that node is left cordoned and the next run's pre-flight refuses:
 `kubectl uncordon <node>` once you have looked, then re-run.
