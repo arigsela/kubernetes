@@ -219,6 +219,22 @@
     reloads_ok: "{{ _reloads | select('search', 'status=\"success\"') | map('regex_search', '\\S+$') | map('float') | sum | int }}"
     reloads_fail: "{{ _reloads | select('search', 'status=\"failure\"') | map('regex_search', '\\S+$') | map('float') | sum | int }}"
   tasks:
+    # ---- 2b. the static guards again: --tags install / --skip-tags validate must not install an
+    # unchecked file, and a config-only change hot-reloads LIVE (no anonymous block = anonymous ON).
+    - name: REFUSED unless authn-config.yaml carries anonymous disabled (install re-check)
+      ansible.builtin.assert:
+        that: (lookup('file', authn_src ~ '/authn-config.yaml') | from_yaml).anonymous.enabled | default(true) is sameas false
+        fail_msg: >-
+          REFUSED: authn-config.yaml must carry `anonymous: {enabled: false}`. k3s stops passing
+          --anonymous-auth=false when given this file, and the default is ENABLED.
+        quiet: true
+
+    - name: REFUSED if the drop-in sets an --oidc-* flag (install re-check)
+      ansible.builtin.assert:
+        that: lookup('file', authn_src ~ '/config.yaml.d/10-authn.yaml') | regex_replace('(?m)^\s*#.*$', '') is not search('oidc-')
+        fail_msg: "REFUSED: 10-authn.yaml sets an --oidc-* flag (exclusive with --authentication-config)"
+        quiet: true
+
     # ---- 3. node preflight (read-only) ------------------------------------------------------
     - name: Read the node's k3s config and unit
       ansible.builtin.shell: >-
@@ -281,7 +297,8 @@
     # ---- 4. back up, then install by temp + rename -------------------------------------------
     - name: Back up the current files (a marker records one that did not exist)
       ansible.builtin.shell: >-
-        mkdir -p {{ backup_dir }}/config.yaml.d &&
+        set -e;
+        mkdir -p {{ backup_dir }}/config.yaml.d {{ k3s_dir }}/config.yaml.d;
         for f in {{ authn_files | join(' ') }}; do
           if [ -e {{ k3s_dir }}/$f ]; then cp -p {{ k3s_dir }}/$f {{ backup_dir }}/$f;
           else touch {{ backup_dir }}/.no-$(basename $f); fi;
@@ -351,11 +368,15 @@
       rescue:
         - name: API NOT ready — ROLLING BACK
           ansible.builtin.shell: >-
+            set -e;
             for f in {{ authn_files | join(' ') }}; do
               if [ -e {{ backup_dir }}/.no-$(basename $f) ]; then rm -f {{ k3s_dir }}/$f;
               else cp -p {{ backup_dir }}/$f {{ k3s_dir }}/$f; fi;
-            done && systemctl restart k3s
+            done;
+            systemctl restart k3s
+          register: rollback
           changed_when: true
+          ignore_errors: true
 
         - name: Wait for /readyz after the rollback
           ansible.builtin.command: kubectl get --raw /readyz  # noqa: command-instead-of-module
@@ -367,11 +388,14 @@
           delay: 3
           changed_when: false
           ignore_errors: true
+          when: rollback is not failed
 
         - name: Report the rollback
           ansible.builtin.fail:
             msg: >-
-              {{ 'rolled back; the API is back on the previous config'
+              {{ 'ROLLBACK FAILED to restore the files: fix on the node by hand'
+                 if rollback is failed else
+                 'rolled back; the API is back on the previous config'
                  if (readyz_rb.stdout | default('')) == 'ok' else
                  'ROLLBACK DID NOT RESTORE THE API: fix on the node by hand' }}
               (backup: {{ backup_dir }})
