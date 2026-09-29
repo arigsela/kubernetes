@@ -24,3 +24,30 @@ def test_confirm_accepts_true_and_yes(tmp_path):
 def test_a_wrong_value_is_refused(tmp_path):
     r = run_playbook("patch-hypervisor.yml", empty_inventory(tmp_path), "--tags", "gate", "-e", "confirm=maybe")
     assert r.returncode != 0 and "REFUSED" in r.stdout
+
+
+def test_confirm_accepts_a_json_boolean(tmp_path):
+    r = run_playbook("patch-hypervisor.yml", empty_inventory(tmp_path), "--tags", "gate", "-e", '{"confirm": true}')
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_limit_to_the_hypervisor_still_refuses_without_confirm(tmp_path):
+    """--limit drops localhost (and so the gate play); the hypervisor play must refuse on its own.
+    Never pass confirm=yes here: with a local connection the apt task would run on this machine."""
+    inv = tmp_path / "inventory-local-hv.yml"
+    inv.write_text(
+        "all:\n"
+        "  children:\n"
+        "    hypervisors:\n"
+        "      hosts:\n"
+        "        hv-local:\n"
+        "          ansible_host: 127.0.0.1\n"
+        "          ansible_connection: local\n"
+        "          ansible_become: false\n"
+        "          vm_shutdown_order: []\n"
+        "    k3s_nodes:\n"
+        "      hosts: {}\n"
+    )
+    r = run_playbook("patch-hypervisor.yml", inv, "--limit", "hv-local")
+    assert r.returncode != 0 and "REFUSED" in r.stdout, r.stdout + r.stderr
+    assert "Upgrade packages" not in r.stdout, r.stdout

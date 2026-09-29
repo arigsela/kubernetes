@@ -27,6 +27,15 @@
 - name: Patch and reboot the hypervisor
   hosts: hypervisors
   become: true
+  pre_tasks:
+    # The gate play above is `hosts: localhost`, which --limit <host> drops; repeat the check so
+    # the confirmation holds for any host pattern.
+    - name: REFUSED without -e confirm=yes
+      ansible.builtin.assert:
+        that: (confirm | default('') | string | lower) in ['yes', 'true']
+        fail_msg: "REFUSED: this shuts down every VM and reboots the hypervisor. Re-run with -e confirm=yes."
+        quiet: true
+
   tasks:
     - name: Upgrade packages
       ansible.builtin.apt:
@@ -73,7 +82,8 @@
             state: running
             uri: qemu:///system
           register: still_running
-          until: still_running.list_vms | intersect(vm_shutdown_order) | length == 0
+          until: still_running.list_vms | default([]) | intersect(vm_shutdown_order) | length == 0
+          when: not ansible_check_mode
           retries: 60
           delay: 5
 
@@ -88,7 +98,8 @@
             state: running
             uri: qemu:///system
           register: back
-          until: vm_shutdown_order | difference(back.list_vms) | length == 0
+          until: vm_shutdown_order | difference(back.list_vms | default([])) | length == 0
+          when: not ansible_check_mode
           retries: 60
           delay: 5
       rescue:
