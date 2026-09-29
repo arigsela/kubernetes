@@ -1,0 +1,25 @@
+---
+- name: Virtualization packages
+  ansible.builtin.apt:
+    name:
+      - qemu-kvm
+      - libvirt-daemon-system
+      - libvirt-clients
+      - python3-libvirt        # community.libvirt.virt runs on the host and needs it
+      - smartmontools
+    state: present
+
+- name: Admin user may manage VMs without sudo
+  ansible.builtin.user:
+    name: "{{ ansible_user }}"
+    groups:
+      - libvirt
+      - kvm
+    append: true
+
+- name: Every cluster VM starts with the host
+  community.libvirt.virt:
+    name: "{{ item }}"
+    autostart: true
+    uri: qemu:///system
+  loop: "{{ hypervisor_vms }}"
