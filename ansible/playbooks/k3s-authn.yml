@@ -199,3 +199,224 @@
           ansible.builtin.file:
             path: "{{ authn_stage }}"
             state: absent
+
+
+- name: Install the authn config on the control plane
+  hosts: k3s_control
+  become: true
+  gather_facts: false
+  tags: [install]
+  vars:
+    authn_src: "{{ playbook_dir }}/../roles/k3s_node/files/authn"
+    authn_files:
+      - authn-config.yaml
+      - config.yaml.d/10-authn.yaml
+    k3s_dir: /etc/rancher/k3s
+    ready_timeout: 240    # seconds to wait for /readyz after a restart
+    reload_timeout: 90    # seconds to wait for a hot reload
+    # Lazily evaluated against whatever `metrics` currently holds (baseline, then each poll).
+    _reloads: "{{ metrics.stdout_lines | select('match', '^apiserver_authentication_config_controller_automatic_reloads_total') }}"
+    reloads_ok: "{{ _reloads | select('search', 'status=\"success\"') | map('regex_search', '\\S+$') | map('float') | sum | int }}"
+    reloads_fail: "{{ _reloads | select('search', 'status=\"failure\"') | map('regex_search', '\\S+$') | map('float') | sum | int }}"
+  tasks:
+    # ---- 3. node preflight (read-only) ------------------------------------------------------
+    - name: Read the node's k3s config and unit
+      ansible.builtin.shell: >-
+        cat {{ k3s_dir }}/config.yaml {{ k3s_dir }}/config.yaml.d/*.yaml 2>/dev/null;
+        systemctl cat k3s 2>/dev/null; true
+      register: node_cfg
+      changed_when: false
+      check_mode: false
+
+    - name: REFUSED if the node already sets an --oidc-* flag
+      ansible.builtin.assert:
+        that: node_cfg.stdout | regex_replace('(?m)^\s*#.*$', '') is not search('oidc-')
+        fail_msg: "REFUSED: the node's k3s config or unit already sets an --oidc-* flag"
+        quiet: true
+
+    - name: Checksum the installed files
+      ansible.builtin.stat:
+        path: "{{ k3s_dir }}/{{ item }}"
+        checksum_algorithm: sha256
+      loop: "{{ authn_files }}"
+      register: installed
+      check_mode: false
+
+    - name: Decide what changed
+      ansible.builtin.set_fact:
+        changed_authn: "{{ (installed.results[0].stat.checksum | default('')) != (lookup('file', authn_src + '/authn-config.yaml', rstrip=False) | hash('sha256')) }}"
+        changed_dropin: "{{ (installed.results[1].stat.checksum | default('')) != (lookup('file', authn_src + '/config.yaml.d/10-authn.yaml', rstrip=False) | hash('sha256')) }}"
+        backup_dir: "{{ k3s_dir }}/authn-backup/{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
+
+    - name: Node preflight
+      ansible.builtin.debug:
+        msg: "3. node preflight: ok (changed: authn-config.yaml={{ changed_authn }} 10-authn.yaml={{ changed_dropin }})"
+
+    - name: Already installed
+      ansible.builtin.debug:
+        msg: "already installed; nothing to do"
+      when: not (changed_authn | bool) and not (changed_dropin | bool)
+
+    - name: Stop when there is nothing to do
+      ansible.builtin.meta: end_host
+      when: not (changed_authn | bool) and not (changed_dropin | bool)
+
+    # Hot-reload path: the baseline is taken BEFORE installing. A file with no JWT issuers reloads
+    # in well under a second, i.e. before a post-install read (B21's second finding).
+    - name: Read the reload counters before installing (config-only change)
+      ansible.builtin.command: kubectl get --raw /metrics  # noqa: command-instead-of-module (stubbed in tests)
+      delegate_to: localhost
+      become: false
+      register: metrics
+      changed_when: false
+      check_mode: false
+      when: not (changed_dropin | bool)
+
+    - name: Remember the baseline
+      ansible.builtin.set_fact:
+        reloads_ok_before: "{{ reloads_ok }}"
+        reloads_fail_before: "{{ reloads_fail }}"
+      when: not (changed_dropin | bool)
+
+    # ---- 4. back up, then install by temp + rename -------------------------------------------
+    - name: Back up the current files (a marker records one that did not exist)
+      ansible.builtin.shell: >-
+        mkdir -p {{ backup_dir }}/config.yaml.d &&
+        for f in {{ authn_files | join(' ') }}; do
+          if [ -e {{ k3s_dir }}/$f ]; then cp -p {{ k3s_dir }}/$f {{ backup_dir }}/$f;
+          else touch {{ backup_dir }}/.no-$(basename $f); fi;
+        done
+      changed_when: true
+
+    - name: Install changed files to a temp name (0600)
+      ansible.builtin.copy:
+        src: "{{ authn_src }}/{{ item.name }}"
+        dest: "{{ k3s_dir }}/{{ item.name }}.tmp"
+        owner: root
+        group: root
+        mode: "0600"
+      loop:
+        - {name: authn-config.yaml, changed: "{{ changed_authn }}"}
+        - {name: config.yaml.d/10-authn.yaml, changed: "{{ changed_dropin }}"}
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.changed | bool
+
+    - name: Rename into place
+      ansible.builtin.command: mv {{ k3s_dir }}/{{ item.name }}.tmp {{ k3s_dir }}/{{ item.name }}  # noqa: command-instead-of-module
+      loop:
+        - {name: authn-config.yaml, changed: "{{ changed_authn }}"}
+        - {name: config.yaml.d/10-authn.yaml, changed: "{{ changed_dropin }}"}
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.changed | bool
+      changed_when: true
+
+    - name: Installed
+      ansible.builtin.debug:
+        msg: "4. backed up to {{ backup_dir }}; installed"
+      when: not ansible_check_mode
+
+    - name: DRY RUN — what would happen next
+      ansible.builtin.debug:
+        msg: >-
+          4. (dry run) would back up to {{ backup_dir }} and install the changed files, then
+          {{ 'DRY: would restart k3s and wait up to ' ~ ready_timeout ~ 's for /readyz (auto-rollback on timeout)'
+             if changed_dropin | bool else
+             'DRY: would wait up to ' ~ reload_timeout ~ 's for the API server to hot-reload authn-config.yaml' }},
+          then check anonymous {{ k3s_api_url }}/api → 401
+      when: ansible_check_mode
+
+    # ---- 5a. drop-in changed: restart, wait, roll back on timeout ----------------------------
+    - name: Restart k3s and wait for the API (drop-in changed)
+      when: changed_dropin | bool and not ansible_check_mode
+      block:
+        - name: Restart k3s (control-plane blip; workloads keep running)
+          ansible.builtin.command: systemctl restart k3s  # noqa: command-instead-of-module (stubbed in tests)
+          changed_when: true
+
+        - name: Wait for /readyz
+          ansible.builtin.command: kubectl get --raw /readyz  # noqa: command-instead-of-module
+          delegate_to: localhost
+          become: false
+          register: readyz
+          until: readyz.stdout == 'ok'
+          retries: "{{ ready_timeout | int // 3 }}"
+          delay: 3
+          changed_when: false
+
+        - name: API ready
+          ansible.builtin.debug:
+            msg: "5. k3s restarted; API ready"
+      rescue:
+        - name: API NOT ready — ROLLING BACK
+          ansible.builtin.shell: >-
+            for f in {{ authn_files | join(' ') }}; do
+              if [ -e {{ backup_dir }}/.no-$(basename $f) ]; then rm -f {{ k3s_dir }}/$f;
+              else cp -p {{ backup_dir }}/$f {{ k3s_dir }}/$f; fi;
+            done && systemctl restart k3s
+          changed_when: true
+
+        - name: Wait for /readyz after the rollback
+          ansible.builtin.command: kubectl get --raw /readyz  # noqa: command-instead-of-module
+          delegate_to: localhost
+          become: false
+          register: readyz_rb
+          until: readyz_rb.stdout == 'ok'
+          retries: "{{ ready_timeout | int // 3 }}"
+          delay: 3
+          changed_when: false
+          ignore_errors: true
+
+        - name: Report the rollback
+          ansible.builtin.fail:
+            msg: >-
+              {{ 'rolled back; the API is back on the previous config'
+                 if (readyz_rb.stdout | default('')) == 'ok' else
+                 'ROLLBACK DID NOT RESTORE THE API: fix on the node by hand' }}
+              (backup: {{ backup_dir }})
+
+    # ---- 5b. config only: wait for the hot reload --------------------------------------------
+    - name: Wait for the API server to hot-reload authn-config.yaml (config-only change)
+      when: not (changed_dropin | bool) and not ansible_check_mode
+      block:
+        - name: Poll the reload counters
+          ansible.builtin.command: kubectl get --raw /metrics  # noqa: command-instead-of-module
+          delegate_to: localhost
+          become: false
+          register: metrics
+          until: (reloads_ok | int) > (reloads_ok_before | int) or (reloads_fail | int) > (reloads_fail_before | int)
+          retries: "{{ reload_timeout | int // 3 }}"
+          delay: 3
+          changed_when: false
+      rescue:
+        - name: No reload
+          ansible.builtin.fail:
+            msg: "no reload observed within {{ reload_timeout }}s (success counter was {{ reloads_ok_before }} before the install)"
+
+    - name: The API server must not have REJECTED the file
+      ansible.builtin.assert:
+        that: (reloads_fail | int) == (reloads_fail_before | int)
+        fail_msg: "the API server REJECTED the new file on reload (it keeps the old config). Check its log."
+        quiet: true
+      when: not (changed_dropin | bool) and not ansible_check_mode
+
+    - name: Reloaded
+      ansible.builtin.debug:
+        msg: "5. reloaded (success counter {{ reloads_ok }})"
+      when: not (changed_dropin | bool) and not ansible_check_mode
+
+    # ---- 6. post-check ----------------------------------------------------------------------
+    - name: POST-CHECK — anonymous must still be denied
+      ansible.builtin.uri:
+        url: "{{ k3s_api_url }}/api"
+        validate_certs: false
+        status_code: [401]
+      delegate_to: localhost
+      become: false
+      when: not ansible_check_mode
+
+    - name: Done
+      ansible.builtin.debug:
+        msg: "6. anonymous still denied (401). Done."
+      when: not ansible_check_mode
