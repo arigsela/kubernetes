@@ -9,3 +9,10 @@
   roles:
     - role: common
       tags: [common]
+
+- name: Hypervisor
+  hosts: hypervisors
+  become: true
+  roles:
+    - role: hypervisor
+      tags: [hypervisor]

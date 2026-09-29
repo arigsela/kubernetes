@@ -1,0 +1,3 @@
+---
+# VMs that must start with the host. Defaults to the shutdown list so the two never drift.
+hypervisor_vms: "{{ vm_shutdown_order }}"
