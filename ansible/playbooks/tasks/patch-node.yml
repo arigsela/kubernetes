@@ -1,0 +1,86 @@
+---
+# One node: pre-flight, upgrade, and (only if the OS asks for it) drain → reboot → uncordon.
+- name: Pre-flight — every node Ready and none cordoned
+  kubernetes.core.k8s_info:
+    kind: Node
+  register: cluster_nodes
+  delegate_to: localhost
+  become: false
+
+- name: Refuse to patch an unhealthy or partly cordoned cluster
+  ansible.builtin.assert:
+    that:
+      - cluster_nodes.resources | length > 0
+      - cluster_nodes.resources | selectattr('spec.unschedulable', 'defined') | selectattr('spec.unschedulable') | list | length == 0
+      - cluster_nodes.resources | map(attribute='status.conditions') | map('selectattr', 'type', 'equalto', 'Ready') | map('map', attribute='status') | map('first') | list | unique == ['True']
+    fail_msg: "cluster is not healthy (a node is NotReady or cordoned); fix that by hand, then re-run"
+    quiet: true
+
+- name: Upgrade packages
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: full
+    autoremove: true
+
+- name: Does the OS want a reboot?
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: reboot_required
+
+- name: No reboot required
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }}: packages up to date, no reboot required"
+  when: not reboot_required.stat.exists
+
+- name: Drain, reboot, uncordon
+  when: reboot_required.stat.exists
+  block:
+    - name: Cordon and drain {{ inventory_hostname }}
+      kubernetes.core.k8s_drain:
+        name: "{{ inventory_hostname }}"
+        state: drain
+        delete_options:
+          ignore_daemonsets: true
+          delete_emptydir_data: true
+          wait_timeout: "{{ drain_timeout }}"
+      delegate_to: localhost
+      become: false
+
+    - name: Reboot
+      ansible.builtin.reboot:
+        reboot_timeout: "{{ reboot_timeout }}"
+        post_reboot_delay: 10
+
+    - name: Wait for {{ k3s_unit }}
+      ansible.builtin.command: systemctl is-active {{ k3s_unit }}  # noqa: command-instead-of-module
+      register: unit
+      until: unit.stdout == 'active'
+      retries: 30
+      delay: 5
+      changed_when: false
+      check_mode: false  # read-only; must really run so --check can pass the wait
+
+    # Retries while the API is down after the control-plane reboot.
+    - name: Uncordon {{ inventory_hostname }}
+      kubernetes.core.k8s_drain:
+        name: "{{ inventory_hostname }}"
+        state: uncordon
+      delegate_to: localhost
+      become: false
+      register: uncordon
+      until: uncordon is succeeded
+      retries: 40
+      delay: 5
+
+    - name: Wait for Ready on {{ inventory_hostname }}
+      kubernetes.core.k8s_info:
+        kind: Node
+        name: "{{ inventory_hostname }}"
+      register: this_node
+      delegate_to: localhost
+      become: false
+      until: >-
+        this_node.resources | default([]) | length == 1 and
+        (this_node.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | map(attribute='status') | first) == 'True'
+      retries: 60
+      delay: 5

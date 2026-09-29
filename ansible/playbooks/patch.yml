@@ -1,0 +1,26 @@
+---
+# patch.yml — OS patching for the k3s VMs: apt full-upgrade, then a drained serial reboot of any
+# node that needs one. Workers first, the control plane last, one node at a time. Run from the
+# workstation: the pre-flight, drain, uncordon and readiness checks use your kubeconfig.
+#   ansible-playbook playbooks/patch.yml                        # all nodes
+#   ansible-playbook playbooks/patch.yml --limit k3s-worker-02  # one node
+#   ansible-playbook playbooks/patch.yml --check                # preview (drain/reboot simulated)
+# The control node is a single SQLite server: its reboot takes the API down for about a minute;
+# every API call after that retries. Pods pinned to it by nodeSelector sit Pending until uncordon.
+# A run that stops mid-way leaves that node cordoned; the next run's pre-flight refuses until you
+# `kubectl uncordon` it by hand.
+- name: Patch the workers
+  hosts: k3s_workers
+  serial: 1
+  become: true
+  tasks:
+    - name: Patch this node
+      ansible.builtin.import_tasks: tasks/patch-node.yml
+
+- name: Patch the control plane
+  hosts: k3s_control
+  serial: 1
+  become: true
+  tasks:
+    - name: Patch this node
+      ansible.builtin.import_tasks: tasks/patch-node.yml
