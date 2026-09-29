@@ -1,0 +1,200 @@
+---
+# k3s-authn.yml — install kube-apiserver's structured authentication config on the control plane.
+# Port of scripts/install-authn-config.sh (removed 2026-09); every guard kept. Source of truth:
+# roles/k3s_node/files/authn/{authn-config.yaml,config.yaml.d/10-authn.yaml}.
+#
+#   ansible-playbook playbooks/k3s-authn.yml --check   # the old --dry-run: validate, read the node, report
+#   ansible-playbook playbooks/k3s-authn.yml           # install
+#
+# Play 1 (workstation): static guards, then the files are mounted into a throwaway k3s of the
+#   cluster's version: the API must come up, load the config, and answer anonymous with 401.
+#   A broken file stops here and never reaches the node. Needs Docker (colima start).
+# Play 2 (control plane): refuse if the node sets --oidc-*; checksum; back up; install by
+#   temp+rename (0600). Drop-in changed → restart k3s, wait for /readyz, ROLL BACK on timeout.
+#   Only authn-config.yaml changed → the API server hot-reloads it; wait for the reload counter.
+#   Post-check: anonymous is still 401. /readyz and /metrics go through kubectl and your
+#   kubeconfig because anonymous cannot read them.
+#
+# Tags: validate (play 1: static + container), install (play 2). The tests run play 2 alone
+# with --skip-tags validate; an operator must not.
+- name: Validate the authn files in a throwaway k3s
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  any_errors_fatal: true   # a failure here must stop play 2
+  check_mode: false        # validation runs for real under --check
+  tags: [validate]
+  vars:
+    authn_src: "{{ playbook_dir }}/../roles/k3s_node/files/authn"
+    authn_files:
+      - authn-config.yaml
+      - config.yaml.d/10-authn.yaml
+    k3s_image: rancher/k3s:v1.36.4-k3s1   # the cluster's version; bump with it
+    authn_validate_name: "install-authn-validate-{{ 1000000 | random }}"
+    # colima and Docker Desktop only share $HOME with their VM: stage the files there.
+    # community.docker ignores `docker context` (colima's socket is not /var/run/docker.sock):
+    # use DOCKER_HOST if set, else the active context's endpoint.
+    authn_docker_host: "{{ lookup('env', 'DOCKER_HOST') or (docker_endpoint.stdout | default('') | trim) or 'unix:///var/run/docker.sock' }}"
+    authn_stage: "{{ lookup('env', 'HOME') }}/.cache/install-authn-config/{{ authn_validate_name }}"
+  tasks:
+    - name: The source files must exist
+      ansible.builtin.stat:
+        path: "{{ authn_src }}/{{ item }}"
+      loop: "{{ authn_files }}"
+      register: src_stat
+      tags: [static]
+
+    - name: Refuse on a missing source file
+      ansible.builtin.assert:
+        that: src_stat.results | map(attribute='stat.exists') | list == [true, true]
+        fail_msg: "missing {{ src_stat.results | rejectattr('stat.exists') | map(attribute='item') | join(', ') }} under {{ authn_src }}"
+        quiet: true
+      tags: [static]
+
+    - name: Read the candidate files
+      ansible.builtin.set_fact:
+        authn_cfg: "{{ lookup('file', authn_src + '/authn-config.yaml') | from_yaml }}"
+        dropin_text: "{{ lookup('file', authn_src + '/config.yaml.d/10-authn.yaml') }}"
+      tags: [static]
+
+    - name: REFUSED unless authn-config.yaml carries anonymous disabled
+      ansible.builtin.assert:
+        that:
+          - authn_cfg.apiVersion | default('') == 'apiserver.config.k8s.io/v1'
+          - authn_cfg.kind | default('') == 'AuthenticationConfiguration'
+          - authn_cfg.anonymous is defined
+          - authn_cfg.anonymous.enabled is defined
+          - authn_cfg.anonymous.enabled is sameas false
+          - authn_cfg.jwt | default([]) is not string
+          - authn_cfg.jwt | default([]) is sequence
+        fail_msg: >-
+          REFUSED: authn-config.yaml must carry `anonymous: {enabled: false}`. k3s stops passing
+          --anonymous-auth=false when given this file, and the default is ENABLED.
+        quiet: true
+      tags: [static]
+
+    - name: REFUSED if the drop-in sets an --oidc-* flag
+      ansible.builtin.assert:
+        that: dropin_text | regex_replace('(?m)^\s*#.*$', '') is not search('oidc-')
+        fail_msg: "REFUSED: 10-authn.yaml sets an --oidc-* flag (exclusive with --authentication-config)"
+        quiet: true
+      tags: [static]
+
+    - name: Static guards passed
+      ansible.builtin.debug:
+        msg: "1. static guards: ok"
+      tags: [static]
+
+    - name: Is Docker running?
+      ansible.builtin.command: docker info
+      register: docker_info
+      changed_when: false
+      failed_when: false
+      tags: [container]
+
+    # `random` in a play var is re-rolled on every reference, so pin the name (then the path built
+    # from it) once per run.
+    - name: Pin the validation container name for this run
+      ansible.builtin.set_fact:
+        authn_validate_name: "{{ authn_validate_name }}"
+      tags: [container]
+
+    - name: Pin the staging directory for this run
+      ansible.builtin.set_fact:
+        authn_stage: "{{ authn_stage }}"
+      tags: [container]
+
+    - name: Find the Docker endpoint of the active context
+      ansible.builtin.command: docker context inspect --format '{% raw %}{{.Endpoints.docker.Host}}{% endraw %}'
+      register: docker_endpoint
+      changed_when: false
+      failed_when: false
+      when: docker_info.rc == 0
+      tags: [container]
+
+    - name: Docker is required for the validation
+      ansible.builtin.fail:
+        msg: "Docker is not running (colima start). Nothing changed on the node."
+      when: docker_info.rc != 0
+      tags: [container]
+
+    - name: Validate in a throwaway k3s
+      tags: [container]
+      block:
+        - name: Create the staging directories under $HOME
+          ansible.builtin.file:
+            path: "{{ authn_stage }}/{{ item }}"
+            state: directory
+            mode: "0755"
+          loop: ["", config.yaml.d]
+
+        - name: Stage the files under $HOME
+          ansible.builtin.copy:
+            src: "{{ authn_src }}/{{ item }}"
+            dest: "{{ authn_stage }}/{{ item }}"
+            mode: "0644"
+          loop: "{{ authn_files }}"
+
+        - name: Start the validation k3s
+          community.docker.docker_container:
+            docker_host: "{{ authn_docker_host }}"
+            name: "{{ authn_validate_name }}"
+            image: "{{ k3s_image }}"
+            privileged: true
+            published_ports:
+              - "127.0.0.1::6443"
+            volumes:
+              - "{{ authn_stage }}/authn-config.yaml:/etc/rancher/k3s/authn-config.yaml:ro"
+              - "{{ authn_stage }}/config.yaml.d:/etc/rancher/k3s/config.yaml.d:ro"
+            command: server --disable traefik --disable metrics-server --disable local-storage --disable servicelb
+            state: started
+          register: val
+
+        - name: Wait for the validation API server
+          ansible.builtin.command: docker exec {{ authn_validate_name }} kubectl get --raw /readyz
+          register: val_ready
+          until: val_ready.stdout == 'ok'
+          retries: 60
+          delay: 2
+          changed_when: false
+
+        - name: The API server must have loaded the config
+          ansible.builtin.command: docker exec {{ authn_validate_name }} kubectl get --raw /metrics
+          register: val_metrics
+          changed_when: false
+          failed_when: "'apiserver_authentication_config_controller_last_config_info' not in val_metrics.stdout"
+
+        - name: Anonymous must get 401
+          ansible.builtin.uri:
+            url: "https://127.0.0.1:{{ val.container.NetworkSettings.Ports['6443/tcp'][0].HostPort }}/version"
+            validate_certs: false
+            status_code: [401]
+
+        - name: Validated
+          ansible.builtin.debug:
+            msg: "2. validated in {{ k3s_image }}: API up, config loaded, anonymous → 401"
+      rescue:
+        - name: Last log lines of the validation k3s
+          ansible.builtin.command: docker logs --tail 15 {{ authn_validate_name }}
+          register: val_logs
+          changed_when: false
+          failed_when: false
+
+        - name: Stop
+          ansible.builtin.fail:
+            msg: |
+              VALIDATION FAILED: the API server does not start with these files, did not load the
+              config, or answered anonymous with something other than 401. Nothing changed on the node.
+              {{ (val_logs.stdout | default('')) ~ (val_logs.stderr | default('')) }}
+      always:
+        - name: Remove the validation k3s and its volumes
+          community.docker.docker_container:
+            docker_host: "{{ authn_docker_host }}"
+            name: "{{ authn_validate_name }}"
+            state: absent
+            keep_volumes: false
+
+        - name: Remove the staged files
+          ansible.builtin.file:
+            path: "{{ authn_stage }}"
+            state: absent
