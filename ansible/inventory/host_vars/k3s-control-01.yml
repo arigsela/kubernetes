@@ -1,0 +1,4 @@
+---
+vm_name: k3s-control-01
+# No k3s_node_static_ip: the control node's netplan was written static at install time and is
+# left alone (roles/k3s_node only pins hosts that define k3s_node_static_ip).

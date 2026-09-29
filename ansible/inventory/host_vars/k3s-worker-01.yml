@@ -1,0 +1,5 @@
+---
+vm_name: k3s-worker-01
+# The address this VM held by DHCP on 2026-09-29, pinned static by roles/k3s_node.
+k3s_node_static_ip: 10.0.1.5/24
+k3s_node_mac: "52:54:00:67:81:26"

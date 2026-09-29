@@ -1,0 +1,7 @@
+---
+# libvirt domain names, in the order patch-hypervisor.yml shuts them down: workers first, the
+# control plane last. Every running VM must be listed or the playbook refuses to reboot the host.
+vm_shutdown_order:
+  - k3s-worker-01
+  - k3s-worker-02
+  - k3s-control-01

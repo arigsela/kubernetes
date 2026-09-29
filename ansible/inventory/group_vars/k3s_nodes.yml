@@ -1,0 +1,7 @@
+---
+# Static-address settings for roles/k3s_node (workers only; see host_vars). Mirrors k3s-control-01's
+# hand-written netplan.
+k3s_node_gateway: 10.0.1.1
+k3s_node_nameservers:
+  - 8.8.8.8
+  - 1.1.1.1
