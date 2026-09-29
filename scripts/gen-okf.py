@@ -173,7 +173,7 @@ def export(repo_root: Path, dest: Path) -> int:
     (dest / "base-apps").mkdir(parents=True)
 
     copied = 0
-    for rel in ("index.md", "terraform/index.md", "docs/index.md"):
+    for rel in ("index.md", "terraform/index.md", "ansible/index.md", "docs/index.md"):
         src = repo_root / rel
         if not src.is_file():
             continue

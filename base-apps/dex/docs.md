@@ -53,7 +53,7 @@ installed by the Helm chart rather than by a manifest here.
 |---|---|---|---|
 | Vault | confidential | `vault-client-secret` from Vault | `base-apps/vault/` |
 | Argo CD | public (PKCE) | none, by design | `terraform/roots/asela-cluster/argocd.tf` |
-| kubectl (kubelogin) | public (PKCE) | none, by design | `node-config/k3s-control-01/authn-config.yaml` (API server) |
+| kubectl (kubelogin) | public (PKCE) | none, by design | `ansible/roles/k3s_node/files/authn/authn-config.yaml` (API server) |
 | agent-audit-web (oauth2-proxy) | confidential + PKCE | `agent-audit-client-secret` from Vault | `base-apps/agent-audit-web/` |
 
 Because Vault and Argo CD both depend on Dex, **Dex is a single point of failure for

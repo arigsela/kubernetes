@@ -33,7 +33,7 @@ NC='\033[0m' # No Color
 BACKUP_NAME="${1:-}"
 SSH_KEY="${SSH_KEY:-~/.ssh/ari_sela_key}"
 SSH_USER="${SSH_USER:-asela}"
-NODES=("10.0.1.50" "10.0.1.51" "10.0.1.52")
+NODES=("10.0.1.50" "10.0.1.5" "10.0.1.108")
 
 echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║           Velero Post-Restart Recovery                        ║${NC}"

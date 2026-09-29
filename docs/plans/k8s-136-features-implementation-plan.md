@@ -141,7 +141,7 @@ independent; it goes last but could move earlier.
 1. Add the full config and restart. A mistake leaves the API server down.
 2. Two stages: restart with `anonymous: {enabled: false}` and `jwt: []`, which is explicitly valid, then add the Dex issuer by **hot reload**, where a bad edit is ignored instead of fatal.
 
-**Chosen:** Option 2. The node files are kept in the repo (`node-config/k3s-control-01/`) and installed by a script that validates in a throwaway `rancher/k3s:v1.36.4-k3s1` container first. Access is pinned to the GitHub ID through `claimValidationRules` (owner).
+**Chosen:** Option 2. The node files are kept in the repo (`ansible/roles/k3s_node/files/authn/`) and installed by a script that validates in a throwaway `rancher/k3s:v1.36.4-k3s1` container first. Access is pinned to the GitHub ID through `claimValidationRules` (owner). (moved to `ansible/roles/k3s_node/files/authn/` and ported to `ansible/playbooks/k3s-authn.yml` on 2026-09-29)
 
 ## Implementation
 
@@ -390,7 +390,7 @@ Move enforcement into the API server, retire every `kyverno.io/v1` ClusterPolicy
 - [ ] **Vault OIDC login and Argo CD SSO still work.**
 
 #### Task 5.2: Node config as code, plus an installer
-**Files:** `node-config/k3s-control-01/authn-config.yaml`, `node-config/k3s-control-01/config.yaml.d/10-authn.yaml` (`kube-apiserver-arg+: [authentication-config=/etc/rancher/k3s/authn-config.yaml]`), `scripts/install-authn-config.sh`, `docs/troubleshooting/kubectl-oidc.md`
+**Files:** `ansible/roles/k3s_node/files/authn/authn-config.yaml`, `ansible/roles/k3s_node/files/authn/config.yaml.d/10-authn.yaml` (`kube-apiserver-arg+: [authentication-config=/etc/rancher/k3s/authn-config.yaml]`), `ansible/playbooks/k3s-authn.yml`, `docs/troubleshooting/kubectl-oidc.md`
 **Steps:**
 1. The installer:
    1. validates the files by starting a throwaway `rancher/k3s:v1.36.4-k3s1` container with them and requiring the API to come up

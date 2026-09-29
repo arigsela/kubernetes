@@ -342,8 +342,8 @@ aws kms describe-key --key-id 2d982e46-c7bd-4606-a1bf-a470d1c09e07 --region us-e
 | Node | IP | Role |
 |------|------|------|
 | k3s-control-01 | 10.0.1.50 | Control Plane |
-| k3s-worker-01 | 10.0.1.51 | Worker |
-| k3s-worker-02 | 10.0.1.52 | Worker |
+| k3s-worker-01 | 10.0.1.5 | Worker |
+| k3s-worker-02 | 10.0.1.108 | Worker |
 
 SSH access: `ssh -i ~/.ssh/ari_sela_key asela@<IP>`
 
