@@ -16,3 +16,10 @@
   roles:
     - role: hypervisor
       tags: [hypervisor]
+
+- name: K3s nodes
+  hosts: k3s_nodes
+  become: true
+  roles:
+    - role: k3s_node
+      tags: [k3s_node]

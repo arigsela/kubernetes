@@ -1,7 +1,7 @@
 # Structured authentication configuration for k3s-control-01's kube-apiserver
 # (AuthenticationConfiguration, GA in Kubernetes 1.34). Installed to
-# /etc/rancher/k3s/authn-config.yaml by scripts/install-authn-config.sh, NEVER by hand:
-# the installer validates it in a throwaway k3s first. docs/troubleshooting/kubectl-oidc.md.
+# /etc/rancher/k3s/authn-config.yaml by ansible/playbooks/k3s-authn.yml, NEVER by hand:
+# the playbook validates it in a throwaway k3s first. docs/troubleshooting/kubectl-oidc.md.
 #
 # STAGE B (plan docs/plans/k8s-136-features-implementation-plan.md, Task 5.4): Dex is a JWT
 # issuer. Stage A (installed 2026-09-27, one k3s restart) moved authentication into this

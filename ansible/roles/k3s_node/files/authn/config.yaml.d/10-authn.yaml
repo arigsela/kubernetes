@@ -1,6 +1,6 @@
 # k3s config drop-in: point kube-apiserver at the structured authentication config.
-# Installed to /etc/rancher/k3s/config.yaml.d/10-authn.yaml by scripts/install-authn-config.sh
-# (a change here needs a k3s restart; the installer does it and waits for /readyz).
+# Installed to /etc/rancher/k3s/config.yaml.d/10-authn.yaml by ansible/playbooks/k3s-authn.yml
+# (a change here needs a k3s restart; the playbook does it and waits for /readyz).
 # `+` appends to any kube-apiserver-arg set elsewhere instead of replacing it.
 # ⊥ combine with any --oidc-* flag: they are mutually exclusive with --authentication-config.
 kube-apiserver-arg+:

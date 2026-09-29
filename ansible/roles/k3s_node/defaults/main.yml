@@ -1,0 +1,5 @@
+---
+k3s_node_netplan_file: /etc/netplan/50-cloud-init.yaml
+k3s_node_interface: enp1s0
+# Set false where there is no networkd to talk to (the test container).
+k3s_node_netplan_apply: true
