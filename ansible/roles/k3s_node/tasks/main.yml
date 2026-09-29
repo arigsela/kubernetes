@@ -52,8 +52,16 @@
             mode: "0600"
           when: k3s_node_netplan.backup_file is defined
 
+        - name: Remove the rejected file (there was no previous one to restore)
+          ansible.builtin.file:
+            path: "{{ k3s_node_netplan_file }}"
+            state: absent
+          when: k3s_node_netplan.backup_file is not defined
+
         - name: Fail loudly
           ansible.builtin.fail:
             msg: >-
-              netplan rejected the rendered config on {{ inventory_hostname }}; the previous file was
-              restored and nothing was applied. Check k3s_node_static_ip / k3s_node_mac in host_vars.
+              netplan rejected the rendered config on {{ inventory_hostname }}; nothing was applied and
+              {{ 'the previous file was restored' if k3s_node_netplan.backup_file is defined
+              else 'the rejected file was removed (there was no previous one)' }}.
+              Check k3s_node_static_ip / k3s_node_mac in host_vars.
