@@ -1,0 +1,10 @@
+---
+# Split out so playbooks/bootstrap.yml can run just this with --ask-become-pass.
+- name: Passwordless sudo for {{ common_admin_user }}
+  ansible.builtin.copy:
+    dest: "/etc/sudoers.d/{{ common_admin_user }}"
+    content: "{{ common_admin_user }} ALL=(ALL) NOPASSWD:ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s

@@ -1,0 +1,19 @@
+# A throwaway Ubuntu that stands in for a host. Reached through the community.docker.docker
+# connection plugin, so no sshd listener or key is needed. Contents, and why:
+#   python3, sudo        Ansible's needs (plays use become: true; sudo as root needs no password)
+#   python3-apt          the apt module refuses to run without it
+#   openssh-server       so `sshd -t` can validate the hardening drop-in
+#   unattended-upgrades  so the role's apt task is a no-op instead of a network install
+#   netplan.io           so `netplan generate` can validate a rendered file
+#   systemctl (stub)     records what it was asked; there is no systemd here
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 python3-apt sudo openssh-server unattended-upgrades netplan.io ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && ssh-keygen -A && mkdir -p /run/sshd
+RUN mkdir -p /etc/rancher/k3s/config.yaml.d \
+    && printf 'disable:\n  - traefik\n' > /etc/rancher/k3s/config.yaml
+COPY systemctl /usr/bin/systemctl
+RUN chmod 0755 /usr/bin/systemctl
+CMD ["sleep", "infinity"]

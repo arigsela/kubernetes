@@ -1,0 +1,11 @@
+---
+# site.yml — the baseline for every host. Idempotent; re-run any time.
+#   ansible-playbook playbooks/site.yml --check --diff   # preview
+#   ansible-playbook playbooks/site.yml                  # apply
+#   ansible-playbook playbooks/site.yml --tags common    # one role
+- name: Baseline every host
+  hosts: all
+  become: true
+  roles:
+    - role: common
+      tags: [common]

@@ -1,0 +1,14 @@
+---
+# bootstrap.yml — one-time: passwordless sudo for the admin user on hosts that still ask for a
+# password (the hypervisor). Run once, with the sudo password:
+#   ansible-playbook playbooks/bootstrap.yml --ask-become-pass
+# After this, site.yml and the patch playbooks run without prompts.
+- name: Bootstrap passwordless sudo
+  hosts: hypervisors
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Install the sudoers drop-in
+      ansible.builtin.include_role:
+        name: common
+        tasks_from: sudoers

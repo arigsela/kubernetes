@@ -1,0 +1,4 @@
+---
+# The account that gets passwordless sudo. Defaults to the connecting user (asela on the real
+# hosts); the tests connect as root and pass -e common_admin_user=asela.
+common_admin_user: "{{ ansible_user }}"

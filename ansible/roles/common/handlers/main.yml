@@ -1,0 +1,4 @@
+---
+- name: Reload sshd
+  ansible.builtin.command: systemctl reload ssh  # noqa: command-instead-of-module (stubbed in tests)
+  changed_when: true
