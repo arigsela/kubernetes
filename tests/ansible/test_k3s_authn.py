@@ -67,7 +67,7 @@ def test_a_missing_source_file_is_a_clear_error(tmp_path):
     """Review Focus 2."""
     src = source_dir(tmp_path, dropin=None)
     r = run_playbook("k3s-authn.yml", no_node_inventory(tmp_path), "--tags", "static", "-e", f"authn_src={src}")
-    assert r.returncode != 0 and "missing" in r.stdout, r.stdout + r.stderr
+    assert r.returncode != 0 and "missing config.yaml.d/10-authn.yaml under" in r.stdout, r.stdout + r.stderr
     assert "Traceback" not in r.stderr
 
 
@@ -88,6 +88,8 @@ def test_a_file_the_api_server_rejects_fails_validation(tmp_path):
     src = source_dir(tmp_path, authn=broken)
     r = run_playbook("k3s-authn.yml", no_node_inventory(tmp_path), "--tags", "validate", "-e", f"authn_src={src}")
     assert r.returncode != 0 and "VALIDATION FAILED" in r.stdout, r.stdout + r.stderr
+    # the rescue fires for ANY failure in the block; pin the cause to k3s rejecting the file
+    assert "invalid authentication configuration" in r.stdout and "must be https" in r.stdout, r.stdout + r.stderr
 
 
 @needs_docker

@@ -185,6 +185,7 @@
             msg: |
               VALIDATION FAILED: the API server does not start with these files, did not load the
               config, or answered anonymous with something other than 401. Nothing changed on the node.
+              Failed task: {{ ansible_failed_result.msg | default('') }}
               {{ (val_logs.stdout | default('')) ~ (val_logs.stderr | default('')) }}
       always:
         - name: Remove the validation k3s and its volumes
