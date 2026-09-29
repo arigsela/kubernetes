@@ -211,7 +211,7 @@ jobs:
           python-version: "3.12"
       - name: Install Ansible, lint, and test deps
         run: |
-          pip install ansible-core==2.21.4 ansible-lint==26.9.0 pytest==8.3.3 pyyaml==6.0.2 kubernetes==36.0.3
+          pip install ansible-core==2.21.4 ansible-lint==26.9.0 pytest==8.3.3 pyyaml==6.0.3 kubernetes==36.0.3
           ansible-galaxy collection install -r ansible/requirements.yml
       - name: Lint, syntax-check, and run the playbook tests (Ubuntu node + real k3s in Docker)
         run: python -m pytest tests/ansible/ -v
