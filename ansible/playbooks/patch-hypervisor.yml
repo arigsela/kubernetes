@@ -1,0 +1,115 @@
+---
+# patch-hypervisor.yml — patch the hypervisor and, only if the OS asks for it, reboot it: every
+# VM is ACPI-shut-down first (workers, then control), the host reboots, libvirt autostart brings
+# the VMs back, and the last play waits for the cluster. The whole lab is down meanwhile.
+#   ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes
+#   ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes -e velero_backup=yes   # backup first
+#   ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes --check               # preview
+# A VM that does not shut off within 300 s FAILS the play; nothing is ever forced.
+- name: Gate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [gate]
+  tasks:
+    - name: REFUSED without -e confirm=yes
+      ansible.builtin.assert:
+        that: (confirm | default('') | string | lower) in ['yes', 'true']
+        fail_msg: "REFUSED: this shuts down every VM and reboots the hypervisor. Re-run with -e confirm=yes."
+        quiet: true
+
+    - name: Velero pre-shutdown backup (opt-in with -e velero_backup=yes)
+      ansible.builtin.command: "{{ playbook_dir }}/../../recovery/pre-shutdown-backup.sh"
+      when: (velero_backup | default('no') | string | lower) in ['yes', 'true']
+      changed_when: true
+
+- name: Patch and reboot the hypervisor
+  hosts: hypervisors
+  become: true
+  tasks:
+    - name: Upgrade packages
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: full
+        autoremove: true
+
+    - name: Does the OS want a reboot?
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: No reboot required
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: packages up to date, no reboot required"
+      when: not reboot_required.stat.exists
+
+    - name: Shut the VMs down, reboot, wait for them
+      when: reboot_required.stat.exists
+      block:
+        - name: Running VMs
+          community.libvirt.virt:
+            command: list_vms
+            state: running
+            uri: qemu:///system
+          register: running
+
+        - name: Every running VM must be in vm_shutdown_order (anything else would be killed by the reboot)
+          ansible.builtin.assert:
+            that: running.list_vms | difference(vm_shutdown_order) | length == 0
+            fail_msg: "running VMs not in vm_shutdown_order: {{ running.list_vms | difference(vm_shutdown_order) }}. Add them to host_vars or stop them by hand."
+            quiet: true
+
+        - name: ACPI shutdown, workers first
+          community.libvirt.virt:
+            name: "{{ item }}"
+            state: shutdown
+            uri: qemu:///system
+          loop: "{{ vm_shutdown_order }}"
+
+        - name: Wait until every VM is shut off (never forced)
+          community.libvirt.virt:
+            command: list_vms
+            state: running
+            uri: qemu:///system
+          register: still_running
+          until: still_running.list_vms | intersect(vm_shutdown_order) | length == 0
+          retries: 60
+          delay: 5
+
+        - name: Reboot the hypervisor
+          ansible.builtin.reboot:
+            reboot_timeout: "{{ reboot_timeout }}"
+            post_reboot_delay: 15
+
+        - name: Wait for libvirt autostart to bring every VM back
+          community.libvirt.virt:
+            command: list_vms
+            state: running
+            uri: qemu:///system
+          register: back
+          until: vm_shutdown_order | difference(back.list_vms) | length == 0
+          retries: 60
+          delay: 5
+      rescue:
+        - name: Stopped
+          ansible.builtin.fail:
+            msg: >-
+              stopped before or during the reboot: a VM did not shut off within 300 s (it was NOT
+              forced), or the host or its VMs did not come back in time. Check `virsh list --all` on
+              {{ inventory_hostname }} and recovery/POST-RESTART-WALKTHROUGH.md.
+
+- name: Wait for the cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Every k3s node Ready
+      kubernetes.core.k8s_info:
+        kind: Node
+      register: nodes
+      until: >-
+        nodes.resources | default([]) | length == groups['k3s_nodes'] | length and
+        (nodes.resources | map(attribute='status.conditions') | map('selectattr', 'type', 'equalto', 'Ready') | map('map', attribute='status') | map('first') | list | unique == ['True'])
+      retries: 120
+      delay: 5
