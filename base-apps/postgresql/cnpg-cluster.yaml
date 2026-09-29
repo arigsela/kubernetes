@@ -25,6 +25,16 @@ metadata:
   namespace: postgresql
 spec:
   instances: 1
+  # Single instance on a node-bound local-path volume: a switchover is impossible,
+  # so the operator's PodDisruptionBudget (postgresql-cluster-primary, minAvailable 1)
+  # can never allow an eviction and `kubectl drain` / ansible patch.yml fails on
+  # k3s-worker-01 with "Cannot evict pod as it would violate the pod's disruption
+  # budget" (2026-09-29). The PDB cannot prevent the outage a reboot causes anyway:
+  # the volume lives on that node. CNPG's documented fix for 1-instance clusters is
+  # to disable PDBs (docs: Kubernetes Upgrade > Pod Disruption Budgets); the
+  # nodeMaintenanceWindow alternative is retained upstream only for compatibility.
+  # Revisit if instances is ever raised above 1.
+  enablePDB: false
   imageName: ghcr.io/cloudnative-pg/postgresql:16.4
   # Shutdown waits at most 30s for clients to leave (smart), then disconnects
   # them and checkpoints (fast). The default 180s turned the 1.30.1 operator
