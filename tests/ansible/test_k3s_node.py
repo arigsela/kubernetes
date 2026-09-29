@@ -37,3 +37,14 @@ def test_a_rejected_netplan_config_is_restored(node, inventory_for):
     assert r.returncode != 0
     assert "netplan rejected" in r.stdout, r.stdout
     assert node_read(node, "/etc/netplan/50-cloud-init.yaml") == DHCP
+
+
+@needs_docker
+def test_a_rejected_netplan_config_with_no_previous_file_is_removed(node, inventory_for):
+    """No previous file means no backup to restore; the rejected file must not be left for next boot."""
+    r = run_playbook("site.yml", inventory_for("k3s_workers"), "--tags", "k3s_node",
+                     "-e", "k3s_node_static_ip=10.0.1.5", "-e", "k3s_node_mac=52:54:00:67:81:26",
+                     "-e", "k3s_node_netplan_apply=false")
+    assert r.returncode != 0
+    assert "netplan rejected" in r.stdout, r.stdout
+    assert node_read(node, "/etc/netplan/50-cloud-init.yaml") == ""
