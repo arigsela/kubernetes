@@ -179,7 +179,8 @@ def test_dry_run_validates_then_only_reads_the_node(tmp_path, node, inventory_fo
     assert "anonymous → 401" in r.stdout and "DRY:" in r.stdout and "restart k3s" in r.stdout
     assert node_read(node, "/etc/rancher/k3s/authn-config.yaml") == ""
     assert only_read_k3s_unit(node), "k3s was touched: " + node_read(node, "/var/log/systemctl.log")
-    assert node_read(node, "/etc/rancher/k3s/authn-backup") == ""
+    assert node_exec(node, "test -e /etc/rancher/k3s/authn-backup").returncode != 0, "a backup dir was created"
+    assert node_exec(node, "ls /etc/rancher/k3s/*.tmp /etc/rancher/k3s/config.yaml.d/*.tmp 2>/dev/null").stdout == ""
 
 
 @needs_docker
@@ -202,7 +203,8 @@ def test_already_installed_does_nothing(tmp_path, node, inventory_for, node_env,
     r = run_playbook("k3s-authn.yml", inventory_for("k3s_control"), *install_args(api_401), env=node_env)
     assert r.returncode == 0 and "already installed" in r.stdout, r.stdout + r.stderr
     assert only_read_k3s_unit(node), "k3s was touched: " + node_read(node, "/var/log/systemctl.log")
-    assert node_read(node, "/etc/rancher/k3s/authn-backup") == ""
+    assert node_exec(node, "test -e /etc/rancher/k3s/authn-backup").returncode != 0, "a backup dir was created"
+    assert node_exec(node, "ls /etc/rancher/k3s/*.tmp /etc/rancher/k3s/config.yaml.d/*.tmp 2>/dev/null").stdout == ""
 
 
 @needs_docker
@@ -254,3 +256,15 @@ def test_rollback_reports_when_the_api_comes_back(tmp_path, node, inventory_for,
     r = run_playbook("k3s-authn.yml", inventory_for("k3s_control"), *install_args(api_401, ready_timeout=3), env=node_env)
     assert r.returncode != 0 and "rolled back; the API is back on the previous config" in r.stdout, r.stdout + r.stderr
     assert node_read(node, "/etc/rancher/k3s/config.yaml.d/10-authn.yaml") == "# old drop-in\n"
+
+
+@needs_docker
+def test_install_alone_still_refuses_a_config_without_the_anonymous_block(tmp_path, node, inventory_for, node_env, api_401):
+    """--skip-tags validate skips play 1; play 2 must not install (and hot-reload) a file that would
+    turn anonymous auth ON."""
+    src = source_dir(tmp_path, authn="apiVersion: apiserver.config.k8s.io/v1\nkind: AuthenticationConfiguration\njwt: []\n")
+    r = run_playbook("k3s-authn.yml", inventory_for("k3s_control"), *install_args(api_401), "-e", f"authn_src={src}", env=node_env)
+    assert r.returncode != 0 and "anonymous" in r.stdout, r.stdout + r.stderr
+    assert node_read(node, "/etc/rancher/k3s/authn-config.yaml") == ""
+    assert only_read_k3s_unit(node), "k3s was touched: " + node_read(node, "/var/log/systemctl.log")
+    assert node_exec(node, "test -e /etc/rancher/k3s/authn-backup").returncode != 0
