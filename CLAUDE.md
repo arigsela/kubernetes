@@ -26,6 +26,9 @@ This is a GitOps-based Kubernetes infrastructure repository that manages applica
 - `/terraform/` - Infrastructure as Code
   - `/modules/` - Reusable Terraform modules (argocd, application-sets, kube-secrets)
   - `/roots/asela-cluster/` - Main cluster configuration with provider configs
+- `/ansible/` - Host layer: the Ubuntu hypervisor and the three k3s VMs (see `ansible/README.md`)
+  - `/playbooks/` - `site.yml` (baseline), `patch.yml` (VMs), `patch-hypervisor.yml`, `k3s-authn.yml`
+  - `/roles/` - `common`, `hypervisor`, `k3s_node` (holds the control plane's authn files)
 - `/docs/` - Implementation plans and troubleshooting guides
 - `/scripts/` - Operational scripts (monitoring, maintenance)
 
@@ -55,6 +58,14 @@ terraform apply
 
 # Target specific resources
 terraform apply -target=module.argocd
+```
+
+### Run Ansible (host layer)
+```bash
+cd ansible
+ansible-playbook playbooks/site.yml --check --diff   # preview the baseline
+ansible-playbook playbooks/patch.yml                 # patch + drained serial reboot of the VMs
+ansible-playbook playbooks/k3s-authn.yml --check     # validate the API server authn config
 ```
 
 ### Branch Management

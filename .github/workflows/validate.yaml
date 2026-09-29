@@ -12,6 +12,7 @@ jobs:
     outputs:
       yaml_files: ${{ steps.changed.outputs.yaml_files }}
       yaml_any_changed: ${{ steps.changed.outputs.yaml_any_changed }}
+      ansible_any_changed: ${{ steps.changed.outputs.ansible_any_changed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,6 +44,17 @@ jobs:
           else
             echo "yaml_any_changed=false" >> "$GITHUB_OUTPUT"
           fi
+          # ansible/ and its tests gate the ansible-validate job (Docker-heavy; skip when untouched).
+          if [ "${{ github.event_name }}" = "push" ]; then
+            ANSIBLE_CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'ansible/' 'tests/ansible/' | head -1)
+          else
+            ANSIBLE_CHANGED=$(git diff --name-only origin/main...HEAD -- 'ansible/' 'tests/ansible/' | head -1)
+          fi
+          if [ -n "$ANSIBLE_CHANGED" ]; then
+            echo "ansible_any_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ansible_any_changed=false" >> "$GITHUB_OUTPUT"
+          fi
 
   yaml-lint:
     needs: changed-files
@@ -69,12 +81,10 @@ jobs:
       - name: Validate changed Kubernetes manifests
         run: |
           # base-apps/<app>/mkdocs.yml is Backstage TechDocs config,
-          # appsets/*/*.yaml are ApplicationSet generator configs, and
-          # node-config/** are k3s node files (a config drop-in, an apiserver
-          # AuthenticationConfiguration). None is a Kubernetes manifest, so
-          # kubeconform would fail them. Drop them before validating; yamllint
-          # still covers them, and node-config has its own job.
-          FILES=$(echo "${{ needs.changed-files.outputs.yaml_files }}" | tr ' ' '\n' | grep -v -e '/mkdocs\.yml$' -e '^appsets/' -e '^node-config/' || true)
+          # appsets/*/*.yaml are ApplicationSet generator configs. Neither is
+          # a Kubernetes manifest, so kubeconform would fail them. Drop them
+          # before validating; yamllint still covers them.
+          FILES=$(echo "${{ needs.changed-files.outputs.yaml_files }}" | tr ' ' '\n' | grep -v -e '/mkdocs\.yml$' -e '^appsets/' || true)
           if [ -z "$FILES" ]; then echo "No Kubernetes manifests to validate."; exit 0; fi
           echo "$FILES" | xargs kubeconform \
             -summary \
@@ -189,10 +199,9 @@ jobs:
       - name: Run admission-policy tests against a real API server
         run: python -m pytest tests/admission-policies/ -v
 
-  # The control plane's kube-apiserver authentication config (plan Phase 5). The installer
-  # validates every file in a throwaway k3s before it may touch the node; these tests prove a
-  # rejected file never reaches it, and that its refusal guards actually fire.
-  node-config-validate:
+  ansible-validate:
+    needs: changed-files
+    if: needs.changed-files.outputs.ansible_any_changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -200,10 +209,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
-      - name: Run install-authn-config.sh tests (stub ssh, real k3s in Docker)
-        run: python -m pytest tests/node-config/ -v
+      - name: Install Ansible, lint, and test deps
+        run: |
+          pip install ansible-core==2.21.4 ansible-lint==26.9.0 pytest==8.3.3 pyyaml==6.0.2 kubernetes==36.0.3
+          ansible-galaxy collection install -r ansible/requirements.yml
+      - name: Lint, syntax-check, and run the playbook tests (Ubuntu node + real k3s in Docker)
+        run: python -m pytest tests/ansible/ -v
 
   wan-ip-validate:
     runs-on: ubuntu-latest

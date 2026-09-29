@@ -106,7 +106,7 @@ EOF
 
 ### Step 3.2: Clean CNI on Worker 1
 ```bash
-ssh -i ~/.ssh/ari_sela_key asela@10.0.1.51 << 'EOF'
+ssh -i ~/.ssh/ari_sela_key asela@10.0.1.5 << 'EOF'
 echo "Cleaning CNI on k3s-worker-01..."
 sudo rm -rf /var/lib/cni/networks/cbr0
 sudo mkdir -p /var/lib/cni/networks/cbr0
@@ -116,7 +116,7 @@ EOF
 
 ### Step 3.3: Clean CNI on Worker 2
 ```bash
-ssh -i ~/.ssh/ari_sela_key asela@10.0.1.52 << 'EOF'
+ssh -i ~/.ssh/ari_sela_key asela@10.0.1.108 << 'EOF'
 echo "Cleaning CNI on k3s-worker-02..."
 sudo rm -rf /var/lib/cni/networks/cbr0
 sudo mkdir -p /var/lib/cni/networks/cbr0
@@ -403,8 +403,8 @@ velero restore logs <restore-name>
 |------|------------|------|--------|
 | Ubuntu Physical Host | 10.0.1.101 | VM Host (KVM/libvirt) | `ssh -i ~/.ssh/ari_sela_key asela@10.0.1.101` |
 | k3s-control-01 | 10.0.1.50 | K3s Control Plane | `ssh -i ~/.ssh/ari_sela_key asela@10.0.1.50` |
-| k3s-worker-01 | 10.0.1.51 | K3s Worker Node | `ssh -i ~/.ssh/ari_sela_key asela@10.0.1.51` |
-| k3s-worker-02 | 10.0.1.52 | K3s Worker Node | `ssh -i ~/.ssh/ari_sela_key asela@10.0.1.52` |
+| k3s-worker-01 | 10.0.1.5 | K3s Worker Node | `ssh -i ~/.ssh/ari_sela_key asela@10.0.1.5` |
+| k3s-worker-02 | 10.0.1.108 | K3s Worker Node | `ssh -i ~/.ssh/ari_sela_key asela@10.0.1.108` |
 
 ---
 

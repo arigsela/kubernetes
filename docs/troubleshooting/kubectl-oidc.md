@@ -10,10 +10,10 @@ Dex or on this file.
 ## Files and how they get onto the node
 | Source (git) | Node path | Change takes effect |
 |---|---|---|
-| `node-config/k3s-control-01/authn-config.yaml` | `/etc/rancher/k3s/authn-config.yaml` | `jwt` edits: **hot reload** (~1 min, no restart). `anonymous` edits: restart |
-| `node-config/k3s-control-01/config.yaml.d/10-authn.yaml` | `/etc/rancher/k3s/config.yaml.d/10-authn.yaml` | k3s **restart** |
+| `ansible/roles/k3s_node/files/authn/authn-config.yaml` | `/etc/rancher/k3s/authn-config.yaml` | `jwt` edits: **hot reload** (~1 min, no restart). `anonymous` edits: restart |
+| `ansible/roles/k3s_node/files/authn/config.yaml.d/10-authn.yaml` | `/etc/rancher/k3s/config.yaml.d/10-authn.yaml` | k3s **restart** |
 
-Install only with `scripts/install-authn-config.sh` (`--dry-run` first). It refuses a file
+Install only with `ansible-playbook playbooks/k3s-authn.yml` from `ansible/` (`--check` first). It refuses a file
 without `anonymous: {enabled: false}` or with an `--oidc-*` flag, then validates the files in
 a throwaway `rancher/k3s` of the cluster's version (API must start, load the config, and deny
 anonymous with 401). It then backs up the node's files to
