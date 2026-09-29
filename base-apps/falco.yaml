@@ -10,7 +10,12 @@ spec:
   source:
     repoURL: https://falcosecurity.github.io/charts
     chart: falco
-    targetRevision: 8.0.2
+    # 9.2.0 = Falco 0.45.0 with container plugin 0.7.4. The 0.6.3 plugin bundled
+    # with 0.43.1 (chart 8.0.2) nil-pointer panics while listing containers when a
+    # node carries stale NotReady sandboxes left from a reboot (seen on
+    # k3s-worker-02 after the first Ansible patch run, 2026-09-29): falco
+    # crash-looped on that node until upgraded. 0.7.x guards those fields.
+    targetRevision: 9.2.0
     helm:
       releaseName: falco
       values: |
