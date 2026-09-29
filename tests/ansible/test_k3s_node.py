@@ -3,7 +3,8 @@ from conftest import needs_docker, node_read, node_write, run_playbook
 
 DHCP = "network:\n  version: 2\n  ethernets:\n    enp1s0:\n      dhcp4: true\n"
 STATIC_VARS = ("-e", "k3s_node_static_ip=10.0.1.5/24", "-e", "k3s_node_mac=52:54:00:67:81:26",
-               "-e", "k3s_node_netplan_apply=false")   # no networkd in a container
+               "-e", "k3s_node_netplan_apply=false",   # no networkd in a container
+               "-e", "k3s_node_verify_host=false")     # the container is not the worker
 
 
 @needs_docker
@@ -33,7 +34,7 @@ def test_a_rejected_netplan_config_is_restored(node, inventory_for):
     node_write(node, "/etc/netplan/50-cloud-init.yaml", DHCP)
     r = run_playbook("site.yml", inventory_for("k3s_workers"), "--tags", "k3s_node",
                      "-e", "k3s_node_static_ip=10.0.1.5", "-e", "k3s_node_mac=52:54:00:67:81:26",
-                     "-e", "k3s_node_netplan_apply=false")
+                     "-e", "k3s_node_netplan_apply=false", "-e", "k3s_node_verify_host=false")
     assert r.returncode != 0
     assert "netplan rejected" in r.stdout, r.stdout
     assert node_read(node, "/etc/netplan/50-cloud-init.yaml") == DHCP
@@ -44,7 +45,19 @@ def test_a_rejected_netplan_config_with_no_previous_file_is_removed(node, invent
     """No previous file means no backup to restore; the rejected file must not be left for next boot."""
     r = run_playbook("site.yml", inventory_for("k3s_workers"), "--tags", "k3s_node",
                      "-e", "k3s_node_static_ip=10.0.1.5", "-e", "k3s_node_mac=52:54:00:67:81:26",
-                     "-e", "k3s_node_netplan_apply=false")
+                     "-e", "k3s_node_netplan_apply=false", "-e", "k3s_node_verify_host=false")
     assert r.returncode != 0
     assert "netplan rejected" in r.stdout, r.stdout
     assert node_read(node, "/etc/netplan/50-cloud-init.yaml") == ""
+
+
+@needs_docker
+def test_a_mac_mismatch_refuses_before_writing(node, inventory_for):
+    """host_vars that describe another machine must stop the play before any file is written."""
+    r = run_playbook("site.yml", inventory_for("k3s_workers"), "--tags", "k3s_node",
+                     "-e", "k3s_node_static_ip=10.0.1.5/24", "-e", "k3s_node_mac=52:54:00:67:81:26",
+                     "-e", "k3s_node_netplan_apply=false")
+    assert r.returncode != 0
+    assert "k3s_node_mac" in r.stdout, r.stdout
+    assert node_read(node, "/etc/netplan/50-cloud-init.yaml") == ""
+    assert node_read(node, "/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg") == ""

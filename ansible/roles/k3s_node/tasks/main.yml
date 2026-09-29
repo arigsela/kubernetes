@@ -6,6 +6,21 @@
 - name: Pin the address as static netplan (hosts that define k3s_node_static_ip)
   when: k3s_node_static_ip is defined
   block:
+    - name: The host must be the one host_vars describes
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['default_ipv4']['macaddress'] == k3s_node_mac
+          - ansible_facts['default_ipv4']['address'] == (k3s_node_static_ip | split('/') | first)
+          - ansible_facts['default_ipv4']['interface'] == k3s_node_interface
+        fail_msg: >-
+          REFUSED: host_vars do not match this host. k3s_node_mac={{ k3s_node_mac }} vs
+          {{ ansible_facts['default_ipv4']['macaddress'] | default('none') }},
+          k3s_node_static_ip={{ k3s_node_static_ip }} vs {{ ansible_facts['default_ipv4']['address'] | default('none') }},
+          k3s_node_interface={{ k3s_node_interface }} vs {{ ansible_facts['default_ipv4']['interface'] | default('none') }}.
+          Nothing was written.
+        quiet: true
+      when: k3s_node_verify_host | bool
+
     - name: Stop cloud-init from regenerating the netplan file
       ansible.builtin.copy:
         dest: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg

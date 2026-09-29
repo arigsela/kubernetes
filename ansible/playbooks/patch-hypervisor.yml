@@ -5,6 +5,8 @@
 #   ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes
 #   ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes -e velero_backup=yes   # backup first
 #   ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes --check               # preview
+# `--limit asela-k8s` drops the final cluster wait (it runs on localhost); run without --limit, or
+# check `kubectl get nodes` yourself afterwards.
 # A VM that does not shut off within 300 s FAILS the play; nothing is ever forced.
 - name: Gate
   hosts: localhost
