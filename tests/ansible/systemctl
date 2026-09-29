@@ -1,0 +1,9 @@
+#!/bin/sh
+# Stub systemctl for the test container: records every call to /var/log/systemctl.log and
+# answers the reads the playbooks make. Everything else succeeds silently.
+echo "$*" >> /var/log/systemctl.log
+case "$*" in
+  "cat k3s") printf '[Service]\nExecStart=/usr/local/bin/k3s server\n' ;;
+  "is-active k3s"|"is-active k3s-agent") echo active ;;
+esac
+exit 0
