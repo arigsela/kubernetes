@@ -3,3 +3,4 @@ profile: moderate
 exclude_paths:
   - .cache/
   - .ansible/
+  - roles/*/files/   # data shipped verbatim to hosts (k3s authn config), not Ansible YAML

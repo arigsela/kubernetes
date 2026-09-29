@@ -1,0 +1,19 @@
+# Managed by Ansible (ansible/roles/k3s_node). Static address pinned from the DHCP lease this VM
+# held on 2026-09-29; cloud-init network config is disabled so this file is not regenerated.
+network:
+  version: 2
+  ethernets:
+    {{ k3s_node_interface }}:
+      match:
+        macaddress: "{{ k3s_node_mac }}"
+      addresses:
+        - {{ k3s_node_static_ip }}
+      routes:
+        - to: default
+          via: {{ k3s_node_gateway }}
+      nameservers:
+        addresses:
+{% for ns in k3s_node_nameservers %}
+          - {{ ns }}
+{% endfor %}
+      set-name: "{{ k3s_node_interface }}"

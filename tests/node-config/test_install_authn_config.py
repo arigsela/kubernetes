@@ -15,7 +15,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 SCRIPT = REPO / "scripts" / "install-authn-config.sh"
-SRC = REPO / "node-config" / "k3s-control-01"
+SRC = REPO / "ansible" / "roles" / "k3s_node" / "files" / "authn"
 
 SSH_STUB = """#!/usr/bin/env bash
 # stub ssh: record the command; answer reads from $STUB_NODE_CFG; swallow stdin for writes

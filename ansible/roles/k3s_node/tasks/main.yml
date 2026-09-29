@@ -1,0 +1,59 @@
+---
+# The control plane's kube-apiserver authn files live in files/authn/ so this role is the single
+# source for node-level k3s config, but ONLY playbooks/k3s-authn.yml installs them: installing
+# restarts the API server and needs the validation that playbook does first.
+
+- name: Pin the address as static netplan (hosts that define k3s_node_static_ip)
+  when: k3s_node_static_ip is defined
+  block:
+    - name: Stop cloud-init from regenerating the netplan file
+      ansible.builtin.copy:
+        dest: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+        content: "network: {config: disabled}\n"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Write the static netplan config
+      ansible.builtin.template:
+        src: netplan-static.yaml.j2
+        dest: "{{ k3s_node_netplan_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+        backup: true
+      register: k3s_node_netplan
+
+    - name: Validate, then apply
+      when: k3s_node_netplan.changed and not ansible_check_mode
+      block:
+        - name: Netplan must accept the rendered config
+          ansible.builtin.command: netplan generate  # noqa: command-instead-of-module
+          changed_when: false
+
+        - name: Apply (the address does not change, so the session survives)
+          ansible.builtin.command: netplan apply  # noqa: command-instead-of-module
+          changed_when: true
+          when: k3s_node_netplan_apply | bool
+
+        - name: The host must still answer
+          ansible.builtin.wait_for_connection:
+            delay: 5
+            timeout: 90
+          when: k3s_node_netplan_apply | bool
+      rescue:
+        - name: Restore the previous netplan file
+          ansible.builtin.copy:
+            remote_src: true
+            src: "{{ k3s_node_netplan.backup_file }}"
+            dest: "{{ k3s_node_netplan_file }}"
+            owner: root
+            group: root
+            mode: "0600"
+          when: k3s_node_netplan.backup_file is defined
+
+        - name: Fail loudly
+          ansible.builtin.fail:
+            msg: >-
+              netplan rejected the rendered config on {{ inventory_hostname }}; the previous file was
+              restored and nothing was applied. Check k3s_node_static_ip / k3s_node_mac in host_vars.
