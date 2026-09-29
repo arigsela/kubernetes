@@ -268,3 +268,12 @@ def test_install_alone_still_refuses_a_config_without_the_anonymous_block(tmp_pa
     assert node_read(node, "/etc/rancher/k3s/authn-config.yaml") == ""
     assert only_read_k3s_unit(node), "k3s was touched: " + node_read(node, "/var/log/systemctl.log")
     assert node_exec(node, "test -e /etc/rancher/k3s/authn-backup").returncode != 0
+
+
+@needs_docker
+def test_limit_to_the_control_node_refuses_because_validation_did_not_run(tmp_path, node, inventory_for, node_env, api_401):
+    """--limit <node> drops play 1 (hosts: localhost); play 2 must refuse rather than install unvalidated."""
+    r = run_playbook("k3s-authn.yml", inventory_for("k3s_control"), "--limit", node,
+                     "-e", f"k3s_api_url={api_401}", env=node_env)
+    assert r.returncode != 0 and "validation is mandatory" in r.stdout, r.stdout + r.stderr
+    assert node_read(node, "/etc/rancher/k3s/authn-config.yaml") == ""

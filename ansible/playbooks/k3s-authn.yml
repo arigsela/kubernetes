@@ -200,6 +200,12 @@
             path: "{{ authn_stage }}"
             state: absent
 
+    # Play 2 refuses to run unless this fact exists: --limit <control node> drops this whole play.
+    - name: Validation ran
+      ansible.builtin.set_fact:
+        authn_validated: true
+      tags: [static, container]
+
 
 - name: Install the authn config on the control plane
   hosts: k3s_control
@@ -219,6 +225,12 @@
     reloads_ok: "{{ _reloads | select('search', 'status=\"success\"') | map('regex_search', '\\S+$') | map('float') | sum | int }}"
     reloads_fail: "{{ _reloads | select('search', 'status=\"failure\"') | map('regex_search', '\\S+$') | map('float') | sum | int }}"
   tasks:
+    - name: REFUSED unless play 1 (validation) ran
+      ansible.builtin.assert:
+        that: (hostvars['localhost']['authn_validated'] | default(false)) or ('validate' in ansible_skip_tags)
+        fail_msg: "play 1 (validation) did not run — --limit or --tags dropped it; validation is mandatory, re-run without --limit"
+        quiet: true
+
     # ---- 2b. the static guards again: --tags install / --skip-tags validate must not install an
     # unchecked file, and a config-only change hot-reloads LIVE (no anonymous block = anonymous ON).
     - name: REFUSED unless authn-config.yaml carries anonymous disabled (install re-check)
@@ -349,7 +361,7 @@
       when: changed_dropin | bool and not ansible_check_mode
       block:
         - name: Restart k3s (control-plane blip; workloads keep running)
-          ansible.builtin.command: systemctl restart k3s  # noqa: command-instead-of-module (stubbed in tests)
+          ansible.builtin.command: timeout {{ ready_timeout }} systemctl restart k3s  # noqa: command-instead-of-module (stubbed in tests)
           changed_when: true
 
         - name: Wait for /readyz
@@ -373,7 +385,7 @@
               if [ -e {{ backup_dir }}/.no-$(basename $f) ]; then rm -f {{ k3s_dir }}/$f;
               else cp -p {{ backup_dir }}/$f {{ k3s_dir }}/$f; fi;
             done;
-            systemctl restart k3s
+            timeout {{ ready_timeout }} systemctl restart k3s
           register: rollback
           changed_when: true
           ignore_errors: true

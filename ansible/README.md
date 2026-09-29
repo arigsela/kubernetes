@@ -35,7 +35,9 @@ Run every command from this directory (ansible.cfg lives here). `k3s-authn.yml` 
 | Preview / apply the baseline | `ansible-playbook playbooks/site.yml --check --diff` then without `--check` |
 | Patch the VMs (apt full-upgrade, drained serial reboot, workers first) | `ansible-playbook playbooks/patch.yml` (`--limit k3s-worker-02` for one) |
 | Patch and reboot the hypervisor (all VMs shut down in order, never forced) | `ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes` (`-e velero_backup=yes` to back up first) |
-| Change the API server's authn config | edit `roles/k3s_node/files/authn/`, then `ansible-playbook playbooks/k3s-authn.yml --check`, then without `--check` |
+| Change the API server's authn config | edit `roles/k3s_node/files/authn/`, then `ansible-playbook playbooks/k3s-authn.yml --check`, then without `--check`. The first run after the 2026-09-29 move re-installs both files (only their comments changed) and restarts k3s once (about 20 s of API blip); `--check` shows `DRY: would restart k3s` first. |
+
+Before the first `site.yml` on the workers, reserve (or exclude) 10.0.1.5 and 10.0.1.108 in the router's DHCP server: once pinned, the workers stop renewing and the pool could hand those addresses to another device.
 
 If `patch.yml` stops mid-way, that node is left cordoned and the next run's pre-flight refuses:
 `kubectl uncordon <node>` once you have looked, then re-run.
