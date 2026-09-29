@@ -1,0 +1,9 @@
+---
+ansible_user: asela
+ansible_ssh_private_key_file: ~/.ssh/ari_sela_key
+ansible_python_interpreter: /usr/bin/python3
+
+# playbooks/patch.yml and patch-hypervisor.yml
+drain_timeout: 300     # seconds kubectl drain may take per node
+reboot_timeout: 600    # seconds a host may take to come back
+k3s_api_url: https://10.0.1.50:6443

@@ -62,3 +62,7 @@ docs/reference/claude-agents/
 
 # Superpowers SDD scratch workspace (ledgers, briefs, review packages)
 .superpowers/
+
+# ansible-lint / ansible-galaxy caches
+ansible/.cache/
+ansible/.ansible/

@@ -1,0 +1,4 @@
+---
+vm_name: k3s-worker-02
+k3s_node_static_ip: 10.0.1.108/24
+k3s_node_mac: "52:54:00:b2:24:6b"
