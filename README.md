@@ -111,6 +111,30 @@ Production-grade GitOps infrastructure managing containerized applications with 
   - TFLint linting rules (provider version constraints)
   - tfsec security scanning
 
+### PR Triage (AI review labels)
+
+```
+┌──────────────┐     ┌──────────────────────┐     ┌──────────────────────┐
+│  PR opened   │ ──▶ │ review-policy.yaml   │ ──▶ │ Jev (TypeSafe)       │
+│  or pushed   │     │ rules (base commit)  │     │ risk questions       │
+└──────────────┘     └──────────────────────┘     └──────────────────────┘
+                                                             │ unsure?
+                     ┌──────────────────────┐     ┌──────────▼───────────┐
+                     │ review:skip|skim|read│ ◀── │ Claude Haiku decides │
+                     │ + sticky PR comment  │     │ + "what to look at"  │
+                     └──────────────────────┘     └──────────────────────┘
+```
+
+- **PR Triage workflow** (`.github/workflows/pr-triage.yaml`) runs the [`pr-triage`](https://github.com/arigsela/claude-agents/tree/main/pr-triage) action, pinned by SHA, on every non-draft PR from this repo to `main`
+  - Adds exactly one label, `review:skip`, `review:skim` or `review:read`, plus one sticky comment with the reason and what to look at
+  - Labels only: it never blocks, approves or merges
+  - If Jev or Claude is unavailable, it falls back to the rules, then to `review:read`
+- **Review policy** (`.github/review-policy.yaml`) - read at the PR's *base* commit, so a PR can't loosen its own triage
+  - Always read: auth/RBAC/admission apps, `terraform/**`, `ansible/**`, `appsets/**`, `.github/**`, `atlantis.yaml`, RBAC/CRD/admission/network-policy/PVC kinds, deleted Applications, k3s version changes
+  - Always skip: docs-only changes and image-tag bumps (a chart `targetRevision` bump never qualifies)
+  - Thresholds and 26 "hot components" come from calibration on the last 200 PRs: none of the 43 PRs that later needed a fix was labelled skip ([report](https://github.com/arigsela/claude-agents/blob/main/pr-triage/calibration/kubernetes-2026-09.md))
+- **Explain and learn** - the [`pr-explainer`](https://github.com/arigsela/claude-agents/tree/main/skills/pr-explainer) and [`review-retro`](https://github.com/arigsela/claude-agents/tree/main/skills/review-retro) Claude Code skills: `/pr-explainer <n>` turns a GitOps PR into a rendered-manifest resource map with must-read hunks; `/review-retro <n>` compares a `/code-review` session with the fixes that followed
+
 ### Observability Stack
 
 - **Loki** - Log aggregation with S3 backend (30-day retention)
@@ -170,9 +194,12 @@ Pod with ECR image ──▶ API server (native MutatingAdmissionPolicy
 │
 ├── atlantis.yaml                   # Atlantis project configuration
 │
-├── .github/workflows/
-│   ├── terraform-validate.yaml     # fmt, validate, tflint, tfsec
-│   └── infracost.yaml              # Cost estimation on PRs
+├── .github/
+│   ├── review-policy.yaml          # PR triage risk policy
+│   └── workflows/
+│       ├── pr-triage.yaml          # review:skip|skim|read labels
+│       ├── terraform-validate.yaml # fmt, validate, tflint, tfsec
+│       └── infracost.yaml          # Cost estimation on PRs
 │
 └── docs/                           # Architecture documentation
 ```
