@@ -1,0 +1,56 @@
+# Risk policy for PR triage, pr-explainer and review-retro.
+# Spec: arigsela/claude-agents docs/superpowers/specs/2026-09-30-pr-review-toolkit-design.md §3
+# pr-triage reads this file at the PR's BASE commit, so a PR cannot loosen its own triage.
+version: 1
+always_read:                 # any match -> review:read (Jev not called)
+  paths:                     # gitwildmatch, matched against changed paths (and pre-rename paths)
+    - base-apps/dex/**
+    - base-apps/dex.yaml
+    - base-apps/cluster-rbac/**
+    - base-apps/cluster-rbac.yaml
+    - base-apps/admission-policies/**
+    - base-apps/admission-policies.yaml
+    - appsets/**
+    - terraform/**
+    - ansible/**
+    - node-config/**         # host-level k3s config (e.g. apiserver authn, #625)
+    - .github/**
+    - "!**/*.md"             # docs inside those directories are not "read" on their own
+  kinds:                     # kind: added/removed/modified anywhere in the diff
+    - ClusterRole
+    - ClusterRoleBinding
+    - CustomResourceDefinition
+    - ValidatingAdmissionPolicy
+    - MutatingAdmissionPolicy
+    - NetworkPolicy
+    - AuthorizationPolicy
+    - PersistentVolumeClaim
+  signals: [application_deleted, k3s_version_change]
+always_skip:                 # EVERY changed file must satisfy one entry
+  paths: [docs/**, "**/*.md"]
+  image_tag_bump_only: true  # only `image:`/`tag:` value lines changed, <= 4 lines in total.
+                             # A Helm chart bump (Application targetRevision) never qualifies.
+hot_components: {}           # component -> follow-up rate; written from `pr_triage calibrate`
+thresholds:
+  read_if_p_read_gte: 0.30
+  read_if_any_flag_gte: 0.70
+  skip_if_p_skip_gte: 0.90
+  escalate_if_confidence_lt: 0.50
+risk_callouts:               # kind -> plain-language risk (pr-explainer)
+  ClusterRole: access control
+  ClusterRoleBinding: access control
+  RoleBinding: access control
+  Role: access control
+  ServiceAccount: identity
+  NetworkPolicy: network exposure
+  AuthorizationPolicy: network exposure
+  HTTPRoute: network exposure
+  Gateway: network exposure
+  VirtualService: network exposure
+  PersistentVolumeClaim: data durability
+  Cluster: data durability
+  PodDisruptionBudget: availability during drains
+  CustomResourceDefinition: cluster-wide API change
+  ValidatingAdmissionPolicy: cluster-wide admission
+  MutatingAdmissionPolicy: cluster-wide admission
+  ExternalSecret: credentials wiring
