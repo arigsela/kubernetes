@@ -87,7 +87,7 @@ spec:
         # grafana-alerting.yaml must restart it. sha256 of that ConfigMap's `data`
         # (json.dumps, sort_keys); tests/dashboards/test_grafana_alerting.py fails if
         # it is stale. Before this, rule changes needed a manual rollout restart.
-        checksum/alerting: 9b264c9422c8bbf762a80c4ff2c2ba4279532bd75e7621a148cb757fde567ef9
+        checksum/alerting: aa3022a7a07a4d2f10a6e15da9630efd7f58a049a4bed655a036eb40941ef472
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
