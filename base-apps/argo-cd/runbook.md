@@ -1,20 +1,27 @@
 ---
 type: "Kubernetes App Runbook"
 title: "Argo CD — Runbook"
-description: "Operational runbook for Argo CD: failure modes, checks, and fixes."
+description: "Operational runbook for Argo CD: sync outages (suspended root, stale CRD schema), UI/SSO failures, Terraform-applied config changes."
 app: argo-cd
 catalog_entity: argo-cd
 kind: runbook
 namespace: argo-cd
-last_reviewed: 2026-07-08
+last_reviewed: 2026-09-30
 status: current
 tags: [gitops, control-plane]
 sources:
   - base-apps/argo-cd.yaml
+  - base-apps/master-app.yaml
+  - base-apps/managed-apps.yaml
+  - docs/managed-apps-appset.md
   - base-apps/argo-cd/httproute.yaml
+  - base-apps/argo-cd/certificate.yaml
+  - base-apps/istio-ingress/authorizationpolicy.yaml
   - terraform/modules/argocd
-  - terraform/modules/application-sets
   - terraform/roots/asela-cluster/argocd.tf
+  - scripts/argo-sync-window.sh
+  - atlantis.yaml
+  - .github/workflows/terraform-apply.yaml
 ---
 
 # argo-cd — Runbook
@@ -25,12 +32,15 @@ sources:
 - **Fix:** correct the manifest/path in git and push — `selfHeal: true` will reconcile it. If a manual change is fighting `selfHeal`, revert the manual change instead of re-applying it.
 
 ### Symptom: nothing is syncing, across all apps
-- **Check:** the `argo-cd` namespace's `application-controller`, `repo-server`, and `server` pods (`kubectl -n argo-cd get pods`); also check the `master-app` Application's own status, since it is what discovers every other Application under `base-apps/`.
-- **Fix:** restart the failing controller pod; confirm repo connectivity/credentials to `https://github.com/arigsela/kubernetes`. If `master-app` itself is broken, no new or changed `base-apps/*.yaml` Applications will be picked up even if the other controllers are healthy.
+Work through these in order:
+- **Root suspended by a sync window.** `scripts/argo-sync-window.sh pause` (used around k3s upgrade hops) removes `syncPolicy.automated` from `master-app` and every PVC-bearing app, and a suspended root can't sync itself back. **Check:** `kubectl -n argo-cd get app master-app -o jsonpath='{.spec.syncPolicy.automated}'`. Empty means suspended. **Fix:** if the maintenance window is over, `scripts/argo-sync-window.sh resume` (restores exactly what `pause` recorded in its state file, default `~/.k3s-hop-argo-state.json`). Without the state file, restore `automated: {prune: true, selfHeal: true}` on master-app by hand, and it re-applies its children from git.
+- **Stale schema after a CRD upgrade.** Affected apps show `ComparisonError` with `field not declared in schema` (the CRD gained a field the controller's cached schema doesn't know), and auto-sync stops for them. **Check:** `kubectl -n argo-cd get applications` and look at the condition message. **Fix:** restart the application controller: `kubectl -n argo-cd rollout restart statefulset -l app.kubernetes.io/name=argocd-application-controller`. It's a control-plane-wide action, so confirm with the owner first.
+- **Control plane down.** **Check:** the `application-controller`, `repo-server`, and `server` pods (`kubectl -n argo-cd get pods`) and the `master-app` Application's own status. **Fix:** restart the failing component; confirm repo connectivity/credentials to `https://github.com/arigsela/kubernetes`. If `master-app` is broken, no new or changed top-level `base-apps/*.yaml` Application is picked up even while the other controllers are healthy. Apps from the `managed-apps` ApplicationSet depend on the applicationset-controller instead (`kubectl -n argo-cd get applicationset managed-apps -o yaml` shows its conditions).
+- **`master-app` pointed at the wrong path/revision.** It re-points the whole tree at once. **Fix:** `kubectl -n argo-cd edit application master-app` to recover, then fix `base-apps/master-app.yaml` in git (it manages itself and would otherwise revert your edit on the next sync).
 
 ### Symptom: UI at `argocd.arigsela.com` is unreachable or fails TLS
-- **Check:** `base-apps/argo-cd/ingress.yaml` — confirm the `letsencrypt-prod` `ClusterIssuer`-issued `argocd-tls` secret is valid, and that the client IP is covered by `nginx.ingress.kubernetes.io/whitelist-source-range` (a fixed allowlist of IPs/CIDRs; anything else is rejected at the ingress).
-- **Fix:** renew/repair the cert-manager certificate, or update the whitelist annotation and push via git — do not `kubectl edit` the ingress, `selfHeal` will revert it.
+- **Check:** a 403 (Istio RBAC) means the client IP isn't in the `argocd.arigsela.com` rule of `base-apps/istio-ingress/authorizationpolicy.yaml`; after a WAN IP rotation every host fails at once. TLS errors: `kubectl -n argo-cd get certificate argocd-tls` (issuer `letsencrypt-route53`, DNS-01) and confirm `reference-grant.yaml` still grants the Gateway access to the `argocd-tls` Secret. Without it the `https-argocd` listener comes up without a certificate and logs no error. Route: `kubectl -n argo-cd get httproute argo-cd -o yaml` (status shows whether the `main` Gateway accepted it).
+- **Fix:** allow-list and DNS changes go through `base-apps/istio-ingress/` (see its runbook); certificate problems through cert-manager. Push via git; don't `kubectl edit` the route or certificate, since `selfHeal` reverts them.
 
 ### Symptom: "Log in via Dex" fails, or SSO login lands in an empty Argo CD
 Added 2026-08-12 with SSO. Work through these in order — they fail at different stages and look similar from the browser.
@@ -62,5 +72,8 @@ Edit `terraform/modules/argocd/helm.tf` (chart/values) or the `module "argocd"` 
 
 **If you merge first, the change is silently stranded.** Atlantis deletes the saved `plan.tfplan` and the workspace locks within seconds of the PR closing, and `.github/workflows/terraform-apply.yaml` hard-fails on a non-`OPEN` PR (`PR #N is not OPEN (state=MERGED)`). Git then disagrees with the cluster and **no check anywhere reports a failure** — the PR is green and merged, it simply never took effect. Recovery is a fresh PR touching any `.tf` file to re-trigger autoplan, then the sequence above. Verify with `kubectl -n argo-cd get cm argocd-cm -o jsonpath='{.data.admin\.enabled}'` (or whichever key you changed) rather than trusting the merge.
 
-### Change this app's own GitOps-managed resources (e.g. the ingress)
-Edit `base-apps/argo-cd/ingress.yaml` and push; it is synced like any other app, via the `argo-cd-config` Application (`base-apps/argo-cd.yaml`).
+### Change this app's own GitOps-managed resources (e.g. the UI route)
+Edit `base-apps/argo-cd/httproute.yaml` / `certificate.yaml` / `reference-grant.yaml` and push; they sync like any other app, via the `argo-cd-config` Application (`base-apps/argo-cd.yaml`). The IP allow-list lives in `base-apps/istio-ingress/authorizationpolicy.yaml`, not here.
+
+### Add an app without writing an Application
+If the app needs no bespoke Argo CD config, add `appsets/managed-apps/<name>.yaml` (plus the golden and test entry) instead of `base-apps/<app>.yaml`. The `managed-apps` ApplicationSet generates it. Removing a config does **not** delete the Application (`applicationsSync: create-update`), so delete the orphan by hand. Full procedure: `docs/managed-apps-appset.md`.

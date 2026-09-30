@@ -6,14 +6,17 @@ app: coroot
 catalog_entity: coroot
 kind: runbook
 namespace: coroot
-last_reviewed: 2026-07-10
+last_reviewed: 2026-09-30
 status: current
 tags: [observability, ebpf, apm, clickhouse]
 sources:
   - base-apps/coroot/coroot-operator.yaml
   - base-apps/coroot/coroot-instance.yaml
   - base-apps/coroot/httproute.yaml
+  - base-apps/coroot/certificate.yaml
+  - base-apps/coroot/reference-grant.yaml
   - base-apps/coroot/namespace-config.yaml
+  - base-apps/istio-ingress/authorizationpolicy.yaml
 ---
 
 # coroot runbook
@@ -37,7 +40,7 @@ Synced/Healthy does it reconcile the `Coroot` CR (`coroot-instance.yaml`) into r
 `nodeAgent` runs with `ebpfTracer.enabled: true` / `ebpfProfiler.enabled: true` and
 `tolerations: [{operator: Exists}]` so it schedules on every node; it needs the privileged access
 granted by `namespace-config.yaml`'s `pod-security.kubernetes.io/enforce: privileged` label.
-- **Check:** `kubectl -n coroot get pods -l app.kubernetes.io/component=node-agent -o wide` and
+- **Check:** `kubectl -n coroot get pods -l app.kubernetes.io/component=coroot-node-agent -o wide` and
   `kubectl -n coroot describe pod <pod>` for PodSecurity admission denials or eBPF/kernel errors;
   confirm the label is still present with `kubectl get ns coroot -o yaml`.
 - **Fix:** PR restoring the `pod-security.kubernetes.io/enforce: privileged` label in
@@ -48,8 +51,9 @@ granted by `namespace-config.yaml`'s `pod-security.kubernetes.io/enforce: privil
 Coroot has no bundled Prometheus — metrics come from `externalPrometheus.url:
 http://prometheus.logging.svc.cluster.local:9090` (the `logging` app's Prometheus). Traces/logs/
 profiles are unaffected since those go to Coroot's own bundled ClickHouse.
-- **Check:** `kubectl -n coroot exec deploy/coroot -- wget -qO- http://prometheus.logging.svc.cluster.local:9090/-/healthy`
-  (or check from any pod in-cluster), and `kubectl -n logging get pods -l app=prometheus` for the
+- **Check:** `kubectl -n coroot exec coroot-coroot-0 -- wget -qO- http://prometheus.logging.svc.cluster.local:9090/-/healthy`
+  (the server is the operator-managed pod `coroot-coroot-0`, not a Deployment; if its image lacks
+  `wget`, check from any pod in-cluster), and `kubectl -n logging get pods -l app=prometheus` for the
   Prometheus StatefulSet's health.
 - **Fix:** this is a `logging`-namespace problem, not a coroot-config problem — resolve Prometheus
   there. Only PR `coroot-instance.yaml` if the `externalPrometheus.url` itself needs to change
@@ -58,9 +62,12 @@ profiles are unaffected since those go to Coroot's own bundled ClickHouse.
 ## How-to
 
 ### Access the dashboard
-`https://coroot.arigsela.com` — restricted by `nginx.ingress.kubernetes.io/whitelist-source-range`
-in `ingress.yaml` to a fixed list of home/LAN CIDRs. A `403`/connection refusal from an otherwise
-allowed network usually means that IP list is stale — PR an update to `ingress.yaml`.
+`https://coroot.arigsela.com` — routed by `httproute.yaml` on the shared `main` Gateway and
+restricted by the `coroot.arigsela.com` rule in `base-apps/istio-ingress/authorizationpolicy.yaml`.
+A `403` from Envoy on a network that should be allowed means the allow-list
+is stale — usually a home WAN rotation, which `wan-ip-monitor` fixes with a PR (see the
+istio-ingress runbook). A TLS error instead points at `certificate.yaml` (`kubectl -n coroot get
+certificate coroot-tls`) or a missing `reference-grant.yaml`.
 
 ### Deploy / update
 Edit manifests under `base-apps/coroot/` and PR; Argo CD syncs `coroot` (and, via

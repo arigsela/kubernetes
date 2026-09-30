@@ -1,12 +1,12 @@
 ---
 type: "Kubernetes App Guide"
 title: "Dex"
-description: "OIDC provider fronting GitHub — issuer for Vault OIDC (human `vault` login via GitHub SSO)"
+description: "OIDC provider fronting GitHub — human SSO for Vault, Argo CD, kubectl (kubelogin) and agent-audit-web"
 app: dex
 catalog_entity: dex
 kind: docs
 namespace: dex
-last_reviewed: 2026-07-15
+last_reviewed: 2026-09-30
 status: current
 tags: [oidc, authentication, github, vault]
 sources:
@@ -16,7 +16,11 @@ sources:
   - base-apps/dex/secret-store.yaml
   - base-apps/dex/service.yaml
   - base-apps/dex/httproute.yaml
+  - base-apps/dex/certificate.yaml
+  - base-apps/dex/reference-grant.yaml
   - base-apps/dex/rbac.yaml
+  - base-apps/istio-ingress/authorizationpolicy.yaml
+  - docs/troubleshooting/kubectl-oidc.md
 ---
 
 # dex
@@ -26,8 +30,11 @@ Dex (`ghcr.io/dexidp/dex:v2.41.1`) is an **OIDC provider** that fronts an upstre
 identity source. In this cluster it wraps **GitHub** so that humans can log in to
 other services with their GitHub account without those services holding GitHub
 credentials directly. It is deployed as a single `Deployment` in the `dex`
-namespace and served at `https://dex.arigsela.com` (`base-apps/dex/httproute.yaml`,
-TLS via `letsencrypt-prod`).
+namespace and served at `https://dex.arigsela.com` through the shared Istio `main`
+Gateway (`httproute.yaml`; TLS from `certificate.yaml`, ClusterIssuer
+`letsencrypt-route53`, read by the Gateway via `reference-grant.yaml`). The host is
+**IP-restricted** by its rule in `base-apps/istio-ingress/authorizationpolicy.yaml`
+— a `403` from `dex.arigsela.com` is the allow-list, not Dex.
 
 Its OIDC issuer is `https://dex.arigsela.com` (`configmap.yaml`, `dex-config`).
 
@@ -51,19 +58,31 @@ installed by the Helm chart rather than by a manifest here.
 
 | Relying party | Client type | Credential | Config lives in |
 |---|---|---|---|
-| Vault | confidential | `vault-client-secret` from Vault | `base-apps/vault/` |
+| Vault | confidential | `vault-client-secret` from Vault | inside Vault (`vault read auth/oidc/config`, `auth/oidc/role`) — not in git |
 | Argo CD | public (PKCE) | none, by design | `terraform/roots/asela-cluster/argocd.tf` |
 | kubectl (kubelogin) | public (PKCE) | none, by design | `ansible/roles/k3s_node/files/authn/authn-config.yaml` (API server) |
 | agent-audit-web (oauth2-proxy) | confidential + PKCE | `agent-audit-client-secret` from Vault | `base-apps/agent-audit-web/` |
 
-Because Vault and Argo CD both depend on Dex, **Dex is a single point of failure for
-human login to both** — and the two handle that differently. (agent-audit-web depends
-on it too: with Dex down, nobody can log in to it, and it has no local fallback.) Vault keeps its own
-token/root path as a break-glass route. Argo CD **does not**: its local `admin`
-login was disabled on 2026-08-12, so if Dex is down there is no Argo CD UI login
-at all. That is deliberate (Argo CD is driven by git and `kubectl`, not the UI),
-but it means **taking Dex down locks out the Argo CD UI entirely** — worth
-remembering before restarting or reconfiguring this app.
+All four clients are `staticClients` in `configmap.yaml`: `vault`, `argocd`,
+`kubernetes`, `agent-audit`.
+
+**Dex is a single point of failure for human login to every relying party**, and
+each handles that differently:
+- **Vault** keeps its own token path as break-glass (port-forward and use a token —
+  see the vault runbook).
+- **Argo CD** has none: its local `admin` login was disabled on 2026-08-12, so with
+  Dex down there is no Argo CD UI login at all. That is deliberate (Argo CD is driven
+  by git and `kubectl`, not the UI).
+- **kubectl via OIDC fails too** — the API server validates Dex tokens and fetches
+  Dex discovery/JWKS through the public, allow-listed hostname. Break-glass is the
+  x509 admin kubeconfig, which does not depend on Dex
+  (`docs/troubleshooting/kubectl-oidc.md`). So "use kubectl" only rescues an Argo CD
+  lockout if you reach for the admin context.
+- **agent-audit-web** has no local fallback: nobody can log in until Dex is back.
+
+Worth remembering before restarting or reconfiguring this app. A home WAN IP
+rotation that leaves the Dex allow-list stale has the same effect on logins made
+from home and on kubectl OIDC (see the wan-ip-monitor docs).
 
 ## Storage
 Dex uses its **Kubernetes CRD storage backend** (`storage.type: kubernetes`,

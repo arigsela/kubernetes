@@ -1,12 +1,12 @@
 ---
 type: "Kubernetes App Guide"
 title: "homepage"
-description: "Homelab dashboard listing every cluster app plus the WSL2-hosted Plex server, with live widgets for Plex, Grafana, Argo CD, and cluster resources."
+description: "Homelab dashboard listing every cluster app plus the WSL2-hosted media stack, with live widgets for Argo CD, Grafana, the Media group (Plex, qBittorrent, Sonarr, Radarr, Jellyseerr) and cluster resources."
 app: homepage
 catalog_entity: homepage
 kind: docs
 namespace: homepage
-last_reviewed: 2026-08-04
+last_reviewed: 2026-09-30
 status: current
 tags: [dashboard, gitops, self-hosted]
 sources:
@@ -17,7 +17,10 @@ sources:
   - base-apps/homepage/secret-store.yaml
   - base-apps/homepage/httproute.yaml
   - base-apps/homepage/certificate.yaml
+  - base-apps/homepage/reference-grant.yaml
   - base-apps/homepage.yaml
+  - scripts/provision-homepage-vault.sh
+  - scripts/provision-homepage-media-vault.sh
   - terraform/roots/asela-cluster/argocd.tf
   - base-apps/logging/grafana-deployment.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
@@ -54,9 +57,10 @@ single most important thing to understand about this app:
 plaintext in Git, and Homepage performs `{{HOMEPAGE_VAR_*}}` substitution only
 in config files, never in annotations.*
 
-Concretely: `configmap.yaml`'s `services.yaml` hand-lists exactly three tiles
-that need a widget (Argo CD, Grafana, Plex — see below), because only widgets
-need credentials or a non-default query. Every other app on the dashboard is
+Concretely: `configmap.yaml`'s `services.yaml` hand-lists only the tiles that
+carry a widget — Argo CD, Grafana, and the whole `Media` group (Plex,
+qBittorrent, Sonarr, Radarr, Jellyseerr; see below) — because only widgets need
+credentials or a non-default query. Every other app on the dashboard is
 discovered by Homepage's Kubernetes provider (`kubernetes.yaml`: `mode:
 cluster`, `gateway: true`) reading `gethomepage.dev/*` annotations off
 `HTTPRoute` objects cluster-wide — which is why the ClusterRole below grants
@@ -86,11 +90,18 @@ know about this app: `configmap.yaml` changes need a rollout (see the
 `checksum/config` note below); `httproute.yaml` annotation changes do not,
 because they never go through the ConfigMap/subPath path at all.
 
-If `group` does not match one of the keys under `layout:` in `settings.yaml`
-(`GitOps & Delivery`, `Automation`, `Observability`, `Platform`, `AI &
-Agents`, `Home`), Homepage silently renders the tile into its own
-unconfigured row rather than erroring — see the runbook for the "tile
-missing" symptom.
+If `group` does not match one of the keys under `layout:` in `settings.yaml`,
+Homepage silently renders the tile into its own unconfigured row rather than
+erroring — see the runbook for the "tile missing" symptom. The keys today are
+`GitOps & Delivery`, `Automation`, `Observability`, `Platform` and
+`Cloud & Code` (the bookmarks group) on the `Infra` tab, and `AI & Agents`,
+`Home` and `Media` on the `Home` tab; read `settings.yaml` for the current set.
+
+**Every layout group must carry a `tab:`.** Homepage shows a group *without*
+one on every tab, so a new group added without `tab:` silently duplicates
+itself across both tabs rather than erroring. This applies to bookmark groups
+too — they live in the same `layout:` block. Tab order follows the order the
+groups appear there.
 
 ### Why `checksum/config` exists and is mandatory
 
@@ -111,20 +122,20 @@ ConfigMap edit. Recompute it after any `configmap.yaml` change:
 shasum -a 256 base-apps/homepage/configmap.yaml | cut -c1-16
 ```
 
-The current value baked into `deployments.yaml` is `910dd3cd79b4a78e`.
 Forgetting this step is indistinguishable from a successful, no-op deploy —
 Argo CD reports Synced/Healthy either way.
 
 ### Why the Argo CD tile reads Prometheus, not the Argo CD API
 
 The natural design would be an Argo CD `apiKey` account and the built-in
-`argocd` widget. That requires editing `argocd-cm`, and in this repo the
-Argo CD Terraform module (`terraform/modules/argocd`) writes Helm values
-under the deprecated `server.config.*` path, which the chart no longer reads
-(it reads `configs.cm.*`) — see `templates/agent-docs/README.md` for the full
-account of why that path is dead. So instead the tile uses a `prometheusmetric`
-widget against `argocd_app_info`, counting apps by `sync_status` and
-`health_status`.
+`argocd` widget. That needs a local account in `argocd-cm` plus a long-lived
+API token in this unauthenticated app's environment. When the tile was built
+that looked impossible, because the Argo CD module's `server.config.*` values
+are a dead path the chart ignores. `terraform/roots/asela-cluster/argocd.tf`
+now also writes `configs.cm` directly (Dex SSO, `admin.enabled: "false"`), so an
+account *could* be added there — but Argo CD deliberately has no local accounts
+at all, and the Prometheus route needs none. So the tile uses a `prometheusmetric` widget
+against `argocd_app_info`, counting apps by `sync_status` and `health_status`.
 
 **This has a dependency that lives entirely outside the `homepage`
 namespace, and outside Argo CD sync entirely:** `argocd_app_info` only
@@ -154,32 +165,35 @@ sent as a Bearer header. **If someone "fixes" this back to the built-in
 `grafana` widget expecting it to be simpler, it will break** — the widget
 issue is not the token, it's the auth scheme.
 
-### The external Plex dependency (lives outside Git)
+### The external media stack (lives outside Git)
 
-The Plex tile points at `10.0.1.200:32401` — **not** Plex's default port
-32400. Plex itself runs on a Windows/WSL2 host, not in the cluster; it is
-reachable from cluster pods only because WSL2 mirrored networking is enabled
-on that host (`networkingMode=mirrored` in `%UserProfile%\.wslconfig`,
+Every tile in the `Media` group runs on one Windows/WSL2 host at `10.0.1.200`,
+not in the cluster: Plex on `:32401` (**not** Plex's default 32400),
+qBittorrent `:8080`, Sonarr `:8989`, Radarr `:7878`, Jellyseerr `:5055` (widget
+type `seerr`, the canonical name since Jellyseerr/Overseerr merged upstream).
+They are reachable from cluster pods only because WSL2 mirrored networking is
+enabled on that host (`networkingMode=mirrored` in `%UserProfile%\.wslconfig`,
 requires WSL 2.0+ and Windows 11 22H2+). Without mirrored networking, WSL2's
-default NAT mode puts Plex behind a private address the cluster cannot route
+default NAT mode puts them behind a private address the cluster cannot route
 to.
 
 The Windows host needs a static DHCP reservation: `10.0.1.200` is hardcoded
-into `configmap.yaml`'s Plex tile (both `href` and the widget `url`), and
-there is nothing in this app that would notice or recover from the lease
-moving. If the widget goes blank while the link still works, this dependency
-— entirely outside this repo, outside the cluster, and outside Kubernetes —
-is almost always why. See the runbook for the probe command.
+into every Media tile (`href` and widget `url`), and there is nothing in this
+app that would notice or recover from the lease moving. If the Media widgets go
+blank while the links still work, this dependency — entirely outside this repo,
+outside the cluster, and outside Kubernetes — is almost always why. See the
+runbook for the probe command.
 
 ## Where config lives
 
 | What | Where |
 |---|---|
 | Layout, groups, kubernetes-provider mode | `configmap.yaml` (`settings.yaml`, `kubernetes.yaml`) |
-| The three widget-bearing tiles (Argo CD, Grafana, Plex) | `configmap.yaml` (`services.yaml`) |
+| Widget-bearing tiles (Argo CD, Grafana, the Media group) | `configmap.yaml` (`services.yaml`) |
+| Bookmarks (`Cloud & Code`) | `configmap.yaml` (`bookmarks.yaml`) |
 | Cluster-resources widget (CPU/memory on the tile row) | `configmap.yaml` (`widgets.yaml`) |
 | Link-only tiles for every other app | `gethomepage.dev/*` annotations on that app's own `httproute.yaml` |
-| Plex token, Grafana service-account token | Vault `k8s-secrets/homepage` → `external-secrets.yaml` |
+| Plex token, Grafana service-account token, qBittorrent login, Sonarr/Radarr/Seerr API keys | Vault `k8s-secrets/homepage` → `external-secrets.yaml` (written by `scripts/provision-homepage-vault.sh` and `scripts/provision-homepage-media-vault.sh`) |
 | Allowed request hostnames | `HOMEPAGE_ALLOWED_HOSTS` env var in `deployments.yaml` |
 | TLS certificate | `certificate.yaml` (ClusterIssuer `letsencrypt-route53`) |
 | Who can reach it at all | `base-apps/istio-ingress/authorizationpolicy.yaml` |
@@ -205,8 +219,8 @@ the blast radius of a compromised pod for no functional benefit.
 Upstream is explicit that Homepage has **no built-in authentication and none
 is planned**. This app is reachable, unauthenticated, by anyone whose source
 IP is on the allow-list — and the page it serves enumerates essentially every
-service in the homelab (name, description, group, and for three apps, live
-operational data). The Istio `AuthorizationPolicy` IP allow-list in
+service in the homelab (name, description, group, and for the widget tiles,
+live operational data). The Istio `AuthorizationPolicy` IP allow-list in
 `base-apps/istio-ingress/authorizationpolicy.yaml` is therefore not *a*
 control, it is the **only** control standing in front of a full service
 inventory of this cluster.
@@ -219,6 +233,8 @@ app's environment should not hand out Grafana admin. There is no equivalent
 scoped credential for Argo CD (the tile reads Prometheus, which has no
 authentication of its own inside the cluster network) or Plex (the token is
 Plex's own least-privileged "server" access token, not an account password).
+qBittorrent is the weak spot: it has no API key, so its WebUI username and
+password sit in this app's environment.
 
 ## Known follow-ups (deliberately out of scope)
 

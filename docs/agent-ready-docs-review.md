@@ -1,5 +1,9 @@
 # Agent-Ready Infrastructure Documentation — Research Review
 
+> **Status: research note (2026-07-08).** It led to the agent-docs contract,
+> `templates/agent-docs/README.md`; what the repo does today is described there and in
+> `docs/okf-documentation-structure.md`.
+
 *A shareable summary of our review into "docs-as-code for AI agents": how teams structure infrastructure knowledge in git so agents (kagent, Claude Code, SRE copilots) can triage, answer questions, and operate the stack.*
 
 ---

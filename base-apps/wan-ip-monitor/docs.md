@@ -6,7 +6,7 @@ app: wan-ip-monitor
 catalog_entity: wan-ip-monitor
 kind: docs
 namespace: wan-ip-monitor
-last_reviewed: 2026-08-12
+last_reviewed: 2026-09-30
 status: current
 tags: [automation, dns, route53, istio, github-actions]
 sources:
@@ -59,7 +59,7 @@ moves in seconds, the annotation moves only when a human merges the PR. Once
 they diverge the code cannot notice. The proven failure: WAN goes A→B (records
 move to B, PR opened), then flaps back to A before the merge. Now
 `detected == declared == A`, the early return fires, the job prints `in sync,
-nothing to do` — and all 21 records stay stranded on B, permanently and
+nothing to do` — and every managed record stays stranded on B, permanently and
 silently, because every subsequent run draws the same conclusion.
 `tests/wan_ip/test_main.py::test_dns_follows_a_flap_back_to_the_previous_address`
 drives that exact three-run sequence; it needs multiple runs to express, which
@@ -131,14 +131,9 @@ expected, not a bug (see runbook: "PR opened but nothing merged").
 An **explicit list**, in `cronjob.yaml`'s `MANAGED_HOSTNAMES` env var
 (comma-separated; trailing dots and case are normalised on both sides before
 comparing, so `Argocd.arigsela.com.` and `argocd.arigsela.com` are the same
-entry). Seeded with the 21 A records in zone `Z0524483LR4JCFNLS7N0` that point
-at the WAN address; it now holds 22 (`oncall-crewai` came out with its app; `jupyter` and
-`agent-audit` were added with theirs):
-
-`agent-audit`, `agent`, `argo-workflows`, `argocd`, `atlantis`, `backstage`,
-`chores`, `coroot`, `dex`, `grafana`, `home`, `jupyter`, `kagent-mcp`,
-`kagent`, `langflow`, `n8n`, `oncall`, `overseerr`, `rollouts`, `vault`,
-`weather-kitchen`, `whoami` — each `<name>.arigsela.com`.
+entry). It was seeded with the A records in zone `Z0524483LR4JCFNLS7N0` that
+pointed at the WAN address and changes as apps come and go — read the current
+set from `cronjob.yaml`, not from here.
 
 **Adding a host to the homelab means adding it here.** A hostname absent from
 the list is simply never touched: after a rotation it keeps pointing at the
@@ -167,7 +162,7 @@ record.
 `base-apps/istio-ingress/authorizationpolicy.yaml`'s `metadata.annotations`
 carries:
 ```yaml
-arigsela.com/wan-ip: "76.97.4.210"
+arigsela.com/wan-ip: "<current home WAN address>"
 ```
 This is the **single source of truth** for which of the several `/32`s
 allow-listed in that file is the home WAN address (the file also allow-lists
@@ -288,8 +283,14 @@ there is then no bespoke image to build, publish, or keep patched.
   an n8n that is *also* down cannot mask the real cause.
 
 ## DRY_RUN
-Ships with `DRY_RUN: "true"` on the CronJob deliberately. **`DRY_RUN` only
-gates the write path — it does not gate the reads.** Every run, dry or not,
+**Armed since 2026-08-12: the CronJob sets `DRY_RUN: "false"`**, so scheduled
+runs (and any Job created `--from` the CronJob) write for real. It shipped as
+`"true"` and was flipped only after a dry run proved both credentials; the
+transcript of that run is kept, dated, in `cronjob.yaml`. `reconcile.py` reads
+it from the env (`1`/`true`/`yes` disable writes), so a one-off dry run means
+overriding it on the Job (see runbook: "Run a job by hand").
+
+**`DRY_RUN` only gates the write path — it does not gate the reads.** Every run, dry or not,
 steady-state or not, performs both:
 
 - a live Route 53 `list-resource-record-sets` on the zone
@@ -300,19 +301,18 @@ steady-state or not, performs both:
 Only the writes are skipped when `DRY_RUN` is true:
 `change-resource-record-sets` and `open_allowlist_pr`. Instead the job logs
 what it *would* have done, naming the specific records:
-`DRY_RUN: would move 21 Route 53 record(s) to <ip>: ...`.
+`DRY_RUN: would move <n> Route 53 record(s) to <ip>: ...` and
+`DRY_RUN: would open an allow-list PR <old> -> <new>`.
 
 Because both reads now happen on **every** run, a steady-state dry run
 exercises **both** credentials — unlike the previous design, where the Route 53
 call only happened if a rotation was already detected, so a clean steady-state
 dry run proved nothing about AWS. A dry run that gets to
-`route53: 21 managed hostname(s) already on <ip>` has proven the AWS half, and
+`route53: <n> managed hostname(s) already on <ip>` has proven the AWS half, and
 one that gets to `allow-list: declared=... detected=...` has proven the GitHub
 half.
 
-Arming it (`DRY_RUN: "false"`) is a separate, deliberately reviewable commit,
-not part of the initial deployment (see runbook: "Disabling it" for the
-reverse operation).
+Disarming (back to `"true"`) is the soft disable — see runbook: "Disabling it".
 
 ## Known limitations (deferred, not part of this task)
 - **`pip install` at container start is version-pinned but not hash-pinned.**
@@ -359,8 +359,8 @@ reverse operation).
   that a CI failure.
 - `open_allowlist_pr` is idempotent per rotation: it looks up an existing open
   PR for branch `automation/wan-ip-<new_ip>` before doing anything else, so a
-  rotation that sits unmerged for a day does not open a second PR five minutes
-  later.
+  rotation that sits unmerged for a day does not open a second PR on the next
+  run.
 - **`open_allowlist_pr` reads the file's blob SHA from the *branch* when the
   branch already exists**, not from `main`. `PUT /contents` needs the SHA of
   the blob it replaces on the target branch; committing `main`'s SHA onto a

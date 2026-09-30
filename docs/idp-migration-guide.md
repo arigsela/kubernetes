@@ -1,8 +1,16 @@
 # IDP Migration Guide — Onboarding Existing Apps via Backstage + Crossplane
 
-**Status:** v1.5 as-shipped (2026-05-12)
+**Status:** v1.5 as-shipped (2026-05-12). **Superseded** — kept as a record.
 **Audience:** Operators onboarding existing `base-apps/<name>` apps into the IDP
 **Scope:** Decision framework + step-by-step migration + worked example using `chores-tracker-backend`
+
+> New apps use the Backstage **New Application** template (`templates/new-app/README.md`), which
+> writes plain `base-apps/<app>/` manifests; the "Application (Crossplane)" scaffolder template
+> this guide drives was removed from the portal. The `XApplication` XRD and Composition are still
+> deployed (`base-apps/crossplane-compositions/`) but dormant: nothing in the repo instantiates
+> one, and the Composition still emits an nginx `Ingress` with `letsencrypt-prod`, which nothing
+> routes since the Istio Gateway cutover (SPEC §T.76). The worked example app,
+> `chores-tracker-backend`, was removed on 2026-08-01.
 
 ---
 
@@ -589,8 +597,7 @@ cd /Users/arisela/git/kubernetes
 
 ## Related docs
 
-- **Design specs:** `docs/superpowers/specs/2026-05-*-idp-v*-design.md` (one per iteration)
-- **Implementation plans:** `docs/superpowers/plans/2026-05-*-idp-v*.md` (one per iteration, includes run notes)
+- **Design specs and implementation plans:** one per iteration (v1–v1.5), deleted from the tree on 2026-09-30 once superseded; read them in git history (`git log --all -- 'docs/superpowers/*idp*'`). The deployed XApplication is described in `docs/platform/crossplane.md`.
 - **Composition source:** `base-apps/crossplane-compositions/composition-application.yaml`
 - **XRD source:** `base-apps/crossplane-compositions/xrd-application.yaml`
 - **Render-test harness:** `tests/composition/render.sh`

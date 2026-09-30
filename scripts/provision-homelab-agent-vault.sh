@@ -33,9 +33,8 @@
 #   rm /tmp/prov.sh
 #   exit
 #
-# Spec: docs/superpowers/specs/2026-07-17-homelab-agent-deployment-design.md
-# Plan: docs/superpowers/plans/2026-07-17-homelab-agent-deployment.md
-# Runbook: docs/superpowers/homelab-agent-vault-provisioning.md
+# Design + runbook: base-apps/kagent/docs.md ("homelab-agent (BYO)") and
+# base-apps/kagent/runbook.md ("Provision homelab-agent's Vault side").
 
 set -eu
 
@@ -134,4 +133,4 @@ vault write auth/kubernetes/role/homelab-agent-db \
 echo
 echo "==> Done. The ExternalSecrets will resolve on the next ESO refresh"
 echo "    (or delete the target Secret to force an immediate resync)."
-echo "    Verify per docs/superpowers/homelab-agent-vault-provisioning.md section 4."
+echo "    Verify per base-apps/kagent/runbook.md (\"Provision homelab-agent's Vault side\")."

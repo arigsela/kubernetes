@@ -145,7 +145,7 @@ hand-written `base-apps/<app>.yaml` files puts them back under `master-app`.
 **The generator matches nothing** (path typo, branch rename, repo unreachable):
 all 12 Applications are deleted. Workloads and Crossplane CRs keep running.
 Restoring the glob restores the Applications. This is why
-`preserveResourcesOnDeletion: true` is not optional here — three of these apps
+`preserveResourcesOnDeletion: true` is not optional here — four of these apps
 front real S3 buckets and IAM users via Crossplane CRs with the default
 `deletionPolicy: Delete`.
 

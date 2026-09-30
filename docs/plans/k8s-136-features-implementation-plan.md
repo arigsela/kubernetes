@@ -2,6 +2,12 @@
 
 *Written 2026-09-25, the day after the cluster reached `v1.36.4+k3s1` (SPEC.md §T.21).*
 
+> **Status: complete 2026-09-27** — all five phases shipped (Phases 1–2 on 2026-09-25; Phase 3 =
+> SPEC §T.80, Phase 4 = §T.91, Phase 5 = §T.92). Living docs: `base-apps/admission-policies/docs.md`,
+> `docs/troubleshooting/in-place-resize.md`, `docs/troubleshooting/kubectl-oidc.md`. Paths below
+> that are gone: `base-apps/kyverno-policies/` (retired 2026-09-27, §T.90) and `base-apps/qwen/`
+> (app and `qwen-test` agent retired 2026-09-27, after Phase 4).
+
 ## Overview
 
 The walk from 1.33 to 1.36 made several features generally available that this cluster

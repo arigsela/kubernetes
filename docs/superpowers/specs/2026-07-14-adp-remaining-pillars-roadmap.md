@@ -1,7 +1,7 @@
 # ADP Remaining Pillars — Roadmap (L02 Paths, L03 Evaluation, L03 Observability)
 
 - **Date:** 2026-07-14
-- **Status:** Draft for review
+- **Status:** Draft for review (2026-07-14); see **Status as of 2026-09-30** below. The body is the original roadmap.
 - **Frames onto:** the Weave Intelligence ADP model — L01 Tooling/IDP, L02 Paths, L03 Agent Infrastructure (7 pillars: Identity, Context, Capability, Execution, Evaluation, Security, Observability).
 - **Predecessors (both shipped):** [Agent Identity](2026-07-11-agent-identity-principal-design.md), [Agent Capability Classes](2026-07-13-agent-capability-classes-design.md).
 
@@ -9,19 +9,29 @@ This is a **sequencing document**, not an implementation plan. It exists to pick
 the next increment with the dependencies visible. Each track below gets its own
 design doc before any code.
 
+## Status as of 2026-09-30
+
+| Track | Done | Open |
+|---|---|---|
+| **O** Observability | O0–O4, 2026-07-14/15: the agent action record (`scripts/agent-audit.py`), the `agent-audit-export` (daily → S3 `asela-agent-audit-record`) and `agent-audit-ungated` CronJobs (`base-apps/postgresql/agent-audit-cronjob.yaml`), Falco → Loki → Grafana alert rules → n8n. O4's "dashboard" became `agent-audit-web` (`agent-audit.arigsela.com`, live 2026-09-27) rather than a Grafana board. | — |
+| **E** Evaluation | E1 corpus (`tests/eval-corpus/`, `scripts/mine-eval-corpus.py`) and E2 scorer (`scripts/score-eval.py`), 2026-07-15. CI validates the corpus (schema, no secrets). | E3 regression gate (nothing scores agents on change), E4 `.judge` in CI. |
+| **P** Paths | P1: the `agents.platform.ai` contract was deleted (2026-07-14). P2 in part: the New App template now lives in this repo (`templates/new-app/`). | No path registry; not agent-consumable (P3); one path (P4). Both the template and the dormant `XApplication` Composition still emit an nginx `Ingress` (SPEC T76). |
+
 ## Where we actually are
+
+*Refreshed 2026-09-30; the 2026-07-14 assessment is what the findings below argue from.*
 
 | Layer / pillar | State |
 |---|---|
-| **L01 IDP** | Strong. Backstage, Argo CD, Atlantis, Crossplane, Vault, Kyverno, Falco, Coroot, Loki, argo-rollouts. |
-| **L02 Paths** | **Fragmented, not absent** — see Finding 3. |
-| L03 **Identity** | ✅ Closed. Contract, universal hard-fail CI gate, Kyverno `Enforce`, no exclusions. |
-| L03 **Security** | ✅ Closed. Capability classes, fail-closed tool taxonomy, `requireApproval` enforced, delegation cannot escalate. |
+| **L01 IDP** | Strong. Backstage, Argo CD, Atlantis, Crossplane, Vault, native admission policies (Kyverno only reports), Falco, Coroot, Loki, argo-rollouts, Argo Workflows. |
+| **L02 Paths** | **Fragmented, not absent.** The New App template is in this repo now, but there is no registry — see Track P. |
+| L03 **Identity** | ✅ Closed. Contract, universal hard-fail CI gate, native ValidatingAdmissionPolicies (`[Deny]`, failurePolicy `Fail`; Kyverno `Enforce` until 2026-09-26), no exclusions. |
+| L03 **Security** | ✅ Closed. Capability classes, fail-closed tool taxonomy, `requireApproval` enforced, delegation cannot escalate — all native admission since 2026-09-26. |
 | L03 **Context** | ✅ Strong. agent-docs framework + Backstage catalog graph. |
 | L03 **Capability** | ✅ Strong, and now *bounded* by the class contract. |
-| L03 **Execution** | ⚠️ Unassessed. kagent runtime + openshell sandbox exist; never audited. Out of scope here. |
-| L03 **Observability** | ❌ Weak — see Track O. |
-| L03 **Evaluation** | ❌ Absent — see Track E. |
+| L03 **Execution** | ⚠️ Unassessed. The openshell sandbox was removed on 2026-08-12, so the targets are the kagent runtimes, the BYO `homelab-agent`, and agent egress. Out of scope here. |
+| L03 **Observability** | ✅ O0–O4 done — see the status table above. |
+| L03 **Evaluation** | ⚠️ Tool, not yet a gate: E1–E2 done, E3–E4 open. |
 
 ## Three findings that change the plan
 

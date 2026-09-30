@@ -6,14 +6,17 @@ app: coroot
 catalog_entity: coroot
 kind: docs
 namespace: coroot
-last_reviewed: 2026-07-10
+last_reviewed: 2026-09-30
 status: current
 tags: [observability, ebpf, apm, clickhouse]
 sources:
   - base-apps/coroot/coroot-operator.yaml
   - base-apps/coroot/coroot-instance.yaml
   - base-apps/coroot/httproute.yaml
+  - base-apps/coroot/certificate.yaml
+  - base-apps/coroot/reference-grant.yaml
   - base-apps/coroot/namespace-config.yaml
+  - base-apps/istio-ingress/authorizationpolicy.yaml
 ---
 
 # coroot
@@ -33,8 +36,10 @@ This app is deployed in two layers, both sourced from `base-apps/coroot/`:
    part of the `coroot` app's own sync, which is what bootstraps the second, independently-synced
    `coroot-operator` Application (visible in Argo CD as its own app).
 2. **Instance** (`coroot-instance.yaml`) — a `Coroot` custom resource (`coroot.com/v1`) that the
-   operator (once installed) reconciles into the actual Coroot workloads: the Coroot server,
-   a bundled ClickHouse, a per-node eBPF agent, and a cluster agent.
+   operator (once installed) reconciles into the actual Coroot workloads: the Coroot server
+   (pod `coroot-coroot-0`, Service `coroot-coroot`), a bundled ClickHouse, a per-node eBPF agent,
+   and a cluster agent. The pods are told apart by `app.kubernetes.io/component`: `coroot`
+   (server), `coroot-node-agent`, `coroot-cluster-agent` (see the comment in `httproute.yaml`).
 
 ## What it observes and how
 The `Coroot` CR (`coroot-instance.yaml`) configures:
@@ -57,7 +62,11 @@ The `Coroot` CR (`coroot-instance.yaml`) configures:
 - Single replica for both the Coroot server and ClickHouse (`replicas: 1` at each level) — no HA.
 
 ## Ingress
-`ingress.yaml` exposes the `coroot-coroot` Service (port `8080`) at `coroot.arigsela.com` via the
-shared `nginx` IngressClass, TLS from `letsencrypt-prod` (`cert-manager.io/cluster-issuer`), with a
-`nginx.ingress.kubernetes.io/whitelist-source-range` restricting access to a short list of home/LAN
-IPs, and long (`600s`) read/send timeouts for dashboard loading.
+`httproute.yaml` attaches to the shared Istio `main` Gateway (namespace `istio-ingress`, listener
+`https-coroot`) and routes `coroot.arigsela.com` to the `coroot-coroot` Service on port `8080`.
+TLS: `certificate.yaml` issues `coroot-tls` from the `letsencrypt-route53` ClusterIssuer, and
+`reference-grant.yaml` lets the Gateway read that secret across namespaces (without the grant the
+listener comes up silently certless). Access is **restricted**: the `coroot.arigsela.com` rule in
+`base-apps/istio-ingress/authorizationpolicy.yaml` allow-lists the home WAN address plus a few
+remote `/32`s. The nginx-era `600s` read/send timeouts were not carried over — the HTTPRoute sets
+no `timeouts`.

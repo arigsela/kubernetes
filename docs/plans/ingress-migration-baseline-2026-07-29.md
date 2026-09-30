@@ -1,5 +1,9 @@
 # Ingress migration baseline — 2026-07-29
 
+> **Status: historical record.** Baseline captured 2026-07-29 (SPEC §T.50); the migration it
+> served finished 2026-07-31 (§T.43). Several hosts below (e.g. `chores`) no longer exist. Live
+> ingress: `base-apps/istio-ingress/docs.md`.
+
 **Captured for SPEC.md §T.50**, before any change under §T.43 (ingress-nginx → Istio
 Gateway API). Compare against this after every host cutover (§V.53).
 

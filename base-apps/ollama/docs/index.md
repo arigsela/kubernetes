@@ -6,7 +6,7 @@ app: ollama
 catalog_entity: ollama
 kind: docs
 namespace: ollama
-last_reviewed: 2026-09-27
+last_reviewed: 2026-09-30
 status: current
 tags: [llm, embeddings, gpu-optional]
 sources:
@@ -14,12 +14,14 @@ sources:
   - base-apps/ollama/services.yaml
   - models/nomic-embed-text/Dockerfile
   - scripts/build-model-image.sh
+  - base-apps/kagent/embedding-model-config.yaml
+  - base-apps/kagent/agents/homelab-agent.yaml
 ---
 
 # ollama
 
 ## What it is
-Self-hosted [Ollama](https://ollama.com) model server (`ollama/ollama:0.20.5`) providing local LLM/embedding inference in-cluster. It is a base provider — other apps call it over HTTP; it does not itself depend on any other catalogued app.
+Self-hosted [Ollama](https://ollama.com) model server (`ollama/ollama:0.20.5`) that serves exactly **one model: the `nomic-embed-text` embedding model**. It can't serve text generation. The read-only `/models` image volume holds only that model, and `/api/pull` fails by design, so there's no way to add a generation model at runtime (a new model means a new image digest; see the runbook). It is a base provider — other apps call it over HTTP; it does not itself depend on any other catalogued app. (`models/qwen/` is the recipe for a GGUF image that belonged to a separate, retired `qwen` app, not an Ollama model.)
 
 ## Architecture & data flow
 Single-replica `Deployment` (`deployments.yaml`, `RollingUpdate` with `maxSurge: 1`, `maxUnavailable: 0`) scheduled onto either worker (`nodeSelector` `node.kubernetes.io/workload: application`, a pool, not a pin). There is no GPU `nodeSelector`/resource request anywhere in the spec, so this runs **CPU-only inference** — expect slower token/embedding throughput than a GPU-backed deployment.
@@ -37,4 +39,7 @@ The main container exposes port `11434` (`services.yaml`, Service `ollama`, `Clu
 Main container: requests `cpu: 250m` / `memory: 1Gi`, limits `cpu: 3` / `memory: 2Gi` (`OLLAMA_KEEP_ALIVE=-1` keeps the ~274MB model resident, so the cold reload never lands on a kagent call). No GPU is requested. The model file lives in the node's image store, not in the pod's memory or ephemeral storage.
 
 ## Who consumes it
-kagent's embedding model config (`base-apps/kagent/embedding-model-config.yaml`) points at `ollama` for the `nomic-embed-text` embedding model via `http://ollama.ollama.svc.cluster.local:11434`.
+- kagent's `ModelConfig` `embedding-model-config` (`base-apps/kagent/embedding-model-config.yaml`, provider `Ollama`, model `nomic-embed-text`), used as `memory.modelConfig` by kagent's Declarative agents with a `memory` block.
+- `homelab-agent` calls it directly (`OLLAMA_BASE_URL` / `EMBEDDING_MODEL: nomic-embed-text` in `base-apps/kagent/agents/homelab-agent.yaml`).
+
+Both store vectors made with this exact model, which is why its digest is asserted at build time.

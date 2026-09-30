@@ -1,12 +1,12 @@
 ---
 type: "Kubernetes App Runbook"
 title: "Ollama — Runbook"
-description: "Operational runbook for Ollama: failure modes, checks, and fixes."
+description: "Operational runbook for Ollama (embedding-only): model-volume pulls, model not found, OOM, model updates."
 app: ollama
 catalog_entity: ollama
 kind: runbook
 namespace: ollama
-last_reviewed: 2026-09-27
+last_reviewed: 2026-09-30
 status: current
 tags: [llm, embeddings, gpu-optional]
 sources:
@@ -14,6 +14,7 @@ sources:
   - base-apps/ollama/services.yaml
   - models/nomic-embed-text/Dockerfile
   - scripts/build-model-image.sh
+  - base-apps/kagent/embedding-model-config.yaml
 ---
 
 # ollama runbook
@@ -48,4 +49,7 @@ The model changes only through a new image digest, and **changing the embedding 
 `kubectl -n ollama exec deploy/ollama -c ollama -- ollama list`
 
 ### Note on performance
-No GPU `nodeSelector` or GPU resource request is configured (`deployments.yaml`) — inference runs on CPU only. Expect materially slower embedding/generation latency than a GPU-backed node pool; this is expected behavior, not a bug.
+No GPU `nodeSelector` or GPU resource request is configured (`deployments.yaml`) — inference runs on CPU only. Expect materially slower embedding latency than a GPU-backed node pool; this is expected behavior, not a bug.
+
+### "Can I run a chat/generation model here?"
+Not as deployed. Only `nomic-embed-text` is in the image volume, and `/api/pull` fails because `/models` is read-only. Serving another model means building an image that contains it (extend `scripts/build-model-image.sh` / `models/`), adding it to the volume via PR, and resizing the container (the 2Gi limit is sized for the ~274MB embedding model kept resident by `OLLAMA_KEEP_ALIVE=-1`). Treat that as a design change, not a runbook step.

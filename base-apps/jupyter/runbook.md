@@ -6,12 +6,18 @@ app: jupyter
 catalog_entity: jupyter
 kind: runbook
 namespace: jupyter
-last_reviewed: 2026-08-17
+last_reviewed: 2026-09-30
 status: current
 tags: [python, notebooks, jupyter]
 sources:
   - base-apps/jupyter/deployments.yaml
+  - base-apps/jupyter/pvc.yaml
   - base-apps/jupyter/network-policy.yaml
+  - base-apps/jupyter/external-secret.yaml
+  - base-apps/jupyter/secret-store.yaml
+  - base-apps/jupyter/httproute.yaml
+  - base-apps/istio-ingress/telemetry.yaml
+  - base-apps/istio-istiod.yaml
 ---
 
 # JupyterLab Workspace — Runbook
@@ -52,7 +58,7 @@ sources:
 
 ### Symptom: node disk filling, or other apps on the node failing to write
 - **Check:** `kubectl -n jupyter exec deploy/jupyter -- du -sh /home/jovyan` and `df -h /home/jovyan` — the latter reports the **node's** filesystem, not a 20Gi volume.
-- **Fix:** `local-path` enforces no quota, so the PVC's 20Gi is advisory. Move large datasets to S3 (`asela-jupyter-scratch`) and delete them from the PVC. This is why the pod is pinned away from the node holding Vault and PostgreSQL.
+- **Fix:** `local-path` enforces no quota, so the PVC's 20Gi is advisory. Move large datasets to S3 (`asela-jupyter-scratch`) and delete them from the PVC. The pod is pinned away from the node holding Vault, Prometheus and Coroot's ClickHouse, but **one CNPG PostgreSQL instance also runs on `k3s-worker-02`** (two instances since 2026-09-30, one per worker) — so treat a filling disk as a database risk too: `kubectl -n postgresql get pods -o wide -l cnpg.io/cluster=postgresql-cluster -L cnpg.io/instanceRole` shows whether the worker-02 instance is currently the primary.
 
 ### Symptom: pod Pending after a node reboot
 - **Check:** `kubectl -n jupyter describe pvc jupyter-pvc`
@@ -69,7 +75,7 @@ Commit to `main`; Argo CD syncs. Never `kubectl apply`.
 ### Log in without leaking the token
 Browse to `https://jupyter.arigsela.com/login` and paste the token into the form. That submits it as a POST body, which the gateway access log does not capture.
 
-**Never** browse to `https://jupyter.arigsela.com/?token=<token>`. `base-apps/istio-ingress/telemetry.yaml` enables Envoy access logging on the `main` Gateway, the default format logs the request path including the query string, and `base-apps/logging/alloy-config.yaml` ships every pod's logs to Loki, which persists to S3 — so a token pasted into the URL is written to durable, plaintext storage. Treat any token used that way as compromised and rotate it immediately (above).
+**Never** browse to `https://jupyter.arigsela.com/?token=<token>`. The Gateway access log no longer records it — since f04063a the format in `base-apps/istio-istiod.yaml` logs `%REQ_WITHOUT_QUERY%`, stripping query strings (`telemetry.yaml` enables the log; `tests/istio_logging/` pins the format) — but the URL still lands in browser history and can leak to other sites in the `Referer` header, and the log format is one config change away from capturing it again. Treat any token used in a URL as compromised and rotate it (above).
 
 Programmatic clients (Claude Code) send `Authorization: token <…>` as a header, which is never captured by the access log either.
 

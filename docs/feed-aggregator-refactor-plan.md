@@ -1,5 +1,10 @@
 # Feed Aggregator Refactor Plan
 
+> **Status: implemented 2025-12-26** (`e5abe1b`): `n8n-workflows/feed-data-ingestion.json`,
+> `claude-digest-generator.json`, `devops-digest-generator.json` and
+> `docs/sql/feed_articles_schema.sql`. These workflows are not in the n8n pod's declarative import
+> (`base-apps/n8n/workflows-configmap.yaml`), so whether they still run cannot be told from the repo.
+
 ## Overview
 
 Refactor the two similar workflows (`claude-news-aggregator.json` and `devops-feed-aggregator.json`) into a shared architecture following the reference pattern from `ai_news_data_ingestion.json`.

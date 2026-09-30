@@ -6,30 +6,39 @@ app: weather-kitchen-frontend
 catalog_entity: weather-kitchen-frontend
 kind: runbook
 namespace: weather-kitchen-frontend
-last_reviewed: 2026-07-10
+last_reviewed: 2026-09-30
 status: current
 tags: [nginx, node, frontend]
 sources:
   - base-apps/weather-kitchen-frontend/deployments.yaml
   - base-apps/weather-kitchen-frontend/httproute.yaml
   - base-apps/weather-kitchen-frontend/services.yaml
+  - base-apps/weather-kitchen-backend/httproute.yaml
+  - base-apps/weather-kitchen-backend/certificate.yaml
+  - base-apps/istio-ingress/authorizationpolicy.yaml
+  - base-apps/admission-policies/inject-ecr-pull-secret.yaml
+  - base-apps/ecr-auth/cronjobs.yaml
 ---
 
 # weather-kitchen-frontend runbook
 
 ## Failure modes
 
-### Symptom: `weather-kitchen.arigsela.com/api/*` calls return the frontend UI (or 404) instead of backend responses
-Routing between the two apps is split purely by `nginx.ingress.kubernetes.io/priority` annotations on two separate `Ingress` objects sharing the same host: this app's `weather-kitchen-frontend-nginx` matches `/` at priority `"50"`, while `weather-kitchen-backend-nginx` (`base-apps/weather-kitchen-backend/nginx-ingress.yaml`, namespace `weather-kitchen`) matches `/api/(?!docs|openapi\.json)(.*)` at priority `"100"`. If either annotation is dropped or this app's path is broadened past `/`, the frontend's catch-all rule can shadow the backend's `/api` routes.
-- **Check:** `kubectl -n weather-kitchen-frontend get ingress weather-kitchen-frontend-nginx -o yaml` and `kubectl -n weather-kitchen get ingress weather-kitchen-backend-nginx -o yaml` — confirm both `nginx.ingress.kubernetes.io/priority` annotations are present (`50` vs `100`) and this app's path is still `/` with `pathType: Prefix`.
-- **Fix:** open a PR restoring the priority annotation / path scoping in `base-apps/weather-kitchen-frontend/nginx-ingress.yaml` rather than editing the live `Ingress` (Argo CD `selfHeal` will revert direct edits anyway).
+### Symptom: `weather-kitchen.arigsela.com/api/*` calls return the frontend UI (or 404) instead of backend responses, or `/api/docs` stops showing the docs page
+Routing is split between two HTTPRoutes on listener `https-weather-kitchen`: this app's `weather-kitchen-frontend` (`Exact /api/docs`, `Exact /api/openapi.json`, `PathPrefix /`) and the backend's `weather-kitchen-backend` (`PathPrefix /api`, namespace `weather-kitchen`). If the backend route is missing or not accepted, this app's `/` prefix catches every `/api` request. If the two `Exact` rules here are removed or widened, `/api/docs` and `/api/openapi.json` fall through to the backend.
+- **Check:** `kubectl -n weather-kitchen-frontend get httproute weather-kitchen-frontend -o yaml` and `kubectl -n weather-kitchen get httproute weather-kitchen-backend -o yaml` — confirm both are `Accepted` on `https-weather-kitchen` (`status.parents[].conditions`) and the paths match the files.
+- **Fix:** open a PR restoring the route in `base-apps/weather-kitchen-frontend/httproute.yaml` or `base-apps/weather-kitchen-backend/httproute.yaml` rather than editing live objects (Argo CD `selfHeal` reverts direct edits).
 
-### Symptom: clients get `403 Forbidden` from `https://weather-kitchen.arigsela.com`
-The `Ingress` (`nginx-ingress.yaml`) hard-codes `nginx.ingress.kubernetes.io/whitelist-source-range` to a small allow-list of public IPs plus `10.0.0.0/8`. A legitimate client whose public IP isn't in that list is blocked at the ingress before it ever reaches a pod.
-- **Check:** `kubectl -n weather-kitchen-frontend get ingress weather-kitchen-frontend-nginx -o yaml` and inspect the `whitelist-source-range` annotation.
-- **Fix:** open a PR adding the new IP/CIDR to `whitelist-source-range` in `base-apps/weather-kitchen-frontend/nginx-ingress.yaml` (the backend's ingress carries the same list and typically needs the matching update).
+### Symptom: clients get `403 Forbidden` (`RBAC: access denied`) from `https://weather-kitchen.arigsela.com`
+The Gateway's `AuthorizationPolicy` (`base-apps/istio-ingress/authorizationpolicy.yaml`) has one `weather-kitchen.arigsela.com` rule, covering both this app and the backend, that allows only the allow-listed `/32`s. A client outside it is refused at the Gateway before reaching any pod.
+- **Check:** compare the client's public IP (`curl -s ifconfig.me`) with that rule. If every allow-listed host broke at once, the home WAN address probably rotated.
+- **Fix:** open a PR adding the address to that rule (one change covers both halves). For a WAN rotation, see `base-apps/wan-ip-monitor/runbook.md`.
+
+### Symptom: TLS errors on `weather-kitchen.arigsela.com`
+This app has no certificate: the listener serves `weather-kitchen-tls` from the backend's namespace.
+- **Check / Fix:** see the TLS symptom in `base-apps/weather-kitchen-backend/runbook.md` (`certificate.yaml` and `reference-grant.yaml` there).
 
 ### Symptom: Pods stuck in `ImagePullBackOff`/`ErrImagePull`
-The image (`852893458518.dkr.ecr.us-east-2.amazonaws.com/weather-kitchen-frontend:latest`, `deployments.yaml`) is pulled from a private ECR repo, and this `Deployment` declares no `imagePullSecrets`. Cluster-wide ECR auth is refreshed into namespaces by `base-apps/ecr-auth/cronjobs.yaml` (an `ecr-registry` docker-registry `Secret`).
-- **Check:** `kubectl -n weather-kitchen-frontend describe pod -l app=weather-kitchen-frontend` (look for `ErrImagePull`/`ImagePullBackOff` in Events) and `kubectl -n weather-kitchen-frontend get secret ecr-registry`.
-- **Fix:** confirm the `ecr-credentials-sync` CronJob (`base-apps/ecr-auth/cronjobs.yaml`, namespace `kube-system`) is running successfully (`kubectl -n kube-system get cronjob ecr-credentials-sync` and check its latest job's logs); if the secret is missing here, open a PR adding an explicit `imagePullSecrets: [{name: ecr-registry}]` to `base-apps/weather-kitchen-frontend/deployments.yaml`.
+The image (`852893458518.dkr.ecr.us-east-2.amazonaws.com/weather-kitchen-frontend:latest`, `deployments.yaml`) is pulled from a private ECR repo. The Deployment declares no `imagePullSecrets` on purpose: the MutatingAdmissionPolicy `inject-ecr-pull-secret` (`base-apps/admission-policies/inject-ecr-pull-secret.yaml`) appends `ecr-registry` to every pod that pulls from ECR, and `ecr-credentials-sync` (`base-apps/ecr-auth/cronjobs.yaml`, namespace `kube-system`, every 15 minutes) keeps that Secret fresh in every namespace. The policy is `failurePolicy: Ignore`, so if it fails the pod is still admitted, just without the secret.
+- **Check:** `kubectl -n weather-kitchen-frontend get pod -l app=weather-kitchen-frontend -o jsonpath='{.items[*].spec.imagePullSecrets}'` — it must list `ecr-registry`. Then `kubectl -n weather-kitchen-frontend get secret ecr-registry` (exists and recent?) and `kubectl -n kube-system get cronjob ecr-credentials-sync` plus its latest job's logs.
+- **Fix:** if the pod lacks `ecr-registry`, the admission policy didn't apply; see `base-apps/admission-policies/runbook.md`, then delete the pod so it is re-created with the secret. If the Secret is missing or stale, fix the `ecr-credentials-sync` CronJob. Don't add `imagePullSecrets` to the Deployment to work around either.

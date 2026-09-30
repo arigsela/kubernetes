@@ -1,5 +1,8 @@
 # Argo CD drift diagnosis (SPEC.md §T.42)
 
+> **Status: closed 2026-09-24** (SPEC §T.42) — see the status block below. Kept as the diagnosis
+> record; `openshell` and `openshell-secrets` below were removed on 2026-08-12.
+
 Eight applications sit permanently `OutOfSync` while reporting `Healthy`. §V.5 originally
 required every app `Synced+Healthy` before each upgrade hop, which made every hop
 unreachable. §V.47 revised that to *no **unexplained** drift* — so each app needs a
@@ -15,6 +18,9 @@ lead to resources having to be recreated."*
 > openshell-secrets, istio-base, istio-istiod, openshell, argo-rollouts.
 > Remaining: kagent-secrets (needs an operator fix, not an ignore rule) and
 > kyverno (cause identified, rule applied, controller still disagrees — see below).
+>
+> **Status 2026-09-24: closed.** Both remaining drifters, `kyverno` and `kagent-secrets`, are
+> Synced after the Argo CD `v3.5.3` upgrade; 54/54 apps Synced+Healthy (§T.42, §T.71).
 
 ## Summary
 

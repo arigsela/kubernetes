@@ -6,14 +6,18 @@ app: jupyter
 catalog_entity: jupyter
 kind: docs
 namespace: jupyter
-last_reviewed: 2026-08-17
+last_reviewed: 2026-09-30
 status: current
 tags: [python, notebooks, jupyter]
 sources:
   - base-apps/jupyter/deployments.yaml
+  - base-apps/jupyter/pvc.yaml
   - base-apps/jupyter/network-policy.yaml
   - base-apps/jupyter/external-secret.yaml
+  - base-apps/jupyter/secret-store.yaml
+  - base-apps/jupyter/httproute.yaml
   - base-apps/jupyter-aws-infrastructure/iam-policy.yaml
+  - base-apps/postgresql/cnpg-cluster.yaml
 ---
 
 # JupyterLab Workspace
@@ -40,7 +44,8 @@ State is split three ways. Notebooks live in `arigsela/notebooks` on GitHub. The
 - **The pod has no ServiceAccount token, and reaches nothing in-cluster except two read-only endpoints.** Vault, PostgreSQL, Loki, Grafana, ClickHouse and the Kubernetes API are all refused; `pypi.org` and public IPs are reachable and DNS resolves — verified in-cluster 2026-08-17. Confirmed differentially against `n8n` (same cluster and mesh, no NetworkPolicy), which *can* reach PostgreSQL on the same IP and port, so the policy is what enforces this and deleting it would open the pod up. The two deliberate exceptions are **Prometheus `:9090`** and **Ollama `:11434`** (spec §3.3.2); both are read-only and hold no credentials. Adding a third is a design decision, not a config tweak — see `docs/superpowers/specs/2026-08-17-jupyter-notebooks-design.md` §3.3.
 - **Prometheus is reachable, but per-PVC disk attribution is not available from any metric in this cluster.** `kubelet_volume_stats_used_bytes` and Coroot's `container_resources_disk_used_bytes` both report the *shared device*, so every `local-path` PVC on a node reports that node's usage — on 2026-08-17, eight different PVCs on `worker-01` all read ~117.8GB. That is the same root cause as the disk risk itself: no per-volume isolation means nothing per-volume to measure. Node-level trend and forecasting work fine; "which app is filling the disk" does not, and no query will fix it.
 - **A denied connection surfaces as `ConnectionRefused`, not a timeout.** Under this CNI plus ztunnel the deny path sends an immediate RST. When debugging, do not read "connection refused" as "nothing is listening there" — from this pod, refused is what *blocked* looks like.
-- **The 20Gi on the PVC is a request, not a quota — and the pod is pinned to `k3s-worker-02` because of it.** `local-path` bind-mounts a directory on the node, so `df` inside the pod reports the node's whole filesystem and a notebook can fill it. `k3s-worker-01` holds the local-path volumes for Vault, PostgreSQL, Prometheus and Coroot; a single large write there would starve all of them of disk. The NetworkPolicy stops this pod *talking* to Vault and PostgreSQL but does nothing about shared-disk exhaustion, so isolation is achieved by scheduling instead. `worker-02` hosts no stateful workload. Do not remove the `kubernetes.io/hostname` selector without putting a real quota in place.
+- **The 20Gi on the PVC is a request, not a quota — and the pod is pinned to `k3s-worker-02` because of it.** `local-path` bind-mounts a directory on the node, so `df` inside the pod reports the node's whole filesystem and a notebook can fill it. `k3s-worker-01` holds the local-path volumes for Vault, PostgreSQL, Prometheus and Coroot's ClickHouse (per the comment on the pin in `deployments.yaml`); the pin keeps a runaway notebook write off that disk. The NetworkPolicy stops this pod *talking* to Vault and PostgreSQL but does nothing about shared-disk exhaustion, so isolation is achieved by scheduling instead. Do not remove the `kubernetes.io/hostname` selector without putting a real quota in place.
+- **The isolation is no longer complete: a PostgreSQL instance now shares `worker-02`.** Since 2026-09-30 the CNPG cluster runs `instances: 2` with required anti-affinity across both workers (`base-apps/postgresql/cnpg-cluster.yaml`), so one instance — primary or replica, depending on the last switchover — has its local-path volume on the same disk as this PVC. The comment above the pin in `deployments.yaml` ("worker-02 hosts no stateful workload") predates that. Filling the disk can now take down that Postgres instance; if it is the primary, the apps on `postgresql-cluster` (today donetick) are hit until the operator fails over to the worker-01 instance. The rule "bulk data in S3, not the PVC" is therefore the real control; the pin only halves the blast radius.
 - **Bulk data belongs in S3 (`asela-jupyter-scratch`), not the PVC.** Not a style preference — see above.
 - **`enableServiceLinks: false` is load-bearing, not tidiness.** Kubernetes injects Docker-link-style env vars for every Service in the namespace, so `Service/jupyter` produces `JUPYTER_PORT=tcp://10.43.x.x:8888` — and `jupyter_server` reads `JUPYTER_PORT` expecting an integer. With service links on, the container dies at startup with `ValueError: invalid literal for int() with base 10: 'tcp://...:8888'`, which looks like a Jupyter config bug and is actually a name collision between the Service and the app's own env var. Hit on the first live deploy. Turning links off is also correct posture: the NetworkPolicy blocks all but two in-cluster endpoints, both reached by DNS name, so service-discovery env vars buy nothing.
 - **`strategy: Recreate`.** `local-path` is ReadWriteOnce, so a rolling update deadlocks on the volume.

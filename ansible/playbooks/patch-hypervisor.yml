@@ -3,7 +3,6 @@
 # VM is ACPI-shut-down first (workers, then control), the host reboots, libvirt autostart brings
 # the VMs back, and the last play waits for the cluster. The whole lab is down meanwhile.
 #   ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes
-#   ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes -e velero_backup=yes   # backup first
 #   ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes --check               # preview
 # `--limit asela-k8s` drops the final cluster wait (it runs on localhost); run without --limit, or
 # check `kubectl get nodes` yourself afterwards.
@@ -20,11 +19,6 @@
         that: (confirm | default('') | string | lower) in ['yes', 'true']
         fail_msg: "REFUSED: this shuts down every VM and reboots the hypervisor. Re-run with -e confirm=yes."
         quiet: true
-
-    - name: Velero pre-shutdown backup (opt-in with -e velero_backup=yes)
-      ansible.builtin.command: "{{ playbook_dir }}/../../recovery/pre-shutdown-backup.sh"
-      when: (velero_backup | default('no') | string | lower) in ['yes', 'true']
-      changed_when: true
 
 - name: Patch and reboot the hypervisor
   hosts: hypervisors
@@ -110,7 +104,7 @@
             msg: >-
               stopped before or during the reboot: a VM did not shut off within 300 s (it was NOT
               forced), or the host or its VMs did not come back in time. Check `virsh list --all` on
-              {{ inventory_hostname }} and recovery/POST-RESTART-WALKTHROUGH.md.
+              {{ inventory_hostname }} and recovery/CLUSTER-RECOVERY.md.
 
 - name: Wait for the cluster
   hosts: localhost

@@ -3,7 +3,9 @@
 **Status:** open
 **Found:** 2026-08-03, deploying donetick (PR #525)
 **Affects:** every role added to `spec.managed.roles` on `postgresql-cluster`
-**Operator:** CloudNativePG 1.29.1 (chart `cloudnative-pg` 0.28.3)
+**Operator when found:** CloudNativePG 1.29.1 (chart `cloudnative-pg` 0.28.3)
+**Operator now:** CloudNativePG 1.30.1 (chart 0.29.1, `base-apps/cnpg-system.yaml`, since
+2026-09-24). **Not re-tested** after that upgrade: the finding may or may not still hold.
 
 ## Symptom
 
@@ -79,8 +81,10 @@ the same wall.
   work there, the fault is specific to `postgresql-cluster`, which was adopted
   into GitOps on 2026-07-15 after running unmanaged since 2025-12-03 and may
   carry state the operator does not expect.
-- Read the 1.29.1 role synchronizer source for the conditions under which it
-  returns without recording status; a role landing in no bucket is the specific
+- First, re-test on 1.30.1: add a throwaway role to `spec.managed.roles` and see whether it
+  lands in a `managedRolesStatus` bucket.
+- Read the role synchronizer source (1.29.1, where it was found, and 1.30.1) for the conditions
+  under which it returns without recording status; a role landing in no bucket is the specific
   behaviour to explain.
-- Check upstream issues for managed roles silently skipped in 1.28/1.29.
-- A version bump is plausible but unverified — do not assume it fixes this.
+- Check upstream issues for managed roles silently skipped in 1.28/1.29/1.30.
+- The 1.29.1 → 1.30.1 bump has not been shown to fix this — do not assume it did.

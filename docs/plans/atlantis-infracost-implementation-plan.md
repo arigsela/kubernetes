@@ -1,5 +1,9 @@
 # Atlantis + Infracost Implementation Plan
 
+> **Status: implemented (Phases 1–6 on 2026-03-29/30) and in daily use** — Atlantis plans and
+> applies Terraform from open PRs (e.g. #584, SPEC §T.71); Phase 7's checklist below was never
+> ticked. Living docs: `base-apps/atlantis/docs.md` and `runbook.md`.
+
 **Status:** Phase 6 Complete (6/7 phases)
 **Last Updated:** 2026-03-30
 **Phase 1 Completed:** 2026-03-29

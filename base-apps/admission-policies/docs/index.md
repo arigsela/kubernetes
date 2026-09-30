@@ -6,16 +6,21 @@ app: admission-policies
 catalog_entity: admission-policies
 kind: docs
 namespace: kube-system
-last_reviewed: 2026-09-25
+last_reviewed: 2026-09-30
 status: current
 tags: [admission, cel, policy, security]
 sources:
   - base-apps/admission-policies.yaml
   - base-apps/admission-policies/agent-identity.yaml
   - base-apps/admission-policies/agent-capability.yaml
+  - base-apps/admission-policies/agent-capability-taxonomy.yaml
   - base-apps/admission-policies/disallow-latest-tag.yaml
+  - base-apps/admission-policies/disallow-privileged-containers.yaml
   - base-apps/admission-policies/require-resource-limits.yaml
+  - base-apps/admission-policies/require-labels.yaml
+  - base-apps/admission-policies/disallow-default-namespace.yaml
   - base-apps/admission-policies/inject-ecr-pull-secret.yaml
+  - base-apps/admission-policies/kyverno-reports-rbac.yaml
   - scripts/gen-agent-capability-policy.py
   - tests/admission-policies/conftest.py
   - tests/admission-policies/test_admission_policies.py
@@ -36,7 +41,7 @@ Why: Kyverno enforces through an admission **webhook** served by a single pod, a
 `forceFailurePolicyIgnore=true`. So whenever that pod is down or slow, its "Enforce" policies
 silently stop enforcing. A native policy has no webhook and no pod: the API server evaluates
 it on every request. Kyverno also does not state support for Kubernetes 1.36, and Kyverno 1.20
-(~2026-11) removes the `kyverno.io/v1` ClusterPolicy type every current policy uses (SPEC §T.80).
+(~2026-11) removes the `kyverno.io/v1` ClusterPolicy type every one of those policies used (SPEC §T.80).
 
 ## Architecture & data flow
 - Each policy is a `ValidatingAdmissionPolicy` (the rule: `matchConstraints` + CEL
@@ -44,12 +49,14 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   `validationActions`).
 - **Rollout stages**, per binding:
   - **shadow**: `validationActions: [Warn, Audit]`, `failurePolicy: Ignore`. A violation is a
-    `kubectl` warning and an audit record, and blocks nothing. Runs next to the still-active
-    Kyverno policy so the two verdicts can be compared.
-  - **enforcing**: `validationActions: [Deny]`, `failurePolicy: Fail`. The Kyverno policy is
-    then deleted.
+    `kubectl` warning and an audit record, and blocks nothing. Every new policy starts here.
+  - **enforcing**: `validationActions: [Deny]`, `failurePolicy: Fail`.
   `tests/admission-policies` fails if a binding's actions and its policy's failurePolicy
   disagree (a shadow policy that could block, or an enforcing one that fails open).
+  History: during the migration each shadow policy ran next to the Kyverno ClusterPolicy it
+  replaced so the verdicts could be compared, and the Kyverno policy was deleted at the flip.
+  None remain — 2260b8f deleted the last five and 82f9dea retired the `kyverno-policies` app —
+  so today shadow is judged on its own warnings, audit records and PolicyReports.
 - **Reporting**: Kyverno's reports controller runs with `--validatingAdmissionPolicyReports=true`
   and writes native results to `kubectl get policyreports -A` (`source:
   ValidatingAdmissionPolicy`), but **only for policies labelled

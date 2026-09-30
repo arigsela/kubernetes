@@ -1,17 +1,20 @@
 ---
 type: "Kubernetes App Runbook"
 title: "cert-manager — Runbook"
-description: "Operational runbook for cert-manager: failure modes, checks, and fixes."
+description: "Operational runbook for cert-manager: stuck or unrenewed certificates, Route 53 credentials, adding a host, chart upgrades."
 app: cert-manager
 catalog_entity: cert-manager
 kind: runbook
 namespace: cert-manager
-last_reviewed: 2026-09-24
+last_reviewed: 2026-09-30
 status: current
 tags: [tls, certificates, route53]
 sources:
+  - base-apps/cert-manager.yaml
+  - base-apps/cert-manager-config.yaml
   - base-apps/cert-manager/letsencrypt-route53.yaml
   - base-apps/cert-manager/external-secret.yaml
+  - base-apps/cert-manager/secret-store.yaml
 ---
 
 # cert-manager — Runbook
@@ -29,7 +32,10 @@ sources:
 
 ## How-to
 ### Add a certificate for a new host
-Add `base-apps/<app>/certificate.yaml` with `issuerRef: {name: letsencrypt-route53, kind: ClusterIssuer}` and a `secretName` in the app's namespace (copy `base-apps/homepage/certificate.yaml`). To serve it from the Gateway, add a listener in `base-apps/istio-ingress/gateway.yaml` whose `certificateRefs` names that Secret and namespace, and a `ReferenceGrant` in the app's namespace (copy `base-apps/homepage/reference-grant.yaml`). There is no staging issuer, so every test hits production ACME directly.
+Add `base-apps/<app>/certificate.yaml` with `issuerRef: {name: letsencrypt-route53, kind: ClusterIssuer}` and a `secretName` in the app's namespace (copy `base-apps/homepage/certificate.yaml`). To serve it from the Gateway, add a listener in `base-apps/istio-ingress/gateway.yaml` whose `certificateRefs` names that Secret and namespace, and a `ReferenceGrant` in the app's namespace (copy `base-apps/homepage/reference-grant.yaml`). Add the host's allow-list rule to `base-apps/istio-ingress/authorizationpolicy.yaml` too: the Gateway is deny-by-default, so a host with no rule gets 403. There is no staging issuer, so every test hits production ACME directly. Don't copy the New App template's `skeleton-ingress/` or the Crossplane `Application` composition, which still emit nginx + `letsencrypt-prod` (docs.md).
 
 ### Rotate Route 53 credentials
 Update the `access-key-id` / `secret-access-key` values at Vault path `cert-manager/route53`. The `route53-credentials` ExternalSecret (`refreshInterval: 1h`) re-syncs the target Secret automatically. Re-trigger any DNS-01 challenges that were stuck on the old credentials by deleting the affected `CertificateRequest`.
+
+### Upgrade cert-manager
+Bump `targetRevision` in `base-apps/cert-manager.yaml` and PR. Read the jetstack release notes for every minor you cross first. CRDs ship with the chart (`installCRDs: "true"`), so they upgrade in the same sync. After the sync, check `kubectl -n cert-manager get pods`, confirm `kubectl get certificates -A` stays Ready, and force one renewal to prove issuance end to end (`cmctl renew <name> -n <ns>`, or delete a CertificateRequest). If Argo CD then reports `field not declared in schema` on apps using cert-manager kinds, that's the stale-schema issue in the `argo-cd` runbook (restart the application controller).

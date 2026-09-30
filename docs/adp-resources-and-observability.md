@@ -67,7 +67,7 @@ Source of truth: `base-apps/agent-audit-aws-infrastructure/` (except the two han
 
 ---
 
-## 3. The agent action record (no UI yet — observe via CLI)
+## 3. The agent action record — CLI view
 
 ```bash
 # the two scheduled jobs
@@ -78,10 +78,10 @@ kubectl get cronjob -n postgresql | grep agent-audit
 # last run's findings
 kubectl logs -n postgresql -l app=agent-audit --tail=20
 
-# the admission contracts are live at Enforce
-kubectl get cpol agent-identity agent-capability
-#   agent-identity     Enforce
-#   agent-capability   Enforce
+# the admission contracts are enforced natively by the API server
+kubectl get validatingadmissionpolicy,validatingadmissionpolicybinding | grep agent-
+#   agent-identity-{scoped-store,no-monolithic-key,mcp-toolnames},
+#   agent-capability, agent-capability-delegation — each binding [Deny]
 ```
 
 For browsing, use https://agent-audit.arigsela.com; the CLI below is still the way to script it.
@@ -105,7 +105,8 @@ python scripts/agent-audit.py --cost       # per-agent token spend
 | Tool | Role here | Link |
 |---|---|---|
 | kagent | Runs the AI agents on Kubernetes | https://kagent.dev |
-| Kyverno | Enforces the identity & capability contracts at admission | https://kyverno.io |
+| ValidatingAdmissionPolicy (Kubernetes API server) | Enforces the identity & capability contracts at admission (`base-apps/admission-policies/`) | https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/ |
+| Kyverno | Reports only: writes PolicyReports for those policies, enforces nothing | https://kyverno.io |
 | Falco | Runtime threat detection (un-muted in O3) | https://falco.org |
 | Coroot | eBPF traces/metrics/logs; agent telemetry sink | https://coroot.com |
 | External Secrets Operator | Materializes the scoped Vault credentials | https://external-secrets.io |

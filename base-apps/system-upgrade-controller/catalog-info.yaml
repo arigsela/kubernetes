@@ -1,0 +1,18 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: system-upgrade-controller
+  namespace: system-upgrade
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app.kubernetes.io/name=system-upgrade-controller'
+    backstage.io/kubernetes-namespace: system-upgrade
+  tags: [k3s, upgrades, lifecycle]
+spec:
+  type: infrastructure
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-gitops
+  dependsOn:
+    - resource:argo-cd/argo-cd

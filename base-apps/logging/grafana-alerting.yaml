@@ -33,7 +33,7 @@
 # tool names. It carries NO tool arguments, because argument redaction is only
 # best-effort and this payload leaves the cluster. To see what a flagged agent
 # actually ran, you go and look — behind the SELECT-only credential. See
-# scripts/agent-audit.py and docs/superpowers/specs/2026-07-14-agent-action-record-design.md.
+# scripts/agent-audit.py (its module docstring holds the redaction rationale).
 apiVersion: v1
 kind: ConfigMap
 metadata:
