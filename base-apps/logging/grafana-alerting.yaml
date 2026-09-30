@@ -242,7 +242,7 @@ data:
             for: 30m
             annotations:
               summary: >-
-                {{ $labels.namespace }}/{{ $labels.pod }} spent {{ $values.query.Value | printf "%.0f" }}%
+                {{ $labels.namespace }}/{{ $labels.pod }} spent {{ with $values.query }}{{ .Value | printf "%.0f" }}{{ else }}n/a{{ end }}%
                 of the last 5m waiting for CPU (PSI "some").
               runbook: >-
                 Grafana: Cluster Overview → Pod pressure. If "Pods most CPU-throttled"
@@ -253,7 +253,14 @@ data:
               severity: warning
               pillar: capacity
             noDataState: OK
-            execErrState: Error
+            # KeepLast (not Error): these query Prometheus, which is rescheduled during
+            # node patching (ansible patch.yml) while the API server is down for the
+            # control-plane reboot. With Error every such blip paged a DatasourceError
+            # with a %!f(<nil>) body (2026-09-30 10:14-10:19). Keeping the last state
+            # for a few evaluations is the right answer for a capacity signal; the
+            # security rules above stay on Error because there you want to know when
+            # the rule cannot evaluate.
+            execErrState: KeepLast
             data:
               - refId: query
                 relativeTimeRange:
@@ -295,7 +302,7 @@ data:
             annotations:
               summary: >-
                 {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) is at
-                {{ $values.query.Value | printf "%.0f" }}% of its memory limit.
+                {{ with $values.query }}{{ .Value | printf "%.0f" }}{{ else }}n/a{{ end }}% of its memory limit.
               runbook: >-
                 Grafana: Cluster Overview → Pod pressure → Memory used vs limit. Raise the
                 limit (git, or in place for stateful pods —
@@ -304,7 +311,14 @@ data:
               severity: warning
               pillar: capacity
             noDataState: OK
-            execErrState: Error
+            # KeepLast (not Error): these query Prometheus, which is rescheduled during
+            # node patching (ansible patch.yml) while the API server is down for the
+            # control-plane reboot. With Error every such blip paged a DatasourceError
+            # with a %!f(<nil>) body (2026-09-30 10:14-10:19). Keeping the last state
+            # for a few evaluations is the right answer for a capacity signal; the
+            # security rules above stay on Error because there you want to know when
+            # the rule cannot evaluate.
+            execErrState: KeepLast
             data:
               - refId: query
                 relativeTimeRange:
