@@ -10,6 +10,7 @@ last_reviewed: 2026-09-30
 status: current
 tags: [terraform, opentofu, gitops, ci-cd]
 sources:
+  - base-apps/istio-ingress/gateway-options.yaml
   - base-apps/atlantis.yaml
   - base-apps/atlantis-config.yaml
   - atlantis.yaml
@@ -106,8 +107,10 @@ webhooks start getting 403s. The Coraza WAF doesn't inspect this host
 **NetworkPolicy — known issue, not working protection.**
 `base-apps/atlantis/network-policy.yaml` still reflects the nginx era: its only
 ingress rule admits namespace `nginx-ingress` on 4141, and that namespace no
-longer exists. The Istio Gateway lives in `istio-ingress` (and runs
-`hostNetwork`), so the rule matches nothing. Its egress "Kubernetes API server"
+longer exists. The Istio Gateway's Envoy pods run in namespace `istio-ingress`
+as ordinary pods (no `hostNetwork`; see `base-apps/istio-ingress/gateway-options.yaml`),
+so the rule matches nothing. The fix is a `namespaceSelector` on
+`kubernetes.io/metadata.name: istio-ingress`, not a node-IP `ipBlock`. Its egress "Kubernetes API server"
 rule also excludes all RFC1918 ranges, which contain the cluster's own
 addresses. The catch-all `443` egress rule still admits the in-cluster
 `kubernetes` Service, but nothing admits a node's `:6443`. Atlantis evidently still receives webhooks and applies against the

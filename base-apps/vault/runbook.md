@@ -18,6 +18,7 @@ sources:
   - terraform/roots/asela-cluster/vault-kms.tf
   - base-apps/dex/configmap.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
+  - base-apps/atlantis/external-secrets.yaml
   - scripts/vault-backup.sh
   - scripts/vault-restore.sh
   - recovery/CLUSTER-RECOVERY.md
@@ -37,7 +38,16 @@ sources:
 
 ### Symptom: Vault pod won't start after being deleted/recreated (e.g. rebuilt cluster)
 - **Check:** whether the `vault-kms-credentials` Secret exists in the `vault` namespace (`kubectl -n vault get secret vault-kms-credentials`). Pod events show `CreateContainerConfigError` / `secret "vault-kms-credentials" not found` if not.
-- **Fix:** the Secret is Terraform-managed (`kubernetes_secret.vault_kms_credentials` in `terraform/roots/asela-cluster/vault-kms.tf`), not synced by ESO. On a rebuilt cluster, Terraform state still lists it, so re-plan to recreate the drift: open a PR that touches a `.tf` file, let Atlantis plan, apply on the open PR, then merge. Prefer this over hand-creating the Secret, so Terraform stays its only owner.
+- **Fix:** the Secret is Terraform-managed (`kubernetes_secret.vault_kms_credentials` in `terraform/roots/asela-cluster/vault-kms.tf`), not synced by ESO. Terraform state still lists it, so re-applying recreates it. Which way you apply depends on whether Atlantis can still run:
+  - **Only this Secret is gone** (Atlantis's own Secrets still exist in the cluster, so it keeps working while Vault is down): open a PR that touches a `.tf` file, let Atlantis plan, apply on the open PR, then merge.
+  - **Rebuilt cluster:** Atlantis can't help. It gets its GitHub, webhook and AWS credentials from Vault through ESO (`base-apps/atlantis/external-secrets.yaml`), and Vault can't start without this Secret. This is the one break-glass case for a laptop apply, an exception to the "never `apply` from a laptop" rule. Create the namespace if Argo hasn't yet (`kubectl create namespace vault`; Terraform doesn't create it), point the providers at the new cluster (`TF_VAR_host`, `TF_VAR_client_certificate`, `TF_VAR_client_key`, `TF_VAR_cluster_ca_certificate` from its kubeconfig, plus AWS credentials for the state bucket), then in `terraform/roots/asela-cluster` run `tofu init` and `tofu apply -target=kubernetes_secret.vault_kms_credentials`. Use `tofu` (OpenTofu 1.12.x wrote the state), not `terraform`. Once Atlantis is back, its next plan should show no changes for this resource. See "Rebuild from nothing" in `recovery/CLUSTER-RECOVERY.md`.
+  - Prefer either path over hand-creating the Secret, so Terraform stays its only owner.
+
+### Symptom: every SecretStore fails with `permission denied` while Vault is unsealed (after a rebuild or restore)
+- **Check:** Vault is up (`vault status` shows `Sealed: false`) but ExternalSecrets in every namespace fail auth. Read Vault's Kubernetes auth config with a token that can: `vault read auth/kubernetes/config`. If it pins a `kubernetes_ca_cert` from the old cluster, Vault can't verify the new cluster's ServiceAccount tokens. A cluster rebuilt without the k3s artifact has a new CA.
+- **Fix:** rewrite the config from inside the pod so it picks up the current CA, then make ESO retry. Open a shell with `kubectl -n vault exec -it vault-0 -- sh`, run `vault login` and paste an admin token at the prompt (so it stays out of shell history), then:
+  `vault write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc:443 kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt disable_local_ca_jwt=false`.
+  Afterwards run `kubectl -n external-secrets rollout restart deploy`. This config lives only in Vault, not git. The step was needed after the January 2026 cluster restore (commit 13c53ae).
 
 ### Symptom: one namespace's ExternalSecrets fail but others work
 - **Check:** that namespace's `SecretStore` role vs the Vault Kubernetes-auth role/policy (Vault's auth-delegator access is granted via `cluster_role_bindings.yaml`).
@@ -61,9 +71,17 @@ Use `scripts/vault-backup.sh` (read its header first). Default is a **cold** cop
 scripts/vault-backup.sh --dest s3://<bucket>/vault/ --argo-app vault   # or an off-cluster local dir
 ```
 
-- `--argo-app vault` is required. Without it the script refuses, because Argo's selfHeal would rescale Vault in the middle of the copy.
+- `--argo-app vault` is required, but it isn't enough on its own. Without it the script refuses, because Argo's selfHeal would rescale Vault in the middle of the copy. With it, the script suspends only the `vault` app, and `master-app` restores that app's auto-sync from git within minutes, so Vault can still be rescaled mid-copy (SPEC §V.33, §B.4). Pause the root first and resume afterwards:
+
+  ```bash
+  scripts/argo-sync-window.sh pause     # master-app first, then every PVC-bearing app, vault included
+  scripts/vault-backup.sh --dest s3://<bucket>/vault/ --argo-app vault
+  scripts/argo-sync-window.sh resume
+  ```
+
+  Never run `pause` twice without a `resume` in between. A second `pause` records every app as already suspended, so `resume` would then leave them all suspended.
 - It refuses destinations inside cluster storage. `--mode online` needs `--allow-inconsistent` and brands the artifact `INCONSISTENT`.
 - The artifact is **ciphertext**. It can only be used while the KMS key `alias/vault-auto-unseal` exists (`vault-kms.tf`, `prevent_destroy = true`). The Shamir recovery keys won't decrypt it.
 
 ### Restore Vault
-`scripts/vault-restore.sh --artifact <file.tar.gz> --data-dir <dir> --verify-cmd '<cmd>'` checks the checksum, refuses `INCONSISTENT` artifacts unless you pass `--accept-inconsistent`, moves any existing data dir aside, extracts, and then runs the verification command, which must prove that Vault unseals and a known secret reads back. It restores into a **local directory**. It doesn't touch the cluster. Putting the data back into `vault-0`'s PVC is manual: run `scripts/argo-sync-window.sh pause` (it suspends `master-app` and `vault` together; pausing only `vault` lets the root app re-enable it mid-restore, SPEC §B.4), scale the StatefulSet to 0, copy the extracted tree into the PVC with a helper pod (same pattern as the backup script), scale to 1, verify `vault status` and a secret read, then `scripts/argo-sync-window.sh resume`. The KMS key and a valid `vault-kms-credentials` Secret must exist first. See `recovery/CLUSTER-RECOVERY.md` for where this fits in a full cluster recovery.
+`scripts/vault-restore.sh --artifact <file.tar.gz> --data-dir <dir> --verify-cmd '<cmd>'` checks the checksum, refuses `INCONSISTENT` artifacts unless you pass `--accept-inconsistent`, moves any existing data dir aside, extracts, and then runs the verification command, which must prove that Vault unseals and a known secret reads back. It restores into a **local directory**. It doesn't touch the cluster. Putting the data back into `vault-0`'s PVC is manual: run `scripts/argo-sync-window.sh pause` (it suspends `master-app` first, then every PVC-bearing app including `vault`; pausing only `vault` lets the root app re-enable it mid-restore, SPEC §B.4), scale the StatefulSet to 0, copy the extracted tree into the PVC with a helper pod (same pattern as the backup script), scale to 1, verify `vault status` and a secret read, then `scripts/argo-sync-window.sh resume`. The KMS key and a valid `vault-kms-credentials` Secret must exist first. See `recovery/CLUSTER-RECOVERY.md` for where this fits in a full cluster recovery.

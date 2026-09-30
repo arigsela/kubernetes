@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-29-ansible-host-management-design.md`
 
+> **Update 2026-09-30:** the `velero_backup` option is gone from `playbooks/patch-hypervisor.yml` (Velero was removed on 2026-02-08, and `recovery/pre-shutdown-backup.sh` with it). Ansible silently ignores `-e velero_backup=yes` now, so passing it takes no backup. Take backups by hand first: "Taking backups before risky work" in `recovery/CLUSTER-RECOVERY.md`. The Task listing below still shows the playbook as originally written.
+
 ## Global Constraints
 
 - Pip pins: `ansible-core==2.21.4`, `ansible-lint==26.9.0`, `kubernetes==36.0.3`, `pytest==8.3.3`, `pyyaml==6.0.2`. Collection floors in `ansible/requirements.yml`: ansible.posix ≥2.2.2, community.general ≥13.4.0, community.docker ≥5.3.0, community.libvirt ≥2.3.0, kubernetes.core ≥6.6.0.
@@ -2167,7 +2169,7 @@ Run every command from this directory (ansible.cfg lives here). `k3s-authn.yml` 
 | First run on a host that still asks for a sudo password | `ansible-playbook playbooks/bootstrap.yml --ask-become-pass` |
 | Preview / apply the baseline | `ansible-playbook playbooks/site.yml --check --diff` then without `--check` |
 | Patch the VMs (apt full-upgrade, drained serial reboot, workers first) | `ansible-playbook playbooks/patch.yml` (`--limit k3s-worker-02` for one) |
-| Patch and reboot the hypervisor (all VMs shut down in order, never forced) | `ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes` (`-e velero_backup=yes` to back up first) |
+| Patch and reboot the hypervisor (all VMs shut down in order, never forced) | `ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes` (take backups by hand first; see `recovery/CLUSTER-RECOVERY.md`) |
 | Change the API server's authn config | edit `roles/k3s_node/files/authn/`, then `ansible-playbook playbooks/k3s-authn.yml --check`, then without `--check` |
 
 If `patch.yml` stops mid-way, that node is left cordoned and the next run's pre-flight refuses:
@@ -2290,4 +2292,4 @@ Each step is a gate. Do not continue past a surprise.
 2. `ansible-playbook playbooks/site.yml --check --diff`. Expected changes: the two sudoers drop-ins that do not exist yet (VMs already have cloud-init's; the new file is additive), the sshd hardening drop-in on all four, the unattended-upgrades policy file on all four, qemu-guest-agent on the three VMs, the workers' netplan. No router change is needed: the role pins the address on the host itself. Optional hardening: reserve 10.0.1.5 and 10.0.1.108 in the DHCP server so it never hands them to another device. If that ever happens the worker flaps NotReady while the other device is online; move the worker to a free address then. Then `ansible-playbook playbooks/site.yml --limit k3s_workers`, watch the workers stay reachable, then `--limit k3s_control`, then `--limit hypervisors`.
 3. `colima start`, then `ansible-playbook playbooks/k3s-authn.yml --check`. Expected: play 1 validates; play 2 re-installs both files (only their comments changed in the 2026-09-29 move, so the sha256 differs) and restarts k3s once (about 20 s of API blip); `--check` shows `DRY: would restart k3s` first.
 4. `ansible-playbook playbooks/patch.yml --limit k3s-worker-02`. Watch `kubectl get nodes -w` in another terminal: cordon, NotReady during the reboot, Ready, uncordon. Then `ansible-playbook playbooks/patch.yml` for the rest; the control node's step takes the API down for about a minute.
-5. When a full lab restart is acceptable: `ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes -e velero_backup=yes`.
+5. When a full lab restart is acceptable: take backups first ("Taking backups before risky work" in `recovery/CLUSTER-RECOVERY.md`), then `ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes`. There is no backup flag; `-e velero_backup=yes` is silently ignored.
