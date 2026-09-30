@@ -15,6 +15,7 @@ always_read:                 # any match -> review:read (Jev not called)
     - ansible/**
     - node-config/**         # host-level k3s config (e.g. apiserver authn, #625)
     - .github/**
+    - atlantis.yaml
     - "!**/*.md"             # docs inside those directories are not "read" on their own
   kinds:                     # kind: added/removed/modified anywhere in the diff
     - ClusterRole
@@ -58,9 +59,9 @@ hot_components:              # component -> follow-up rate; from `pr_triage cali
   tests/eval-corpus: 1.0
   tests/node-config: 1.0
 thresholds:
-  read_if_p_read_gte: 0.20
+  read_if_p_read_gte: 0.30
   read_if_any_flag_gte: 0.70
-  skip_if_p_skip_gte: 0.80
+  skip_if_p_skip_gte: 0.90
   escalate_if_confidence_lt: 0.50
 risk_callouts:               # kind -> plain-language risk (pr-explainer)
   ClusterRole: access control
