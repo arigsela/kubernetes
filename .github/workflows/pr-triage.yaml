@@ -1,0 +1,32 @@
+name: PR Triage
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write  # create the review:* labels
+
+concurrency:
+  group: pr-triage-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    # Drafts wait for ready_for_review. Fork PRs get a read-only token, so they are skipped.
+    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: arigsela/claude-agents/pr-triage@ac3367d4088c816739d85c818f970d0a588505dd
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          repo: ${{ github.repository }}
+          policy-ref: ${{ github.event.pull_request.base.sha }}
