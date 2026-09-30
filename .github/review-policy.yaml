@@ -30,11 +30,37 @@ always_skip:                 # EVERY changed file must satisfy one entry
   paths: [docs/**, "**/*.md"]
   image_tag_bump_only: true  # only `image:`/`tag:` value lines changed, <= 4 lines in total.
                              # A Helm chart bump (Application targetRevision) never qualifies.
-hot_components: {}           # component -> follow-up rate; written from `pr_triage calibrate`
+hot_components:              # component -> follow-up rate; from `pr_triage calibrate` (2026-09, 200 PRs)
+  .github/workflows: 0.57
+  appsets/managed-apps: 0.67
+  base-apps/admission-policies: 1.0
+  base-apps/agent-audit-aws-infrastructure: 0.5
+  base-apps/agent-audit-web: 0.5
+  base-apps/argo-rollouts: 0.4
+  base-apps/argo-workflow-tasks: 0.7
+  base-apps/argo-workflows: 0.43
+  base-apps/istio-ingress: 0.63
+  base-apps/jupyter: 0.5
+  base-apps/kagent: 0.5
+  base-apps/kyverno: 0.67
+  base-apps/kyverno-policies: 0.5
+  base-apps/nginx-ingress: 0.8
+  base-apps/postgresql: 0.45
+  base-apps/vault: 0.5
+  base-apps/wan-ip-monitor: 0.5
+  base-apps/weather-kitchen-backend: 0.4
+  scripts/gen-agent-capability-policy.py: 1.0
+  scripts/hop-verify.sh: 0.5
+  scripts/install-authn-config.sh: 0.75
+  tests/admission-policies: 0.89
+  tests/appset: 0.4
+  tests/cve_report: 0.67
+  tests/eval-corpus: 1.0
+  tests/node-config: 1.0
 thresholds:
-  read_if_p_read_gte: 0.30
+  read_if_p_read_gte: 0.20
   read_if_any_flag_gte: 0.70
-  skip_if_p_skip_gte: 0.90
+  skip_if_p_skip_gte: 0.80
   escalate_if_confidence_lt: 0.50
 risk_callouts:               # kind -> plain-language risk (pr-explainer)
   ClusterRole: access control
