@@ -6,7 +6,7 @@ app: donetick
 catalog_entity: donetick
 kind: runbook
 namespace: donetick
-last_reviewed: 2026-08-03
+last_reviewed: 2026-09-30
 status: current
 tags: [go, postgres, chores, self-hosted]
 sources:
@@ -15,6 +15,8 @@ sources:
   - base-apps/donetick/db-external-secret.yaml
   - base-apps/postgresql/donetick-database.yaml
   - base-apps/postgresql/external-secrets-donetick.yaml
+  - base-apps/postgresql/cnpg-cluster.yaml
+  - docs/troubleshooting/cnpg-managed-roles-inert.md
 ---
 
 # donetick — Runbook
@@ -38,7 +40,8 @@ The manifests do not create Vault material. Before the first sync can succeed:
 2. Ensure `chores.arigsela.com` resolves to the ingress address in Route 53
    (A record, TTL 300, same shape as the other hosts). It predates this app —
    it was chores-tracker's hostname — so on the original deploy it already
-   existed and needed no change.
+   existed and needed no change. It is in wan-ip-monitor's `MANAGED_HOSTNAMES`,
+   so it follows WAN rotations automatically.
 
 Order matters only in that the Certificate cannot issue until DNS resolves, and
 the Deployment will crash-loop until both ExternalSecrets have synced. Both
@@ -88,18 +91,19 @@ window is about 15 seconds of warnings before the process exits.
 
 - **Check:** `kubectl -n donetick get certificate donetick-tls` then the
   CertificateRequest and Order beneath it.
-- **Fix:** confirm the issuer is `letsencrypt-route53`. If anything ever points
-  this at `letsencrypt-prod`, it will never complete — that ClusterIssuer solves
-  HTTP-01 through `ingress.class: nginx`, and there is no nginx ingress
-  controller in this cluster since the Istio cutover. Do not delete and recreate
+- **Fix:** confirm the issuer is `letsencrypt-route53` — it is the only
+  ClusterIssuer (`base-apps/cert-manager/letsencrypt-route53.yaml`). The old
+  `letsencrypt-prod` solved HTTP-01 through the nginx ingress and no longer
+  exists, so a Certificate pointing at it never issues. Do not delete and recreate
   the Certificate in a loop while debugging; Let's Encrypt allows 50 issuances
   per registered domain per week and arigsela.com has approached that ceiling
   before.
 
 ### Symptom: reachable from home, times out from a phone
 
-Working as configured, not a fault. The AuthorizationPolicy allow-lists four
-source IPs and carrier NAT is not among them. See `docs.md`.
+Working as configured, not a fault. The AuthorizationPolicy allow-lists the home
+WAN address and a few remote `/32`s; carrier NAT is not among them. See `docs.md`.
+If it fails from home too, suspect a WAN IP rotation (istio-ingress runbook).
 
 ### Symptom: config change had no effect
 
@@ -130,18 +134,13 @@ on-demand backup before a risky change, create a `Backup` resource against
 
 ### Rotate the DB password
 
-```bash
-vault kv put k8s-secrets/donetick-db db-password="$(openssl rand -base64 32 | tr -d '\n' | cut -c1-32)"
-```
-
-**This does not work as written today.** CNPG is supposed to apply `ALTER ROLE`
-from the postgresql-side secret, but its managed-role reconciler is inert on this
-cluster — the `donetick` role was created by hand on 2026-08-03 and the operator
-does not manage it. Rotating in Vault alone therefore changes the app's password
-and NOT the database's, and donetick fails authentication on its next restart.
-
-Until `docs/troubleshooting/cnpg-managed-roles-inert.md` is resolved, rotation is
-a two-step manual operation:
+CNPG is supposed to apply `ALTER ROLE` from the postgresql-side secret, but its
+managed-role reconciler is inert on this cluster
+(`docs/troubleshooting/cnpg-managed-roles-inert.md`) — the `donetick` role was
+created by hand on 2026-08-03 and the operator does not manage it. Rotating in
+Vault alone therefore changes the app's password and NOT the database's, and
+donetick fails authentication on its next restart. Until that is resolved,
+rotation is a manual operation against the **primary**:
 
 ```bash
 # 1. new value into Vault
@@ -152,7 +151,9 @@ kubectl -n postgresql annotate externalsecret donetick-db-credentials force-sync
 kubectl -n donetick   annotate externalsecret donetick-db-credentials force-sync=$(date +%s) --overwrite
 
 P=$(kubectl -n postgresql get secret donetick-db-credentials -o jsonpath='{.data.password}' | base64 -d)
-kubectl -n postgresql exec -i postgresql-cluster-2 -c postgres -- \
+PRIMARY=$(kubectl -n postgresql get pods -o name \
+  -l cnpg.io/cluster=postgresql-cluster,cnpg.io/instanceRole=primary)
+kubectl -n postgresql exec -i "$PRIMARY" -c postgres -- \
   psql -U postgres -c "ALTER ROLE donetick WITH PASSWORD '$P'"
 
 # 3. restart the app so it picks up the new secret
@@ -177,9 +178,14 @@ closing it again: set the flag to `false` in `configmap.yaml`, bump
 then revert both. Confirm the new row before closing:
 
 ```bash
-kubectl -n postgresql exec postgresql-cluster-2 -c postgres -- \
+PRIMARY=$(kubectl -n postgresql get pods -o name \
+  -l cnpg.io/cluster=postgresql-cluster,cnpg.io/instanceRole=primary)
+kubectl -n postgresql exec "$PRIMARY" -c postgres -- \
   psql -U postgres -d donetick -tAc "select id, username from users order by id;"
 ```
+
+(The cluster has two instances and the primary moves on switchover, so never
+hardcode a pod name like `postgresql-cluster-2`.)
 
 ### Recover a password with no email configured
 

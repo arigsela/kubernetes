@@ -6,12 +6,16 @@ app: admission-policies
 catalog_entity: admission-policies
 kind: runbook
 namespace: kube-system
-last_reviewed: 2026-09-25
+last_reviewed: 2026-09-30
 status: current
 tags: [admission, cel, policy, security]
 sources:
   - base-apps/admission-policies/agent-identity.yaml
+  - base-apps/admission-policies/agent-capability.yaml
+  - base-apps/admission-policies/agent-capability-taxonomy.yaml
   - base-apps/admission-policies/inject-ecr-pull-secret.yaml
+  - base-apps/admission-policies/kyverno-reports-rbac.yaml
+  - scripts/gen-agent-capability-policy.py
   - tests/admission-policies/test_admission_policies.py
 ---
 
@@ -70,6 +74,20 @@ sources:
 - **Emergency:** `kubectl delete mutatingadmissionpolicybinding <name>`, then fix git (Argo
   re-creates the binding at the next sync).
 
+### Symptom: PolicyReports have no results for Agents (agent-capability, agent-identity-mcp-toolnames)
+- Kyverno's reports controller evaluates the agent policies in the background, so it must
+  list and watch `kagent.dev` Agents. That access comes only from the
+  `kyverno:read-kagent-agents` ClusterRole in `kyverno-reports-rbac.yaml`, which aggregates
+  into the reports controller via the `rbac.kyverno.io/aggregate-to-reports-controller: "true"`
+  label. Without it the controller reports nothing for Agents; admission is unaffected (the
+  API server evaluates the policies itself).
+- **Check:** `kubectl get clusterrole kyverno:read-kagent-agents`, and
+  `kubectl auth can-i list agents.kagent.dev --as=system:serviceaccount:kyverno:kyverno-reports-controller`.
+  The controller's log names the missing permission (`requires permissions get,list,watch for
+  resource kagent.dev/v1alpha2/Agent`).
+- **Also check** the policy carries `reports.kyverno.io/enabled: "true"` (docs.md,
+  "Reporting"). `agent-capability-delegation` deliberately does not, so it never appears.
+
 ### Symptom: a policy silently never fires
 - **Check:** `kubectl get validatingadmissionpolicy <name> -o jsonpath='{.status.typeChecking}'`.
   An `undefined field` warning means a path in the expression does not exist in the resource's
@@ -92,7 +110,10 @@ sources:
 2. Add fixtures: at least one `bad/<policy-name>/` case **per kind the policy matches** (the
    static tests enforce it) and a `good/` case, in `tests/admission-policies/fixtures/<suite>/`.
 3. `python3 -m pytest tests/admission-policies/` (needs Docker; CI runs it too).
-4. After merge, check `status.typeChecking` on the cluster, and compare the shadow warnings
-   against the Kyverno policy it replaces (`kubectl get policyreports -A`).
-5. Flip to enforcing in a separate change: binding `[Deny]`, policy `failurePolicy: Fail`,
-   delete the Kyverno policy.
+4. After merge, check `status.typeChecking` on the cluster, then let the policy soak in
+   shadow: review its warnings and results (`kubectl get policyreports -A`, source
+   `ValidatingAdmissionPolicy`) against the live objects it matches, and dry-run the live
+   objects back through it (see "List current workload-hygiene violations").
+5. Flip to enforcing in a separate change: binding `[Deny]`, policy `failurePolicy: Fail`
+   (for `agent-capability*`, the `ENFORCE` constant in `scripts/gen-agent-capability-policy.py`,
+   then regenerate). Workload-hygiene policies stay audit-only.

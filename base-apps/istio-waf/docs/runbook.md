@@ -6,12 +6,13 @@ app: istio-waf
 catalog_entity: istio-waf
 kind: runbook
 namespace: istio-ingress
-last_reviewed: 2026-08-11
+last_reviewed: 2026-09-30
 status: current
 tags: [waf, security, istio, coraza]
 sources:
   - base-apps/istio-waf/wasmplugin.yaml
   - base-apps/logging/grafana-dashboard-coraza.yaml
+  - base-apps/istio-ingress/gateway-options.yaml
 ---
 
 # istio-waf — Runbook
@@ -49,6 +50,24 @@ kubectl -n argo-cd patch application istio-waf --type merge \
   ```
 - **Fix:** emergency step 1 above, then add a commented exclusion (see Tuning).
 
+### Symptom: an automation that POSTs to an n8n webhook silently stopped working
+A blocked webhook fails **silently** from the sender's side: Coraza returns
+`403`, the workflow never runs, nothing errors in n8n. The precedent is the email
+digest: its HTML body scored 75 against a threshold of 5, so every run since
+enforcement (2026-08-11) was blocked and hidden by the digest skill's Gmail-draft
+fallback, until rule `9013` exempted `/webhook/newsletter-digest` on 2026-09-24.
+- **Check:** find the blocked request and its rules:
+  ```logql
+  {namespace="istio-ingress", container="istio-proxy"} |= "Coraza" |= "/webhook"
+  ```
+  A `403` with no Coraza line is not the WAF — check the workflow's own auth
+  (e.g. a bearer token that no longer matches the n8n credential).
+- **Fix:** a scoped `SecRuleUpdateTargetById` exclusion after the CRS include
+  when one argument trips a rule (see Tuning and the known `930110` false
+  positive in docs.md). Only for a payload that changes every run, like the
+  digest, turn body inspection off for that one anchored path the way `9013`
+  does — placed after `9010`. Never raise the anomaly threshold.
+
 ### Symptom: no detections at all, ever
 This is the dangerous one — it looks identical to "no attacks."
 - **Check:** is the filter actually attached?
@@ -83,15 +102,21 @@ This is the dangerous one — it looks identical to "no attacks."
 - **Fix:** if the fetch failed, confirm ghcr.io reachability from the node and
   that the tag `0.6.0` still exists.
 
-### Symptom: gateway pod OOMKilled — ALL 19 hostnames down
+### Symptom: gateway pod OOMKilled — every hostname down
 - **Check:**
   ```bash
   kubectl -n istio-ingress describe pod -l gateway.networking.k8s.io/gateway-name=main | grep -A3 "Last State"
   ```
+  The *Coraza WAF* dashboard's "Gateway memory vs 1 GiB limit" panel shows the
+  trend.
 - **Fix:** emergency step 3 (revert the WAF) to restore ingress immediately.
-  Then raise the gateway's memory limit in
-  `base-apps/istio-ingress/gateway-options.yaml` and reduce
-  `SecRequestBodyLimit` before redeploying.
+  Then set a higher memory limit on the gateway in
+  `base-apps/istio-ingress/gateway-options.yaml` (it sets no resources today)
+  and reduce `SecRequestBodyLimit` before redeploying. **istiod ignores changes
+  to that ConfigMap** until the generated Deployment is recreated: after the
+  change syncs, `kubectl -n istio-ingress delete deploy main-istio` (a brief
+  full outage; istiod rebuilds it in seconds). See the istio-ingress runbook,
+  "Changing gateway-options.yaml appears to do nothing".
 
 ### Symptom: Loki ingest volume spiked
 - **Check:** `SecDebugLogLevel` in `wasmplugin.yaml`.

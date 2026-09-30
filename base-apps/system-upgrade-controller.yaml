@@ -22,6 +22,9 @@ spec:
     repoURL: https://github.com/arigsela/kubernetes
     targetRevision: main
     path: base-apps/system-upgrade-controller
+    directory:
+      # catalog-info.yaml and mkdocs.yml are Backstage/TechDocs files, not manifests.
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
   destination:
     server: https://kubernetes.default.svc
     namespace: system-upgrade

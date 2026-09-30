@@ -1,5 +1,11 @@
 # Istio Ambient Mesh Deployment Plan
 
+> **Status: installed 2025-12-20; historical plan.** `istio-base`, `istio-istiod`, `istio-cni` and
+> `istio-ztunnel` run today (upgraded in place to 1.30.3, SPEC §T.10). `istio-ambient-config/`, the
+> chores-tracker enrollment and waypoints, was deleted with chores-tracker on 2026-08-01, so **no
+> namespace is enrolled**; the dataplane is kept for future use (§T.84). North-south traffic uses
+> the Istio Gateway API since 2026-07-31: `base-apps/istio-ingress/docs.md`.
+
 ## Overview
 
 Deploy Istio Ambient Mesh to the K3s cluster using ArgoCD and Helm, following existing GitOps patterns in the repository.

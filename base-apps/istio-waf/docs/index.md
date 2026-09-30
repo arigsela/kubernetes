@@ -1,18 +1,20 @@
 ---
 type: "Kubernetes App Guide"
 title: "istio-waf"
-description: "OWASP Coraza WAF as an Envoy Wasm filter on the main ingress Gateway, protecting the three public-by-design hostnames"
+description: "OWASP Coraza WAF as an Envoy Wasm filter on the main ingress Gateway, inspecting the public-by-design hosts (grafana, n8n webhooks) plus oncall"
 app: istio-waf
 catalog_entity: istio-waf
 kind: docs
 namespace: istio-ingress
-last_reviewed: 2026-09-24
+last_reviewed: 2026-09-30
 status: current
 tags: [waf, security, istio, coraza]
 sources:
   - base-apps/istio-waf.yaml
   - base-apps/istio-waf/wasmplugin.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
+  - base-apps/logging/grafana-dashboard-coraza.yaml
+  - scripts/validate-waf-scope.py
   - docs/superpowers/specs/2026-08-11-coraza-waf-design.md
 ---
 
@@ -28,10 +30,11 @@ runs in the Envoy that already terminates every request.
 ## What it protects, and why only three hosts
 
 `base-apps/istio-ingress/authorizationpolicy.yaml` is the security boundary, and
-it works at L3: it answers "what IP are you from?" Of the 19 hostnames, 14 are
-restricted to IPs exclusively — including `atlantis`, which allows the same
-four `/32`s plus six GitHub webhook CIDR ranges on top. `n8n` is mixed — its
-webhook paths are public while its admin UI is IP-restricted (see below).
+it works at L3: it answers "what IP are you from?" Almost every hostname is
+restricted to IPs exclusively — including `atlantis`, which also admits GitHub's
+webhook CIDR ranges. `n8n` is mixed — its webhook paths are public while its
+admin UI is IP-restricted (see below). Read the policy for the current list
+rather than a count.
 `vault.local` / `vault.10.0.1.110` were unrestricted (no `from:` clause at
 all, hence reachable from the public internet) until they were given an IP
 allow-list as part of this work (2026-08-11) — see
@@ -42,7 +45,7 @@ Two hosts are public by design and cannot be IP-restricted:
 | Host | Why open | App-layer control |
 |---|---|---|
 | `grafana.arigsela.com` | Read from mobile; carrier IPs unlistable | GitHub OAuth |
-| `n8n.arigsela.com` `/webhook*` | Arbitrary external senders | Per-workflow auth |
+| `n8n.arigsela.com` `/webhook*`, `/webhook-test*`, `/mcp-server*` | Arbitrary external senders | Per-workflow auth |
 
 `oncall.arigsela.com` was a third until **2026-08-11**, when it was given an IP
 allow-list. Slack does not publish stable egress addresses, so there is no
@@ -132,8 +135,9 @@ instance per named set**. Three tiers would mean three copies of CRS resident in
 a single gateway pod. The SecLang guard rules do the same job with one.
 
 **3. `failStrategy: FAIL_OPEN` is deliberate, against Istio's default.** Under
-`FAIL_CLOSE` a ghcr.io outage or one Coraza panic returns 5xx for all nineteen
-hostnames — including the Argo CD UI needed to roll it back. The accepted cost
+`FAIL_CLOSE` a ghcr.io outage or one Coraza panic returns 5xx for every
+hostname on the Gateway — the filter is in the chain for all of them — including
+the Argo CD UI needed to roll it back. The accepted cost
 is that a crashed WAF stops enforcing **silently**, which is why the dashboard's
 first panel watches Wasm load errors rather than only rule hits. An empty
 "detections" graph cannot distinguish *clean* from *dead*.
@@ -144,7 +148,7 @@ first panel watches Wasm load errors rather than only rule hits. An empty
 |---|---|
 | Which hosts are inspected | rule `9000` scope regex, `wasmplugin.yaml` |
 | Whether a host blocks or logs | rules `9001`–`9003` (present = log only) |
-| Body inspection | rules `9010` (n8n, path-scoped), `9011` (oncall); `9013` switches it back off for `/webhook/newsletter-digest` only |
+| Body inspection | rules `9010` (n8n `/webhook`, `/webhook-test`, `/mcp-server`, path-scoped), `9011` (oncall); `9013` switches it back off for `/webhook/newsletter-digest` only |
 | CRS tuning (allow-lists) | rule `9100`, between the two `Include` lines |
 | CRS exclusions | end of the `default` directives list |
 | Log verbosity | `SecDebugLogLevel` |
@@ -166,7 +170,7 @@ first request. Check what a host currently scores before promoting it.
 Rule `9100` exists because of exactly that trap — Coroot's UI would have been
 blocked by its own telemetry the moment the host was promoted.
 
-## Adding a fourth host
+## Adding a host to the WAF scope
 
 0. Check what it already scores. Unprotected hosts still evaluate CRS (see
    above), so grep the gateway log for its traffic first — a host already

@@ -6,14 +6,17 @@ app: istio-ingress
 catalog_entity: istio-ingress
 kind: runbook
 namespace: istio-ingress
-last_reviewed: 2026-07-31
+last_reviewed: 2026-09-30
 status: current
 tags: [ingress, gateway-api, istio]
 sources:
   - base-apps/istio-ingress/gateway.yaml
   - base-apps/istio-ingress/gateway-options.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
+  - base-apps/wan-ip-monitor/cronjob.yaml
+  - base-apps/istio-waf/wasmplugin.yaml
   - scripts/hop-verify.sh
+  - scripts/validate-waf-scope.py
 ---
 
 # istio-ingress Runbook
@@ -31,6 +34,29 @@ scripts/hop-verify.sh gate                                 # the four gate check
 has ready pods, **every** listener resolved its `certificateRef`, and the
 AuthorizationPolicy exists. That last one matters: an ingress that serves but
 enforces nothing is worse than one that is down.
+
+## Every host 403s or times out at once
+
+Almost always a home WAN IP rotation, not the Gateway. Two phases:
+
+- **Timeouts**: public DNS still points at the old address. `wan-ip-monitor` moves
+  the Route 53 records it owns on its next run (schedule `0 */12 * * *`, so up to
+  12 hours).
+- **403 from every restricted host** (public ones — grafana, n8n webhooks — still
+  work): DNS is fixed but `authorizationpolicy.yaml` still trusts the old `/32`.
+
+```bash
+dig +short argocd.arigsela.com                  # what DNS says
+curl -s https://checkip.amazonaws.com           # what the house actually is
+gh pr list --repo arigsela/kubernetes --search 'head:automation/wan-ip-'
+```
+
+**Fix:** merge the `automation/wan-ip-<new-ip>` PR wan-ip-monitor opened; Argo CD
+syncs the new allow-list. Don't wait 12 hours for detection — run the job by hand
+(wan-ip-monitor runbook, "Run a job by hand"; a Job created `--from` the CronJob
+is a **live** run). Editing the allow-list by hand instead: **replace** the old
+`/32` everywhere and move the `arigsela.com/wan-ip` annotation in the same commit
+(`tests/wan_ip/test_policy_annotation.py` fails otherwise) — never append.
 
 ## A host returns 404 through the Gateway
 
@@ -67,7 +93,8 @@ name `Gateway` in `istio-ingress`.
 
 ## Everything is 403, including from an allow-listed address
 
-Check what source address Envoy actually saw — do not assume:
+Rule out a WAN rotation first (above). Then check what source address Envoy
+actually saw — do not assume:
 
 ```bash
 kubectl -n istio-ingress logs deploy/main-istio --tail=20 | grep rbac_access_denied
@@ -95,7 +122,9 @@ kubectl -n istio-ingress delete deploy main-istio            # istiod rebuilds i
 ```
 
 Deleting the Deployment is the supported way to force it. istiod recreates it
-within seconds, applying the current ConfigMap.
+within seconds, applying the current ConfigMap. This briefly takes every host
+down; it is also the only way a memory-limit raise for the WAF (istio-waf
+runbook) actually lands.
 
 ## The gateway pod is Pending on "didn't have free ports"
 
@@ -131,12 +160,22 @@ outage.
 
 ## Adding a host
 
-Four things, together — never a listener without a rule:
+All of these, together — never a listener without a rule:
 
 1. listener in `gateway.yaml` (hostname + `certificateRefs`)
-2. `ReferenceGrant` in the app namespace
-3. `HTTPRoute` in the app namespace (`sectionName` = listener name)
-4. rule in `authorizationpolicy.yaml`, **or** the host is refused
+2. `Certificate` in the app namespace, `issuerRef` ClusterIssuer
+   `letsencrypt-route53` (DNS-01; `letsencrypt-prod` no longer exists)
+3. `ReferenceGrant` in the app namespace for that TLS secret
+4. `HTTPRoute` in the app namespace (`sectionName` = listener name)
+5. rule in `authorizationpolicy.yaml`, **or** the host is refused. Copy an
+   existing restricted rule's `ipBlocks` (the WAN `/32` must be the annotated
+   one). A rule with no `from` makes it public — then it must also be added to
+   the WAF scope regex, or `scripts/validate-waf-scope.py` fails CI.
+6. the hostname in `MANAGED_HOSTNAMES` in `base-apps/wan-ip-monitor/cronjob.yaml`
+   — `tests/wan_ip/` fails CI if an allow-listed host is missing, and without it
+   the record is stranded after the next WAN rotation
+7. a Route 53 A record pointing at the current WAN address (hand-created, not
+   Terraform-managed; wan-ip-monitor keeps it current from then on)
 
 Then verify by observation, not by reading YAML:
 
@@ -148,9 +187,9 @@ curl -o /dev/null -w '%{http_code}\n' https://<host>/     # from an allow-listed
 ## Gotchas that cost time
 
 - **Argo app names are not directory names.** `base-apps/kagent/` is owned by the
-  app `kagent-secrets`; `base-apps/chores-tracker-backend/` by
-  `chores-tracker-backend`, not `chores-tracker`. Refreshing the wrong name does
-  nothing and looks like the change failed.
+  app `kagent-secrets`; `base-apps/argo-rollouts/` by `argo-rollouts-config` (the
+  `argo-rollouts` app is the Helm chart). Refreshing the wrong name does nothing
+  and looks like the change failed.
 - **The child Application's own spec is owned by `master-app`.** Changing
   `targetRevision` in git and refreshing the child re-syncs it from its *old*
   spec. Refresh `master-app`.

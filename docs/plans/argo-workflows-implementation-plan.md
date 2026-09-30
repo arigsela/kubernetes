@@ -1,5 +1,15 @@
 # Argo Workflows POC Implementation Plan
 
+> **Status: partially implemented.** Built: Phase 1 (`base-apps/argo-workflows.yaml`; the UI is now
+> served by the Istio Gateway via `base-apps/argo-workflows/httproute.yaml`, not an Ingress) and
+> Phase 3 (`hello-world-dag`, `artifact-example`, `cluster-health-check` in
+> `base-apps/argo-workflow-tasks/`). Never built: Phase 2 (Vault SecretStore), Phase 4's
+> namespace-report CronWorkflow and Phase 5 (CI pipeline). Added later, outside this plan: the
+> weekly `image-scan` WorkflowTemplate + CronWorkflow
+> (`docs/superpowers/specs/2026-08-17-image-vulnerability-scanning-design.md`), with a pods-only
+> `argo-workflow-pod-reader` ClusterRole (`serviceaccount.yaml`) and S3 credentials from the
+> Crossplane-written `argo-workflows-s3-creds` Secret rather than Vault.
+
 ## Overview
 
 Deploy Argo Workflows as a POC on the asela-cluster to learn workflow orchestration and establish a Kubernetes-native CI/pipeline capability alongside our existing ArgoCD GitOps stack.

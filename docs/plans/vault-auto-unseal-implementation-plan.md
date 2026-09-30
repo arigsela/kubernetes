@@ -1,5 +1,9 @@
 # Vault AWS KMS Auto-Unseal Implementation Plan
 
+> **Status: implemented 2026-01-19** (all four phases). Living doc: `base-apps/vault/docs.md`
+> (Seal section); the KMS key, IAM user and credentials Secret are in
+> `terraform/roots/asela-cluster/vault-kms.tf`.
+
 ## Overview
 Migrate Vault from Shamir-based manual unsealing to AWS KMS auto-unseal, eliminating the need for manual intervention after server restarts.
 

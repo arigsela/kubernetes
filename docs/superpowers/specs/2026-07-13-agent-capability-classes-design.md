@@ -1,6 +1,9 @@
 # Agent Capability Classes — Security Guardrails (increment 1) — Design
 
-Status: draft for review
+Status: implemented 2026-07-13 (`886cdcb`). Enforcement moved from the Kyverno ClusterPolicy to
+native ValidatingAdmissionPolicies on 2026-09-26 (`base-apps/admission-policies/agent-capability.yaml`,
+same generator and taxonomy; see `docs/adp-engineering-deep-dive.md`). The `observability-agent`
+discussed below was removed on 2026-09-24. Kyverno mechanics below are historical.
 Pillar: L03 Security (agent guardrails)
 Predecessor: [Agent Identity — "Agent Principal"](2026-07-11-agent-identity-principal-design.md)
 

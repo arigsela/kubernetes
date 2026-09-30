@@ -2,6 +2,9 @@
 
 A comprehensive guide to understanding Layer 4/7 networking, mutual TLS, and how service mesh brings it all together in Kubernetes.
 
+> **This is a conceptual primer.** For what this cluster actually runs, see
+> [How this cluster uses it](#how-this-cluster-uses-it) at the end.
+
 ---
 
 ## Table of Contents
@@ -13,6 +16,7 @@ A comprehensive guide to understanding Layer 4/7 networking, mutual TLS, and how
 5. [Istio Ambient Mesh Architecture](#istio-ambient-mesh-architecture)
 6. [How It All Works Together](#how-it-all-works-together)
 7. [Glossary](#glossary)
+8. [How this cluster uses it](#how-this-cluster-uses-it)
 
 ---
 
@@ -268,7 +272,9 @@ Pod IPs are ephemeral (pods get recreated). Services provide stable DNS names an
 
 ### Ingress: External Traffic
 
-Ingress handles traffic coming from outside the cluster.
+Ingress handles traffic coming from outside the cluster. The classic form is an `Ingress`
+object served by an ingress controller such as NGINX; the newer Gateway API (`Gateway` +
+`HTTPRoute`) does the same job and is what this cluster uses.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -277,7 +283,7 @@ Ingress handles traffic coming from outside the cluster.
 │      │                                                      │
 │      ▼                                                      │
 │   ┌─────────────────────────────────────┐                  │
-│   │ Ingress Controller (NGINX)          │                  │
+│   │ Ingress controller / Gateway        │                  │
 │   │ - TLS termination                   │                  │
 │   │ - Path-based routing                │                  │
 │   │ - Load balancing                    │                  │
@@ -504,7 +510,7 @@ Ambient Mesh solves these problems by moving the proxy OUT of the pod.
 
 ## How It All Works Together
 
-### Putting It All Together: Your Cluster With Ambient Mesh
+### Putting It All Together: A Cluster With Ambient Mesh
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -513,7 +519,7 @@ Ambient Mesh solves these problems by moving the proxy OUT of the pod.
 │      │                                                                  │
 │      ▼                                                                  │
 │  ┌───────────────────────────────────────────┐                         │
-│  │ NGINX Ingress Controller                  │  ◄── North-South        │
+│  │ Ingress Gateway (Gateway API)             │  ◄── North-South        │
 │  │ (TLS termination, path routing)           │      (external traffic) │
 │  └──────────────────┬────────────────────────┘                         │
 │                     │                                                   │
@@ -525,7 +531,7 @@ Ambient Mesh solves these problems by moving the proxy OUT of the pod.
 │  ┌─────────────────────────────────────────────────────────────────┐   │
 │  │  Node 1                              Node 2                      │   │
 │  │  ┌──────────────────┐               ┌──────────────────┐        │   │
-│  │  │ chores-frontend  │               │ chores-backend   │        │   │
+│  │  │ frontend pod     │               │ backend pod      │        │   │
 │  │  │ (no sidecar!)    │               │ (no sidecar!)    │        │   │
 │  │  └────────┬─────────┘               └────────┬─────────┘        │   │
 │  │           │                                  │                   │   │
@@ -556,20 +562,20 @@ Ambient Mesh solves these problems by moving the proxy OUT of the pod.
 ### Example: Authorization Policy
 
 ```yaml
-# Allow only chores-frontend to call chores-backend
+# Allow only the frontend to call the backend (illustrative names)
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: backend-access
-  namespace: chores-tracker
+  namespace: shop
 spec:
   selector:
     matchLabels:
-      app: chores-backend
+      app: backend
   rules:
   - from:
     - source:
-        principals: ["cluster.local/ns/chores-tracker/sa/chores-frontend"]
+        principals: ["cluster.local/ns/shop/sa/frontend"]
     to:
     - operation:
         methods: ["GET", "POST"]
@@ -577,15 +583,15 @@ spec:
 ```
 
 This policy:
-1. Applies to pods labeled `app: chores-backend`
-2. Only allows traffic FROM the chores-frontend service account
+1. Applies to pods labeled `app: backend`
+2. Only allows traffic FROM the frontend service account
 3. Only allows GET and POST methods to /api/* paths
 4. All other traffic is denied
 
 ### The Security Improvement
 
 ```
-BEFORE (Current State):
+BEFORE (No Mesh):
 ┌─────────────────────────────────────────────────────────────┐
 │                                                             │
 │   Any pod can call any service                             │
@@ -641,13 +647,23 @@ AFTER (With Ambient Mesh):
 
 ---
 
-## Next Steps
+## How this cluster uses it
 
-1. **Deploy Istio Ambient Mesh** in the cluster
-2. **Label namespaces** to enable mesh for specific workloads
-3. **Create authorization policies** for service-to-service access
-4. **Add waypoints** where L7 features are needed
-5. **Configure observability** with Prometheus/Grafana integration
+Status as of 2026-09-30:
+
+- **North-south:** the Istio Gateway API. One `Gateway` named `main` in `istio-ingress`
+  terminates TLS for every host; each app has an `HTTPRoute` and a `Certificate`, and an
+  `AuthorizationPolicy` enforces the per-host IP allow-lists; the Coraza WAF runs on the same
+  gateway (`base-apps/istio-waf/`). It replaced `ingress-nginx` on 2026-07-31. See
+  `base-apps/istio-ingress/docs.md`.
+- **Ambient mesh:** installed in December 2025 (`istio-base`, `istio-istiod`, `istio-cni`,
+  `istio-ztunnel`, now 1.30.3), but **no namespace is enrolled**. The only enrolled workload,
+  chores-tracker, and its waypoints were removed on 2026-08-01. ztunnel and istio-cni still run on
+  every node, kept for future use (SPEC §T.84). So east-west traffic is **not** mTLS-encrypted
+  today; the diagrams above show what enrolling a namespace would give.
+- **To enroll a namespace:** label it `istio.io/dataplane-mode=ambient`, add
+  `AuthorizationPolicy` rules, and add a waypoint only where L7 policy is needed. The original
+  plan is `docs/istio-ambient-mesh-implementation-plan.md` (historical).
 
 ---
 

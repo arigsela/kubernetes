@@ -35,7 +35,7 @@ This is a GitOps repository for a homelab k3s cluster. Argo CD deploys everythin
 - `/docs/` - Cross-cutting guides, troubleshooting notes, specs and plans (see `docs/index.md`)
 - `/scripts/` - Generators, validators, backup/restore and Vault provisioning scripts
 - `/tests/` - pytest suites, one directory per concern (commands in `AGENTS.md`)
-- `/recovery/` - Power-loss recovery notes
+- `/recovery/` - Backup & recovery: `CLUSTER-RECOVERY.md` (what is backed up, how to restore, known gaps)
 - `SPEC.md` - The current task and invariant ledger; manifests cite its sections (`§T.n`, `§V.n`)
 
 ### Secret Management Architecture

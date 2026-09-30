@@ -20,8 +20,11 @@
 #   rm /tmp/phase0.sh   # (still inside the pod)
 #   exit
 #
-# Spec: docs/superpowers/specs/2026-04-30-idp-v1.2-vault-credentials-design.md
-# Plan: docs/superpowers/plans/2026-04-30-idp-v1.2-vault-credentials.md (Phase 0)
+# What it provisions: the shared `app-namespace-rw` Vault policy. The per-namespace
+# Kubernetes-auth roles of the Backstage IDP's Crossplane XApplication apps are created with it
+# (policies=default,app-namespace-rw); its templated path covers k8s-secrets/<namespace>/*, so no
+# per-app policy is needed.
+# See base-apps/backstage/docs.md; the golden path now in use is templates/new-app/README.md.
 
 set -e
 

@@ -6,7 +6,7 @@ app: agent-audit-web
 catalog_entity: agent-audit-web
 kind: docs
 namespace: agent-audit
-last_reviewed: 2026-09-27
+last_reviewed: 2026-09-30
 status: current
 tags: [audit, agents, fastapi, oauth2-proxy]
 sources:
@@ -21,7 +21,9 @@ sources:
   - base-apps/agent-audit-web/external-secrets.yaml
   - base-apps/agent-audit-aws-infrastructure/web-s3-read.yaml
   - base-apps/agent-audit-aws-infrastructure/web-s3-read-key.yaml
+  - base-apps/agent-audit-aws-infrastructure/web-ecr-push.yaml
   - base-apps/postgresql/init-agent-audit-web-role.yaml
+  - base-apps/postgresql/external-secrets-agent-audit-web-db.yaml
   - base-apps/dex/configmap.yaml
 ---
 

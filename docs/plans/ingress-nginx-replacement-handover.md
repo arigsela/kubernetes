@@ -1,5 +1,8 @@
 # Handover: replacing ingress-nginx
 
+> **Status: done 2026-07-31** — `ingress-nginx` replaced by the Istio ingress Gateway (SPEC §T.43).
+> Historical handover; the living docs are `base-apps/istio-ingress/docs.md` and `runbook.md`.
+
 **Written** 2026-07-29. **For** an agent picking up SPEC.md §T.43.
 **Every fact below was verified against the live cluster on 2026-07-29**, not read from
 older docs. Where this contradicts SPEC.md, this document is newer — see

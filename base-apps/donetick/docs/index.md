@@ -6,7 +6,7 @@ app: donetick
 catalog_entity: donetick
 kind: docs
 namespace: donetick
-last_reviewed: 2026-08-03
+last_reviewed: 2026-09-30
 status: current
 tags: [go, postgres, chores, self-hosted]
 sources:
@@ -16,6 +16,9 @@ sources:
   - base-apps/donetick/db-external-secret.yaml
   - base-apps/donetick/certificate.yaml
   - base-apps/donetick/httproute.yaml
+  - base-apps/donetick/reference-grant.yaml
+  - base-apps/istio-ingress/authorizationpolicy.yaml
+  - base-apps/postgresql/cnpg-cluster.yaml
   - base-apps/postgresql/donetick-database.yaml
   - base-apps/postgresql/external-secrets-donetick.yaml
 ---
@@ -50,7 +53,10 @@ listener and certificate are named for `chores`. TLS terminates at the Gateway u
 namespace reached across namespaces by `reference-grant.yaml`.
 
 All state is in Postgres — the `donetick` database inside the CloudNativePG
-cluster `postgresql-cluster`, not the plain `postgresql` Deployment. That choice
+cluster `postgresql-cluster`, not the plain `postgresql` Deployment. The app
+connects through the operator's `postgresql-cluster-rw` Service, so it follows
+the primary: since 2026-09-30 the cluster runs `instances: 2` (one per worker),
+and a switchover — e.g. before a node drain — moves the primary to the other pod. That choice
 is the reason there is no PVC here: the CNPG cluster is the only Postgres in this
 cluster with backups (daily 02:00 UTC to S3, 30d retention). The pod itself holds
 nothing that survives a restart.
@@ -79,17 +85,18 @@ Vault once — never either Kubernetes Secret.
 ## Gotchas & tribal knowledge
 
 - **Not reachable from mobile data.** The Gateway AuthorizationPolicy restricts
-  this host to four source IPs. A phone on LTE is denied at the mesh, which reads
-  as a hang or a TLS-level failure in the app, not a login error. This is the
+  this host to the home WAN address plus a few remote `/32`s (the `chores` rule in
+  `authorizationpolicy.yaml`). A phone on LTE is refused at the Gateway, which the
+  app shows as a failure to load rather than a login error. This is the
   deliberate posture; the alternative considered was public-with-app-auth, as
   grafana does.
 - **`serve_swagger` is off.** Upstream defaults it on and the Swagger UI is
   unauthenticated wherever it is served.
-- **First-boot signup window.** `is_user_creation_disabled: false` in
-  `configmap.yaml` exists so the first account can be created. There is no
-  bootstrap admin and no CLI to make one. Flip it to `true` after registering,
-  and understand that flipping it back is the only recovery if you disable signup
-  with no accounts present.
+- **Signup is closed.** `is_user_creation_disabled: true` in `configmap.yaml`
+  (since 2026-08-03). It was `false` only so the first account could be created —
+  there is no bootstrap admin, no admin-invite flow and no CLI to make one. So
+  adding a user means reopening signup briefly (runbook: "Add a user"), and
+  reopening it is also the only recovery if every account is ever lost.
 - **The image's own HEALTHCHECK probes a path that does not exist.** The
   Dockerfile hits `/health`; the binary only registers `/api/v1/health`. Harmless
   under Docker, fatal if copied into a Kubernetes probe. The probes here use the

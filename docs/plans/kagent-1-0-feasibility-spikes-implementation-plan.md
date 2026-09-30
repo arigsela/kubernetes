@@ -4,6 +4,7 @@
 **Date:** 2026-09-26
 **Owner:** Ari Sela
 **Prior research:** [docs/research/2026-07-16-agent-substrate-in-kagent.md](../research/2026-07-16-agent-substrate-in-kagent.md)
+**Note (2026-09-30):** `docs/research/` is **gitignored** by design (`.gitignore`: security-posture notes stay off this public repo). The prior research above and every `docs/research/kagent-1.0-spike/` file this plan creates are local-only, so "committed" / "reproducible from git" below cannot hold unless the spike files move elsewhere or get an explicit `.gitignore` exception.
 **Upstream:** [kagent releases](https://github.com/kagent-dev/kagent/releases) (v1.0.0-alpha4, 2026-09-25) · upgrade guide `docs-site/content/kagent/1.x/operations/upgrade-from-0x.md` in [kagent-dev/website](https://github.com/kagent-dev/website)
 
 ## Overview
@@ -23,10 +24,10 @@ This plan does **not** migrate anything. It runs **time-boxed feasibility spikes
 ## Success Criteria
 
 - [ ] Every go/no-go gate (G1–G6) answered with evidence: commands run, output captured.
-- [ ] A translation table maps all 8 Declarative agents to `AgentTemplate` + `Harness`, with each semantic gap and a proposed fix.
+- [ ] A translation table maps all 7 Declarative agents to `AgentTemplate` + `Harness`, with each semantic gap and a proposed fix. *(8 when written; `qwen-test` was retired 2026-09-27.)*
 - [ ] A list of the admission-policy exemptions Agent Substrate would need.
 - [ ] Zero changes to the production cluster, and the spike can be reproduced from files in `docs/research/kagent-1.0-spike/`.
-- [ ] Side answer: does the **upstream Node 24 kagent UI** crash on our CPU? If not, the Node 20 UI fork can be retired even on 0.10.2 (separate PR).
+- [x] Side answer: does the **upstream Node 24 kagent UI** crash on our CPU? **Answered 2026-09-26 (`ef61222`):** upstream `ui:0.10.2` ran clean on all three nodes and the Node 20 UI fork was retired.
 
 ## Go/No-Go Gates
 
@@ -97,7 +98,7 @@ All three nodes are **Intel Xeon E5-2670 (Sandy Bridge) VMs**:
 - They **lack AVX2**, so the real ceiling is x86-64-v3.
 - Coroot's ClickHouse (needs SSE4.2) already runs on worker-01, which corroborates this.
 
-The repo's "nodes lack x86-64-v2" premise (2026-05-09 UI-fork design) was inferred, not measured. The Node 24 UI SIGILL was real, but its cause is unexplained, so Task 2.1 re-tests it.
+The repo's "nodes lack x86-64-v2" premise (2026-05-09 UI-fork design) was inferred, not measured. The Node 24 UI SIGILL was real, but its cause is unexplained, so Task 2.1 re-tests it. (Upstream `ui:0.10.2`, also Node 24, has since run clean on all three production nodes: `ef61222`, 2026-09-26.)
 
 What this implies:
 - Chainguard/Wolfi images (agentgateway, the 1.0 UI) and NumPy ≥ 2.4 should run.
@@ -108,12 +109,11 @@ What this implies:
 | Path | Why it matters |
 |---|---|
 | `base-apps/kagent.yaml`, `base-apps/kagent-crds.yaml`, `base-apps/kagent-secrets.yaml` | Argo Applications for the 0.10.2 install |
-| `base-apps/kagent/agents/*.yaml`, `base-apps/kagent/build-orchestrator.yaml` | The 8 Declarative agents plus the BYO homelab-agent being retired |
+| `base-apps/kagent/agents/*.yaml`, `base-apps/kagent/build-orchestrator.yaml` | The 7 Declarative agents plus the BYO homelab-agent being retired |
 | `base-apps/kagent/model-configs/`, `embedding-model-config.yaml` | ModelConfigs: only the apiVersion changes in 1.0 |
 | `base-apps/kagent/agent-docs-mcp*.yaml`, `backstage-catalog-mcp.yaml` | MCPServer/RemoteMCPServer; kmcp servers need RemoteMCPServer wrappers |
-| `base-apps/kagent/build/` | Node 20 UI fork; possibly retired by Task 2.1 |
 | `base-apps/admission-policies/agent-identity.yaml`, `agent-capability.yaml`, plus the workload-hygiene audits | CEL written against the `Agent` spec; hygiene audits would flag Substrate's privileged pods |
-| `base-apps/kyverno-policies/kyverno-kagent-read-rbac.yaml`, `base-apps/backstage/rbac.yaml` | RBAC over `kagent.dev` resources (Backstage TeraSky ingester) |
+| `base-apps/admission-policies/kyverno-reports-rbac.yaml`, `base-apps/backstage/rbac.yaml` | RBAC over `kagent.dev` resources (Kyverno reports controller; Backstage TeraSky ingester) |
 | `scripts/validate-agent-{identity,capability}.py`, `scripts/gen-agent-capability-policy.py`, `scripts/validate-catalog-refs.py` | Parse `v1alpha2` Agent specs |
 | `scripts/agent-audit.py`, `scripts/gen-agent-audit-cronjob.py`, `base-apps/postgresql/agent-audit-cronjob.yaml` | Read the kagent `event`/`session` tables directly |
 | `scripts/mine-eval-corpus.py`, `scripts/score-eval.py` | Evaluation E1/E2 read conversation history and invoke agents |
@@ -220,7 +220,7 @@ Turn the research into concrete, checkable inputs before spending VM time.
 
 **Testing:**
 - [ ] `results.md` has a pass/fail/SIGILL row with captured output for every image in `versions.md`.
-- [ ] Upstream 0.10.2 UI verdict recorded. **If it runs, open a separate PR to retire the Node 20 UI fork on 0.10.2** (drop `ui.image` override, `base-apps/kagent/build/`, and the related comments).
+- [ ] Upstream 0.10.2 UI verdict recorded. *(Already answered on production nodes: the Node 20 UI fork was retired 2026-09-26 in `ef61222`; no separate PR needed.)*
 
 #### Task 2.2: gVisor on this CPU
 **Steps:**
@@ -368,5 +368,5 @@ and then reproduce three key results: the approval-gate behaviour, the delegatio
 - **Hypervisor contention with prod.** Size the VM modestly, run it only during active spike work, and power it off between sessions.
 - **Anthropic spend.** Use a dedicated spike key with a low budget, default to Haiku, and run Sonnet 5 only in Task 4.5.
 - **Nightly runsc from `gs://gvisor` isn't reproducible.** Pin and record the exact build (date + sha256).
-- **Scope creep into a migration.** No production manifest changes in this plan. The one exception is a separate PR to retire the UI fork if Task 2.1 shows upstream Node 24 runs.
+- **Scope creep into a migration.** No production manifest changes in this plan. (The one planned exception, retiring the UI fork, already happened on 2026-09-26.)
 - **Substrate on k3s is unsupported upstream (substrate#1782).** Treat k3s-specific failures as findings, not blockers to work around at length. Time-box each task and record the failure.

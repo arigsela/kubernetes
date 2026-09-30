@@ -60,7 +60,3 @@ jupyter-aws-infrastructure:
 loki-aws-infrastructure:
   description: "S3 bucket asela-chores-loki-logs-20251017 and its lifecycle rule, plus the IAM user and policy Loki writes with (Crossplane)"
   namespace: logging
-
-system-upgrade-controller:
-  description: "system-upgrade-controller and the k3s-agent Plan (v1.36.4+k3s1): upgrades the two workers one at a time, no drain; the control plane is upgraded by hand"
-  namespace: system-upgrade

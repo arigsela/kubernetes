@@ -6,7 +6,7 @@ app: wan-ip-monitor
 catalog_entity: wan-ip-monitor
 kind: runbook
 namespace: wan-ip-monitor
-last_reviewed: 2026-08-12
+last_reviewed: 2026-09-30
 status: current
 tags: [automation, dns, route53, istio, github-actions]
 sources:
@@ -26,10 +26,11 @@ kubectl -n wan-ip-monitor get jobs --sort-by=.metadata.creationTimestamp
 kubectl -n wan-ip-monitor logs -l app=wan-ip-monitor --tail=50
 kubectl -n wan-ip-monitor get externalsecret wan-ip-monitor
 ```
-A healthy steady-state run's log is exactly five lines:
+A healthy steady-state run's log is exactly five lines (`<n>` is the number of
+entries in `MANAGED_HOSTNAMES`, `cronjob.yaml`):
 ```
 detected=<ip> dry_run=<True|False>
-route53: 22 managed hostname(s) already on <ip>
+route53: <n> managed hostname(s) already on <ip>
 allow-list: declared=<ip> detected=<ip>
 allow-list: already trusts <ip>, nothing to propose
 allow-list PR: None (new=False)
@@ -165,8 +166,10 @@ docs.md, "DRY_RUN").
   deploy time. A PyPI outage, or an egress/DNS problem specific to this
   namespace, fails the run even though nothing about the reconciler's own
   logic is wrong.
-- **Fix:** this self-corrects once PyPI is reachable again (next run, 5
-  minutes later); no action needed for a transient PyPI blip. If it persists,
+- **Fix:** this self-corrects once PyPI is reachable again (next scheduled
+  run — the schedule is `0 */12 * * *`, so up to 12 hours later); no action
+  needed for a transient PyPI blip, or trigger a run by hand (see "Run a job
+  by hand"). If it persists,
   check cluster egress/DNS generally (other CronJobs hitting the internet
   would show the same symptom) before suspecting this job specifically.
 
@@ -177,10 +180,11 @@ docs.md, "DRY_RUN").
   that External Secrets Operator creates from the `ExternalSecret`
   (`external-secret.yaml`). If a run fires before that Secret exists yet
   (ExternalSecret's first sync hasn't completed), the pod can't start.
-- **Fix:** none needed — this self-corrects within one schedule interval (5
-  minutes) once the ExternalSecret finishes its first sync. Confirm with
-  `kubectl -n wan-ip-monitor get externalsecret wan-ip-monitor` if it doesn't
-  clear within ~10 minutes (see "Job failing on AWS auth" above).
+- **Fix:** none needed — the next scheduled run (up to 12 hours later)
+  succeeds once the ExternalSecret has finished its first sync. Confirm with
+  `kubectl -n wan-ip-monitor get externalsecret wan-ip-monitor` (see "Job
+  failing on AWS auth" above), then run a dry-run Job by hand rather than
+  waiting.
 
 ### Repeated PRs for the same address
 - **Symptom:** more than one open PR targeting the same rotation (same
@@ -191,7 +195,7 @@ docs.md, "DRY_RUN").
   during PR cleanup) while the CronJob still runs on schedule, the next
   run finds no matching branch/PR and opens a new one.
 - **Check:** confirm `branch_name(new_ip)` is still deterministic for a given
-  IP (`tests/wan_ip/test_logic.py::test_branch_name_is_deterministic_per_address`)
+  IP (`tests/wan_ip/test_github.py::test_branch_name_is_deterministic_per_address`)
   — if that guarantee ever regresses, dedup breaks silently.
 - **Fix:** close/merge the duplicate PRs, and avoid deleting a
   `automation/wan-ip-*` branch until its PR is merged or the rotation is
@@ -228,8 +232,9 @@ docs.md, "DRY_RUN").
 Two options, in order of reversibility:
 - **Soft disable (keep observing, stop acting):** set `DRY_RUN` to `"true"` on
   the CronJob (`cronjob.yaml`) and let Argo CD sync it. The job keeps running
-  on schedule and logging `detected=... declared=... dry_run=True`, but
-  never touches Route 53 or opens a PR.
+  on schedule and logging `detected=<ip> dry_run=True` (plus `DRY_RUN: would
+  ...` lines for anything it skipped), but never touches Route 53 or opens a
+  PR.
 - **Hard disable (stop running entirely):**
   ```bash
   kubectl -n wan-ip-monitor patch cronjob wan-ip-monitor \
@@ -250,27 +255,40 @@ reconciler logic itself, also update `tests/wan_ip/` and confirm
 `python3 -m pytest tests/wan_ip/ -q` passes first — the ConfigMap is the
 script's only home, so a change there is a change to production.
 
-### Run a one-off dry-run job
+### Run a job by hand
+**`kubectl create job --from=cronjob/wan-ip-monitor` is a LIVE run.** The
+CronJob is armed (`DRY_RUN: "false"` since 2026-08-12), and a Job created
+`--from` it inherits that env — so if the WAN address has moved, it UPSERTs
+Route 53 and opens the allow-list PR, exactly like a scheduled tick. Use it
+only when that is what you want (e.g. to act on a rotation now instead of
+waiting up to 12 hours):
 ```bash
-kubectl -n wan-ip-monitor create job --from=cronjob/wan-ip-monitor manual-check
-kubectl -n wan-ip-monitor logs job/manual-check
+kubectl -n wan-ip-monitor create job --from=cronjob/wan-ip-monitor manual-live
+kubectl -n wan-ip-monitor logs -f job/manual-live
 ```
-A clean steady-state result proves **both** credentials work. The zone is
-listed on every run — that is not gated behind a detected rotation — so
-`route53: 22 managed hostname(s) already on <ip>` is itself evidence the AWS
-credentials are valid, and `allow-list: declared=...` is evidence
+
+**A real dry run** overrides `DRY_RUN` on the Job before it is created
+(`reconcile.py` reads it from the env: `1`/`true`/`yes` disables every write).
+A Job's pod template is immutable once created, so render, patch, then create:
+```bash
+kubectl -n wan-ip-monitor create job --from=cronjob/wan-ip-monitor manual-dry-run \
+    --dry-run=client -o json \
+  | jq '.spec.template.spec.containers[0].env |= map(if .name == "DRY_RUN" then .value = "true" else . end)' \
+  | kubectl create -f -
+kubectl -n wan-ip-monitor logs -f job/manual-dry-run
+```
+Its first line must read `detected=<ip> dry_run=True`; if it says
+`dry_run=False`, the patch did not apply and the run is live. Anything it
+would have written shows up as `DRY_RUN: would move ...` / `DRY_RUN: would
+open an allow-list PR ...` instead.
+
+Either way, a clean steady-state result proves **both** credentials work. The
+zone is listed on every run — that is not gated behind a detected rotation —
+so `route53: <n> managed hostname(s) already on <ip>` is itself evidence the
+AWS credentials are valid, and `allow-list: declared=...` is evidence
 `GITHUB_TOKEN` is. See docs.md, "DRY_RUN", for exactly what a dry run does
-and does not exercise.
-
-(Before 2026-08-12 this section said the opposite, because Route 53 used to
-be reached only when a rotation was detected. That ordering was the C1 defect
-— it let DNS strand on a dead address — and the reconcile now runs
-unconditionally.)
-
-### Arm it (flip DRY_RUN off)
-Set `DRY_RUN` to `"false"` in `cronjob.yaml` and push as its own commit,
-separate from any other change — arming the automation to make live Route 53
-and GitHub PR changes is deliberately a standalone, reviewable diff.
+and does not exercise. Both Jobs are cleaned up by `ttlSecondsAfterFinished`
+(1h).
 
 ### Rotate/replace credentials
 Update the Vault KV secret at `k8s-secrets/wan-ip-monitor` (see "Job failing

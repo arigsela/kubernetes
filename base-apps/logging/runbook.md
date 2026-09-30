@@ -6,7 +6,7 @@ app: logging
 catalog_entity: logging
 kind: runbook
 namespace: logging
-last_reviewed: 2026-08-18
+last_reviewed: 2026-09-30
 status: current
 tags: [loki, grafana, prometheus, alloy]
 sources:
@@ -16,7 +16,13 @@ sources:
   - base-apps/logging/loki-s3-external-secret.yaml
   - base-apps/logging/secret-store.yaml
   - base-apps/logging/grafana-deployment.yaml
+  - base-apps/logging/grafana-admin-external-secret.yaml
+  - base-apps/logging/grafana-github-oauth-external-secret.yaml
+  - base-apps/logging/grafana-alerting.yaml
   - base-apps/logging/httproute.yaml
+  - base-apps/logging/certificate.yaml
+  - base-apps/logging/prometheus-statefulset.yaml
+  - docs/troubleshooting/in-place-resize.md
 ---
 
 # logging runbook
@@ -105,20 +111,48 @@ sources:
   `loki-config.yaml`'s `common.storage.s3` and `storage_config.aws.s3` (both must match).
 
 ### Symptom: Grafana unreachable or dashboards missing
-- **Check:** `kubectl -n logging get pods -l app=grafana` and
-  `kubectl -n logging get ingress grafana-nginx` — confirm the `grafana-tls` cert is issued
-  (`kubectl -n logging get certificate grafana-tls`) and the ingress host
-  `grafana.arigsela.com` resolves. For missing dashboards/data, check the Loki/Prometheus
-  datasources are reachable from inside the Grafana pod (`http://loki.logging.svc.cluster
-  .local:3100`, `http://prometheus.logging.svc.cluster.local:9090` — both ClusterIP-only, no
-  ingress) and that the `grafana-dashboard-provider` ConfigMap's folders (`Kubernetes`,
-  `Istio`) still match the mounted dashboard ConfigMaps.
+- **Check:** `kubectl -n logging get pods -l app=grafana`, then the route and cert:
+  `kubectl -n logging get httproute logging` (its `Accepted`/`ResolvedRefs` conditions on the
+  `https-grafana` listener) and `kubectl -n logging get certificate grafana-tls` (issued by
+  `letsencrypt-route53`). A pod stuck in `CreateContainerConfigError` usually means the
+  `grafana-admin` or `grafana-github-oauth` Secret is missing — both are non-optional
+  `secretKeyRef`s (`kubectl -n logging get externalsecret`). For missing dashboards/data, check
+  the Loki/Prometheus datasources are reachable from inside the Grafana pod
+  (`http://loki.logging.svc.cluster.local:3100`, `http://prometheus.logging.svc.cluster.local:9090`
+  — both ClusterIP-only) and that the `grafana-dashboard-provider` ConfigMap's folders
+  (`Kubernetes`, `Istio`, `Security`) still match the mounted dashboard ConfigMaps.
 - **Fix:** PR any datasource URL or dashboard-provider path changes; a stuck cert-manager
   challenge for `grafana-tls` is a cert-manager issue, not this app.
+
+### Symptom: OAuth login broken (GitHub round-trip fails or every login is refused)
+Grafana has no other way in: the login form and basic auth are off
+(`GF_AUTH_DISABLE_LOGIN_FORM=true`, `GF_AUTH_BASIC_ENABLED=false` in `grafana-deployment.yaml`).
+- **Check:** `kubectl -n logging logs deploy/grafana | grep -i oauth`.
+  `oauth.role_attribute_strict_violation` means the GitHub login matched no role in
+  `GF_AUTH_GITHUB_ROLE_ATTRIBUTE_PATH`; a refused *new* user is the closed sign-up gate
+  (`GF_AUTH_GITHUB_ALLOW_SIGN_UP=false`) working as intended. A redirect-URI error from GitHub
+  means `GF_SERVER_ROOT_URL` no longer matches `https://grafana.arigsela.com` or the OAuth App's
+  callback (`/login/github`). Client errors mean the `grafana-github-oauth` Secret is stale or
+  empty (`kubectl -n logging get externalsecret grafana-github-oauth`; Vault
+  `k8s-secrets/grafana`, `github-client-id`/`github-client-secret`).
+- **Fix:** correct the value in Vault or the env in `grafana-deployment.yaml` and PR it. To add
+  a user, follow docs.md, "Login: GitHub OAuth only". **Break-glass** if OAuth cannot be fixed
+  quickly: revert `ee5c8c8` ("GitHub OAuth only - disable the local login form and basic
+  auth"), which re-enables the form so the `grafana-admin` credentials work again; Argo CD
+  re-syncs in about 2 minutes. `kubectl` access is unaffected throughout. Re-apply the commit
+  once OAuth is fixed — this host is internet-facing.
 
 ## How-to
 
 ### Deploy / update
-Edit manifests here and PR; Argo CD syncs on merge (`prune`/`selfHeal` enabled). All four
-components are single-replica (Deployment or StatefulSet) — expect a brief gap in
-collection/storage/visualization during a rolling update of any one of them.
+Edit manifests here and PR; Argo CD syncs on merge (`prune`/`selfHeal` enabled). How a
+change reaches the pods differs per component, and all are single-replica:
+- **Prometheus** is `updateStrategy: OnDelete` (`prometheus-statefulset.yaml`): merging a
+  template change does **not** restart it. For resources, resize the running pod in place
+  first (`scripts/resize-pod.sh`), then merge the same values; a real restart is a deliberate
+  `kubectl -n logging delete pod prometheus-0`. See `docs/troubleshooting/in-place-resize.md`.
+- **Grafana** is `strategy: Recreate` — about 20 s of downtime per rollout. An alert-rule change
+  also restarts it via the `checksum/alerting` annotation (keep it current; the test fails
+  otherwise).
+- **Loki** (Deployment) and **Alloy** (DaemonSet) roll normally; expect a brief gap in
+  ingestion on the affected node or for Loki as a whole.
