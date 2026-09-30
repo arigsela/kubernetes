@@ -29,11 +29,12 @@ tracker for households: recurring chores, assignment across a "circle" of users,
 natural-language due dates, and a mobile-friendly web UI. AGPLv3, upstream
 publishes multi-arch images (`amd64`, `arm64`, `arm/v7`).
 
-It is deployed here as the intended successor to the homegrown
-[chores-tracker](https://github.com/arigsela/chores-tracker) (FastAPI + MySQL).
-Both are in the `chores-tracker` Backstage system. chores-tracker's database and
-`CHORES_TRACKER_INTEGRATION.md` are untouched by this app and are pending
-retirement — see the Gotchas section.
+It replaced the homegrown
+[chores-tracker](https://github.com/arigsela/chores-tracker) (FastAPI + MySQL),
+whose manifests were removed on 2026-08-01 (be36e9e); donetick has served
+`chores.arigsela.com` since 2026-08-03. It stays in the `chores-tracker`
+Backstage system. chores-tracker's leftover `chores_tracker` database is
+untouched by this app — see the Gotchas section.
 
 ## Architecture & data flow
 
