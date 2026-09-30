@@ -91,7 +91,9 @@ older than 24 hours.
 ```bash
 # laptop, with kubectl pointed at the cluster
 scripts/pg-backup.sh    --dest ~/k3s-upgrade-artifacts --all              # pg_dumpall of the CNPG primary
+scripts/argo-sync-window.sh pause    # vault-backup suspends only the vault app; master-app would re-enable it (§V.33, §B.4)
 scripts/vault-backup.sh --dest ~/k3s-upgrade-artifacts --argo-app vault   # Vault is DOWN during the copy
+scripts/argo-sync-window.sh resume   # never pause twice without a resume in between
 
 # k3s-control-01: the script runs on the server node, as root
 scp -i ~/.ssh/ari_sela_key scripts/k3s-backup.sh asela@10.0.1.50:
@@ -112,8 +114,8 @@ scripts/hop-verify.sh gate
 - **Vault.** Cold mode suspends the `vault` Argo app, scales the StatefulSet to 0, tars
   `/vault/data` from a helper pod on the volume's node, scales back and waits for the unseal.
   It only suspends the child app, so `master-app` can turn auto-sync back on during the copy
-  (§V.33, §B.4). For full protection run `scripts/argo-sync-window.sh pause` first and
-  `scripts/argo-sync-window.sh resume` afterwards. `--mode online` needs `--allow-inconsistent`,
+  (§V.33, §B.4). That's why the block above wraps it in `argo-sync-window.sh pause` and
+  `resume`. `--mode online` needs `--allow-inconsistent`,
   and the artifact name is marked `INCONSISTENT`.
 - **Off the laptop too.** Upload each artifact and its `.sha256`. So far the prefixes have
   been `k3s/`, `vault/` and `pg/` under `s3://mysql-backups-asela-cluster/` (§T.28). Barman
@@ -224,18 +226,44 @@ Recreating the PVC gives the app an empty volume somewhere else. That's a delibe
 
 ### Rebuild from nothing (never drilled)
 
-Nobody has tried this. What matters is the order:
+Nobody has tried this, so read it as the order to think through, not a tested procedure. What
+matters is the order, and not letting Argo CD start Vault and CNPG on empty volumes before
+you've restored them.
 
 1. **VMs.** VM creation isn't automated; `ansible/` only lays down the OS baseline.
-2. **k3s server.** Install the version the artifact came from, then run `k3s-restore.sh`. That
-   brings back every API object, including Argo CD, `master-app` and `vault-kms-credentials`.
-   With no k3s artifact:
-   1. Run `terraform apply` in `terraform/roots/asela-cluster` from your laptop, since Atlantis
-      isn't running yet. That creates Argo CD and `vault-kms-credentials`.
-   2. Run `kubectl apply -f base-apps/master-app.yaml`, because Terraform no longer creates the
-      root app.
-3. **Vault**, before anything that needs a secret.
-4. **CNPG**, from barman. Everything else syncs from git and starts empty.
+2. **k3s server, with the k3s artifact.** Install the version the artifact came from, then run
+   `k3s-restore.sh`. That brings back every API object, including Argo CD, `master-app` and
+   `vault-kms-credentials`. Skip to step 4.
+3. **k3s server, no k3s artifact.** Install k3s fresh. Atlantis can't apply Terraform yet: it
+   runs in this cluster and gets its credentials from Vault. So this is the one break-glass
+   case for a laptop apply, an exception to CLAUDE.md's "never `apply` from a laptop":
+   1. In `terraform/roots/asela-cluster`, point the providers at the new cluster
+      (`TF_VAR_host`, `TF_VAR_client_certificate`, `TF_VAR_client_key`,
+      `TF_VAR_cluster_ca_certificate` from its kubeconfig; AWS credentials for the state
+      bucket). Use `tofu`, not `terraform`: OpenTofu wrote the state.
+   2. `tofu init`, then `tofu apply -target=module.argocd` to install Argo CD.
+   3. `kubectl create namespace vault` (Terraform doesn't create it; Argo would, later), then
+      `tofu apply -target=kubernetes_secret.vault_kms_credentials`.
+   4. Apply `master-app` **without auto-sync**: `kubectl apply -f` a local copy of
+      `base-apps/master-app.yaml` with `syncPolicy.automated` removed. Don't commit the copy.
+      The git version would create every child Application at once, and each child
+      auto-syncs as soon as it exists. That starts `vault-0` on an empty volume, where it
+      self-initialises (§V.40), and bootstraps CNPG with `initdb` before any restore.
+      `argo-sync-window.sh pause` can't prevent this, because it finds apps by their PVCs and
+      none exist yet.
+4. **Vault, before anything that needs a secret.** With a restored k3s datastore, Vault comes
+   back on its own if its volume survived. Otherwise, create only the `vault` child
+   Application (Argo CD UI: `master-app` → Sync → select just that Application). Its
+   StatefulSet starts `vault-0` on a new, empty volume, and here that's expected. Then restore
+   into it the §V.40 way: `scripts/argo-sync-window.sh pause`, scale the StatefulSet to 0,
+   delete the PVC, restore through a helper pod, scale to 1. See "Restore Vault" in
+   `base-apps/vault/runbook.md`. On a new cluster CA, also rewrite Vault's Kubernetes auth
+   config (the "every SecretStore fails" entry in that runbook).
+5. **CNPG, from barman.** Hold the `postgresql` Application back until the recovery spec is
+   ready (CNPG section above); syncing it earlier bootstraps an empty cluster.
+6. **Everything else** syncs from git and starts empty. Create the remaining child
+   Applications, then `kubectl apply -f base-apps/master-app.yaml` (the git version, which
+   restores auto-sync) and `scripts/argo-sync-window.sh resume`.
 
 ## Vault and the KMS key
 

@@ -52,11 +52,14 @@ All three artifacts must be off-cluster, checksummed and less than 24 h old. The
 ```bash
 # workstation
 scripts/pg-backup.sh    --dest ~/k3s-upgrade-artifacts --all
+scripts/argo-sync-window.sh pause    # the Vault backup needs master-app suspended too (§V.33, §B.4)
 scripts/vault-backup.sh --dest ~/k3s-upgrade-artifacts --argo-app vault   # cold: Vault is scaled to 0 for the copy
+scripts/argo-sync-window.sh resume   # close this window before the gate; step 2 opens the hop's own
 # on k3s-control-01
 scripts/k3s-backup.sh   --mode cold --dest ~/k3s-upgrade-artifacts
 ```
 
+- **Why the Vault backup has its own pause/resume:** `--argo-app vault` suspends only the `vault` app, and `master-app` restores that app's auto-sync from git within minutes, so Argo could rescale Vault mid-copy and the script would still mark the artifact consistent. The 1.36 plan's order skipped this. Resume before step 2: a second `pause` while a window is open records every app as already suspended, and the hop's final `resume` would then leave them all suspended.
 - **`--mode cold` stops k3s and does not start it again.** Either `sudo systemctl start k3s` before the gate, or take the cold artifact as the first action of step 3, right before the installer, which starts k3s at the new version. The 1.36 hop did the latter: k3s stopped at 20:05:36, artifact stamped 20:05:40Z (§T.21). The gate still wants a k3s artifact less than 24 h old, and `--mode online` is valid for that.
 - **Copy the k3s artifact and its `.sha256` off the node:** to the workstation's `~/k3s-upgrade-artifacts` and to S3 (`s3://mysql-backups-asela-cluster/k3s/`, §I). The 1.36 hop kept node, laptop and S3 copies.
 

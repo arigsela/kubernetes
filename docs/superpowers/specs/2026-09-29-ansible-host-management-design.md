@@ -20,7 +20,7 @@ The decision to keep terraform and gitops in one repo stands. The terraform laye
 | k3s-worker-02, 10.0.1.108 | k3s agent | Ubuntu 24.04.3 | NOPASSWD | DHCP netplan, reboot pending |
 
 - unattended-upgrades is installed and enabled on every host, but nothing reboots: all four have carried reboot-required for over two weeks.
-- The worker IPs are DHCP leases. `recovery/post-restart-restore.sh` still lists them as 10.0.1.51 and 10.0.1.52.
+- The worker IPs are DHCP leases. `recovery/post-restart-restore.sh` still listed them as 10.0.1.51 and 10.0.1.52 (that script was deleted on 2026-09-30).
 - k3s v1.36.4+k3s1 on all nodes. Its version is owned by system-upgrade-controller in `base-apps/`.
 - The k3s agents' join token sits in their unit env files. It must never be copied into this repo.
 - Docker on the workstation (colima) is required for the authn validation play.
@@ -111,7 +111,7 @@ Order: `k3s_workers` first, then `k3s_control`, `serial: 1` in both plays.
 ## 5. `patch-hypervisor.yml`: host reboot
 
 - Refuses to run unless `-e confirm=yes` is passed. The refusal message states that this stops every VM.
-- Optional `-e velero_backup=yes` runs `recovery/pre-shutdown-backup.sh` from localhost first. Off by default.
+- ~~Optional `-e velero_backup=yes` runs `recovery/pre-shutdown-backup.sh` from localhost first.~~ Removed 2026-09-30 along with that script (Velero is gone). Take backups by hand first; see `recovery/CLUSTER-RECOVERY.md`.
 - `apt update`, `apt full-upgrade`, `apt autoremove` on the hypervisor.
 - If reboot is required:
   1. `virsh shutdown` each VM in `vm_names` order (workers, then control). Wait until every VM is `shut off`, 300 s timeout. On timeout the play **fails**; it never `virsh destroy`s.
@@ -179,7 +179,7 @@ All from the workstation, in this order. Each step is its own verification gate.
 
 ## 10. Out of scope for v1
 
-- Porting `recovery/post-restart-restore.sh` and the Velero flows.
+- Porting `recovery/post-restart-restore.sh` and the Velero flows. (Moot: both were deleted on 2026-09-30; `recovery/CLUSTER-RECOVERY.md` replaces them.)
 - In-cluster execution (an Argo Workflows CronWorkflow). The node being drained cannot be the one running the workflow, so this needs its own design.
 - Vault-backed secrets via `community.hashi_vault`. Nothing in v1 needs a secret.
 - Hypervisor netplan.
