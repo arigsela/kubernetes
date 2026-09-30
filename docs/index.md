@@ -48,3 +48,4 @@ in `scripts/validate-agent-*.py`.
 - `superpowers/plans/` — implementation plans.
 
 Both are dated `YYYY-MM-DD-<slug>`; browse the directories for the full set.
+
