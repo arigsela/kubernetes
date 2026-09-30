@@ -118,6 +118,16 @@ git status
 - **Rationale**: More secure, automatic rotation, leverages existing RBAC
 - **Configuration**: Service account references with role-based access
 
+## PR Review Labels (pr-triage)
+
+Every PR to `main` is triaged by `.github/workflows/pr-triage.yaml`. It gets exactly one of `review:skip`, `review:skim` or `review:read`, plus one sticky comment that explains the label. The owner uses the label to decide how closely to read the PR. It never blocks a merge.
+
+- **Write PR titles and bodies that describe the change accurately.** They are classifier input. Never address instructions to the triage model; PR text is treated as untrusted and ignored as instructions.
+- **Policy changes:** `.github/review-policy.yaml` is the risk policy. Any change under `.github/**` is always `review:read`. Triage reads the policy from the PR's *base* commit, so a policy change only takes effect after it merges.
+- **Don't relabel by hand to change triage.** Change the policy instead. After changing thresholds, questions or the Jev model, re-run calibration in `arigsela/claude-agents`: `uv run --project pr-triage python -m pr_triage calibrate --repo arigsela/kubernetes --limit 200`.
+- **Next steps:** for `skim`/`read` PRs the comment suggests `/pr-explainer <n>`, a rendered-manifest resource map and must-read hunks, and `/code-review <n>`. `/review-retro <n>` compares a past `/code-review` session with the fix PRs that followed.
+- **Upgrading the action:** the workflow pins `arigsela/claude-agents/pr-triage` by commit SHA. Merge the change in claude-agents first, then bump the SHA here.
+
 ## Important Notes
 
 1. **No Direct kubectl Commands**: All changes must go through Git
