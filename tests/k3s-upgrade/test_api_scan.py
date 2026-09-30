@@ -24,7 +24,9 @@ TARGETS = ["v1.34.0", "v1.35.0", "v1.36.0"]
 @pytest.mark.slow
 @requires_docker
 @pytest.mark.parametrize("target", TARGETS)
-@pytest.mark.parametrize("directory", ["base-apps", "charts"])
+# charts/ was scanned too until its only chart (smoke-test-workload, unused since the
+# XSmokeTestApp composition was deleted) was removed. Add it back if a chart returns.
+@pytest.mark.parametrize("directory", ["base-apps"])
 def test_api_scan_clean(target, directory):
     """§V.10: no manifest may use an API removed in any minor on the path to 1.36."""
     result = subprocess.run(

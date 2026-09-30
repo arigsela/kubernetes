@@ -8,3 +8,59 @@
 agent-audit-aws-infrastructure:
   description: "S3 bucket for the durable, redacted agent action record (write-only exporter + read-only agent-audit-web IAM) and agent-audit-web's ECR push role (Crossplane)"
   namespace: postgresql
+
+agent-sandbox-crds:
+  description: "agent-sandbox v0.4.6 CRDs (kubernetes-sigs release manifest via kustomize); nothing in this repo creates Sandbox objects since openshell was removed"
+  namespace: agent-sandbox-system
+
+argo-rollouts:
+  description: "Argo Rollouts controller and dashboard (Helm chart 2.40.5) with its Gateway route and certificate; no Rollout resources use it today"
+  namespace: argo-rollouts
+
+argo-workflow-tasks:
+  description: "Argo Workflows templates: the weekly image-scan CronWorkflow (ECR CVE scan, HTML report to S3), a cluster health check, and demo templates"
+  namespace: argo-workflows
+
+argo-workflows:
+  description: "Argo Workflows server and controller (Helm chart 2.0.1) with its Gateway route and certificate; the server runs authModes server, so the IP allow-list is its only access control"
+  namespace: argo-workflows
+
+argo-workflows-aws-infrastructure:
+  description: "S3 artifact bucket asela-argo-workflows-artifacts plus the IAM user, policy and access key Argo Workflows writes with (Crossplane)"
+  namespace: argo-workflows
+
+cluster-rbac:
+  description: "ClusterRoleBinding oidc-cluster-admins: binds the Dex OIDC user oidc:arigsela to cluster-admin (see docs/troubleshooting/kubectl-oidc.md)"
+  namespace: kube-system
+
+crossplane-aws-provider:
+  description: "Upbound AWS provider family v2.5.3 (S3 and IAM providers) with its ProviderConfig and DeploymentRuntimeConfig"
+  namespace: crossplane-system
+
+crossplane-compositions:
+  description: "XApplication XRD and Composition (the Crossplane IDP path, dormant since the Backstage New App template replaced it) plus their RBAC"
+  namespace: crossplane-system
+
+crossplane-functions:
+  description: "Crossplane composition functions: function-python v0.4.0 and function-extra-resources v0.3.0"
+  namespace: crossplane-system
+
+crossplane-system:
+  description: "Crossplane core 2.2.1 (umbrella Helm chart) and the vault-backend SecretStore in crossplane-system"
+  namespace: crossplane-system
+
+ecr-auth:
+  description: "ecr-credentials-sync CronJob (every 15 min) that writes a fresh ecr-registry pull secret into every non-system namespace; AWS keys come from Vault"
+  namespace: kube-system
+
+jupyter-aws-infrastructure:
+  description: "S3 scratch bucket asela-jupyter-scratch plus the IAM user, policy and access key the Jupyter notebook uses (Crossplane)"
+  namespace: jupyter
+
+loki-aws-infrastructure:
+  description: "S3 bucket asela-chores-loki-logs-20251017 and its lifecycle rule, plus the IAM user and policy Loki writes with (Crossplane)"
+  namespace: logging
+
+system-upgrade-controller:
+  description: "system-upgrade-controller and the k3s-agent Plan (v1.36.4+k3s1): upgrades the two workers one at a time, no drain; the control plane is upgraded by hand"
+  namespace: system-upgrade

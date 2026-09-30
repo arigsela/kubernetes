@@ -18,37 +18,37 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | admission-policies | Native API-server admission policies (ValidatingAdmissionPolicy / MutatingAdmissionPolicy) replacing the Kyverno webhook | kube-system | [docs.md](admission-policies/docs.md) | [runbook.md](admission-policies/runbook.md) | [catalog-info.yaml](admission-policies/catalog-info.yaml) |
 | agent-audit-aws-infrastructure | S3 bucket for the durable, redacted agent action record (write-only exporter + read-only agent-audit-web IAM) and agent-audit-web's ECR push role (Crossplane) | postgresql |  |  |  |
 | agent-audit-web | Read-only web UI over the redacted agent action record (findings, calls, sessions, token trends) | agent-audit | [docs.md](agent-audit-web/docs.md) | [runbook.md](agent-audit-web/runbook.md) | [catalog-info.yaml](agent-audit-web/catalog-info.yaml) |
-| agent-sandbox-crds |  |  |  |  |  |
+| agent-sandbox-crds | agent-sandbox v0.4.6 CRDs (kubernetes-sigs release manifest via kustomize); nothing in this repo creates Sandbox objects since openshell was removed | agent-sandbox-system |  |  |  |
 | argo-cd | GitOps control plane | argo-cd | [docs.md](argo-cd/docs.md) | [runbook.md](argo-cd/runbook.md) | [catalog-info.yaml](argo-cd/catalog-info.yaml) |
-| argo-rollouts |  |  |  |  |  |
-| argo-workflow-tasks |  |  |  |  |  |
-| argo-workflows |  |  |  |  |  |
-| argo-workflows-aws-infrastructure |  |  |  |  |  |
+| argo-rollouts | Argo Rollouts controller and dashboard (Helm chart 2.40.5) with its Gateway route and certificate; no Rollout resources use it today | argo-rollouts |  |  |  |
+| argo-workflow-tasks | Argo Workflows templates: the weekly image-scan CronWorkflow (ECR CVE scan, HTML report to S3), a cluster health check, and demo templates | argo-workflows |  |  |  |
+| argo-workflows | Argo Workflows server and controller (Helm chart 2.0.1) with its Gateway route and certificate; the server runs authModes server, so the IP allow-list is its only access control | argo-workflows |  |  |  |
+| argo-workflows-aws-infrastructure | S3 artifact bucket asela-argo-workflows-artifacts plus the IAM user, policy and access key Argo Workflows writes with (Crossplane) | argo-workflows |  |  |  |
 | atlantis | Terraform/OpenTofu PR automation (Atlantis, GitHub + AWS auth via Vault, Infracost) | atlantis | [docs.md](atlantis/docs.md) | [runbook.md](atlantis/runbook.md) | [catalog-info.yaml](atlantis/catalog-info.yaml) |
 | backstage | Internal developer portal / software catalog (Backstage, shared PostgreSQL, Vault, kubernetes-ingestor) | backstage | [docs.md](backstage/docs.md) | [runbook.md](backstage/runbook.md) | [catalog-info.yaml](backstage/catalog-info.yaml) |
 | cert-manager | TLS via Let's Encrypt (Route 53 DNS-01) | cert-manager | [docs.md](cert-manager/docs.md) | [runbook.md](cert-manager/runbook.md) | [catalog-info.yaml](cert-manager/catalog-info.yaml) |
-| cluster-rbac |  |  |  |  |  |
+| cluster-rbac | ClusterRoleBinding oidc-cluster-admins: binds the Dex OIDC user oidc:arigsela to cluster-admin (see docs/troubleshooting/kubectl-oidc.md) | kube-system |  |  |  |
 | coroot | eBPF-based observability/APM (Coroot operator + instance, node/cluster agents, ClickHouse) | coroot | [docs.md](coroot/docs.md) | [runbook.md](coroot/runbook.md) | [catalog-info.yaml](coroot/catalog-info.yaml) |
-| crossplane-aws-provider |  |  |  |  |  |
-| crossplane-compositions |  |  |  |  |  |
-| crossplane-functions |  |  |  |  |  |
-| crossplane-system |  |  |  |  |  |
+| crossplane-aws-provider | Upbound AWS provider family v2.5.3 (S3 and IAM providers) with its ProviderConfig and DeploymentRuntimeConfig | crossplane-system |  |  |  |
+| crossplane-compositions | XApplication XRD and Composition (the Crossplane IDP path, dormant since the Backstage New App template replaced it) plus their RBAC | crossplane-system |  |  |  |
+| crossplane-functions | Crossplane composition functions: function-python v0.4.0 and function-extra-resources v0.3.0 | crossplane-system |  |  |  |
+| crossplane-system | Crossplane core 2.2.1 (umbrella Helm chart) and the vault-backend SecretStore in crossplane-system | crossplane-system |  |  |  |
 | dex | OIDC provider fronting GitHub — issuer for Vault OIDC (human `vault` login via GitHub SSO) | dex | [docs.md](dex/docs.md) | [runbook.md](dex/runbook.md) | [catalog-info.yaml](dex/catalog-info.yaml) |
 | donetick | Self-hosted household chore and task tracker (Go + React), backed by the CNPG Postgres cluster. | donetick | [docs.md](donetick/docs.md) | [runbook.md](donetick/runbook.md) | [catalog-info.yaml](donetick/catalog-info.yaml) |
-| ecr-auth |  |  |  |  |  |
+| ecr-auth | ecr-credentials-sync CronJob (every 15 min) that writes a fresh ecr-registry pull secret into every non-system namespace; AWS keys come from Vault | kube-system |  |  |  |
 | homepage | Homelab dashboard listing every cluster app plus the WSL2-hosted Plex server, with live widgets for Plex, Grafana, Argo CD, and cluster resources. | homepage | [docs.md](homepage/docs.md) | [runbook.md](homepage/runbook.md) | [catalog-info.yaml](homepage/catalog-info.yaml) |
 | istio-ingress | The cluster's north-south ingress: a Gateway API Gateway on the `istio` GatewayClass, directly internet-facing | istio-ingress | [docs.md](istio-ingress/docs.md) | [runbook.md](istio-ingress/runbook.md) | [catalog-info.yaml](istio-ingress/catalog-info.yaml) |
 | istio-waf | OWASP Coraza WAF as an Envoy Wasm filter on the main ingress Gateway, protecting the three public-by-design hostnames | istio-ingress | [docs.md](istio-waf/docs.md) | [runbook.md](istio-waf/runbook.md) | [catalog-info.yaml](istio-waf/catalog-info.yaml) |
 | jupyter | Single-workspace JupyterLab for interactive Python, served to a browser and to Claude Code via /api/kernels. | jupyter | [docs.md](jupyter/docs.md) | [runbook.md](jupyter/runbook.md) | [catalog-info.yaml](jupyter/catalog-info.yaml) |
-| jupyter-aws-infrastructure |  |  |  |  |  |
+| jupyter-aws-infrastructure | S3 scratch bucket asela-jupyter-scratch plus the IAM user, policy and access key the Jupyter notebook uses (Crossplane) | jupyter |  |  |  |
 | kagent | Kubernetes-native AI agent platform (kagent Helm controller, declarative agents, MCP tool servers) | kagent | [docs.md](kagent/docs.md) | [runbook.md](kagent/runbook.md) | [catalog-info.yaml](kagent/catalog-info.yaml) |
 | logging | Observability stack (Alloy collector, Loki logs on S3, Prometheus metrics, Grafana) | logging | [docs.md](logging/docs.md) | [runbook.md](logging/runbook.md) | [catalog-info.yaml](logging/catalog-info.yaml) |
-| loki-aws-infrastructure |  |  |  |  |  |
+| loki-aws-infrastructure | S3 bucket asela-chores-loki-logs-20251017 and its lifecycle rule, plus the IAM user and policy Loki writes with (Crossplane) | logging |  |  |  |
 | n8n | Workflow automation platform (shared PostgreSQL, Vault, admin UI + public webhooks) | n8n | [docs.md](n8n/docs.md) | [runbook.md](n8n/runbook.md) | [catalog-info.yaml](n8n/catalog-info.yaml) |
 | ollama | Local embedding model server (Ollama, CPU-only, model from a pinned OCI image volume) | ollama | [docs.md](ollama/docs.md) | [runbook.md](ollama/runbook.md) | [catalog-info.yaml](ollama/catalog-info.yaml) |
 | oncall-agent | AI on-call/incident-response agent (Anthropic Claude, Slack, GitOps PRs) | oncall-agent | [docs.md](oncall-agent/docs.md) | [runbook.md](oncall-agent/runbook.md) | [catalog-info.yaml](oncall-agent/catalog-info.yaml) |
 | postgresql | Shared PostgreSQL + pgvector instance (root DB, kagent DB) + CNPG cluster for chores-tracker (daily S3 backups) | postgresql | [docs.md](postgresql/docs.md) | [runbook.md](postgresql/runbook.md) | [catalog-info.yaml](postgresql/catalog-info.yaml) |
-| system-upgrade-controller |  |  |  |  |  |
+| system-upgrade-controller | system-upgrade-controller and the k3s-agent Plan (v1.36.4+k3s1): upgrades the two workers one at a time, no drain; the control plane is upgraded by hand | system-upgrade |  |  |  |
 | vault | In-cluster secret backend (KV v2) | vault | [docs.md](vault/docs.md) | [runbook.md](vault/runbook.md) | [catalog-info.yaml](vault/catalog-info.yaml) |
 | wan-ip-monitor | CronJob that reconciles the home WAN address into Route 53 and the Istio allow-list, opening a PR for the security-sensitive half | wan-ip-monitor | [docs.md](wan-ip-monitor/docs.md) | [runbook.md](wan-ip-monitor/runbook.md) | [catalog-info.yaml](wan-ip-monitor/catalog-info.yaml) |
 | weather-kitchen-backend | Backend API for Weather Kitchen (likely FastAPI, JWT, Vault-backed DB) | weather-kitchen | [docs.md](weather-kitchen-backend/docs.md) | [runbook.md](weather-kitchen-backend/runbook.md) | [catalog-info.yaml](weather-kitchen-backend/catalog-info.yaml) |
