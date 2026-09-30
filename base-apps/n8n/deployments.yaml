@@ -213,22 +213,30 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1000m"
+        # /healthz only says the process is alive. When n8n loses its database it keeps
+        # answering /healthz 200 while every real request is "503 Database is not
+        # ready!", and it does not reconnect on its own (2026-09-29 20:51: the plain
+        # postgresql pod was evicted during a node drain; n8n stayed broken 16h until
+        # the pod was deleted by hand). /healthz/readiness checks the DB connection.
+        # Liveness: 18 x 10s = 3 min of DB unavailability before a restart, enough to
+        # ride out the ~2-3 min a node reboot takes; readiness pulls the pod out of the
+        # Service after 30s so the gateway returns a clean 503 instead of n8n's.
         livenessProbe:
           httpGet:
-            path: /healthz
+            path: /healthz/readiness
             port: 5678
           initialDelaySeconds: 240
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 6
+          failureThreshold: 18
         readinessProbe:
           httpGet:
-            path: /healthz
+            path: /healthz/readiness
             port: 5678
           initialDelaySeconds: 240
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 6
+          failureThreshold: 3
         volumeMounts:
         - name: n8n-storage
           mountPath: /home/node/.n8n
