@@ -24,7 +24,15 @@ metadata:
   name: postgresql-cluster
   namespace: postgresql
 spec:
-  instances: 1
+  # Two instances (2026-09-30): primary + one streaming replica, one per worker.
+  # With a single instance the operator's primary PDB (minAvailable 1) could never
+  # be satisfied, so `kubectl drain` / ansible patch.yml failed on the primary's
+  # node ("Cannot evict pod as it would violate the pod's disruption budget",
+  # 2026-09-29). With a replica the operator switches the primary over before the
+  # drain and the database stays up through a worker reboot. Replication is
+  # asynchronous (CNPG default): a planned switchover loses nothing; an unplanned
+  # primary crash could lose the last transactions.
+  instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:16.4
   # Shutdown waits at most 30s for clients to leave (smart), then disconnects
   # them and checkpoints (fast). The default 180s turned the 1.30.1 operator
@@ -33,23 +41,24 @@ spec:
   # shutdown time and it is not part of the pod spec, so changing it does not
   # restart the primary. Must stay below maxStopDelay (default 1800s).
   smartShutdownTimeout: 30
-  # Pinned to k3s-worker-01, off the control plane (SPEC.md §T.27, §T.37).
+  # Placement: any `application` worker (both k3s-worker-01 and -02), never the
+  # control plane (SPEC.md §T.27, §T.37), and never two instances on one node
+  # (required anti-affinity on hostname, so a node reboot cannot take both).
   #
-  # Previously `node.kubernetes.io/workload: infrastructure` — a label only k3s-control-01
-  # carries — so the only PostgreSQL instance ran on the single control-plane node, on a
-  # node-bound local-path volume with no replica.
-  #
-  # That blocked the upgrade outright rather than merely widening its blast radius:
-  # enablePDB is true, so the operator's PDB reports ALLOWED DISRUPTIONS 0 for a
-  # single-instance cluster and draining its host node can never complete (§R.10, §V.42).
-  #
-  # Relocated 2026-07-28 via §V.43's three phases — broaden, relocate by cordon and
-  # scale-to-2 with switchover, then narrow. Changing this selector DOES restart the
-  # primary (§R.8, §B.5), and a restarted primary cannot schedule away from its own PV, so
-  # narrowing this value before the data has moved will take the database down.
+  # History: 2026-07-28 the single instance was relocated from k3s-control-01 to
+  # k3s-worker-01 via §V.43's three phases and pinned there by hostname. Lessons
+  # that still apply (§R.8, §B.5): changing `affinity` DOES restart the primary
+  # even though the docs do not list it, and a restarted primary can only
+  # schedule onto the node that holds its local-path PV. The selector below still
+  # matches k3s-worker-01, so the restart this change triggers is in place.
+  # Volumes are node-bound local-path: the operator never moves one, it promotes
+  # the replica that lives elsewhere.
   affinity:
     nodeSelector:
-      kubernetes.io/hostname: k3s-worker-01
+      node.kubernetes.io/workload: application
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
   backup:
     barmanObjectStore:
       destinationPath: s3://mysql-backups-asela-cluster/postgresql/
