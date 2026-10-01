@@ -19,7 +19,8 @@ gen-agent-capability-policy.py.
 
 The taxonomy is embedded the same way, from the same file the admission policy is
 generated from — so "which tools should have been gated" has one definition across
-the admission gate, the CI validator, and this alert.
+the admission gate, the CI validator, and this alert. So is the acknowledged file
+(scripts/agent-audit-acknowledged.yaml): the triaged findings the alert leaves out.
 """
 from __future__ import annotations
 
@@ -32,6 +33,7 @@ import yaml
 
 SCRIPT = "scripts/agent-audit.py"
 TAXONOMY = "base-apps/admission-policies/agent-capability-taxonomy.yaml"
+ACKNOWLEDGED = "scripts/agent-audit-acknowledged.yaml"
 OUT = "base-apps/postgresql/agent-audit-cronjob.yaml"
 
 HEADER = """\
@@ -41,8 +43,9 @@ HEADER = """\
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Sources:    scripts/agent-audit.py
 #             base-apps/admission-policies/agent-capability-taxonomy.yaml
+#             scripts/agent-audit-acknowledged.yaml
 # Regenerate: ./scripts/gen-agent-audit-cronjob.py
-# CI fails if this file drifts from either source.
+# CI fails if this file drifts from any source.
 #
 # WHAT IT WATCHES FOR
 #
@@ -172,7 +175,7 @@ def _cronjob(name, schedule, container, *, backoff=0, failed_history=7):
     }
 
 
-def build(script_src: str, taxonomy_src: str) -> list[dict]:
+def build(script_src: str, taxonomy_src: str, acknowledged_src: str) -> list[dict]:
     code_cm = {
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -184,19 +187,22 @@ def build(script_src: str, taxonomy_src: str) -> list[dict]:
         "data": {
             "agent-audit.py": script_src,
             "agent-capability-taxonomy.yaml": taxonomy_src,
+            "agent-audit-acknowledged.yaml": acknowledged_src,
         },
     }
 
     # --- the alerting check (O2). Daily; the finding is a historical fact, so a
     # real-time cadence buys nothing. Exits non-zero on a finding, which IS the
-    # signal in a cluster with no Alertmanager.
+    # signal in a cluster with no Alertmanager. Triaged findings listed in the
+    # acknowledged file are counted but do not alert; anything else still does.
     ungated = _cronjob(
         "agent-audit-ungated", "0 7 * * *",
         _container(
             "agent-audit",
             "'psycopg[binary]==3.2.3' 'pyyaml==6.0.2'",
             "exec python /opt/audit/agent-audit.py --summary "
-            "--taxonomy /opt/audit/agent-capability-taxonomy.yaml\n",
+            "--taxonomy /opt/audit/agent-capability-taxonomy.yaml "
+            "--acknowledged /opt/audit/agent-audit-acknowledged.yaml\n",
         ),
     )
 
@@ -245,7 +251,8 @@ def build(script_src: str, taxonomy_src: str) -> list[dict]:
 def render(repo: Path) -> str:
     script_src = (repo / SCRIPT).read_text()
     taxonomy_src = (repo / TAXONOMY).read_text()
-    docs = build(script_src, taxonomy_src)
+    acknowledged_src = (repo / ACKNOWLEDGED).read_text()
+    docs = build(script_src, taxonomy_src, acknowledged_src)
     body = "\n---\n".join(
         yaml.safe_dump(d, sort_keys=False, width=10_000, default_flow_style=False)
         for d in docs
@@ -271,7 +278,8 @@ def main(argv=None) -> int:
 
     have = path.read_text() if path.exists() else ""
     if have == want:
-        print("agent-audit CronJob is in sync with agent-audit.py + the taxonomy")
+        print("agent-audit CronJob is in sync with agent-audit.py, the taxonomy "
+              "and the acknowledged findings")
         return 0
 
     print(f"{OUT} is STALE — regenerate with ./scripts/gen-agent-audit-cronjob.py",

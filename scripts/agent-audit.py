@@ -4,6 +4,7 @@
 kagent already persists all of this; nothing reads it. This is the read side.
 
     ./scripts/agent-audit.py --ungated          # the query that matters
+                                                # (marks triaged findings: see ACKNOWLEDGED)
     ./scripts/agent-audit.py --cost
     ./scripts/agent-audit.py --agent k8s_agent --since 7d
 
@@ -64,6 +65,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 TAXONOMY = "base-apps/admission-policies/agent-capability-taxonomy.yaml"
+
+# Ungated findings that were triaged and closed (see the file's header).
+ACKNOWLEDGED = "scripts/agent-audit-acknowledged.yaml"
 
 # The tool kagent uses to request a human confirmation for a gated call.
 CONFIRM_TOOL = "adk_request_confirmation"
@@ -284,6 +288,69 @@ def report_ungated(records, gated: set[str]) -> list[dict]:
     return out
 
 
+# ------------------------------------------------------------ acknowledged
+
+
+def _instant(value) -> datetime:
+    """An ISO 8601 datetime; a naive one is UTC (kagent's created_at is UTC)."""
+    dt = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def load_acknowledged(path: Path, required: bool = False) -> list[dict]:
+    """Findings that were triaged and closed, from the acknowledged file.
+
+    Each entry names a session, its agent, and `through`: the instant of the last
+    call being acknowledged. Every field is required and `through` must carry an
+    explicit offset, because a malformed file reaching the CronJob would either
+    crash it (no summary line, so the alert goes quiet) or hide real findings.
+    """
+    import yaml  # local import: only needed for --ungated/--summary
+
+    if not path.exists():
+        if required:
+            raise FileNotFoundError(f"acknowledged file not found: {path}")
+        return []
+    doc = yaml.safe_load(path.read_text()) or {}
+    acks, seen = [], set()
+    for i, entry in enumerate(doc.get("acknowledged") or []):
+        where = f"{path}: acknowledged[{i}]"
+        if not isinstance(entry, dict):
+            raise ValueError(f"{where}: must be a mapping")
+        for field in ("session", "agent", "through", "reason"):
+            if not str(entry.get(field) or "").strip():
+                raise ValueError(f"{where}: missing {field}")
+        through = str(entry["through"])
+        try:
+            parsed = datetime.fromisoformat(through)
+        except ValueError:
+            raise ValueError(f"{where}: through is not an ISO 8601 datetime: {through!r}")
+        if parsed.tzinfo is None:
+            raise ValueError(f"{where}: through needs an explicit offset: {through!r}")
+        if entry["session"] in seen:
+            raise ValueError(f"{where}: duplicate session {entry['session']}")
+        seen.add(entry["session"])
+        acks.append({**entry, "through": parsed})
+    return acks
+
+
+def partition_acknowledged(findings: list[dict], acks: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split findings into (open, acknowledged).
+
+    A finding is acknowledged only if its session is listed, its agent matches, and
+    it happened at or before that entry's `through`. A later call in the same
+    session (kagent sessions can be resumed) stays open, so it still alerts.
+    """
+    by_session = {a["session"]: a for a in acks}
+    open_, acked = [], []
+    for f in findings:
+        ack = by_session.get(f["session"])
+        covered = (ack is not None and f["agent"] == ack["agent"]
+                   and _instant(f["at"]) <= ack["through"])
+        (acked if covered else open_).append(f)
+    return open_, acked
+
+
 def report_cost(records) -> dict[str, int]:
     tokens: dict[str, int] = defaultdict(int)
     for r in records:
@@ -307,7 +374,7 @@ def export_jsonl(records) -> str:
     return "\n".join(json.dumps(r, sort_keys=True) for r in records)
 
 
-def summarize_findings(findings: list[dict]) -> dict:
+def summarize_findings(findings: list[dict], acknowledged: int = 0) -> dict:
     """An ARGUMENT-FREE summary, safe to emit to a log sink.
 
     This is the alerting payload (--summary), and the omission is the whole point.
@@ -331,6 +398,9 @@ def summarize_findings(findings: list[dict]) -> dict:
         "check": "agent-audit-ungated",
         "severity": "warning" if findings else "ok",
         "ungated_invocations": len(findings),
+        # Triaged findings left out of `findings` (see ACKNOWLEDGED). Counted, not
+        # listed, so the alert still shows that they exist.
+        "acknowledged_invocations": acknowledged,
         "findings": sorted(
             (
                 {"agent": agent, "tool": tool, "count": n}
@@ -398,6 +468,10 @@ def main(argv=None) -> int:
     ap.add_argument("--taxonomy", type=Path,
                     help="path to the capability taxonomy ConfigMap manifest "
                          "(the in-cluster CronJob mounts it; defaults to the repo copy)")
+    ap.add_argument("--acknowledged", type=Path,
+                    help="triaged findings to leave out of --summary and mark in "
+                         f"--ungated (the CronJob mounts it; defaults to {ACKNOWLEDGED} "
+                         "in the repo, and a given path must exist)")
     args = ap.parse_args(argv)
 
     with connect() as conn:
@@ -409,11 +483,15 @@ def main(argv=None) -> int:
         print(export_jsonl(records))
         return 0
 
+    if args.summary or args.ungated:
+        acks = load_acknowledged(args.acknowledged or args.repo_root / ACKNOWLEDGED,
+                                 required=args.acknowledged is not None)
+
     if args.summary:
         gated = load_gated_tools(args.repo_root, args.taxonomy)
-        findings = report_ungated(records, gated)
-        print(json.dumps(summarize_findings(findings)))
-        return 1 if findings else 0
+        open_, acked = partition_acknowledged(report_ungated(records, gated), acks)
+        print(json.dumps(summarize_findings(open_, acknowledged=len(acked))))
+        return 1 if open_ else 0
 
     if args.cost:
         tokens = report_cost(records)
@@ -429,19 +507,27 @@ def main(argv=None) -> int:
     if args.ungated:
         gated = load_gated_tools(args.repo_root, args.taxonomy)
         findings = report_ungated(records, gated)
+        # The investigation view shows everything, acknowledged or not, and marks
+        # which is which, so a new finding stands out among the triaged ones.
+        open_, acked = partition_acknowledged(findings, acks)
+        acked_ids = {id(f) for f in acked}
+        for f in findings:
+            f["acknowledged"] = id(f) in acked_ids
         if args.format == "json":
             print(json.dumps(findings, indent=2))
         else:
             if not findings:
                 print("no ungated invocations of write/destructive tools ✓")
                 return 0
-            print(f"{'when':<22} {'agent':<38} {'tool':<26} args")
+            print(f"{'when':<22} {'agent':<38} {'tool':<26} {'ack':<4} args")
             for r in findings:
                 print(f"{r['at'][:19]:<22} {r['agent']:<38} {r['tool']:<26} "
+                      f"{'yes' if r['acknowledged'] else '':<4} "
                       f"{json.dumps(r['args'])[:60]}")
-            print(f"\n{len(findings)} gated tool invocation(s) with NO approval request.")
-        # A finding is a failure: this is the requireApproval-stripping incident.
-        return 1 if findings else 0
+            print(f"\n{len(findings)} gated tool invocation(s) with NO approval request "
+                  f"({len(acked)} acknowledged, {len(open_)} open).")
+        # An open finding is a failure: this is the requireApproval-stripping incident.
+        return 1 if open_ else 0
 
     calls = [r for r in records if r["kind"] == "call"]
     if args.format == "json":

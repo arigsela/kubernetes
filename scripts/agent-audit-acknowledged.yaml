@@ -1,0 +1,60 @@
+---
+# Agent action record: ungated findings that were triaged and closed.
+#
+# agent-audit.py --summary (the daily agent-audit-ungated CronJob behind the
+# "Agent invoked a gated tool with NO approval" alert) leaves these out, and
+# --ungated marks them `ack`. Shipped into the CronJob's ConfigMap by
+# scripts/gen-agent-audit-cronjob.py, so edit it here and regenerate.
+#
+# WHY THIS FILE EXISTS
+#
+# The check scans ALL of kagent's history, and should: a call must not drop out of
+# view just because it is old. But a finding is a permanent row in kagent's
+# database. Without this file the alert fired every day from the same 15 calls,
+# never resolved, and a NEW ungated call would only have turned "15" into "16"
+# inside an alert that was already firing.
+#
+# HOW AN ENTRY MATCHES
+#
+# A finding is acknowledged when its session is listed, its agent matches, and it
+# happened at or before `through`. A later gated call in the same session (kagent
+# sessions can be resumed) is not covered and still alerts.
+#
+# ADDING AN ENTRY
+#
+# Only after triage. Run `scripts/agent-audit.py --ungated` with the SELECT-only
+# role, confirm what ran and why, and fix the cause. Then add the session with
+# `through` set to its last call (copy `at` from `--format json`; it must carry an
+# offset) and a reason that names the fix. Every field except `calls` and
+# `acknowledged_on` is required; tests/agent-audit/ rejects a malformed file.
+acknowledged:
+  - session: aab83cbb-e846-4313-b1f6-91e2fd6cfab0
+    agent: kagent__NS__k8s_agent
+    through: "2026-04-19T18:38:28.832827+00:00"
+    calls: 1 k8s_delete_resource
+    reason: >-
+      k8s_agent's requireApproval gate never fired: the O0 spike found zero
+      approval requests in its entire history, because Argo CD was silently
+      stripping requireApproval on every sync. Fixed: the gate is now part of
+      the capability contract, enforced in CI and at admission
+      (base-apps/kagent/agents/k8s-agent.yaml,
+      base-apps/admission-policies/agent-capability.yaml).
+    acknowledged_on: 2026-10-01
+  - session: 9900dd72-3603-4b43-bd96-7c193b860b1b
+    agent: kagent__NS__k8s_agent
+    through: "2026-07-09T23:41:53.273915+00:00"
+    calls: 11 k8s_execute_command
+    reason: >-
+      The 2026-07-09 incident: k8s_agent ran shell commands inside vault-0
+      with no approval, because Argo CD was silently stripping requireApproval.
+      Fixed the same way: the capability contract enforces the gate in CI and
+      at admission.
+    acknowledged_on: 2026-10-01
+  - session: 6f402c33-9874-48a0-9aeb-c4d3c8a73694
+    agent: kagent__NS__k8s_agent
+    through: "2026-07-09T23:56:15.173746+00:00"
+    calls: 3 k8s_execute_command
+    reason: >-
+      Second session of the 2026-07-09 incident, same cause and fix as the
+      session above.
+    acknowledged_on: 2026-10-01

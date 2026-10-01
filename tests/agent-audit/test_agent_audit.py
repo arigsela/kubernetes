@@ -306,3 +306,128 @@ def test_export_keeps_auditable_call_arguments():
 
 def test_export_of_empty_record_is_empty_not_crash():
     assert aa.export_jsonl([]) == ""
+
+
+# ------------------------------------------- acknowledged (triaged) findings
+#
+# The check scans ALL history, so a triaged incident stays a finding forever. The
+# acknowledged file takes exactly those calls out of the alert, and nothing else:
+# a new call, even in the same (resumed) session, must still alert.
+
+ACK_YAML = """\
+acknowledged:
+  - session: s1
+    agent: kagent__NS__k8s_agent
+    through: "2026-07-09T23:41:53+00:00"
+    calls: 2 k8s_execute_command
+    reason: gate was stripped; fixed by the capability contract
+    acknowledged_on: 2026-10-01
+"""
+
+
+def _write_acks(tmp_path, text=ACK_YAML):
+    p = tmp_path / "acks.yaml"
+    p.write_text(text)
+    return p
+
+
+def _call(session, at, tool="k8s_execute_command", agent="kagent__NS__k8s_agent"):
+    return {"kind": "call", "tool": tool, "session": session, "agent": agent,
+            "args": {}, "at": at}
+
+
+def test_acknowledged_call_is_split_from_open_findings(tmp_path):
+    acks = aa.load_acknowledged(_write_acks(tmp_path))
+    old = _call("s1", "2026-07-09T23:41:15.172008+00:00")
+    new = _call("s2", "2026-10-02T07:00:00+00:00")
+    open_, acked = aa.partition_acknowledged([old, new], acks)
+    assert open_ == [new]
+    assert acked == [old]
+
+
+def test_call_at_the_through_instant_is_acknowledged(tmp_path):
+    acks = aa.load_acknowledged(_write_acks(tmp_path))
+    edge = _call("s1", "2026-07-09T23:41:53+00:00")
+    assert aa.partition_acknowledged([edge], acks) == ([], [edge])
+
+
+def test_later_call_in_an_acknowledged_session_still_alerts(tmp_path):
+    """kagent sessions can be resumed; acknowledging the past must not cover it."""
+    acks = aa.load_acknowledged(_write_acks(tmp_path))
+    resumed = _call("s1", "2026-10-02T07:00:00+00:00")
+    assert aa.partition_acknowledged([resumed], acks) == ([resumed], [])
+
+
+def test_acknowledgement_is_bound_to_its_agent(tmp_path):
+    acks = aa.load_acknowledged(_write_acks(tmp_path))
+    other = _call("s1", "2026-07-09T23:41:15+00:00", agent="kagent__NS__other_agent")
+    assert aa.partition_acknowledged([other], acks) == ([other], [])
+
+
+def test_naive_timestamps_are_read_as_utc(tmp_path):
+    acks = aa.load_acknowledged(_write_acks(tmp_path))
+    naive = _call("s1", "2026-07-09T23:41:15")
+    assert aa.partition_acknowledged([naive], acks) == ([], [naive])
+
+
+@pytest.mark.parametrize("missing", ["session", "agent", "through", "reason"])
+def test_acknowledgement_without_a_required_field_is_rejected(tmp_path, missing):
+    lines = [l for l in ACK_YAML.splitlines() if not l.strip().startswith(f"{missing}:")]
+    lines = [l.replace(f"  - {missing}:", "  - x:") for l in lines]
+    with pytest.raises(ValueError, match=missing):
+        aa.load_acknowledged(_write_acks(tmp_path, "\n".join(lines) + "\n"))
+
+
+def test_acknowledgement_needs_an_explicit_offset(tmp_path):
+    """A date-only or naive `through` names a different instant per timezone."""
+    with pytest.raises(ValueError, match="through"):
+        aa.load_acknowledged(_write_acks(tmp_path, ACK_YAML.replace("+00:00", "")))
+
+
+def test_duplicate_acknowledged_sessions_are_rejected(tmp_path):
+    entry = ACK_YAML.split("\n", 1)[1]
+    with pytest.raises(ValueError, match="duplicate"):
+        aa.load_acknowledged(_write_acks(tmp_path, ACK_YAML + entry))
+
+
+def test_missing_acknowledged_file_is_empty_unless_required(tmp_path):
+    assert aa.load_acknowledged(tmp_path / "absent.yaml") == []
+    with pytest.raises(FileNotFoundError):
+        aa.load_acknowledged(tmp_path / "absent.yaml", required=True)
+
+
+def test_summary_is_clean_when_every_finding_is_acknowledged():
+    out = aa.summarize_findings([], acknowledged=15)
+    assert out["severity"] == "ok"
+    assert out["ungated_invocations"] == 0
+    assert out["acknowledged_invocations"] == 15
+
+
+def test_summary_still_warns_on_an_open_finding_next_to_acknowledged_ones():
+    out = aa.summarize_findings([_call("s2", "2026-10-02T07:00:00+00:00")], acknowledged=15)
+    assert out["severity"] == "warning"
+    assert out["ungated_invocations"] == 1
+    assert out["acknowledged_invocations"] == 15
+
+
+def test_repo_acknowledged_file_is_valid_and_explains_every_entry():
+    """The CronJob ships this file; a malformed one must not reach the cluster."""
+    repo = Path(__file__).resolve().parents[2]
+    acks = aa.load_acknowledged(repo / aa.ACKNOWLEDGED, required=True)
+    assert acks, "expected the triaged k8s_agent incident to be acknowledged"
+    for ack in acks:
+        assert len(ack["reason"].split()) >= 5, f"{ack['session']}: reason too thin"
+
+
+def test_cronjob_ships_and_uses_the_acknowledged_file():
+    """The alerting job must read the same acknowledged file the tests validate."""
+    gen_spec = importlib.util.spec_from_file_location(
+        "gen_agent_audit_cronjob",
+        Path(__file__).resolve().parents[2] / "scripts" / "gen-agent-audit-cronjob.py",
+    )
+    gen = importlib.util.module_from_spec(gen_spec)
+    gen_spec.loader.exec_module(gen)
+    code_cm, ungated, _ = gen.build("script", "taxonomy", "acks")
+    assert code_cm["data"]["agent-audit-acknowledged.yaml"] == "acks"
+    container = ungated["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]
+    assert "--acknowledged /opt/audit/agent-audit-acknowledged.yaml" in " ".join(container["args"])
