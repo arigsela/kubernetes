@@ -7,7 +7,7 @@ catalog_entity: ollama
 kind: docs
 namespace: ollama
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [llm, embeddings, gpu-optional]
 sources:
   - base-apps/ollama/deployments.yaml

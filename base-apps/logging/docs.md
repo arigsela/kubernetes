@@ -7,7 +7,7 @@ catalog_entity: logging
 kind: docs
 namespace: logging
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [loki, grafana, prometheus, alloy]
 sources:
   - base-apps/logging/alloy-config.yaml

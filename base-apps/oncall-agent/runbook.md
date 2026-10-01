@@ -7,7 +7,7 @@ catalog_entity: oncall-agent
 kind: runbook
 namespace: oncall-agent
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [ai-agent, anthropic, incident-response, slack]
 sources:
   - base-apps/oncall-agent/deployment.yaml

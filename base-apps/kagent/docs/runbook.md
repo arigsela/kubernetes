@@ -7,7 +7,7 @@ catalog_entity: kagent
 kind: runbook
 namespace: kagent
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [ai-agent, kagent, mcp, anthropic]
 sources:
   - base-apps/kagent.yaml

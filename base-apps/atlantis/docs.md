@@ -7,7 +7,7 @@ catalog_entity: atlantis
 kind: docs
 namespace: atlantis
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [terraform, opentofu, gitops, ci-cd]
 sources:
   - base-apps/istio-ingress/gateway-options.yaml

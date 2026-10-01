@@ -7,7 +7,7 @@ catalog_entity: wan-ip-monitor
 kind: runbook
 namespace: wan-ip-monitor
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [automation, dns, route53, istio, github-actions]
 sources:
   - base-apps/wan-ip-monitor/configmap-reconcile.yaml

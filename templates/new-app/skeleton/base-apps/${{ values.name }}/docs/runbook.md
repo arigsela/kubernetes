@@ -7,7 +7,7 @@ catalog_entity: ${{ values.name }}
 kind: runbook
 namespace: ${{ values.namespace }}
 last_reviewed: 2026-07-20
-status: current
+status: stable
 tags: [{% for t in values.tags %}"${{ t }}"{% if not loop.last %}, {% endif %}{% endfor %}]
 sources:
   - base-apps/${{ values.name }}/deployments.yaml

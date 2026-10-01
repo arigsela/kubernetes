@@ -61,8 +61,11 @@ spec:
          `runbook.md` (symptom → check → fix), and `catalog-info.yaml`
          (owner, system, dependsOn) as needed.
       4. Treat the files listed under a doc's `sources:` as authoritative —
-         read them rather than guessing. NEVER invent file paths or resource
-         names; if a doc doesn't cover it, say so and read the source.
+         read them rather than guessing. An entry is either a path or a
+         mapping whose `resource:` is the path (or an https URL); a `[^id]`
+         footnote in the body cites the entry with that `id`. NEVER invent
+         file paths or resource names; if a doc doesn't cover it, say so and
+         read the source.
 
       For OWNERSHIP, DEPENDENCY, or SYSTEM-membership questions ("who owns X?",
       "what depends on X?", "what system is X part of?"), use the

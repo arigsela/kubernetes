@@ -7,7 +7,7 @@ catalog_entity: istio-waf
 kind: runbook
 namespace: istio-ingress
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [waf, security, istio, coraza]
 sources:
   - base-apps/istio-waf/wasmplugin.yaml

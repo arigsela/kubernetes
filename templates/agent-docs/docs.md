@@ -7,7 +7,7 @@ catalog_entity: REPLACE_ME
 kind: docs
 namespace: REPLACE_ME
 last_reviewed: 2026-07-08
-status: current
+status: stable
 tags: []
 sources:
   - base-apps/REPLACE_ME/deployments.yaml

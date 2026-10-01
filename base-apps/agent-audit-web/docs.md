@@ -7,7 +7,7 @@ catalog_entity: agent-audit-web
 kind: docs
 namespace: agent-audit
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [audit, agents, fastapi, oauth2-proxy]
 sources:
   - base-apps/agent-audit-web.yaml

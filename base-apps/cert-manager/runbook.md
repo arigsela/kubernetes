@@ -7,7 +7,7 @@ catalog_entity: cert-manager
 kind: runbook
 namespace: cert-manager
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [tls, certificates, route53]
 sources:
   - base-apps/cert-manager.yaml

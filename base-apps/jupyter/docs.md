@@ -7,7 +7,7 @@ catalog_entity: jupyter
 kind: docs
 namespace: jupyter
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [python, notebooks, jupyter]
 sources:
   - base-apps/jupyter/deployments.yaml

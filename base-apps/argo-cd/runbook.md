@@ -7,7 +7,7 @@ catalog_entity: argo-cd
 kind: runbook
 namespace: argo-cd
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [gitops, control-plane]
 sources:
   - base-apps/argo-cd.yaml

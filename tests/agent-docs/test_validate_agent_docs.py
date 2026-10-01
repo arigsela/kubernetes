@@ -20,7 +20,7 @@ catalog_entity: demo
 kind: docs
 namespace: demo-ns
 last_reviewed: 2026-07-08
-status: current
+status: stable
 tags: [x]
 sources:
   - base-apps/demo/deployments.yaml
@@ -226,3 +226,90 @@ def test_directory_exclude_ok_when_no_catalog(tmp_path):
     (root / "base-apps" / "demo" / "catalog-info.yaml").unlink()
     # No catalog-info.yaml -> nothing to guard, even with no Application.
     assert validate_agent_docs.check_app_directory_exclude(root, "demo") == []
+
+
+# --- OKF v0.2: lifecycle values, mapping-form sources, per-claim footnotes ---
+
+def test_validate_frontmatter_accepts_okf_status_values():
+    fm = validate_agent_docs.parse_frontmatter(GOOD_FM)
+    for status in ("stable", "draft", "deprecated"):
+        fm["status"] = status
+        assert validate_agent_docs.validate_frontmatter(fm) == []
+
+
+def test_validate_frontmatter_rejects_pre_okf_status_values():
+    # current/wip were this repo's own values before OKF v0.2 reserved `status`.
+    fm = validate_agent_docs.parse_frontmatter(GOOD_FM)
+    for status in ("current", "wip"):
+        fm["status"] = status
+        assert any("status" in e for e in validate_agent_docs.validate_frontmatter(fm))
+
+
+def test_validate_frontmatter_accepts_mapping_source():
+    fm = validate_agent_docs.parse_frontmatter(GOOD_FM)
+    fm["sources"] = ["base-apps/demo/deployments.yaml",
+                     {"id": "deploy", "resource": "base-apps/demo/deployments.yaml",
+                      "title": "Demo Deployment"}]
+    assert validate_agent_docs.validate_frontmatter(fm) == []
+
+
+def test_validate_frontmatter_rejects_mapping_source_without_id():
+    fm = validate_agent_docs.parse_frontmatter(GOOD_FM)
+    fm["sources"] = [{"resource": "base-apps/demo/deployments.yaml"}]
+    assert any("sources entry" in e for e in validate_agent_docs.validate_frontmatter(fm))
+
+
+def test_validate_frontmatter_rejects_duplicate_source_ids():
+    fm = validate_agent_docs.parse_frontmatter(GOOD_FM)
+    fm["sources"] = [{"id": "a", "resource": "x.yaml"}, {"id": "a", "resource": "y.yaml"}]
+    assert any("duplicate sources id" in e for e in validate_agent_docs.validate_frontmatter(fm))
+
+
+def test_validate_footnotes_accepts_cited_source():
+    fm = {"sources": [{"id": "deploy", "resource": "base-apps/demo/deployments.yaml"}]}
+    body = "Runs two replicas.[^deploy]\n\n[^deploy]: Demo Deployment\n"
+    assert validate_agent_docs.validate_footnotes(fm, body) == []
+
+
+def test_validate_footnotes_rejects_label_without_source():
+    fm = {"sources": ["base-apps/demo/deployments.yaml"]}
+    body = "Runs two replicas.[^deploy]\n\n[^deploy]: Demo Deployment\n"
+    errors = validate_agent_docs.validate_footnotes(fm, body)
+    assert any("[^deploy]" in e and "sources id" in e for e in errors)
+
+
+def test_validate_footnotes_rejects_missing_definition():
+    fm = {"sources": [{"id": "deploy", "resource": "base-apps/demo/deployments.yaml"}]}
+    errors = validate_agent_docs.validate_footnotes(fm, "Runs two replicas.[^deploy]\n")
+    assert any("no definition" in e for e in errors)
+
+
+def test_validate_footnotes_ignores_code_fences():
+    fm = {"sources": ["base-apps/demo/deployments.yaml"]}
+    body = "```\nliteral [^not-a-cite]\n```\n"
+    assert validate_agent_docs.validate_footnotes(fm, body) == []
+
+
+def test_check_app_contract_flags_dangling_mapping_source(tmp_path):
+    root = _make_repo(tmp_path)
+    docs = root / "base-apps" / "demo" / "docs.md"
+    docs.write_text(docs.read_text().replace(
+        "  - base-apps/demo/deployments.yaml",
+        "  - id: gone\n    resource: base-apps/demo/gone.yaml"))
+    errors = validate_agent_docs.check_app_contract(root, "demo")
+    assert any("gone.yaml" in e for e in errors)
+
+
+def test_check_app_contract_accepts_url_source(tmp_path):
+    root = _make_repo(tmp_path)
+    docs = root / "base-apps" / "demo" / "docs.md"
+    docs.write_text(docs.read_text().replace(
+        "  - base-apps/demo/deployments.yaml",
+        "  - base-apps/demo/deployments.yaml\n"
+        "  - id: upstream\n    resource: https://example.com/docs"))
+    assert validate_agent_docs.check_app_contract(root, "demo") == []
+
+
+def test_validate_footnotes_ignores_inline_code():
+    fm = {"sources": ["base-apps/demo/deployments.yaml"]}
+    assert validate_agent_docs.validate_footnotes(fm, "Cite with `[^id]`.\n") == []

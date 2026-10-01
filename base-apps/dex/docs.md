@@ -7,7 +7,7 @@ catalog_entity: dex
 kind: docs
 namespace: dex
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [oidc, authentication, github, vault]
 sources:
   - base-apps/dex/deployment.yaml

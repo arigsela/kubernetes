@@ -7,7 +7,7 @@ catalog_entity: weather-kitchen-frontend
 kind: runbook
 namespace: weather-kitchen-frontend
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [nginx, node, frontend]
 sources:
   - base-apps/weather-kitchen-frontend/deployments.yaml
