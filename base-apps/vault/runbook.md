@@ -7,7 +7,7 @@ catalog_entity: vault
 kind: runbook
 namespace: vault
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [secrets, stateful, kv-v2]
 sources:
   - base-apps/vault/statefulsets.yaml

@@ -11,19 +11,21 @@ warning unless --staleness-fails.
 from __future__ import annotations
 
 import argparse
+import re
 from datetime import date, datetime
 from pathlib import Path
 
 import yaml
 
 REQUIRED_KEYS = [
-    # OKF v0.1 interop fields (see templates/agent-docs/README.md).
+    # OKF v0.2 interop fields (see templates/agent-docs/README.md).
     "type", "title", "description",
     # This repo's own agent-docs contract.
     "app", "catalog_entity", "kind", "namespace", "last_reviewed", "status", "tags", "sources",
 ]
 KIND_VALUES = {"docs", "runbook"}
-STATUS_VALUES = {"current", "wip", "deprecated"}
+# OKF v0.2 reserves `status` for lifecycle (§5.4), so the contract uses its values.
+STATUS_VALUES = {"stable", "draft", "deprecated"}
 # `kind` stays the single source of truth; `type` is its OKF-facing label and
 # must agree, so external consumers and the validator cannot disagree.
 TYPE_FOR_KIND = {"docs": "Kubernetes App Guide", "runbook": "Kubernetes App Runbook"}
@@ -71,8 +73,62 @@ def validate_frontmatter(fm: dict) -> list[str]:
         errors.append(f"last_reviewed must be an ISO date YYYY-MM-DD, got {lr!r}")
     if not isinstance(fm.get("tags"), list):
         errors.append("tags must be a list")
-    if not isinstance(fm.get("sources"), list) or not fm.get("sources"):
+    sources = fm.get("sources")
+    if not isinstance(sources, list) or not sources:
         errors.append("sources must be a non-empty list")
+    else:
+        errors.extend(_validate_source_entries(sources))
+    return errors
+
+
+def _validate_source_entries(sources: list) -> list[str]:
+    """A source is a bare repo path, or an OKF v0.2 mapping with `id` and
+    `resource` (plus an optional `title`). The mapping form exists so a body
+    footnote can cite it by `id`."""
+    errors, ids = [], set()
+    for entry in sources:
+        if isinstance(entry, str):
+            continue
+        if not (isinstance(entry, dict)
+                and isinstance(entry.get("id"), str) and entry["id"].strip()
+                and isinstance(entry.get("resource"), str) and entry["resource"].strip()):
+            errors.append(
+                f"sources entry must be a path or a mapping with string id and resource, got {entry!r}")
+            continue
+        if entry["id"] in ids:
+            errors.append(f"duplicate sources id: {entry['id']}")
+        ids.add(entry["id"])
+    return errors
+
+
+def source_path(entry) -> str | None:
+    """The resource a sources entry names: a bare path, or a mapping's `resource`."""
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, dict) and isinstance(entry.get("resource"), str):
+        return entry["resource"]
+    return None
+
+
+_FENCE = re.compile(r"^(```|~~~).*?^\1", re.M | re.S)
+_CODE_SPAN = re.compile(r"`[^`\n]*`")
+_FOOTNOTE_REF = re.compile(r"\[\^([^\]\s]+)\](?!:)")
+_FOOTNOTE_DEF = re.compile(r"^\[\^([^\]\s]+)\]:", re.M)
+
+
+def validate_footnotes(fm: dict, body: str) -> list[str]:
+    """Per-claim citations (OKF v0.2 §5.1): a footnote label is the join key
+    into `sources`, so every cited label must be a sources `id` and must be
+    defined (or it renders as literal text)."""
+    body = _CODE_SPAN.sub("", _FENCE.sub("", body))
+    ids = {e["id"] for e in fm.get("sources") or [] if isinstance(e, dict) and "id" in e}
+    defined = set(_FOOTNOTE_DEF.findall(body))
+    errors = []
+    for label in sorted(set(_FOOTNOTE_REF.findall(body))):
+        if label not in ids:
+            errors.append(f"footnote [^{label}] does not match any sources id")
+        if label not in defined:
+            errors.append(f"footnote [^{label}] has no definition")
     return errors
 
 
@@ -99,11 +155,13 @@ CATALOG_KINDS = {"Component", "Resource"}
 
 
 def _read_frontmatter_file(path: Path) -> tuple[dict | None, list[str]]:
+    text = path.read_text()
     try:
-        fm = parse_frontmatter(path.read_text())
+        fm = parse_frontmatter(text)
     except ValueError as exc:
         return None, [f"{path}: {exc}"]
-    return fm, [f"{path}: {e}" for e in validate_frontmatter(fm)]
+    errors = validate_frontmatter(fm) + validate_footnotes(fm, text.split("---", 2)[2])
+    return fm, [f"{path}: {e}" for e in errors]
 
 
 def check_app_contract(repo_root: Path, app: str) -> list[str]:
@@ -140,7 +198,11 @@ def check_app_contract(repo_root: Path, app: str) -> list[str]:
             errors.append(
                 f"{app}/{md}: catalog_entity {fm.get('catalog_entity')!r} "
                 f"does not match catalog-info.yaml metadata.name {catalog_name!r}")
-        for src in fm.get("sources", []) or []:
+        for entry in fm.get("sources", []) or []:
+            src = source_path(entry)
+            # An external URL can only be cited, not checked.
+            if src is None or src.startswith(("http://", "https://")):
+                continue
             # .exists() (not .is_file()) so a directory source such as
             # terraform/modules/argocd is accepted.
             if not (repo_root / src).exists():

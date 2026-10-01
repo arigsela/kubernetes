@@ -7,7 +7,7 @@ catalog_entity: admission-policies
 kind: runbook
 namespace: kube-system
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [admission, cel, policy, security]
 sources:
   - base-apps/admission-policies/agent-identity.yaml

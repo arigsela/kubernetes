@@ -7,7 +7,7 @@ catalog_entity: homepage
 kind: runbook
 namespace: homepage
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [dashboard, gitops, self-hosted]
 sources:
   - base-apps/homepage/configmap.yaml

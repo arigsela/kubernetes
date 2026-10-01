@@ -7,7 +7,7 @@ catalog_entity: donetick
 kind: runbook
 namespace: donetick
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [go, postgres, chores, self-hosted]
 sources:
   - base-apps/donetick/deployments.yaml

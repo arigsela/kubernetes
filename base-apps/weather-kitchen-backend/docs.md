@@ -7,7 +7,7 @@ catalog_entity: weather-kitchen-backend
 kind: docs
 namespace: weather-kitchen
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [fastapi, jwt, postgresql]
 sources:
   - base-apps/weather-kitchen-backend/deployments.yaml

@@ -7,7 +7,7 @@ catalog_entity: n8n
 kind: runbook
 namespace: n8n
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [automation, postgresql, webhooks]
 sources:
   - base-apps/n8n/deployments.yaml

@@ -7,7 +7,7 @@ catalog_entity: system-upgrade-controller
 kind: docs
 namespace: system-upgrade
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [k3s, upgrades, lifecycle]
 sources:
   - base-apps/system-upgrade-controller.yaml

@@ -7,7 +7,7 @@ catalog_entity: postgresql
 kind: docs
 namespace: postgresql
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [database, stateful, pgvector, cnpg]
 sources:
   - base-apps/postgresql.yaml

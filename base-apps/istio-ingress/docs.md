@@ -7,7 +7,7 @@ catalog_entity: istio-ingress
 kind: docs
 namespace: istio-ingress
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [ingress, gateway-api, istio]
 sources:
   - base-apps/istio-ingress.yaml

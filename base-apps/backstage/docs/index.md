@@ -7,7 +7,7 @@ catalog_entity: backstage
 kind: docs
 namespace: backstage
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [backstage, developer-portal, catalog, kubernetes-ingestor]
 sources:
   - base-apps/backstage/deployments.yaml

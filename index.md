@@ -1,5 +1,5 @@
 ---
-okf_version: "0.1"
+okf_version: "0.2"
 type: "Platform Knowledge Bundle"
 title: "Homelab Platform"
 description: "Bundle root for the GitOps Kubernetes platform: system context, topology, cross-cutting concerns, and the per-app index."
@@ -10,9 +10,9 @@ tags: [platform, gitops, kubernetes, okf]
 
 > **For agents:** Start here. Traverse: this bundle root → a directory `index.md` → an app's `docs.md`/`runbook.md` → the `sources:` files listed in that doc. This root is a **navigation/summary layer**; the `sources:` files are authoritative. If a summary here looks wrong, go read the source.
 
-This repository's **knowledge documents** are [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF v0.1) documents: markdown with YAML frontmatter, living beside the manifests they describe. Every `docs.md`/`runbook.md` is an OKF concept document (`type`, `title`, `description` plus this repo's own contract fields), and this file plus each directory `index.md` is OKF's reserved directory listing.
+This repository's **knowledge documents** are [Open Knowledge Format](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/main/SPEC.md) (OKF v0.2) documents: markdown with YAML frontmatter, living beside the manifests they describe. Every `docs.md`/`runbook.md` is an OKF concept document (`type`, `title`, `description`, OKF's `status` and `sources`, plus this repo's own contract fields). This file and each directory `index.md` play the role of OKF's directory listing.
 
-The repository as a whole is **not** a strictly conformant OKF bundle, and does not try to be: `README.md`, `CLAUDE.md`, and the specs and plans under `docs/` carry no frontmatter, which OKF §9 would require of every non-reserved `.md`. For a strictly conformant, portable bundle — navigation and concept documents only, with `timestamp` derived from git — run `scripts/gen-okf.py --export <dir>`. That is what to hand an agent that should not get the whole infrastructure repo. See `templates/agent-docs/README.md` for the authoring contract.
+The repository as a whole is **not** a strictly conformant OKF bundle, and does not try to be: `README.md`, `CLAUDE.md`, and the specs and plans under `docs/` carry no frontmatter, which OKF §11 requires of every non-reserved `.md`, and the in-repo `index.md` files carry frontmatter and tables, which §8 does not allow. For a strictly conformant, portable bundle, run `scripts/gen-okf.py --export <dir>`. It exports navigation and concept documents only, rewrites the index files as §8 listings, and derives OKF's trust and lifecycle fields (`generated`, `verified`, `stale_after`) from git and `last_reviewed`. That is what to hand an agent that should not get the whole infrastructure repo. See `templates/agent-docs/README.md` for the authoring contract.
 
 ## 1. System context
 - Kubernetes API: `https://10.0.1.50:6443` (k3s: one control-plane node, two workers)

@@ -7,7 +7,7 @@ catalog_entity: coroot
 kind: docs
 namespace: coroot
 last_reviewed: 2026-09-30
-status: current
+status: stable
 tags: [observability, ebpf, apm, clickhouse]
 sources:
   - base-apps/coroot/coroot-operator.yaml
