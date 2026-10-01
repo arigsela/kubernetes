@@ -297,14 +297,18 @@ def _instant(value) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-def load_acknowledged(path: Path, required: bool = False) -> list[dict]:
+def load_acknowledged(path: Path, required: bool = False,
+                      now: datetime | None = None) -> list[dict]:
     """Findings that were triaged and closed, from the acknowledged file.
 
     Each entry names a session, its agent, and `through`: the instant of the last
     call being acknowledged. Every field is required and `through` must carry an
     explicit offset, because a malformed file reaching the CronJob would either
     crash it (no summary line, so the alert goes quiet) or hide real findings.
+    `through` must also be in the past: a mistyped future instant would silently
+    acknowledge every later call in that session, which is what must still alert.
     """
+    now = now or datetime.now(timezone.utc)
     import yaml  # local import: only needed for --ungated/--summary
 
     if not path.exists():
@@ -327,6 +331,8 @@ def load_acknowledged(path: Path, required: bool = False) -> list[dict]:
             raise ValueError(f"{where}: through is not an ISO 8601 datetime: {through!r}")
         if parsed.tzinfo is None:
             raise ValueError(f"{where}: through needs an explicit offset: {through!r}")
+        if parsed > now:
+            raise ValueError(f"{where}: through is in the future: {through!r}")
         if entry["session"] in seen:
             raise ValueError(f"{where}: duplicate session {entry['session']}")
         seen.add(entry["session"])
@@ -399,7 +405,8 @@ def summarize_findings(findings: list[dict], acknowledged: int = 0) -> dict:
         "severity": "warning" if findings else "ok",
         "ungated_invocations": len(findings),
         # Triaged findings left out of `findings` (see ACKNOWLEDGED). Counted, not
-        # listed, so the alert still shows that they exist.
+        # listed, so the summary line in Loki still shows that they exist. The
+        # Grafana alert itself only counts `severity: warning` lines.
         "acknowledged_invocations": acknowledged,
         "findings": sorted(
             (

@@ -25,8 +25,13 @@
 # Only after triage. Run `scripts/agent-audit.py --ungated` with the SELECT-only
 # role, confirm what ran and why, and fix the cause. Then add the session with
 # `through` set to its last call (copy `at` from `--format json`; it must carry an
-# offset) and a reason that names the fix. Every field except `calls` and
-# `acknowledged_on` is required; tests/agent-audit/ rejects a malformed file.
+# offset and can't be in the future) and a reason that names the fix. Every field
+# except `calls` and `acknowledged_on` is required; tests/agent-audit/ rejects a
+# malformed file.
+#
+# If the new finding is in a session that is already listed (a resumed session),
+# don't add a second entry: a session may appear once. Move that entry's
+# `through` forward to the new last call, and update `calls` and `reason`.
 acknowledged:
   - session: aab83cbb-e846-4313-b1f6-91e2fd6cfab0
     agent: kagent__NS__k8s_agent

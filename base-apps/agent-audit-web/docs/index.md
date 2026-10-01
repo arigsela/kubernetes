@@ -25,6 +25,7 @@ sources:
   - base-apps/postgresql/init-agent-audit-web-role.yaml
   - base-apps/postgresql/external-secrets-agent-audit-web-db.yaml
   - base-apps/dex/configmap.yaml
+  - scripts/agent-audit-acknowledged.yaml
 ---
 
 # agent-audit-web
@@ -77,3 +78,10 @@ The app contains no redaction logic of its own: it vendors a byte-identical copy
 repo. **Changing `scripts/agent-audit.py` means re-vendoring in the app repo**
 (`scripts/vendor_sync.py --latest`) and releasing. The app repo's daily
 `upstream-drift` workflow opens an issue when this repo's copy moves ahead.
+
+**Findings here can include acknowledged calls.** The app doesn't vendor
+`scripts/agent-audit-acknowledged.yaml`, the list of triaged findings that the daily
+`agent-audit-ungated` check and its Grafana alert leave out. So the Findings page
+lists those calls like any other, and re-vendoring doesn't change that. A finding on
+the page isn't necessarily open: check that file, or run `scripts/agent-audit.py
+--ungated`, which marks acknowledged calls.

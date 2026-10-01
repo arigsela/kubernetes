@@ -104,7 +104,8 @@ data:
                 window; it still lists acknowledged calls) and click a finding to
                 see its session - which agent, which tool, and with what (redacted)
                 arguments, in order. Arguments are deliberately absent from this
-                alert. After triage and a fix, acknowledge the session in that file.
+                alert. After triage and a fix, acknowledge the session in that file,
+                or move its `through` forward if the session is already listed.
             labels:
               severity: critical
               pillar: security
