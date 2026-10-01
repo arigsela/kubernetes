@@ -8,6 +8,7 @@ so every known secret shape gets fed through and asserted absent from the output
 from pathlib import Path
 import importlib.util
 import json
+from datetime import datetime, timezone
 
 import pytest
 
@@ -431,3 +432,16 @@ def test_cronjob_ships_and_uses_the_acknowledged_file():
     assert code_cm["data"]["agent-audit-acknowledged.yaml"] == "acks"
     container = ungated["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]
     assert "--acknowledged /opt/audit/agent-audit-acknowledged.yaml" in " ".join(container["args"])
+
+
+def test_future_through_is_rejected(tmp_path):
+    """A mistyped year would silently acknowledge every later call in the session."""
+    future = ACK_YAML.replace("2026-07-09T23:41:53+00:00", "2099-01-01T00:00:00+00:00")
+    with pytest.raises(ValueError, match="future"):
+        aa.load_acknowledged(_write_acks(tmp_path, future))
+
+
+def test_through_is_checked_against_the_given_clock(tmp_path):
+    before = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    with pytest.raises(ValueError, match="future"):
+        aa.load_acknowledged(_write_acks(tmp_path), now=before)
