@@ -56,7 +56,7 @@ Terraform in `terraform/roots/asela-cluster` is applied by the in-cluster Atlant
 2. Comment `atlantis apply`, or run the "Terraform Apply (gated)" Action with the PR number (gated by the `terraform-apply` Environment's required reviewer)
 3. Confirm `atlantis/apply` is green, then merge
 
-Merging before apply silently strands the change. Push once per PR; `atlantis unlock` clears a wedged workdir. Locally, use only the read-only checks in `AGENTS.md` (`fmt`, `validate`, `tflint`); never run `apply` from a laptop.
+Merging before apply silently strands the change. Push once per PR; `atlantis unlock` clears a wedged workdir. Locally, use only the read-only checks in `AGENTS.md` (`fmt`, `validate`, `tflint`); never run `apply` from a laptop. The one exception is rebuilding the cluster while Atlantis can't run (it needs Vault): see "Rebuild from nothing" in `recovery/CLUSTER-RECOVERY.md`.
 
 ### Run Ansible (host layer)
 ```bash
