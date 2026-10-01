@@ -1,7 +1,7 @@
 import importlib.util
 import re
 import subprocess
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -150,6 +150,15 @@ def _frontmatter(path: Path) -> dict:
     return gen_okf._read_frontmatter(path)
 
 
+def _has_offset(value) -> bool:
+    """OKF v0.2 §5: an ISO 8601 datetime with an explicit offset. git writes UTC
+    as `Z` and other zones as `-04:00`, so accept both rather than one shape."""
+    try:
+        return datetime.fromisoformat(str(value)).tzinfo is not None
+    except ValueError:
+        return False
+
+
 def _export(root: Path, tmp_path: Path) -> Path:
     dest = tmp_path / "out"
     gen_okf.export(root, dest)
@@ -211,7 +220,7 @@ def test_export_sources_become_okf_mappings(tmp_path):
     local, upstream = fm["sources"]
     assert local["id"] == "base-apps-demo-deployments-yaml"
     assert local["resource"] == "base-apps/demo/deployments.yaml"  # no origin remote
-    assert re.match(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d$", local["last_modified"])
+    assert _has_offset(local["last_modified"])
     assert upstream == {"id": "upstream", "resource": "https://example.com/docs",
                         "title": "Upstream docs"}
 
@@ -265,6 +274,11 @@ def test_export_is_okf_v02_conformant(tmp_path):
             assert fm.get("type"), f"{path}: concept needs a type"
             assert "timestamp" not in fm, f"{path}: timestamp is superseded by generated.at"
             assert fm.get("status", "stable") in {"draft", "stable", "deprecated"}
+            stamps = [fm.get("stale_after"), (fm.get("generated") or {}).get("at"),
+                      (fm.get("verified") or {}).get("at")]
+            stamps += [e.get("last_modified") for e in fm.get("sources", [])]
+            for stamp in filter(None, stamps):
+                assert _has_offset(stamp), f"{path}: {stamp!r} lacks an explicit offset"
             for entry in fm.get("sources", []):
                 assert isinstance(entry, dict) and entry.get("resource"), f"{path}: bad source {entry!r}"
 
