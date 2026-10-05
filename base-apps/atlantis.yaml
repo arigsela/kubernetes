@@ -16,6 +16,8 @@ spec:
       values: |
         image:
           repository: infracost/infracost-atlantis
+          # Read by Renovate's regex manager (renovate.json5); keep it directly above `tag:`.
+          # renovate: datasource=docker depName=infracost/infracost-atlantis versioning=regex:^atlantis(?<major>\d+)\.(?<minor>\d+)-infracost(?<patch>\d+)\.(?<build>\d+)$
           tag: atlantis0.40-infracost0.10
 
         # Use OpenTofu instead of Terraform. Atlantis verifies Terraform

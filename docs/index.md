@@ -47,6 +47,7 @@ onboard yet).
 | `platform/falco.md` | Falco runtime detection: rules, the alert path, how a silent failure looks |
 | `platform/argo-workflows.md` | Argo Workflows: access model, the weekly image-scan and CVE report, artifacts |
 | `platform/vulnerability-management.md` | CVE policy: actionable vs actively exploited (KEV) vs EPSS, fix deadlines, how findings get fixed, accepted risks |
+| `platform/renovate.md` | Renovate: what it updates and skips, how its PRs are grouped, the weekly routine, running and changing it |
 
 Also cross-cutting, elsewhere in the repo: backup & recovery in
 `recovery/CLUSTER-RECOVERY.md`, k3s upgrades in

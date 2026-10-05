@@ -96,7 +96,7 @@ git checkout -b feature/my-feature
 - Applications use `syncPolicy.automated` with `prune` and `selfHeal`
 - Namespaces are auto-created with `CreateNamespace=true`
 - Each application manages its own SecretStore configuration
-- Image versions are pinned in the manifests; an image update is a Git commit (there is no image updater)
+- Image versions are pinned in the manifests; an image update is a Git commit. Renovate (`renovate.json5`, weekly) opens those PRs for upstream images, charts, Actions and Crossplane packages; it never merges (`docs/platform/renovate.md`)
 
 ## PR Review Labels (pr-triage)
 
