@@ -61,6 +61,15 @@ spec:
         value: "asela-argo-workflows-artifacts"
       - name: report-prefix
         value: "cve-reports/"
+      # Risk feeds for ranking findings (docs/platform/vulnerability-management.md).
+      # Best effort: if either is unreachable the report still publishes and
+      # alerts, with kev/epss left null. Both are public, no credentials.
+      #   - CISA Known Exploited Vulnerabilities catalog (~1.7MB JSON).
+      #   - FIRST EPSS daily scores (~3MB gzipped CSV; redirects to a dated file).
+      - name: kev-url
+        value: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+      - name: epss-url
+        value: "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
 
   templates:
     - name: main
@@ -130,7 +139,12 @@ spec:
     - name: trivy-server
       daemon: true
       container:
-        image: aquasec/trivy:0.74.0
+        # Pinned by digest, here and in scan-image: a tag can be re-pointed, and
+        # on 2026-03-19 aquasec/trivy tags briefly served a malicious build
+        # (GHSA in aquasecurity/trivy discussion #10425). This is the multi-arch
+        # index digest of 0.74.0 (pushed 2026-08-14), checked with
+        # `docker buildx imagetools inspect` and the Docker Hub tags API.
+        image: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
         command: [trivy]
         args:
           - server
@@ -222,7 +236,8 @@ spec:
           duration: "30s"
           factor: "2"
       script:
-        image: aquasec/trivy:0.74.0
+        # Same digest as trivy-server (see the comment there).
+        image: aquasec/trivy:0.74.0@sha256:62b1e65e8869bc4b4c6aa4fa2b21595256c7c2f6018a9d9ad61caf87187c1969
         command: [sh]
         source: |
           set -eo pipefail
@@ -342,6 +357,8 @@ spec:
               "--prefix", "{{workflow.parameters.report-prefix}}",
               "--date", "{{workflow.creationTimestamp.Y}}-{{workflow.creationTimestamp.m}}-{{workflow.creationTimestamp.d}}",
               "--expected", os.environ.get("EXPECTED_IMAGES", ""),
+              "--kev-url", "{{workflow.parameters.kev-url}}",
+              "--epss-url", "{{workflow.parameters.epss-url}}",
           ]
           runpy.run_path("/app/render.py", run_name="__main__")
         env:

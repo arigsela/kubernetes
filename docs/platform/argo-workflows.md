@@ -33,15 +33,16 @@ Argo Workflows runs DAG/step workflows as pods in namespace `argo-workflows`. It
 
 **The DAG:**
 1. **`trivy-server` and `discover` run in parallel.**
-   - `trivy-server` is a daemon (`aquasec/trivy:0.74.0`, DB in a 4Gi emptyDir, readiness-gated) that holds the vulnerability DB for the whole run.
+   - `trivy-server` is a daemon (`aquasec/trivy:0.74.0`, pinned by digest in both Trivy steps since the March 2026 Trivy supply-chain incident; DB in a 4Gi emptyDir, readiness-gated) that holds the vulnerability DB for the whole run.
    - `discover` (`python:3.12-slim`) lists every pod's containers **and** initContainers through the API and prints a JSON array of distinct images. That was about 75–79 at the design's first runs.
 2. **`scan`** fans out one pod per image: `trivy image --server ... --scanners vuln --timeout 30m`. It retries twice on error. Registry creds come from the namespace's `ecr-registry` dockerconfigjson, which `base-apps/ecr-auth/` keeps fresh. The report is JSON, and it is optional, so a failed scan leaves no file.
 3. **`report`** (aggregate) runs once the scans finish, **even if some failed** (`depends: scan.Succeeded || scan.Failed || scan.Errored`). It gets `discover`'s image list, and counts any image with no report as unscanned. Before 2026-10, one failed scan made Argo skip this step entirely. It pip-installs `boto3` (a failure is tolerated) and runs `render.py` from ConfigMap `cve-report` (`configmap-cve-report.yaml`, the only copy; unit tests in `tests/cve_report/`, run in CI). It:
    - dedupes findings, and flags **actionable** findings: CRITICAL/HIGH, with a published fix, in images starting `852893458518.dkr.ecr.` (the ones we build);
+   - downloads CISA's KEV catalog and FIRST's EPSS scores (workflow parameters `kev-url`, `epss-url`) and marks every finding with `kev` and `epss`. This is best effort: an unreachable feed leaves them `null` and changes nothing else. The policy that uses them is `docs/platform/vulnerability-management.md`;
    - writes the Argo artifact `full-report.json`;
    - publishes `cve-reports/<YYYY-MM-DD>.json/.html` **then** `cve-reports/latest.json/.html` to the bucket, so `latest` never points at a partial report;
    - computes a delta against the previous dated report;
-   - **only if there are actionable findings or unscanned images**, POSTs a summary to `http://n8n.n8n.svc.cluster.local:5678/webhook/image-scan-report`. The n8n workflow *Image Vulnerability Scan Report* (`base-apps/n8n/workflows-configmap.yaml`) posts it to Slack `#oncall-alerts`.
+   - **only if there are actionable findings, unscanned images, or actively exploited (KEV) fixable findings in any image**, POSTs a summary to `http://n8n.n8n.svc.cluster.local:5678/webhook/image-scan-report`. The n8n workflow *Image Vulnerability Scan Report* (`base-apps/n8n/workflows-configmap.yaml`) posts it to Slack `#oncall-alerts`.
 4. **Exit status:** the run is red **only when an image couldn't be scanned**. Findings alone don't make it red (changed 2026-08-18).
 
 **Viewing the report:** the bucket is private. Open it with `aws s3 presign s3://asela-argo-workflows-artifacts/cve-reports/latest.html --expires-in 3600`. The bucket has no lifecycle, so dated reports accumulate as history.
@@ -61,7 +62,7 @@ Argo Workflows runs DAG/step workflows as pods in namespace `argo-workflows`. It
 - **No login.** Whoever reaches the server gets the server ServiceAccount's permissions, and can submit workflows that run as `argo-workflow`, which has cluster-wide pod read. From outside, the allow-list is the only barrier. **In-cluster, `argo-workflows-server:2746` is reachable from any pod**: there is no NetworkPolicy in `argo-workflows`. Never add a host rule without a `from:` clause.
 - **Silence in Slack is ambiguous.** A clean week posts nothing, and so does a run that never started or died before `report`. There is no `onExit` handler, so hitting `activeDeadlineSeconds`, a failed `discover`, or a controller that was down at 04:00 for over an hour (`startingDeadlineSeconds`) all post nothing. If a Sunday passes quietly, look at the last run.
 - **`Forbid` plus a wedged run blocks every following week.** `activeDeadlineSeconds` (90 min, versus about 34–40 min measured) exists to turn a hang into a failure.
-- **Only our ECR images alert.** An upstream CVE (Istio, Vault) lands in the S3 report and nobody is told (design §8, a deliberate trade-off).
+- **Only our ECR images alert, with one exception.** An upstream CVE (Istio, Vault) lands in the S3 report and nobody is told (design §8, a deliberate trade-off). The exception, added 2026-10: a fixable CRITICAL/HIGH that is in CISA KEV alerts from any image, because exploitation is happening now.
 - **The `trivy-server` daemon is a single point of failure.** If it dies, every scan fails. That's tolerated because `report` treats a missing report as unscanned, names the image, alerts, and turns the run red. Don't "simplify" that away.
 - **A `crdinstaller` Job appears on every sync of `argo-workflows`.** That's expected. If it can't schedule or lacks RBAC, the sync stalls in PreSync and the controller is never upgraded. Look at the Job, not the chart.
 - **`argo-workflow` is shared by every workflow here.** Widen it only for a workflow that demonstrably needs more, and prefer a separate ServiceAccount.
