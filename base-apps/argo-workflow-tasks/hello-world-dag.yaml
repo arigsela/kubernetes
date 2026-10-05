@@ -52,7 +52,7 @@ spec:
         parameters:
           - name: input
       script:
-        image: alpine:3.19
+        image: alpine:3.19@sha256:6baf43584bcb78f2e5847d1de515f23499913ac9f12bdf834811a3145eb11ca1
         command: [sh]
         source: |
           echo "{{inputs.parameters.input}} @ $(date -u +%FT%TZ)"
@@ -62,7 +62,7 @@ spec:
         parameters:
           - name: text
       script:
-        image: alpine:3.19
+        image: alpine:3.19@sha256:6baf43584bcb78f2e5847d1de515f23499913ac9f12bdf834811a3145eb11ca1
         command: [sh]
         source: |
           echo "{{inputs.parameters.text}}" | tr '[:lower:]' '[:upper:]'
@@ -72,7 +72,7 @@ spec:
         parameters:
           - name: text
       script:
-        image: alpine:3.19
+        image: alpine:3.19@sha256:6baf43584bcb78f2e5847d1de515f23499913ac9f12bdf834811a3145eb11ca1
         command: [sh]
         source: |
           echo "{{inputs.parameters.text}}" | tr '[:upper:]' '[:lower:]'
@@ -83,7 +83,7 @@ spec:
           - name: upper
           - name: lower
       script:
-        image: alpine:3.19
+        image: alpine:3.19@sha256:6baf43584bcb78f2e5847d1de515f23499913ac9f12bdf834811a3145eb11ca1
         command: [sh]
         source: |
           echo "UPPER: {{inputs.parameters.upper}}"
