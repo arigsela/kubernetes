@@ -13,6 +13,7 @@ jobs:
       yaml_files: ${{ steps.changed.outputs.yaml_files }}
       yaml_any_changed: ${{ steps.changed.outputs.yaml_any_changed }}
       ansible_any_changed: ${{ steps.changed.outputs.ansible_any_changed }}
+      renovate_any_changed: ${{ steps.changed.outputs.renovate_any_changed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,6 +55,17 @@ jobs:
             echo "ansible_any_changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "ansible_any_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          # renovate.json5 gates renovate-config-validate (it downloads Renovate; skip when untouched).
+          if [ "${{ github.event_name }}" = "push" ]; then
+            RENOVATE_CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'renovate.json5' | head -1)
+          else
+            RENOVATE_CHANGED=$(git diff --name-only origin/main...HEAD -- 'renovate.json5' | head -1)
+          fi
+          if [ -n "$RENOVATE_CHANGED" ]; then
+            echo "renovate_any_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "renovate_any_changed=false" >> "$GITHUB_OUTPUT"
           fi
 
   yaml-lint:
@@ -400,3 +412,19 @@ jobs:
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run managed-apps ApplicationSet config tests
         run: python -m pytest tests/appset/ -q
+
+  # Renovate reads renovate.json5 from main every Monday; a config it can't
+  # parse just stops PRs coming, quietly. Validate it with the same Renovate
+  # version the workflow runs (.github/workflows/renovate.yaml).
+  renovate-config-validate:
+    needs: changed-files
+    if: needs.changed-files.outputs.renovate_any_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Validate renovate.json5
+        run: npx --yes --package renovate@44.137.0 renovate-config-validator --strict

@@ -12,6 +12,8 @@ variable "helm_services" {
       release_name = "argo-cd"
       # appVersion v3.5.3 (GA). Replaces 10.1.4 + a v3.5.0-rc2 global.image.tag
       # override, so the chart's CRDs and manifests now match the binaries.
+      # Read by Renovate's regex manager (renovate.json5); keep it directly above chart_version.
+      # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
       chart_version = "10.9.2"
       settings      = {}
     }
