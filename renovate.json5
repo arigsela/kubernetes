@@ -73,6 +73,12 @@
   prConcurrentLimit: 10,
   // Skip releases younger than 3 days; a bad release is usually pulled by then.
   minimumReleaseAge: '3 days',
+  // GHCR, Quay, xpkg.upbound.io, OCI Helm repos and git tags publish no release
+  // timestamps. The default (timestamp-required) then holds those updates as
+  // pending FOREVER: the first dry run held 13 of 42 branches, dex v2.45.1
+  // (7 months old) among them. Optional = age-gate what has a timestamp,
+  // let the rest through.
+  minimumReleaseAgeBehaviour: 'timestamp-optional',
 
   packageRules: [
     {
