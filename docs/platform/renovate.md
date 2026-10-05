@@ -7,7 +7,7 @@ Renovate keeps this repo's pinned versions current by opening PRs. Most CVEs in 
 ## How it runs
 
 - **When:** Mondays 05:00 UTC (the morning after the Sunday image scan), plus on demand. The cadence is the workflow's cron, not a `schedule` in the config, so a manual run acts immediately.
-- **As whom:** the GitHub App `arigsela-renovate` (owned by the user `arigsela`, installed on this repo only). The workflow mints a short-lived token from it. Repo settings hold `RENOVATE_APP_ID` and `RENOVATE_APP_CLIENT_ID` (Actions variables) and `RENOVATE_APP_PRIVATE_KEY` (Actions secret).
+- **As whom:** the GitHub App `arigsela-renovate` (owned by the user `arigsela`, installed on this repo only). Repository permissions: Contents, Pull requests, Issues, Workflows and **Commit statuses** read and write; Checks and Metadata read. The workflow mints a short-lived token from it. Repo settings hold `RENOVATE_APP_ID` and `RENOVATE_APP_CLIENT_ID` (Actions variables) and `RENOVATE_APP_PRIVATE_KEY` (Actions secret).
 - **Version:** Renovate `44.137.0`, pinned in the workflow and in the `renovate-config-validate` CI job. Bump both together.
 
 ## What it updates
@@ -75,6 +75,7 @@ gh run list --workflow renovate.yaml --repo arigsela/kubernetes --limit 1
 - **`config:best-practices` digest-pins every docker-datasource dependency**, Crossplane packages and regex-managed tags included, and `pinDigests: false` overrides lost to it in the local run. So the config extends `config:recommended` and opts **into** pinning for Kubernetes images and Actions only.
 - **`matchPackageNames` globs:** `**` only spans `/` as a whole path segment. `852893458518.dkr.ecr.**` matched nothing; use a regex (`/^852893458518\\.dkr\\.ecr\\./`).
 - **`minimumReleaseAge` holds timestamp-less updates forever by default** (`minimumReleaseAgeBehaviour: timestamp-required`). The validator doesn't catch it. The first real dry run held 13 of 42 branches with `creation is disabled because internalChecksFilter was not met`; `timestamp-optional` fixes it.
+- **The App needs *Commit statuses: Read and write*.** Renovate sets `renovate/stability-days` on each branch. With read-only it gets `403 integration-unauthorized` from `POST /statuses/<sha>` and aborts the whole run as `repository-changed` ("Repository has changed during renovation"), after creating at most one branch. Only a debug-level log shows the 403.
 - **`config:recommended` caps new PRs at 2 an hour**, which would mean 2 per weekly run. `prHourlyLimit: 0` lifts that, and `prConcurrentLimit: 10` is the real brake.
 
 ## Key rotation
