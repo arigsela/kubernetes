@@ -145,6 +145,41 @@ def test_exit_code_is_one_when_an_image_could_not_be_scanned(render, tmp_path, m
     assert rc == 1, "an unscanned image means the scan did not do its job"
 
 
+def test_an_expected_image_with_no_report_fails_the_run(render, tmp_path, monkeypatch):
+    """A scan that times out writes no report at all, so nothing under
+    --reports shows it was ever attempted. Only the discovered image list can
+    reveal the gap (ollama/ollama:0.20.5 on 2026-09-27 and 2026-10-04)."""
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    (reports / "r.json").write_text(json.dumps({"ArtifactName": "img-a", "Results": []}))
+    posted = []
+    monkeypatch.setattr(render.urllib.request, "urlopen",
+                        lambda req, timeout=None: posted.append(req) or _Resp())
+    rc = render.main([
+        "--reports", str(reports), "--out", str(tmp_path / "o"),
+        "--owned-prefix", OWNED, "--webhook", "http://x/y",
+        "--expected", json.dumps(["img-a", "img-b"]),
+    ])
+    full = json.loads((tmp_path / "o" / "full-report.json").read_text())
+    assert rc == 1, "an image nobody scanned must fail the run"
+    assert [f for f in full["failed"] if "img-b" in f], "the unscanned image must be named"
+    assert posted, "the gap must reach Slack"
+
+
+def test_every_expected_image_reported_keeps_the_run_green(render, tmp_path, monkeypatch):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    (reports / "r.json").write_text(json.dumps({"ArtifactName": "img-a", "Results": []}))
+    monkeypatch.setattr(render.urllib.request, "urlopen",
+                        lambda req, timeout=None: _Resp())
+    rc = render.main([
+        "--reports", str(reports), "--out", str(tmp_path / "o"),
+        "--owned-prefix", OWNED, "--webhook", "http://x/y",
+        "--expected", json.dumps(["img-a"]),
+    ])
+    assert rc == 0
+
+
 class _Resp:
     def read(self): return b"ok"
     def __enter__(self): return self
