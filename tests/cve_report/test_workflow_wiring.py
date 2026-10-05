@@ -43,6 +43,31 @@ def test_dag_does_not_mix_depends_and_dependencies():
     assert not [t["name"] for t in tasks if "dependencies" in t]
 
 
+def test_trivy_is_pinned_by_digest():
+    # A tag can be re-pointed: on 2026-03-19 aquasec/trivy's tags briefly served
+    # a malicious build (GHSA in aquasecurity/trivy discussion #10425). The scanner
+    # runs with the ECR pull credential mounted, so pin what actually runs.
+    images = [c["image"]
+              for t in _workflow_template()["spec"]["templates"]
+              for c in [t.get("container") or t.get("script") or {}]
+              if "aquasec/trivy" in c.get("image", "")]
+    assert len(images) == 2, "expected trivy-server and scan-image"
+    for image in images:
+        assert "@sha256:" in image, f"{image} is not pinned by digest"
+
+
+def test_report_is_given_the_kev_and_epss_feeds():
+    # render.py only enriches when it is handed the URLs, so dropping them here
+    # would silently turn the KEV ranking off with every test still green.
+    params = {p["name"]: p.get("value", "")
+              for p in _workflow_template()["spec"]["arguments"]["parameters"]}
+    for name in ("kev-url", "epss-url"):
+        assert params.get(name, "").startswith("https://"), f"workflow parameter {name}"
+    source = _template("aggregate")["script"]["source"]
+    assert '"--kev-url", "{{workflow.parameters.kev-url}}"' in source
+    assert '"--epss-url", "{{workflow.parameters.epss-url}}"' in source
+
+
 def test_report_receives_the_discovered_image_list():
     report = _dag_task("report")
     params = {p["name"]: p["value"]

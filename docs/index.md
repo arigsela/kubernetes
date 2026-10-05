@@ -46,6 +46,7 @@ onboard yet).
 | `platform/crossplane.md` | Crossplane core, AWS providers, functions, the dormant XApplication, the `*-aws-infrastructure` buckets, upgrades |
 | `platform/falco.md` | Falco runtime detection: rules, the alert path, how a silent failure looks |
 | `platform/argo-workflows.md` | Argo Workflows: access model, the weekly image-scan and CVE report, artifacts |
+| `platform/vulnerability-management.md` | CVE policy: actionable vs actively exploited (KEV) vs EPSS, fix deadlines, how findings get fixed, accepted risks |
 
 Also cross-cutting, elsewhere in the repo: backup & recovery in
 `recovery/CLUSTER-RECOVERY.md`, k3s upgrades in
@@ -78,6 +79,7 @@ Also cross-cutting, elsewhere in the repo: backup & recovery in
 | `plans/k3s-1.36-api-scan.md` | record | Deprecated-API scan for 1.36 (read by `tests/k3s-upgrade/`; don't move it) |
 | `plans/k8s-136-features-implementation-plan.md` | record | Adopting five Kubernetes 1.34–1.36 features after the 1.36 hop |
 | `plans/kagent-1-0-feasibility-spikes-implementation-plan.md` | active | Feasibility spikes before a kagent 1.0 upgrade |
+| `plans/cve-remediation-automation-implementation-plan.md` | active | Proactive CVE remediation: KEV/EPSS in the weekly scan, and Renovate for this repo |
 | `plans/argocd-drift-diagnosis.md` | record | Why each `ignoreDifferences` exists (cited by several Applications) |
 | `plans/vault-auto-unseal-implementation-plan.md` | record | Moving Vault from Shamir to AWS KMS auto-unseal |
 | `plans/atlantis-infracost-implementation-plan.md` | record | Deploying Atlantis + Infracost |
