@@ -201,11 +201,34 @@ data:
                   # known controllers are silenced. Verified against live Loki: the
                   # 2658-events/h baseline drops to 0, and the sensitive-file clause
                   # is provably unaffected by the namespace filter.
+                  #
+                  # argo-workflows is deliberately NOT in that namespace list. The
+                  # Argo server has no login, so anyone who reaches it can run a
+                  # workflow there with cluster-wide pod read: an unexpected API
+                  # call from that namespace is what this alert is for. Instead
+                  # three clauses each drop one known caller, pinned to its binary
+                  # (LogQL has no `not`, so each is written as its De Morgan form):
+                  #   - argoexec in Argo's own wait/init containers, which every
+                  #     step pod uses to report its result (about 80 per image scan);
+                  #   - the workflow controller;
+                  #   - image-scan's discover step, which lists pods by design.
+                  # Before this, every weekly image scan fired the alert: 104 events
+                  # on 2026-10-04, all of them these three. Checked against live
+                  # Loki on 2026-10-05: that window drops to 0, and the
+                  # sensitive-file clause still matches everything it did.
                   expr: >-
                     sum(count_over_time({namespace="falco"} |= "priority" | json
                     | (rule="Read sensitive file untrusted"
                     or rule="Contact K8S API Server From Container"
-                    and output_fields_k8s_ns_name!~"argo-cd|backstage|kagent")
+                    and output_fields_k8s_ns_name!~"argo-cd|backstage|kagent"
+                    and (output_fields_k8s_ns_name!="argo-workflows"
+                    or output_fields_container_name!~"wait|init"
+                    or output_fields_proc_exepath!="/usr/bin/argoexec")
+                    and (output_fields_k8s_ns_name!="argo-workflows"
+                    or output_fields_proc_exepath!="/usr/bin/workflow-controller")
+                    and (output_fields_k8s_ns_name!="argo-workflows"
+                    or output_fields_k8s_pod_name!~"image-scan-[a-z0-9]+-discover-images-[0-9]+"
+                    or output_fields_proc_name!="python3"))
                     [1h]))
               - refId: threshold
                 relativeTimeRange:
