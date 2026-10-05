@@ -62,7 +62,7 @@ spec:
         runAsNonRoot: true
       containers:
         - name: jupyter
-          image: quay.io/jupyter/scipy-notebook@sha256:807a696f0dd467e4e47cf8bb19ff14f31c1ad105966d3de8ab73f2db8af4c7c6
+          image: quay.io/jupyter/scipy-notebook@sha256:2479174ae36ec84373f3c352cb6d5801382c0aa6642e739f04bea409f6cedae1
           env:
             # Jupyter's native token auth. Same credential for the browser and
             # for Claude Code's /api/kernels calls.
