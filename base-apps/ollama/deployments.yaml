@@ -27,7 +27,7 @@ spec:
         node.kubernetes.io/workload: application
       containers:
         - name: ollama
-          image: ollama/ollama:0.20.5@sha256:662109db8037f17257cfc6e816289c0d4c9ae8a2a4ff760b653d8d410e234ba0
+          image: ollama/ollama:0.35.1@sha256:292ee7945dfc3d5840a181f3ab86fedb1e66703e02c8af98b50f4da56b7e278c
           ports:
             - containerPort: 11434
               name: http
