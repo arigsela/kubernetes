@@ -114,15 +114,28 @@ def test_summary_counts_kev_fixable_in_any_image_and_kev_actionable_in_ours(rend
         _finding(OWNED + "mine:v1", "CVE-2024-0001", "CRITICAL"),     # KEV, ours, fixable
         _finding("docker.io/up:v1", "CVE-2024-0002", "HIGH"),         # KEV, upstream, fixable
         _finding("docker.io/up:v1", "CVE-2024-0003", "HIGH", fixed=""),  # KEV, no fix
-        _finding("docker.io/up:v1", "CVE-2024-0004", "MEDIUM"),       # KEV, too low
+        _finding("docker.io/up:v1", "CVE-2024-0004", "MEDIUM"),       # KEV, upstream, fixable
+        _finding(OWNED + "mine:v1", "CVE-2024-0005", "LOW"),          # KEV, ours, fixable
         _finding(OWNED + "mine:v1", "CVE-2024-9999", "HIGH"),         # not KEV
     ]
     render.enrich(findings, {"CVE-2024-0001", "CVE-2024-0002", "CVE-2024-0003",
-                             "CVE-2024-0004"}, None)
+                             "CVE-2024-0004", "CVE-2024-0005"}, None)
     act = render.actionable(findings, OWNED)
-    summary = render.summarise(findings, act)
-    assert summary["kev_fixable"] == 2
-    assert summary["kev_actionable"] == 1
+    summary = render.summarise(findings, act, OWNED)
+    assert summary["kev_fixable"] == 4, "any severity with a fix; only the unfixable one is out"
+    assert summary["kev_actionable"] == 2, "ours, any severity"
+
+
+def test_kev_ignores_severity(render):
+    """CISA's rule is to fix KEV-listed CVEs whatever their score. The first live
+    enriched run (2026-10-05) showed why: starlette CVE-2026-48710 is in KEV, has
+    a fix, sits in two of our images, and Trivy rates it MEDIUM. A CRITICAL/HIGH
+    filter hid it."""
+    starlette = _finding(OWNED + "oncall-agent:v2.0.2", "CVE-2026-48710", "MEDIUM", "1.0.1")
+    render.enrich([starlette], {"CVE-2026-48710"}, None)
+    hits = render.kev_fixable([starlette])
+    assert hits == [starlette]
+    assert "oncall-agent:v2.0.2" in render._slack_text([], [], kev_fixable=hits)
 
 
 # ------------------------------------------------------------------ slack text
