@@ -14,7 +14,7 @@ variable "helm_services" {
       # override, so the chart's CRDs and manifests now match the binaries.
       # Read by Renovate's regex manager (renovate.json5); keep it directly above chart_version.
       # renovate: datasource=helm depName=argo-cd registryUrl=https://argoproj.github.io/argo-helm
-      chart_version = "10.9.2"
+      chart_version = "10.9.6"
       settings      = {}
     }
   ]
