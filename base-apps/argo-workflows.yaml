@@ -36,7 +36,7 @@ spec:
     # 4.0 removed the Python SDK, the singular mutex/semaphore/schedule fields,
     # podPriority, and INFORMER_WRITE_BACK. None are used here; verified against
     # base-apps/argo-workflow-tasks/ before upgrading.
-    targetRevision: 2.0.1
+    targetRevision: 2.0.9
     helm:
       releaseName: argo-workflows
       values: |
