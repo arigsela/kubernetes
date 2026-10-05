@@ -34,7 +34,7 @@ Renovate keeps this repo's pinned versions current by opening PRs. Most CVEs in 
 - **Digest pinning arrives once, in four PRs**, so no single merge restarts everything: workloads (`renovate/pin-dependencies`), logging (`renovate/pin-image-digests-logging`), stateful Vault and PostgreSQL (`renovate/pin-image-digests-stateful`), and GitHub Actions (`renovate/pin-github-actions-digests`). Merge the stateful one in a quiet window. Every pinned workload restarts once.
 - **Major versions** don't open a PR until you tick them on the **Dependency Dashboard** issue.
 - **Terraform** (`terraform/**`) PRs carry the label `terraform-apply-first` and a note. Run Atlantis apply on the open PR, and merge only after `atlantis/apply` is green.
-- Releases younger than 3 days wait (`minimumReleaseAge`). At most 10 Renovate PRs are open at once.
+- Releases younger than 3 days wait (`minimumReleaseAge`), but only where the registry publishes a release date. GHCR, Quay, xpkg, OCI Helm and git tags don't, so their updates go through at once (`minimumReleaseAgeBehaviour: timestamp-optional`). At most 10 Renovate PRs are open at once.
 - Every PR is labelled `renovate`, and commits use Conventional Commits (`chore(deps): …`).
 
 ## Weekly routine
@@ -74,6 +74,7 @@ gh run list --workflow renovate.yaml --repo arigsela/kubernetes --limit 1
 - **Local mode loads `renovate.json5` as *global* config.** Preset values (for example `ignorePaths` from `config:recommended`) then beat the file's own values, unlike a real run. Don't depend on overriding a preset. Exclusions are `packageRules` with `enabled: false`, which behave the same either way.
 - **`config:best-practices` digest-pins every docker-datasource dependency**, Crossplane packages and regex-managed tags included, and `pinDigests: false` overrides lost to it in the local run. So the config extends `config:recommended` and opts **into** pinning for Kubernetes images and Actions only.
 - **`matchPackageNames` globs:** `**` only spans `/` as a whole path segment. `852893458518.dkr.ecr.**` matched nothing; use a regex (`/^852893458518\\.dkr\\.ecr\\./`).
+- **`minimumReleaseAge` holds timestamp-less updates forever by default** (`minimumReleaseAgeBehaviour: timestamp-required`). The validator doesn't catch it. The first real dry run held 13 of 42 branches with `creation is disabled because internalChecksFilter was not met`; `timestamp-optional` fixes it.
 - **`config:recommended` caps new PRs at 2 an hour**, which would mean 2 per weekly run. `prHourlyLimit: 0` lifts that, and `prConcurrentLimit: 10` is the real brake.
 
 ## Key rotation
