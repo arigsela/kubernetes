@@ -97,7 +97,7 @@ spec:
         runAsNonRoot: true
       containers:
       - name: grafana
-        image: grafana/grafana:11.3.9@sha256:b5845559a3d8073f1c2670929cde4039a0afc6fa8d4f71402567c53de8c90b80
+        image: grafana/grafana:11.6.16@sha256:d67af92050b8d93b393dc741864752a69c9da1ffa39c1bb9af49ad5d9e47d2c3
         ports:
         - containerPort: 3000
           name: http
