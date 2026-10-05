@@ -35,7 +35,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: dex
-          image: ghcr.io/dexidp/dex:v2.41.1@sha256:bc7cfce7c17f52864e2bb2a4dc1d2f86a41e3019f6d42e81d92a301fad0c8a1d
+          image: ghcr.io/dexidp/dex:v2.45.1@sha256:8499afd690c437f52301efd2b05b2455da5bd2dfc20332cd697dc9937f808462
           command: ["/usr/local/bin/dex", "serve", "/etc/dex/config.yaml"]
           ports:
             - name: http
