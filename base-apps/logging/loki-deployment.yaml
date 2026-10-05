@@ -28,7 +28,7 @@ spec:
         runAsNonRoot: true
       containers:
       - name: loki
-        image: grafana/loki:3.2.1@sha256:09a53b4a4ff81ffcd8f13886df19d33fac7a8d3aaf952e3c7e66cbade5b2fc31
+        image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
         args:
           - -config.file=/etc/loki/loki.yaml
           - -target=all
