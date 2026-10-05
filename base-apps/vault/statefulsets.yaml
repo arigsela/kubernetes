@@ -114,7 +114,7 @@ spec:
                 secretKeyRef:
                   name: vault-kms-credentials
                   key: kms-key-id
-          image: hashicorp/vault:1.18.1@sha256:3580fa352195aa7e76449cb8fadeef6d2f90a454c38982d30cf094e9013be786
+          image: hashicorp/vault:1.21.4@sha256:4e33b126a59c0c333b76fb4e894722462659a6bec7c48c9ee8cea56fccfd2569
           imagePullPolicy: IfNotPresent
           lifecycle:
             preStop:
