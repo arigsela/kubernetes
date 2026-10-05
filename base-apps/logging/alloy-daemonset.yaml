@@ -26,7 +26,7 @@ spec:
         operator: Exists
       containers:
       - name: alloy
-        image: grafana/alloy:v1.4.3@sha256:06bdcbb51fc22b16c2e96b31cbdf9cb0972e3bdedfbac2cc55ed36743f7fb9aa
+        image: grafana/alloy:v1.20.1@sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f
         args:
           - run
           - /etc/alloy/config.alloy
