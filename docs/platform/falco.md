@@ -16,7 +16,7 @@ It has no sidecar or sink of its own. Detections travel Falco stdout â†’ Alloy â
   | Rule | Priority | Alerts? |
   |---|---|---|
   | `Terminal shell in container` | NOTICE | No. Loki only (fires on every `kubectl exec -it`). |
-  | `Contact K8S API Server From Container` | NOTICE | Yes, except from namespaces `argo-cd`, `backstage` and `kagent`. |
+  | `Contact K8S API Server From Container` | NOTICE | Yes, except from namespaces `argo-cd`, `backstage` and `kagent`, and from three known Argo callers in `argo-workflows` (see below). |
   | `Read sensitive file untrusted` | WARNING | Yes, from any namespace. |
 
 - **Output threshold `priority: notice`.** Falco's `priority` is an output filter: anything below it is dropped before stdout. It was `warning` until 2026-07-14, which silently discarded both NOTICE rules. Falco ran for months with zero detections while reporting healthy.
@@ -26,9 +26,15 @@ It has no sidecar or sink of its own. Detections travel Falco stdout â†’ Alloy â
   sum(count_over_time({namespace="falco"} |= "priority" | json
     | (rule="Read sensitive file untrusted"
        or rule="Contact K8S API Server From Container"
-       and output_fields_k8s_ns_name!~"argo-cd|backstage|kagent") [1h]))  > 0
+       and output_fields_k8s_ns_name!~"argo-cd|backstage|kagent"
+       and <three argo-workflows exclusions>) [1h]))  > 0
   ```
-  LogQL binds `and` tighter than `or`, so the namespace exclusion applies only to the API-contact rule. The rule's settings are `severity: warning`, `for: 0m`, `noDataState: OK`.
+  LogQL binds `and` tighter than `or`, so every exclusion applies only to the API-contact rule. `argo-workflows` is not excluded as a namespace: the Argo server has no login, so an unexpected API call there is worth an alert. Only these three callers are dropped, each pinned to its binary:
+  - `/usr/bin/argoexec` in Argo's `wait`/`init` containers, which every step pod uses to report its result;
+  - `/usr/bin/workflow-controller`;
+  - `python3` in image-scan's `discover-images` pod, which lists pods by design.
+
+  Before 2026-10-05, every weekly image scan fired this alert (104 events on 2026-10-04, all from these callers). The full expression and its rationale are in `grafana-alerting.yaml`. The rule's settings are `severity: warning`, `for: 0m`, `noDataState: OK`.
 - **Delivery:** contact point `n8n` POSTs to `http://n8n.n8n.svc.cluster.local:5678/webhook/grafana-alerts`. The GitOps-managed n8n workflow `grafana-alerts-slack` (`base-apps/n8n/workflows-configmap.yaml`) formats the message and posts it to Slack `#oncall-alerts`. The notification policy is `group_by: [alertname]`, `group_wait: 30s`, `group_interval: 5m`, `repeat_interval: 24h`.
 
 ## Where config lives

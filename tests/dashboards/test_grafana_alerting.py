@@ -1,6 +1,7 @@
 """Guards on Grafana alert provisioning (base-apps/logging/grafana-alerting.yaml)."""
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -45,6 +46,31 @@ def test_prometheus_alert_rules_use_the_pinned_uid():
             for q in rule["data"]:
                 if q["datasourceUid"] not in ("__expr__", "loki"):
                     assert q["datasourceUid"] == PROM_UID, f"{rule['uid']} references an unknown datasource"
+
+
+def _falco_expr():
+    rules = yaml.safe_load(_alerting_data()["rules.yaml"])
+    rule = [r for g in rules["groups"] for r in g["rules"] if r["uid"] == "falco-sensitive-detection"][0]
+    return [q for q in rule["data"] if q["refId"] == "query"][0]["model"]["expr"]
+
+
+def test_falco_alert_ignores_argo_workflow_plumbing():
+    """Every Argo step pod's executor sidecar reports its result through the API, and
+    so does the workflow controller. The weekly image scan runs ~80 pods, so this alert
+    fired on every run (seen 2026-10-05). Each exclusion is pinned to the exact binary."""
+    expr = _falco_expr()
+    for marker in ('output_fields_proc_exepath!="/usr/bin/argoexec"',
+                   'output_fields_proc_exepath!="/usr/bin/workflow-controller"',
+                   'output_fields_k8s_pod_name!~"image-scan-[a-z0-9]+-discover-images-[0-9]+"'):
+        assert marker in expr, f"missing exclusion: {marker}"
+
+
+def test_falco_alert_never_exempts_the_whole_argo_workflows_namespace():
+    """The Argo server has no login, so anyone who reaches it can run a workflow there as
+    a ServiceAccount with cluster-wide pod read. An unexpected API call from that
+    namespace is exactly what this alert is for."""
+    ns_list = re.search(r'output_fields_k8s_ns_name!~"([^"]+)"', _falco_expr()).group(1)
+    assert "argo-workflows" not in ns_list.split("|")
 
 
 def test_every_rule_has_a_unique_uid_and_a_runbook():
