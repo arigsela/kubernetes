@@ -158,7 +158,9 @@ data:
                 day: Secrets touched, changes beyond one namespace, something a revert
                 does not undo, or actions outside one coherent task. Every call may
                 have been approved; this is about what the session did, not whether
-                the gate fired.
+                the gate fired. It also fires when Jev could not be reached (jev_errors
+                above 0 in the summary line), because a check that did not run must
+                not look healthy.
               runbook: >-
                 The summary line names the agent, session id and the flags that fired
                 (never arguments). Open https://agent-audit.arigsela.com/sessions/<id>
@@ -166,7 +168,8 @@ data:
                 --format json` behind the SELECT-only credential and filter on the
                 session id). A `review` verdict (low Jev
                 confidence or the per-run cap) does not fire this rule; read the
-                day's `-risk.jsonl` in s3://asela-agent-audit-record for those.
+                day's `-risk.jsonl` in s3://asela-agent-audit-record for those. If no
+                session is high, read jev_errors in the summary line first.
             labels:
               severity: warning
               pillar: security
