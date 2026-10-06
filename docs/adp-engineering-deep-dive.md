@@ -303,6 +303,17 @@ Three properties:
 `run()` iterates the corpus; a **missing answer scores as a FAIL, not a skip** (an
 unanswered question is not a pass), and any failure returns exit 1 for CI.
 
+### The judge is a cascade
+
+The semantic judge is Jev first (TypeSafe System One, the same model pr-triage
+uses), Sonnet second. Jev answers one `behavior` choice and one yes/no per
+required fact and returns calibrated probabilities; `classify_jev` turns them into
+pass, fail or unsure, and only unsure (or a Jev outage) reaches Sonnet. The leak
+check still runs before either. `./scripts/score-eval.py --calibrate` runs all
+three independently and writes a comparison; the latest is
+`tests/eval-corpus/calibration/homelab-knowledge-2026-10.md`. Re-run it whenever
+`JEV_PASS`, `JEV_FAIL`, `JEV_ESCALATE_CONF` or the question text change.
+
 ## End to end
 
 ```
@@ -331,5 +342,6 @@ from the outside, on demand.
 | Corpus | `tests/eval-corpus/homelab-knowledge.yaml` |
 | Miner | `scripts/mine-eval-corpus.py` |
 | Corpus validator | `scripts/validate-eval-corpus.py` |
-| Scorer | `scripts/score-eval.py` |
+| Scorer | `scripts/score-eval.py` (rubric, then a Jev-then-Sonnet judge cascade) |
+| Answer capture | `scripts/capture-eval-answers.py` (A2A, not committed output) |
 | Tests | `tests/agent-capability/`, `tests/agent-identity/`, `tests/eval-corpus/` |
