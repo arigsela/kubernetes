@@ -393,9 +393,14 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     if not args.dry_run and not os.environ.get("TYPESAFE_API_KEY"):
-        raise SystemExit("TYPESAFE_API_KEY is not set (use --dry-run for rules only)")
+        print("TYPESAFE_API_KEY is not set (use --dry-run for rules only)", file=sys.stderr)
+        return 2
 
-    lines = args.records.read_text().splitlines() if args.records else sys.stdin.read().splitlines()
+    try:
+        lines = args.records.read_text().splitlines() if args.records else sys.stdin.read().splitlines()
+    except FileNotFoundError:
+        print(f"records file not found: {args.records}", file=sys.stderr)
+        return 2
     records, skipped = load_records(lines)
     sessions = group_sessions(records)
     classes = load_gated_tools(args.taxonomy or args.repo_root / TAXONOMY)
