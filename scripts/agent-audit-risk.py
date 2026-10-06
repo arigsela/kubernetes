@@ -41,11 +41,13 @@ WHAT IT EMITS
   Uploaded next to the daily export; agent-audit-web reads it (follow-up).
 - stdout: ONE argument-free summary line — verdict counts, the `high` sessions by
   agent/session/flag names, token cost. Safe for Loki; the Grafana rule reads it.
-- exit 1 when any session is `high`. A failed Job is the signal, as with --ungated.
+- exit 1 when any session is `high`, and also on a Jev error (`jev_errors > 0`): a
+  check that did not run must not look healthy. A failed Job is the signal, as with --ungated.
 """
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import sys
@@ -239,7 +241,7 @@ def ask_jev(state: dict, *, api_key: str | None = None, model: str = JEV_MODEL,
         return (transport or _http_post)(payload, headers, timeout)
     except urllib.error.HTTPError as err:
         raise JevError(f"Jev request failed: HTTP {err.code}") from err
-    except (OSError, ValueError) as err:
+    except (OSError, ValueError, http.client.HTTPException) as err:
         raise JevError(f"Jev request failed: {err}") from err
 
 

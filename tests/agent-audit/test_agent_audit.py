@@ -434,6 +434,31 @@ def test_cronjob_ships_and_uses_the_acknowledged_file():
     assert "--acknowledged /opt/audit/agent-audit-acknowledged.yaml" in " ".join(container["args"])
 
 
+def test_risk_cronjob_document_is_pinned():
+    """Pin the agent-audit-risk CronJob: no retries, key wired to the ExternalSecret, stderr progress."""
+    import yaml
+    repo = Path(__file__).resolve().parents[2]
+    gen_spec = importlib.util.spec_from_file_location(
+        "gen_agent_audit_cronjob", repo / "scripts" / "gen-agent-audit-cronjob.py")
+    gen = importlib.util.module_from_spec(gen_spec)
+    gen_spec.loader.exec_module(gen)
+    code_cm, _, _, risk = gen.build("script", "taxonomy", "acks", "risk")
+    es = yaml.safe_load((repo / "base-apps/postgresql/external-secrets-agent-audit-risk.yaml").read_text())
+    assert "agent-audit-risk.py" in code_cm["data"]
+    assert risk["metadata"]["name"] == "agent-audit-risk"
+    assert risk["spec"]["jobTemplate"]["spec"]["backoffLimit"] == 0
+    container = risk["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]
+    ref = next(e for e in container["env"] if e["name"] == "TYPESAFE_API_KEY")["valueFrom"]["secretKeyRef"]
+    assert ref["name"] == es["spec"]["target"]["name"]
+    assert ref["key"] == es["spec"]["data"][0]["secretKey"]
+    args = " ".join(container["args"])
+    assert "--taxonomy /opt/audit/agent-capability-taxonomy.yaml" in args
+    assert "exit $RC" in args
+    for line in args.splitlines():
+        if line.startswith("echo "):
+            assert line.endswith(">&2"), line
+
+
 def test_future_through_is_rejected(tmp_path):
     """A mistyped year would silently acknowledge every later call in the session."""
     future = ACK_YAML.replace("2026-07-09T23:41:53+00:00", "2099-01-01T00:00:00+00:00")
