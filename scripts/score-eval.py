@@ -2,7 +2,10 @@
 """Score agent answers against the golden corpus (Evaluation E2).
 
     # score pre-captured answers (deterministic, CI-friendly)
-    ./scripts/score-eval.py --answers answers.jsonl
+    ./scripts/score-eval.py --answers answers.jsonl                  # rubric only
+    ./scripts/score-eval.py --answers answers.jsonl --judge          # jev, then claude if unsure
+    ./scripts/score-eval.py --answers answers.jsonl --judge jev      # jev only; unsure -> rubric
+    ./scripts/score-eval.py --answers answers.jsonl --judge claude   # the original Sonnet judge
 
     # answers.jsonl: one {"id": "<corpus id>", "answer": "<agent's answer>"} per line
 
@@ -25,6 +28,12 @@ TWO SCORING LAYERS, AND WHY
      an LLM judge is available it is AUTHORITATIVE for correctness, and the rubric
      becomes an explanation of why. Without a judge, the rubric stands alone —
      stricter, but honest and free, and it still runs everywhere.
+
+  The semantic judge is a CASCADE. Jev (TypeSafe System One, ~$0.04 per million
+  tokens, calibrated probabilities, no prose) answers first; Sonnet is consulted only
+  when Jev's confidence is low or its probabilities sit in the middle band. Jev
+  being down degrades to Sonnet, never to a verdict. Thresholds: JEV_PASS,
+  JEV_FAIL, JEV_ESCALATE_CONF. Re-run --calibrate when any of them change.
 
 The judge is INJECTED (a callable), so the core is testable with a fake and the
 real one is wired to an API only where a key exists. No API, no problem: the
@@ -317,13 +326,29 @@ def cascade_judge(entry: dict, answer: str, *, transport=None, claude=None) -> d
             "tier": "claude", "jev": j["jev"], "degraded": None}
 
 
+def select_judge(name: str | None):
+    """Map a --judge name to a callable, failing fast on missing credentials so
+    a run does not die after half the entries."""
+    if name is None:
+        return None
+    need = {"jev": ["TYPESAFE_API_KEY"], "claude": ["ANTHROPIC_API_KEY"],
+            "cascade": ["TYPESAFE_API_KEY", "ANTHROPIC_API_KEY"]}[name]
+    for var in need:
+        if not os.environ.get(var):
+            raise SystemExit(f"--judge {name} needs {var} in the environment")
+    return {"jev": jev_judge, "claude": anthropic_judge, "cascade": cascade_judge}[name]
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--answers", required=True, type=Path,
                     help="JSONL of {id, answer} — the agent answers to score")
-    ap.add_argument("--judge", action="store_true",
-                    help="also run the Anthropic semantic judge (needs ANTHROPIC_API_KEY)")
+    ap.add_argument("--judge", nargs="?", const="cascade",
+                    choices=["jev", "claude", "cascade"],
+                    help="semantic judge: jev (TYPESAFE_API_KEY), claude "
+                         "(ANTHROPIC_API_KEY), or cascade = jev then claude only when "
+                         "jev is unsure (both keys). Bare --judge means cascade.")
     ap.add_argument("--repo-root", type=Path,
                     default=Path(__file__).resolve().parent.parent)
     ap.add_argument("--format", choices=["table", "json"], default="table")
@@ -337,7 +362,7 @@ def main(argv=None) -> int:
             d = json.loads(line)
             answers[d["id"]] = d["answer"]
 
-    judge = anthropic_judge if args.judge else None
+    judge = select_judge(args.judge)
     results = run(corpus, answers, judge)
 
     if args.format == "json":
@@ -350,8 +375,9 @@ def main(argv=None) -> int:
                 extra = f"  <-- LEAKED {r['leaked']}"
             elif r.get("missing"):
                 extra = f"  (missing {r['missing']})"
-            print(f"  [{mark}] {r['id']:<34} {r.get('category',''):<18} "
-                  f"by={r.get('decided_by','')}{extra}")
+            tier = (r.get("judge") or {}).get("tier")
+            by = r.get("decided_by", "") + (f" tier={tier}" if tier else "")
+            print(f"  [{mark}] {r['id']:<34} {r.get('category',''):<18} by={by}{extra}")
 
     passed = sum(1 for r in results if r["passed"])
     leaks = sum(1 for r in results if r.get("hard_fail"))
