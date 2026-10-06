@@ -148,6 +148,63 @@ data:
                         params:
                           - 0
 
+          - uid: agent-audit-risk-high
+            title: Agent session scored high risk
+            condition: threshold
+            for: 0m
+            annotations:
+              summary: >-
+                agent-audit-risk scored at least one kagent session `high` in the last
+                day: Secrets touched, changes beyond one namespace, something a revert
+                does not undo, or actions outside one coherent task. Every call may
+                have been approved; this is about what the session did, not whether
+                the gate fired.
+              runbook: >-
+                The summary line names the agent, session id and the flags that fired
+                (never arguments). Open https://agent-audit.arigsela.com/sessions/<id>
+                for the ordered calls (or `scripts/agent-audit.py --agent <agent>
+                --format json` behind the SELECT-only credential and filter on the
+                session id). A `review` verdict (low Jev
+                confidence or the per-run cap) does not fire this rule; read the
+                day's `-risk.jsonl` in s3://asela-agent-audit-record for those.
+            labels:
+              severity: warning
+              pillar: security
+            noDataState: OK
+            execErrState: Error
+            data:
+              - refId: query
+                relativeTimeRange:
+                  from: 86400
+                  to: 0
+                datasourceUid: loki
+                model:
+                  refId: query
+                  datasource:
+                    type: loki
+                    uid: loki
+                  queryType: instant
+                  # Same shape as the ungated rule: parse the JSON, never substring-
+                  # match it (json.dumps writes `"severity": "warning"` with a space).
+                  expr: >-
+                    sum(count_over_time({namespace="postgresql", app="agent-audit"}
+                    |= "agent-audit-risk" | json
+                    | check="agent-audit-risk" | severity="warning" [24h]))
+              - refId: threshold
+                relativeTimeRange:
+                  from: 86400
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: query
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 0
+
           # ------------------------------------------------------------------
           # Falco. Note this alerts on SPECIFIC rule names, not on "any Falco line".
           # With priority now at `notice`, "Terminal shell in container" fires on
