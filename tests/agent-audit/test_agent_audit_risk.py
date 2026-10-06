@@ -240,3 +240,45 @@ def test_summary_warns_when_jev_is_down(classes):
         raise ar.JevError("HTTP 503")
     s = ar.summarize(ar.score_sessions(_sessions(classes), classes, ask=ask))
     assert s["severity"] == "warning" and s["jev_errors"] == 1
+
+
+# ---------------------------------------------------------------------- cli
+
+def _export_file(tmp_path, classes):
+    recs = []
+    for calls in _sessions(classes).values():
+        recs += calls
+    p = tmp_path / "record.jsonl"
+    p.write_text("\n".join(json.dumps(r) for r in recs) + "\n")
+    return p
+
+
+def test_main_requires_key_unless_dry_run(tmp_path, monkeypatch, classes):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    p = _export_file(tmp_path, classes)
+    with pytest.raises(SystemExit) as e:
+        ar.main(["--records", str(p), "--out", str(tmp_path / "r.jsonl"), "--repo-root", str(REPO)])
+    assert "TYPESAFE_API_KEY" in str(e.value)
+
+
+def test_main_dry_run_writes_records_and_summary(tmp_path, monkeypatch, capsys, classes):
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    p = _export_file(tmp_path, classes)
+    out = tmp_path / "r.jsonl"
+    rc = ar.main(["--records", str(p), "--out", str(out), "--dry-run", "--show-state",
+                  "--repo-root", str(REPO)])
+    assert rc == 0
+    recs = [json.loads(l) for l in out.read_text().splitlines()]
+    assert {r["session"]: r["decided_by"] for r in recs} == {"ro": "rules", "g": "dry-run"}
+    captured = capsys.readouterr()
+    summary = json.loads(captured.out.strip().splitlines()[-1])
+    assert summary["check"] == "agent-audit-risk" and summary["counts"]["review"] == 1
+    assert '"session": "g"' in captured.err          # --show-state printed the state
+
+
+def test_main_exits_one_on_high(tmp_path, monkeypatch, classes):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    monkeypatch.setattr(ar, "_http_post", lambda p, h, t: _body(p=(0.1, 0.1, 0.8)))
+    p = _export_file(tmp_path, classes)
+    rc = ar.main(["--records", str(p), "--out", str(tmp_path / "r.jsonl"), "--repo-root", str(REPO)])
+    assert rc == 1
