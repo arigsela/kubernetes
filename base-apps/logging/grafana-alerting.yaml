@@ -163,12 +163,12 @@ data:
                 not look healthy.
               runbook: >-
                 The summary line names the agent, session id and the flags that fired
-                (never arguments). Open https://agent-audit.arigsela.com/sessions/<id>
-                for the ordered calls (or `scripts/agent-audit.py --agent <agent>
-                --format json` behind the SELECT-only credential and filter on the
-                session id). A `review` verdict (low Jev
-                confidence or the per-run cap) does not fire this rule; read the
-                day's `-risk.jsonl` in s3://asela-agent-audit-record for those. If no
+                (never arguments). Open https://agent-audit.arigsela.com/risk for the
+                high and review sessions with their flags and Jev's reasons, then the
+                session link for the ordered calls (or `scripts/agent-audit.py --agent
+                <agent> --format json` behind the SELECT-only credential and filter on
+                the session id). A `review` verdict (low Jev confidence, a Jev error or
+                the per-run cap) does not fire this rule but is listed on /risk. If no
                 session is high, read jev_errors in the summary line first.
             labels:
               severity: warning
