@@ -42,8 +42,17 @@ def _text_parts(parts) -> list[str]:
             if isinstance(p, dict) and p.get("kind") == "text" and isinstance(p.get("text"), str)]
 
 
+FAILED_STATES = {"failed", "canceled", "rejected"}   # A2A TaskState values that carry an error
+
+
 def extract_text(result: dict) -> str | None:
-    """All text parts of the task's artifacts, else of its status message, else None."""
+    """All text parts of the task's artifacts, else of its status message, else None.
+
+    A failed, canceled or rejected task puts its error text in status.message;
+    that is a tooling failure, not an answer, and must not be scored as one."""
+    status = result.get("status") or {}
+    if str(status.get("state", "")).lower() in FAILED_STATES:
+        return None
     texts: list[str] = []
     for art in (result.get("artifacts") or []):
         texts += _text_parts(art.get("parts"))

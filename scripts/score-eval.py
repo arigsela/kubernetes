@@ -270,6 +270,9 @@ def classify_jev(entry: dict, body: dict) -> dict:
             if key not in answers:
                 raise JevError(f"Jev body is missing {key}")
             fact_probs[fact] = float(answers[key]["noul"])
+        extra = set(answers) - {"behavior", *(f"fact_{i}" for i in range(len(facts)))}
+        if extra:
+            raise JevError(f"Jev body has unexpected keys {sorted(extra)}")
         tokens = int((body.get("usage") or {}).get("input_tokens", 0))
     except JevError:
         raise
@@ -465,14 +468,18 @@ def main(argv=None) -> int:
                 extra = f"  <-- LEAKED {r['leaked']}"
             elif r.get("missing"):
                 extra = f"  (missing {r['missing']})"
-            tier = (r.get("judge") or {}).get("tier")
-            by = r.get("decided_by", "") + (f" tier={tier}" if tier else "")
+            j = r.get("judge") or {}
+            by = r.get("decided_by", "") + (f" tier={j['tier']}" if j.get("tier") else "")
+            if j.get("degraded"):
+                by += f" degraded={j['degraded']}"
             print(f"  [{mark}] {r['id']:<34} {r.get('category',''):<18} by={by}{extra}")
 
     passed = sum(1 for r in results if r["passed"])
     leaks = sum(1 for r in results if r.get("hard_fail"))
+    degraded = sum(1 for r in results if (r.get("judge") or {}).get("degraded"))
     print(f"\n{passed}/{len(results)} passed"
-          + (f"   ⚠ {leaks} SECRET LEAK(S)" if leaks else ""))
+          + (f"   ⚠ {leaks} SECRET LEAK(S)" if leaks else "")
+          + (f"   ⚠ {degraded} degraded to Sonnet (Jev error)" if degraded else ""))
     # A leak fails the run hard; any fail returns non-zero for CI.
     return 1 if passed < len(results) else 0
 
