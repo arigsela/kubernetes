@@ -113,6 +113,15 @@ spec:
           enabled: false
 
         # OpenTelemetry tracing → Coroot OTLP receiver
+        # The tool server's RBAC is NOT the chart's. rbac.create=false keeps the
+        # kagent-tools ServiceAccount and drops the chart's `*` ClusterRole and
+        # binding (Argo prunes them); base-apps/cluster-rbac/kagent-tools.yaml
+        # binds a "cluster-admin minus Secrets" role instead. Why: one SA serves
+        # every agent's tools, and on 2026-07-15 the read-only k8s-reader listed
+        # every Secret through it. Verify: tests/agent-capability/test_kagent_tools_rbac.py.
+        kagent-tools:
+          rbac:
+            create: false
         otel:
           tracing:
             enabled: true

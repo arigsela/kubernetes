@@ -1,0 +1,165 @@
+# RBAC for the kagent tool server (kagent-tools): cluster-admin MINUS Secrets.
+#
+# WHY THIS LIVES HERE
+#
+# The kagent-tools subchart binds its ServiceAccount to `*` on everything. One
+# ServiceAccount serves EVERY agent's tools, read-only agents included, so the only
+# thing between a model and cluster-admin was the tool list and the approval gate.
+# On 2026-07-15 the read-class k8s-reader agent called k8s_get_resources with
+# resource_type=secret across all namespaces, which returns every Secret's contents.
+# The capability taxonomy classes that tool as `read`, which describes the verb,
+# not what it can reach. The floor has to be RBAC, so base-apps/kagent.yaml sets
+# `kagent-tools.rbac.create: false` (the chart still creates the ServiceAccount)
+# and this file is the role instead.
+#
+# WHAT IT GRANTS, AND WHAT IT DELIBERATELY DOES NOT
+#
+# - Core group: every resource the cluster serves EXCEPT secrets, plus the pod
+#   subresources kubectl needs (log, exec, attach, portforward). RBAC is additive
+#   and has no "all but one", so the list is explicit. pods/exec stays because
+#   k8s_execute_command is destructive-class and gated by human approval; bounding
+#   what a shell may touch is the tool-guard's job (the spec in
+#   docs/superpowers/specs/2026-10-06-jev-tool-guard-design.md), not RBAC's.
+# - Every non-core API group the cluster had on 2026-10-06, named one by one, all
+#   resources and verbs. `apiGroups: ["*"]` would re-admit the core group and with
+#   it Secrets, so a group added later is DENIED until a PR adds it here. That is
+#   the same fail-closed stance the capability taxonomy takes with new tools: a
+#   chart or CRD upgrade cannot silently widen what an agent can reach.
+# - Discovery URLs, so kubectl inside the tool server can list API resources.
+#
+# Secrets are Vault + ExternalSecrets managed in this repo and the only legitimate
+# write path is git, so no agent, admin class included, loses anything it should
+# have had. A side effect worth having: RBAC escalation prevention now applies, so
+# an agent cannot grant Secret access through an RBAC write it does not hold itself.
+#
+# Guarded by tests/agent-capability/test_kagent_tools_rbac.py: no `secrets`, no
+# wildcard that could cover them, bound to exactly kagent-tools@kagent, chart RBAC
+# off. Verify live with
+#   kubectl auth can-i list secrets --all-namespaces --as=system:serviceaccount:kagent:kagent-tools   # no
+#   kubectl auth can-i list pods --all-namespaces --as=system:serviceaccount:kagent:kagent-tools      # yes
+#
+# NEXT NARROWING CANDIDATES (not this change): the groups that hold the guardrails
+# themselves (admissionregistration.k8s.io, rbac.authorization.k8s.io, kyverno.io,
+# policies.kyverno.io) and the Crossplane AWS groups. An agent with `*` there can
+# switch off the controls that hold it in, or create cloud resources.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kagent-tools
+  labels:
+    app.kubernetes.io/name: cluster-rbac
+    app.kubernetes.io/part-of: agent-guardrails
+rules:
+  # Core group, everything except secrets (see header). Explicit on purpose.
+  - apiGroups: [""]
+    resources:
+      - bindings
+      - componentstatuses
+      - configmaps
+      - endpoints
+      - events
+      - limitranges
+      - namespaces
+      - nodes
+      - persistentvolumeclaims
+      - persistentvolumes
+      - pods
+      - pods/attach
+      - pods/exec
+      - pods/log
+      - pods/portforward
+      - pods/status
+      - podtemplates
+      - replicationcontrollers
+      - resourcequotas
+      - serviceaccounts
+      - services
+    verbs: ["*"]
+  # Every non-core API group the cluster served on 2026-10-06. Add new groups here.
+  - apiGroups:
+      - acme.cert-manager.io
+      - admissionregistration.k8s.io
+      - agents.x-k8s.io
+      - apiextensions.crossplane.io
+      - apiextensions.k8s.io
+      - apiregistration.k8s.io
+      - apps
+      - argoproj.io
+      - authentication.k8s.io
+      - authorization.k8s.io
+      - autoscaling
+      - aws.m.upbound.io
+      - aws.upbound.io
+      - batch
+      - cert-manager.io
+      - certificates.k8s.io
+      - coordination.k8s.io
+      - coroot.com
+      - dex.coreos.com
+      - discovery.k8s.io
+      - events.k8s.io
+      - extauth.solo.io
+      - extensions.istio.io
+      - external-secrets.io
+      - flowcontrol.apiserver.k8s.io
+      - gateway.kgateway.dev
+      - gateway.networking.k8s.io
+      - generators.external-secrets.io
+      - gloo.solo.io
+      - helm.cattle.io
+      - iam.aws.m.upbound.io
+      - iam.aws.upbound.io
+      - k3s.cattle.io
+      - kagent-enterprise.solo.io
+      - kagent.dev
+      - kyverno.io
+      - metrics.k8s.io
+      - mssql.sql.crossplane.io
+      - mysql.sql.crossplane.io
+      - networking.istio.io
+      - networking.k8s.io
+      - node.k8s.io
+      - ops.crossplane.io
+      - pkg.crossplane.io
+      - platform.arigsela.com
+      - policies.kyverno.io
+      - policy
+      - postgresql.cnpg.io
+      - postgresql.sql.crossplane.io
+      - protection.crossplane.io
+      - ratelimit.solo.io
+      - rbac.authorization.k8s.io
+      - reports.kyverno.io
+      - resource.k8s.io
+      - s3.aws.m.upbound.io
+      - s3.aws.upbound.io
+      - scheduling.k8s.io
+      - secrets.crossplane.io
+      - security.istio.io
+      - storage.k8s.io
+      - telemetry.istio.io
+      - upgrade.cattle.io
+      - velero.io
+      - wgpolicyk8s.io
+    resources: ["*"]
+    verbs: ["*"]
+  # API discovery for the kubectl inside the tool server.
+  - nonResourceURLs: ["/api", "/api/*", "/apis", "/apis/*", "/version", "/healthz", "/readyz", "/openapi", "/openapi/*"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kagent-tools
+  labels:
+    app.kubernetes.io/name: cluster-rbac
+    app.kubernetes.io/part-of: agent-guardrails
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kagent-tools
+subjects:
+  # The ServiceAccount the kagent-tools subchart still creates with rbac.create=false.
+  - kind: ServiceAccount
+    name: kagent-tools
+    namespace: kagent
