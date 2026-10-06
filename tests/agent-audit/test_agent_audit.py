@@ -428,7 +428,7 @@ def test_cronjob_ships_and_uses_the_acknowledged_file():
     )
     gen = importlib.util.module_from_spec(gen_spec)
     gen_spec.loader.exec_module(gen)
-    code_cm, ungated, _ = gen.build("script", "taxonomy", "acks")
+    code_cm, ungated, _, _ = gen.build("script", "taxonomy", "acks", "risk")
     assert code_cm["data"]["agent-audit-acknowledged.yaml"] == "acks"
     container = ungated["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]
     assert "--acknowledged /opt/audit/agent-audit-acknowledged.yaml" in " ".join(container["args"])
