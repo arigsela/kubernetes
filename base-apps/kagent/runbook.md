@@ -107,5 +107,8 @@ curl -s localhost:18080/.well-known/agent.json | jq '.skills[].id'  # the three 
 
 Memory check: ask a question, then a related one in a new turn; recall should surface the earlier exchange, and still do so after a pod restart.
 
+### A tool call fails with `secrets is forbidden` or `403` from the API server
+Expected for Secrets: the tool server's ClusterRole (`base-apps/cluster-rbac/kagent-tools.yaml`) grants everything except `secrets`, for every agent. The agent should report the refusal; nothing to fix. For any other resource, the API group is probably new to the cluster: the role names non-core groups explicitly and denies the rest until a PR adds the group. Check with `kubectl auth can-i <verb> <resource> --as=system:serviceaccount:kagent:kagent-tools`, add the group to the role, and note it in the manifest header's dated list.
+
 ### Restart the controller
 `kubectl -n kagent rollout restart deploy/kagent-controller` — safe; agents reconcile again once the controller is back. Verify with `kubectl -n kagent get pods -l app.kubernetes.io/name=kagent` and `kubectl -n kagent get agents`.
