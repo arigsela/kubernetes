@@ -64,3 +64,27 @@ def test_chart_no_longer_creates_its_own_rbac():
                if d and d.get("kind") == "Application")
     values = app["spec"]["source"]["helm"]["valuesObject"]
     assert values["kagent-tools"]["rbac"]["create"] is False
+
+
+# The `*` verb is a wildcard too: it includes escalate, bind, impersonate, approve and
+# sign, each a way around the Secret denial (write yourself a role, become another
+# identity, mint a certificate). The role names its verbs, and names none of those.
+
+ALLOWED_VERBS = {"get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"}
+PRIVILEGE_RESOURCES = {"serviceaccounts/token", "nodes/proxy", "users", "groups",
+                       "certificatesigningrequests/approval"}
+
+
+def test_role_never_uses_wildcard_verbs():
+    for rule in _role()["rules"]:
+        assert "*" not in rule["verbs"], rule
+
+
+def test_role_verbs_are_crud_only():
+    for rule in _role()["rules"]:
+        assert set(rule["verbs"]) <= ALLOWED_VERBS, rule
+
+
+def test_role_never_names_a_privilege_resource():
+    for rule in _role()["rules"]:
+        assert not PRIVILEGE_RESOURCES & set(rule.get("resources", [])), rule
