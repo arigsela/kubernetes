@@ -326,6 +326,85 @@ def cascade_judge(entry: dict, answer: str, *, transport=None, claude=None) -> d
             "tier": "claude", "jev": j["jev"], "degraded": None}
 
 
+# ------------------------------------------------------------ calibration
+#
+# Runs rubric, Jev and Sonnet INDEPENDENTLY on the same answers so the report can
+# say how often Jev decides alone, how often it agrees with Sonnet when both
+# decide, and what the cascade would have cost. Raw Jev numbers are kept per row
+# so thresholds can be re-swept offline. Mirrors `pr_triage calibrate`.
+
+
+def calibrate(corpus: dict, answers: dict[str, str], *, jev=None, claude=None) -> list[dict]:
+    jev = jev or jev_judge
+    claude = claude or anthropic_judge
+    rows = []
+    for cid, entry in corpus.items():
+        answer = answers.get(cid)
+        rub = score_rubric(entry, answer or "")
+        row = {"id": cid, "category": entry.get("category"), "rubric": rub["rubric_pass"],
+               "leak": rub["hard_fail"], "jev": None, "jev_error": None, "claude": None,
+               "cascade_tier": None, "cascade": None}
+        if answer is None:
+            row.update(cascade_tier="no-answer", cascade=False)
+            rows.append(row)
+            continue
+        if rub["hard_fail"]:
+            row.update(cascade_tier="leak", cascade=False)
+            rows.append(row)
+            continue
+        try:
+            row["jev"] = jev(entry, answer)["jev"]
+        except JevError as err:
+            row["jev_error"] = str(err)
+        c = claude(entry, answer)
+        row["claude"] = bool(c.get("pass"))
+        if row["jev"] and row["jev"]["verdict"] != "unsure":
+            row["cascade_tier"] = "jev"
+            row["cascade"] = row["jev"]["verdict"] == "pass"
+        else:
+            row["cascade_tier"] = "claude"
+            row["cascade"] = row["claude"]
+        rows.append(row)
+    return rows
+
+
+def render_calibration(rows: list[dict], *, thresholds=None) -> str:
+    p, f, c = thresholds or (JEV_PASS, JEV_FAIL, JEV_ESCALATE_CONF)
+    judged = [r for r in rows if r["jev"] is not None]
+    decided = [r for r in judged if r["jev"]["verdict"] != "unsure"]
+    both = [r for r in decided if r["claude"] is not None]
+    agree = sum((r["jev"]["verdict"] == "pass") == r["claude"] for r in both)
+    tokens = sum(r["jev"]["input_tokens"] for r in judged)
+    lines = [
+        "# score-eval calibration: Jev as first-tier judge",
+        "",
+        f"- Entries: {len(rows)}; leaks (no judge consulted): {sum(r['leak'] for r in rows)}",
+        f"- Thresholds: pass >= {p}, fail <= {f}, escalate below confidence {c}",
+        f"- Jev decided: {len(decided)}/{len(judged)} "
+        f"(Sonnet calls the cascade avoids: {len(decided)})",
+        f"- Jev/Claude agreement: {agree}/{len(both)} where both decided",
+        f"- Jev errors: {sum(1 for r in rows if r['jev_error'])}",
+        f"- Jev input tokens: {tokens:,} (~${tokens / 1e6 * PRICE_PER_MTOK:.4f})",
+        "",
+        "| id | category | rubric | jev verdict | p(behavior) | conf | min fact p | claude | cascade |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for r in rows:
+        j = r["jev"]
+        minfact = min(j["facts"].values()) if j and j["facts"] else None
+        lines.append("| {id} | {cat} | {rub} | {verdict} | {pb} | {conf} | {mf} | {cl} | {cas} |".format(
+            id=r["id"], cat=r["category"] or "",
+            rub="pass" if r["rubric"] else ("LEAK" if r["leak"] else "fail"),
+            verdict=(j["verdict"] if j else (r["jev_error"] or "-")),
+            pb=f"{j['p_behavior']:.2f}" if j else "-",
+            conf=f"{j['confidence']:.2f}" if j else "-",
+            mf=f"{minfact:.2f}" if minfact is not None else "-",
+            cl={True: "pass", False: "fail", None: "-"}[r["claude"]],
+            cas=f"{'pass' if r['cascade'] else 'fail'} ({r['cascade_tier']})"))
+    lines += ["", "Rows keep Jev's raw probabilities so thresholds can be re-swept without new calls."]
+    return "\n".join(lines) + "\n"
+
+
 def select_judge(name: str | None):
     """Map a --judge name to a callable, failing fast on missing credentials so
     a run does not die after half the entries."""
@@ -349,6 +428,9 @@ def main(argv=None) -> int:
                     help="semantic judge: jev (TYPESAFE_API_KEY), claude "
                          "(ANTHROPIC_API_KEY), or cascade = jev then claude only when "
                          "jev is unsure (both keys). Bare --judge means cascade.")
+    ap.add_argument("--calibrate", type=Path, metavar="REPORT.md",
+                    help="run rubric, jev and claude independently on every answer and "
+                         "write a markdown comparison (needs both API keys); exits 0")
     ap.add_argument("--repo-root", type=Path,
                     default=Path(__file__).resolve().parent.parent)
     ap.add_argument("--format", choices=["table", "json"], default="table")
@@ -361,6 +443,13 @@ def main(argv=None) -> int:
         if line:
             d = json.loads(line)
             answers[d["id"]] = d["answer"]
+
+    if args.calibrate:
+        select_judge("cascade")               # same credential check, fail fast
+        rows = calibrate(corpus, answers)
+        args.calibrate.write_text(render_calibration(rows))
+        print(f"wrote {args.calibrate}")
+        return 0
 
     judge = select_judge(args.judge)
     results = run(corpus, answers, judge)
