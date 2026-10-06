@@ -233,3 +233,10 @@ def test_summary_is_argument_free_and_counts(classes):
 def test_summary_ok_when_nothing_high(classes):
     recs = ar.score_sessions(_sessions(classes), classes, ask=lambda s: _body())
     assert ar.summarize(recs)["severity"] == "ok"
+
+
+def test_summary_warns_when_jev_is_down(classes):
+    def ask(state):
+        raise ar.JevError("HTTP 503")
+    s = ar.summarize(ar.score_sessions(_sessions(classes), classes, ask=ask))
+    assert s["severity"] == "warning" and s["jev_errors"] == 1

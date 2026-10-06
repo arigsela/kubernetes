@@ -347,19 +347,20 @@ def score_sessions(sessions: dict[str, list[dict]], classes: dict[str, str], *, 
 
 
 def summarize(records: list[dict]) -> dict:
-    """ARGUMENT-FREE. This line lands in Loki; the Grafana rule reads it."""
+    """ARGUMENT-FREE. This line lands in Loki; the Grafana rule reads it. A Jev outage is a warning: the check did not run, and an "ok" that was never computed is the dangerous case."""
     counts = {v: sum(r["verdict"] == v for r in records) for v in VERDICTS}
     high = [{"agent": r["agent"], "session": r["session"],
              "flags": sorted(k for k, v in (r["flags"] or {}).items() if v >= HIGH_IF_FLAG_GTE)}
             for r in records if r["verdict"] == "high"]
     tokens = sum(r["input_tokens"] for r in records)
+    jev_errors = sum(r["decided_by"] == "jev-error" for r in records)
     return {
         "check": "agent-audit-risk",
-        "severity": "warning" if high else "ok",
+        "severity": "warning" if high or jev_errors else "ok",
         "sessions": len(records),
         "counts": counts,
         "jev_sessions": sum(r["decided_by"] == "jev" for r in records),
-        "jev_errors": sum(r["decided_by"] == "jev-error" for r in records),
+        "jev_errors": jev_errors,
         "high": sorted(high, key=lambda h: (h["agent"], h["session"])),
         "input_tokens": tokens,
         "cost_usd": round(tokens / 1e6 * PRICE_PER_MTOK, 4),
