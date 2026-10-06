@@ -442,7 +442,8 @@ def main(argv=None) -> int:
         line = line.strip()
         if line:
             d = json.loads(line)
-            answers[d["id"]] = d["answer"]
+            if d.get("answer") is not None:   # a null answer scores as no-answer
+                answers[d["id"]] = d["answer"]
 
     if args.calibrate:
         select_judge("cascade")               # same credential check, fail fast

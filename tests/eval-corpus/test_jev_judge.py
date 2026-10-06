@@ -291,3 +291,14 @@ def test_render_calibration_has_summary_and_rows():
     assert "Jev decided: 1/1" in md
     assert "Jev/Claude agreement: 1/1" in md
     assert "input tokens: 1,000" in md
+
+
+def test_main_treats_null_answer_as_no_answer(tmp_path, capsys):
+    answers = tmp_path / "a.jsonl"
+    corpus = se.load_corpus(REPO)
+    first = next(iter(corpus))
+    answers.write_text(__import__("json").dumps({"id": first, "answer": None}) + "\n")
+    rc = se.main(["--answers", str(answers), "--repo-root", str(REPO), "--format", "json"])
+    results = __import__("json").loads(capsys.readouterr().out.split("\n0/")[0])
+    assert next(r for r in results if r["id"] == first)["decided_by"] == "no-answer"
+    assert rc == 1
