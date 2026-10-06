@@ -334,3 +334,15 @@ def test_main_table_shows_degraded_jev(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "degraded=" in out and "down" in out
     assert "degraded to Sonnet" in out
+
+
+def test_fact_question_is_anchored_on_the_reference():
+    """A must_include entry is a keyword, not a claim. The question must ask whether
+    the answer makes the point the reference makes, and must say that merely
+    mentioning the keyword while contradicting the reference does not count.
+    Found by the demo: a wrong answer naming both apps passed at p=0.9."""
+    q = se.build_jev_questions(_entry())["fact_0"]["instructions"]
+    assert "kagent-controller" in q
+    assert "reference" in q.lower()
+    assert "contradict" in q.lower()
+    assert "mention" in q.lower()

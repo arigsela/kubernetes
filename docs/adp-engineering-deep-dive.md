@@ -307,7 +307,8 @@ unanswered question is not a pass), and any failure returns exit 1 for CI.
 
 The semantic judge is Jev first (TypeSafe System One, the same model pr-triage
 uses), Sonnet second. Jev answers one `behavior` choice and one yes/no per
-required fact and returns calibrated probabilities; `classify_jev` turns them into
+required fact, each anchored on the corpus `reference` so naming a keyword while
+contradicting it does not count, and returns calibrated probabilities; `classify_jev` turns them into
 pass, fail or unsure, and only unsure (or a Jev outage) reaches Sonnet. The leak
 check still runs before either. `./scripts/score-eval.py --calibrate` runs all
 three independently and writes a comparison; the latest is

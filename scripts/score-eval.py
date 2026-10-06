@@ -208,10 +208,20 @@ def build_jev_questions(entry: dict) -> dict:
             },
         },
     }
+    # A must_include entry is a KEYWORD, not a claim. Asking whether the answer
+    # "conveys kagent-controller" let a wrong answer that merely named the app pass
+    # at p=0.9, and failed a correct paraphrase that never spelled the exact name.
+    # So the question anchors on the reference: make the point, don't just say the
+    # word, and don't contradict what the reference establishes.
     for i, fact in enumerate(golden.get("must_include") or []):
         questions[f"fact_{i}"] = {
             "type": "noul",
-            "instructions": f"Does the answer convey this fact, in any wording: {fact}",
+            "instructions": (
+                "The REFERENCE describes what a correct answer establishes. Does the "
+                f"agent's ANSWER correctly make the point that involves '{fact}', in any "
+                "wording, without contradicting the reference? Merely mentioning "
+                f"'{fact}' while stating something the reference contradicts does not count."
+            ),
         }
     return questions
 
