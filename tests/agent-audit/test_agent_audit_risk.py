@@ -130,3 +130,106 @@ def test_questions_have_attention_choice_and_four_flags():
     assert set(ar.QUESTIONS["attention"]["criteria"]) == {"low", "medium", "high"}
     assert {k for k, q in ar.QUESTIONS.items() if q["type"] == "noul"} == \
         {"touched_secrets", "beyond_one_namespace", "hard_to_revert", "scope_creep"}
+
+
+# ------------------------------------------------------------------ verdict
+
+def _body(p=(0.8, 0.15, 0.05), conf=0.9, flags=(0.1, 0.1, 0.1, 0.1), tokens=500):
+    names = ("touched_secrets", "beyond_one_namespace", "hard_to_revert", "scope_creep")
+    return {"answers": {"attention": {"probabilities": dict(zip(("low", "medium", "high"), p)),
+                                      "confidence": conf},
+                        **{n: {"noul": f} for n, f in zip(names, flags)}},
+            "usage": {"input_tokens": tokens}}
+
+
+def test_classify_argmax_when_confident_and_calm():
+    c = ar.classify(_body())
+    assert c["verdict"] == "low" and c["input_tokens"] == 500
+
+
+def test_classify_high_on_p_high_threshold():
+    assert ar.classify(_body(p=(0.4, 0.3, 0.3)))["verdict"] == "high"
+
+
+def test_classify_high_on_any_flag():
+    c = ar.classify(_body(p=(0.9, 0.05, 0.05), flags=(0.1, 0.1, 0.75, 0.1)))
+    assert c["verdict"] == "high" and any("hard_to_revert" in r for r in c["reasons"])
+
+
+def test_classify_review_on_low_confidence():
+    assert ar.classify(_body(conf=0.2))["verdict"] == "review"
+
+
+def test_classify_rejects_malformed_body():
+    with pytest.raises(ar.JevError):
+        ar.classify({"answers": {"attention": {}}})
+
+
+# -------------------------------------------------------------------- scoring
+
+def _sessions(classes):
+    ro = [_call("k8s_get_resources", session="ro")]
+    gated = [_call("k8s_get_resources", session="g"),
+             _call(ar.CONFIRM_TOOL, session="g", at="2026-10-01T10:00:01+00:00"),
+             _call("k8s_delete_resource", {"name": "x"}, session="g", at="2026-10-01T10:00:02+00:00")]
+    return ar.group_sessions(ro + gated)
+
+
+def test_score_rules_decide_read_only_without_calling_jev(classes):
+    calls = []
+    ask = lambda state: calls.append(state) or _body()
+    recs = ar.score_sessions(_sessions(classes), classes, ask=ask)
+    by = {r["session"]: r for r in recs}
+    assert by["ro"]["verdict"] == "low" and by["ro"]["decided_by"] == "rules"
+    assert by["ro"]["probabilities"] is None
+    assert by["g"]["decided_by"] == "jev" and [s["session"] for s in calls] == ["g"]
+
+
+def test_score_marks_jev_error_as_review(classes):
+    def ask(state):
+        raise ar.JevError("HTTP 503")
+    recs = ar.score_sessions(_sessions(classes), classes, ask=ask)
+    g = next(r for r in recs if r["session"] == "g")
+    assert g["verdict"] == "review" and g["decided_by"] == "jev-error" and "503" in g["error"]
+
+
+def test_score_caps_jev_calls(classes):
+    sessions = {f"s{i}": [_call("k8s_patch_resource", {"n": i}, session=f"s{i}")] for i in range(3)}
+    n = []
+    recs = ar.score_sessions(sessions, classes, ask=lambda s: n.append(1) or _body(), max_sessions=2)
+    assert len(n) == 2
+    assert sorted(r["decided_by"] for r in recs) == ["cap", "jev", "jev"]
+    assert next(r for r in recs if r["decided_by"] == "cap")["verdict"] == "review"
+
+
+def test_risk_record_contract(classes):
+    from datetime import datetime, timezone
+    fixed = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    recs = ar.score_sessions(_sessions(classes), classes, ask=lambda s: _body(), now=fixed)
+    g = next(r for r in recs if r["session"] == "g")
+    assert set(g) == {"kind", "session", "agent", "at", "verdict", "decided_by", "reasons",
+                      "probabilities", "confidence", "flags", "calls", "gated_calls",
+                      "candidate_reasons", "model", "input_tokens", "scored_at", "error"}
+    assert g["kind"] == "risk" and g["at"] == "2026-10-01T10:00:02+00:00"
+    assert g["calls"] == 2 and g["gated_calls"] == 1 and g["model"] == "jev-1.13.0"
+    assert g["scored_at"] == "2026-10-02T00:00:00+00:00"
+    assert "args" not in json.dumps(g)
+
+
+# ------------------------------------------------------------------- summary
+
+def test_summary_is_argument_free_and_counts(classes):
+    recs = ar.score_sessions(_sessions(classes), classes,
+                             ask=lambda s: _body(p=(0.1, 0.2, 0.7), flags=(0.9, 0.1, 0.8, 0.1)))
+    s = ar.summarize(recs)
+    assert s["check"] == "agent-audit-risk" and s["severity"] == "warning"
+    assert s["counts"] == {"low": 1, "medium": 0, "high": 1, "review": 0}
+    assert s["high"] == [{"agent": "kagent__NS__k8s_agent", "session": "g",
+                          "flags": ["hard_to_revert", "touched_secrets"]}]
+    assert s["jev_sessions"] == 1 and s["input_tokens"] == 500
+    assert "args" not in json.dumps(s) and "name" not in json.dumps(s)
+
+
+def test_summary_ok_when_nothing_high(classes):
+    recs = ar.score_sessions(_sessions(classes), classes, ask=lambda s: _body())
+    assert ar.summarize(recs)["severity"] == "ok"
