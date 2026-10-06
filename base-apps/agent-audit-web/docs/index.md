@@ -60,6 +60,7 @@ browser ─TLS─▶ Istio gateway `main` (per-host IP allow-list: gateway-allow
 - **The app has no authentication of its own.** Its image CMD binds `127.0.0.1:8000`, so the sidecar is the only way in; the Service exposes only `4180`. Do not add `command:`/`args:` to the app container: the CMD also carries `--no-access-log`.
 - **Probes are `exec`**, because kubelet cannot reach a loopback port. `/readyz` is 200 while the database **or** the archive works, so one source going down degrades the pages (a banner) instead of taking the app out of the Service.
 - **Sessions deleted from kagent** still appear from the S3 archive, labelled "archive only". The database wins per session.
+- **Risk records** (`kind: risk`, written by the `agent-audit-risk` CronJob as `dt=<date>/<time>-risk.jsonl`) are not read yet. The app's archive loader drops unknown kinds, so they are harmless until a release adds them. The contract is in `risk_record()` in `scripts/agent-audit-risk.py`: keep the newest `scored_at` per session; show `verdict`, `decided_by`, `reasons` and the flag names on the session page and as a column on Findings.
 
 ## Where config lives
 - **Image:** pinned `tag@digest` in `deployment.yaml`, released by the app repo's `release.yml` on a `v*` tag (GitHub OIDC → role `github-actions-agent-audit-web-ecr`, `base-apps/agent-audit-aws-infrastructure/web-ecr-push.yaml`). ECR repository `agent-audit-web` (us-east-2, immutable tags) was created by hand.

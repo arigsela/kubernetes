@@ -58,7 +58,7 @@ The repository as a whole is **not** a strictly conformant OKF bundle, and does 
 | Hosts (hypervisor, VMs, node-level k3s config) | `ansible/` |
 | Secret wiring | per-app `secret-store.yaml` / `external-secret*.yaml` |
 | Agent guardrails | `base-apps/admission-policies/agent-identity.yaml`, `agent-capability.yaml` (generated from `base-apps/admission-policies/agent-capability-taxonomy.yaml`), `templates/agent-identity/README.md`, `scripts/validate-agent-*.py` |
-| Agent audit & eval | `scripts/agent-audit.py`, `base-apps/postgresql/agent-audit-cronjob.yaml`, `base-apps/agent-audit-web/`, `tests/eval-corpus/`, `scripts/score-eval.py` |
+| Agent audit & eval | `scripts/agent-audit.py`, `scripts/agent-audit-risk.py`, `base-apps/postgresql/agent-audit-cronjob.yaml`, `base-apps/agent-audit-web/`, `tests/eval-corpus/`, `scripts/score-eval.py` |
 | Doc contract & index | `templates/agent-docs/README.md`, `base-apps/index.md`, `scripts/gen-okf.py` |
 | PR review triage | `.github/review-policy.yaml`, `.github/workflows/pr-triage.yaml`; action and calibration report in `arigsela/claude-agents` (`pr-triage/`) |
 | Build, test & validation commands | `AGENTS.md`, `.github/workflows/validate.yaml` |
