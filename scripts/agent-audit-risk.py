@@ -367,3 +367,59 @@ def summarize(records: list[dict]) -> dict:
         "detail": "Arguments are deliberately omitted. Open the session in agent-audit-web "
                   "or run agent-audit.py against the database to see them.",
     }
+
+
+# ---------------------------------------------------------------------- cli
+
+TAXONOMY = "base-apps/admission-policies/agent-capability-taxonomy.yaml"
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--records", type=Path, help="export JSONL (default: stdin)")
+    ap.add_argument("--out", type=Path, required=True, help="risk JSONL to write")
+    ap.add_argument("--taxonomy", type=Path, help="capability taxonomy manifest "
+                    "(the CronJob mounts it; defaults to the repo copy)")
+    ap.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parent.parent)
+    ap.add_argument("--max-sessions", type=int, default=50,
+                    help="Jev calls per run; later candidates become `review` (cost cap)")
+    ap.add_argument("--argument-free", action="store_true",
+                    help="send tool names, classes and counts only (no redacted arguments)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="rules only, no Jev calls, no key needed; candidates become `review`")
+    ap.add_argument("--show-state", action="store_true",
+                    help="print to stderr the exact state each candidate would send to Jev")
+    args = ap.parse_args(argv)
+
+    if not args.dry_run and not os.environ.get("TYPESAFE_API_KEY"):
+        raise SystemExit("TYPESAFE_API_KEY is not set (use --dry-run for rules only)")
+
+    lines = args.records.read_text().splitlines() if args.records else sys.stdin.read().splitlines()
+    records, skipped = load_records(lines)
+    sessions = group_sessions(records)
+    classes = load_gated_tools(args.taxonomy or args.repo_root / TAXONOMY)
+
+    def ask(state: dict) -> dict:
+        if args.show_state:
+            print(json.dumps(state, ensure_ascii=False), file=sys.stderr)
+        if args.dry_run:
+            raise JevError("dry-run")
+        return ask_jev(state)
+
+    out = score_sessions(sessions, classes, ask=ask, max_sessions=args.max_sessions,
+                         argument_free=args.argument_free)
+    if args.dry_run:
+        for r in out:
+            if r["decided_by"] == "jev-error":
+                r.update(decided_by="dry-run", reasons=["dry-run: not scored"], error=None)
+
+    args.out.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in out))
+    summary = summarize(out)
+    summary["skipped_lines"] = skipped
+    print(json.dumps(summary))
+    return 1 if summary["severity"] == "warning" else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
