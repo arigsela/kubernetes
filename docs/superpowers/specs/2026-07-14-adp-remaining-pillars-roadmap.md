@@ -14,7 +14,7 @@ design doc before any code.
 | Track | Done | Open |
 |---|---|---|
 | **O** Observability | O0–O4, 2026-07-14/15: the agent action record (`scripts/agent-audit.py`), the `agent-audit-export` (daily → S3 `asela-agent-audit-record`) and `agent-audit-ungated` CronJobs (`base-apps/postgresql/agent-audit-cronjob.yaml`), Falco → Loki → Grafana alert rules → n8n. O4's "dashboard" became `agent-audit-web` (`agent-audit.arigsela.com`, live 2026-09-27) rather than a Grafana board. | — |
-| **E** Evaluation | E1 corpus (`tests/eval-corpus/`, `scripts/mine-eval-corpus.py`) and E2 scorer (`scripts/score-eval.py`), 2026-07-15. CI validates the corpus (schema, no secrets). | E3 regression gate (nothing scores agents on change), E4 `.judge` in CI. |
+| **E** Evaluation | E1 corpus (`tests/eval-corpus/`, `scripts/mine-eval-corpus.py`) and E2 scorer (`scripts/score-eval.py`), 2026-07-15. CI validates the corpus (schema, no secrets). Jev first-tier judge with Sonnet escalation and `--calibrate` (2026-10). | E3 regression gate (nothing scores agents on change), E4 `.judge` in CI. |
 | **P** Paths | P1: the `agents.platform.ai` contract was deleted (2026-07-14). P2 in part: the New App template now lives in this repo (`templates/new-app/`). | No path registry; not agent-consumable (P3); one path (P4). Both the template and the dormant `XApplication` Composition still emit an nginx `Ingress` (SPEC T76). |
 
 ## Where we actually are
