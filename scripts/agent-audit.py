@@ -45,6 +45,9 @@ Treat this output as internal. It is *safer*, not *safe*. Do not pipe it to Slac
 a public dashboard, or an agent-readable tool without reviewing the redaction
 against what those arguments actually contain.
 
+One external consumer exists by decision: agent-audit-risk.py sends the redacted
+arguments of candidate sessions to TypeSafe (Jev). See its header for the review.
+
 Read-only by construction: it logs in as the SELECT-only `kagent_audit_ro` role
 (base-apps/postgresql/init-kagent-audit-role.yaml). An audit tool with write access
 to the database it audits is not an audit tool.

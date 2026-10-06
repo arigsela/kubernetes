@@ -30,8 +30,8 @@ WHAT LEAVES THE CLUSTER — the egress decision (2026-10-06)
 The input is the REDACTED export: the same bytes `agent-audit.py --export` writes
 to S3 and agent-audit-web renders. Response bodies were never extracted. Argument
 values went through redact_args() (pattern + shape + key-name redaction, best
-effort). The operator reviewed the exported arguments for the sessions this
-script would send and accepted sending them to TypeSafe; TypeSafe is one more
+effort). Reviewed 2026-10-06 over 90 days: 3 candidate sessions, 14 non-read
+calls, no unredacted secret found; accepted. TypeSafe is one more
 processor of a record that already leaves the cluster. If that decision changes,
 pass --argument-free: the state then carries tool names, classes and counts only.
 
