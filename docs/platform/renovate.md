@@ -8,7 +8,7 @@ Renovate keeps this repo's pinned versions current by opening PRs. Most CVEs in 
 
 - **When:** Mondays 05:00 UTC (the morning after the Sunday image scan), plus on demand. The cadence is the workflow's cron, not a `schedule` in the config, so a manual run acts immediately.
 - **As whom:** the GitHub App `arigsela-renovate` (owned by the user `arigsela`, installed on this repo only). Repository permissions: Contents, Pull requests, Issues, Workflows and **Commit statuses** read and write; Checks and Metadata read. The workflow mints a short-lived token from it. Repo settings hold `RENOVATE_APP_ID` and `RENOVATE_APP_CLIENT_ID` (Actions variables) and `RENOVATE_APP_PRIVATE_KEY` (Actions secret).
-- **Version:** Renovate `44.137.0`, pinned in the workflow and in the `renovate-config-validate` CI job. Bump both together.
+- **Version:** pinned in two places: `renovate-version` in the workflow and the `renovate@<version>` used by the `renovate-config-validate` CI job. Renovate updates both in one `renovate/renovate` PR (a regex manager plus a `renovate` group), so they can't drift.
 
 ## What it updates
 
@@ -57,7 +57,7 @@ gh run list --workflow renovate.yaml --repo arigsela/kubernetes --limit 1
 
 ## Changing the config
 
-1. Validate: `npx --yes --package renovate@44.137.0 renovate-config-validator --strict` from the repo root (Renovate 44 needs Node 24). CI runs the same check on any PR that touches `renovate.json5`.
+1. Validate: `npx --yes --package renovate@<version> renovate-config-validator --strict` (use the pinned version) from the repo root (Renovate 44 needs Node 24). CI runs the same check on any PR that touches `renovate.json5`.
 2. Dry-run it locally against the checkout, read-only:
 
    ```bash
@@ -65,7 +65,7 @@ gh run list --workflow renovate.yaml --repo arigsela/kubernetes --limit 1
      -e LOG_LEVEL=debug -e LOG_FORMAT=json -e RENOVATE_BASE_DIR=/tmp/renovate \
      -e RENOVATE_CONFIG_FILE=/usr/src/app/renovate.json5 \
      -e RENOVATE_GITHUB_COM_TOKEN="$(gh auth token)" \
-     ghcr.io/renovatebot/renovate:44.137.0 --platform=local --dry-run=full > /tmp/renovate.jsonl
+     ghcr.io/renovatebot/renovate:<version> --platform=local --dry-run=full > /tmp/renovate.jsonl
    ```
 
    Read the `packageFiles with updates` log entry; each update carries its `branchName`.

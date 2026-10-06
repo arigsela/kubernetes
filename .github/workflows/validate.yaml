@@ -427,4 +427,4 @@ jobs:
         with:
           node-version: "24"
       - name: Validate renovate.json5
-        run: npx --yes --package renovate@44.137.0 renovate-config-validator --strict
+        run: npx --yes --package renovate@44.138.0 renovate-config-validator --strict
