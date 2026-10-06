@@ -104,8 +104,12 @@ def score_entry(entry: dict, answer: str, judge=None) -> dict:
     if judge is not None:
         j = judge(entry, answer)
         result["judge"] = j
-        result["passed"] = bool(j.get("pass"))
-        result["decided_by"] = "judge"
+        if j.get("pass") is None:          # the judge declined to decide
+            result["passed"] = r["rubric_pass"]
+            result["decided_by"] = "rubric(judge unsure)"
+        else:
+            result["passed"] = bool(j.get("pass"))
+            result["decided_by"] = "judge"
     else:
         result["passed"] = r["rubric_pass"]
         result["decided_by"] = "rubric"
@@ -281,6 +285,36 @@ def classify_jev(entry: dict, body: dict) -> dict:
                       [f"fact '{f}' p={p:.2f}" for f, p in fact_probs.items()]
     return {"verdict": verdict, "p_behavior": p_behavior, "confidence": confidence,
             "facts": fact_probs, "input_tokens": tokens, "reasons": reasons}
+
+
+def jev_judge(entry: dict, answer: str, *, transport=None) -> dict:
+    """Jev alone. pass=None means 'unsure': the caller decides what that means
+    (cascade escalates; `--judge jev` lets the rubric decide)."""
+    body = ask_jev(build_jev_state(entry, answer), build_jev_questions(entry),
+                   transport=transport)
+    c = classify_jev(entry, body)
+    verdict = {"pass": True, "fail": False, "unsure": None}[c["verdict"]]
+    rationale = (f"jev {c['verdict']} (behavior p={c['p_behavior']:.2f}, "
+                 f"confidence {c['confidence']:.2f}"
+                 + (f"; {'; '.join(c['reasons'])}" if c["reasons"] else "") + ")")
+    return {"pass": verdict, "rationale": rationale, "tier": "jev", "jev": c}
+
+
+def cascade_judge(entry: dict, answer: str, *, transport=None, claude=None) -> dict:
+    """Jev first; Sonnet only when Jev is unsure or unreachable. Never turns a Jev
+    outage into a verdict on its own."""
+    claude = claude or anthropic_judge
+    try:
+        j = jev_judge(entry, answer, transport=transport)
+    except JevError as err:
+        c = claude(entry, answer)
+        return {"pass": bool(c.get("pass")), "rationale": c.get("rationale", ""),
+                "tier": "claude", "jev": None, "degraded": str(err)}
+    if j["pass"] is not None:
+        return {**j, "degraded": None}
+    c = claude(entry, answer)
+    return {"pass": bool(c.get("pass")), "rationale": c.get("rationale", ""),
+            "tier": "claude", "jev": j["jev"], "degraded": None}
 
 
 def main(argv=None) -> int:
