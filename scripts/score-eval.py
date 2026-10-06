@@ -235,6 +235,54 @@ def ask_jev(state: dict, questions: dict, *, model: str = JEV_MODEL,
         raise JevError(f"Jev request failed: {err}") from err
 
 
+JEV_PASS = 0.70            # every probability at or above this -> pass
+JEV_FAIL = 0.30            # any probability at or below this  -> fail
+JEV_ESCALATE_CONF = 0.50   # below this Jev is unsure regardless of probabilities
+
+
+def classify_jev(entry: dict, body: dict) -> dict:
+    """Turn one Jev body into pass / fail / unsure. Strict about shape: a missing
+    or extra answer is an error, never a silent pass."""
+    golden = entry.get("golden") or {}
+    expected = golden.get("behavior") or "answer"
+    facts = list(golden.get("must_include") or [])
+    try:
+        answers = body["answers"]
+        beh = answers["behavior"]
+        p_behavior = float(beh["probabilities"][expected])
+        confidence = float(beh["confidence"])
+        fact_probs = {}
+        for i, fact in enumerate(facts):
+            key = f"fact_{i}"
+            if key not in answers:
+                raise JevError(f"Jev body is missing {key}")
+            fact_probs[fact] = float(answers[key]["noul"])
+        tokens = int((body.get("usage") or {}).get("input_tokens", 0))
+    except JevError:
+        raise
+    except (KeyError, TypeError, ValueError) as err:
+        raise JevError(f"unexpected Jev body shape: {err!r}") from err
+
+    reasons: list[str] = []
+    if confidence < JEV_ESCALATE_CONF:
+        reasons.append(f"confidence {confidence:.2f} < {JEV_ESCALATE_CONF}")
+        verdict = "unsure"
+    else:
+        low = [f"behavior={expected} p={p_behavior:.2f}"] if p_behavior <= JEV_FAIL else []
+        low += [f"fact '{f}' p={p:.2f}" for f, p in fact_probs.items() if p <= JEV_FAIL]
+        high = p_behavior >= JEV_PASS and all(p >= JEV_PASS for p in fact_probs.values())
+        if low:
+            verdict, reasons = "fail", low
+        elif high:
+            verdict = "pass"
+        else:
+            verdict = "unsure"
+            reasons = [f"behavior={expected} p={p_behavior:.2f}"] + \
+                      [f"fact '{f}' p={p:.2f}" for f, p in fact_probs.items()]
+    return {"verdict": verdict, "p_behavior": p_behavior, "confidence": confidence,
+            "facts": fact_probs, "input_tokens": tokens, "reasons": reasons}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
