@@ -253,12 +253,20 @@ def _export_file(tmp_path, classes):
     return p
 
 
-def test_main_requires_key_unless_dry_run(tmp_path, monkeypatch, classes):
+def test_main_requires_key_unless_dry_run(tmp_path, monkeypatch, capsys, classes):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     p = _export_file(tmp_path, classes)
-    with pytest.raises(SystemExit) as e:
-        ar.main(["--records", str(p), "--out", str(tmp_path / "r.jsonl"), "--repo-root", str(REPO)])
-    assert "TYPESAFE_API_KEY" in str(e.value)
+    rc = ar.main(["--records", str(p), "--out", str(tmp_path / "r.jsonl"), "--repo-root", str(REPO)])
+    assert rc == 2                                   # usage error, not a risk verdict (1)
+    assert "TYPESAFE_API_KEY" in capsys.readouterr().err
+
+
+def test_main_missing_records_file_is_usage_error(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    missing = tmp_path / "nope.jsonl"
+    rc = ar.main(["--records", str(missing), "--out", str(tmp_path / "r.jsonl"), "--repo-root", str(REPO)])
+    assert rc == 2
+    assert str(missing) in capsys.readouterr().err
 
 
 def test_main_dry_run_writes_records_and_summary(tmp_path, monkeypatch, capsys, classes):
