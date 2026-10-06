@@ -21,7 +21,7 @@
 #   what a shell may touch is the tool-guard's job (the spec in
 #   docs/superpowers/specs/2026-10-06-jev-tool-guard-design.md), not RBAC's.
 # - Every non-core API group the cluster had on 2026-10-06, named one by one, all
-#   resources and verbs. `apiGroups: ["*"]` would re-admit the core group and with
+#   resources, the CRUD verbs. `apiGroups: ["*"]` would re-admit the core group and with
 #   it Secrets, so a group added later is DENIED until a PR adds it here. That is
 #   the same fail-closed stance the capability taxonomy takes with new tools: a
 #   chart or CRD upgrade cannot silently widen what an agent can reach.
@@ -37,6 +37,14 @@
 # off. Verify live with
 #   kubectl auth can-i list secrets --all-namespaces --as=system:serviceaccount:kagent:kagent-tools   # no
 #   kubectl auth can-i list pods --all-namespaces --as=system:serviceaccount:kagent:kagent-tools      # yes
+#   kubectl auth can-i escalate clusterroles.rbac.authorization.k8s.io --as=system:serviceaccount:kagent:kagent-tools  # no
+#
+# VERBS ARE NAMED, NEVER `*`. The `*` verb is a wildcard too: it carries escalate
+# and bind (write yourself a role that reads Secrets), impersonate (become an
+# identity that can), approve and sign (mint a certificate for one). The first
+# version of this file used `*` and every one of those answered "yes" to
+# `kubectl auth can-i`, which made the Secret denial a formality. The eight CRUD
+# verbs are the whole list; nothing here grants a privilege verb.
 #
 # NEXT NARROWING CANDIDATES (not this change): the groups that hold the guardrails
 # themselves (admissionregistration.k8s.io, rbac.authorization.k8s.io, kyverno.io,
@@ -74,7 +82,7 @@ rules:
       - resourcequotas
       - serviceaccounts
       - services
-    verbs: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
   # Every non-core API group the cluster served on 2026-10-06. Add new groups here.
   - apiGroups:
       - acme.cert-manager.io
@@ -142,7 +150,7 @@ rules:
       - velero.io
       - wgpolicyk8s.io
     resources: ["*"]
-    verbs: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
   # API discovery for the kubectl inside the tool server.
   - nonResourceURLs: ["/api", "/api/*", "/apis", "/apis/*", "/version", "/healthz", "/readyz", "/openapi", "/openapi/*"]
     verbs: ["get"]
