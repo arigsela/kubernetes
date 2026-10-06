@@ -70,6 +70,32 @@ spec:
             preStop:
               sleep:
                 seconds: 5
+          # Proves the model really loads and embeds on THIS node's CPU before the pod takes
+          # traffic. `GET /` (readiness/liveness below) answers as soon as the server is up,
+          # but the model only loads on the first embed request: an Ollama upgrade whose CPU
+          # backend didn't fit these E5-2670s (AVX, no AVX2/FMA/F16C) would fail only then,
+          # after a RollingUpdate had already removed the old pod. With this probe the old
+          # pod keeps serving until the new one has returned a real vector. Side effect: the
+          # model is pre-loaded at startup (OLLAMA_KEEP_ALIVE=-1 keeps it resident), so the
+          # first kagent call no longer pays the ~2m43s cold load.
+          # No curl/wget in the image, so this speaks HTTP over bash's /dev/tcp. A probe that
+          # times out while the server is still loading just counts as one failure; the
+          # budget (30 x 10s, plus up to 30s per attempt) covers the ~2m43s cold load.
+          # Liveness/readiness only start once this has passed, so a slow load can't restart
+          # the pod.
+          startupProbe:
+            exec:
+              command:
+                - bash
+                - -c
+                - |
+                  exec 3<>/dev/tcp/127.0.0.1/11434 || exit 1
+                  body='{"model":"nomic-embed-text","input":"probe"}'
+                  printf 'POST /api/embed HTTP/1.0\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: %d\r\n\r\n%s' "${#body}" "$body" >&3
+                  case "$(cat <&3)" in *'"embeddings":[['*) exit 0 ;; *) exit 1 ;; esac
+            periodSeconds: 10
+            timeoutSeconds: 30
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /
