@@ -290,3 +290,14 @@ def test_main_exits_one_on_high(tmp_path, monkeypatch, classes):
     p = _export_file(tmp_path, classes)
     rc = ar.main(["--records", str(p), "--out", str(tmp_path / "r.jsonl"), "--repo-root", str(REPO)])
     assert rc == 1
+
+
+def test_mid_body_disconnect_is_a_jev_error():
+    """IncompleteRead is an HTTPException (not OSError/ValueError); it must not abort the run."""
+    import http.client
+
+    def transport(payload, headers, timeout):
+        raise http.client.IncompleteRead(b"")
+
+    with pytest.raises(ar.JevError):
+        ar.ask_jev({}, api_key="k", transport=transport)

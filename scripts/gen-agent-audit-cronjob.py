@@ -99,7 +99,8 @@ HEADER = """\
 # and prints an argument-free summary that the Grafana rule "Agent session scored
 # high risk" reads. The redacted arguments of candidate sessions leave the cluster
 # for TypeSafe: the operator's egress decision of 2026-10-06, recorded in the
-# script header. Exits non-zero on a `high` session, like --ungated.
+# script header. Exits non-zero on a `high` session, like --ungated, and also on a Jev error
+# (jev_errors > 0): a check that did not run must not look healthy.
 #
 # It reads the database as kagent_audit_ro — the SELECT-only role. It cannot mutate
 # the evidence it audits. Proven: DELETE/UPDATE/INSERT/DDL are all denied by Postgres.
@@ -277,6 +278,8 @@ def build(script_src: str, taxonomy_src: str, acknowledged_src: str, risk_src: s
             "--max-sessions 50\n"
             "RC=$?\n"
             "set -e\n"
+            # No risk.jsonl means a usage error: exit with the script's own code, not an upload traceback.
+            "[ -s /scratch/risk.jsonl ] || exit $RC\n"
             "echo \"uploading $(wc -l < /scratch/risk.jsonl) risk records to ${KEY}\" >&2\n"
             "python -c \"import boto3,os;"
             "boto3.client('s3',"
@@ -334,8 +337,8 @@ def main(argv=None) -> int:
 
     have = path.read_text() if path.exists() else ""
     if have == want:
-        print("agent-audit CronJob is in sync with agent-audit.py, the taxonomy "
-              "and the acknowledged findings")
+        print("agent-audit CronJob is in sync with agent-audit.py, agent-audit-risk.py, "
+              "the taxonomy and the acknowledged findings")
         return 0
 
     print(f"{OUT} is STALE — regenerate with ./scripts/gen-agent-audit-cronjob.py",
