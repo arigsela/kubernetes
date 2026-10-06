@@ -34,6 +34,7 @@ import yaml
 SCRIPT = "scripts/agent-audit.py"
 TAXONOMY = "base-apps/admission-policies/agent-capability-taxonomy.yaml"
 ACKNOWLEDGED = "scripts/agent-audit-acknowledged.yaml"
+RISK_SCRIPT = "scripts/agent-audit-risk.py"
 OUT = "base-apps/postgresql/agent-audit-cronjob.yaml"
 
 HEADER = """\
@@ -44,6 +45,7 @@ HEADER = """\
 # Sources:    scripts/agent-audit.py
 #             base-apps/admission-policies/agent-capability-taxonomy.yaml
 #             scripts/agent-audit-acknowledged.yaml
+#             scripts/agent-audit-risk.py
 # Regenerate: ./scripts/gen-agent-audit-cronjob.py
 # CI fails if this file drifts from any source.
 #
@@ -88,6 +90,16 @@ HEADER = """\
 # Wiring a real Alertmanager is a separate gap and is named as such. Falco has the
 # same hole (falcosidekick disabled, detections go to stdout and nothing reads them).
 # Fixing both together is the right move; it is not this increment.
+#
+# RISK TRIAGE (the third CronJob)
+#
+# agent-audit-risk runs after the export. It re-exports the same 25h window, scores
+# every session (rules first, then Jev for sessions with a gated call, a redacted
+# argument or a Secret read), uploads the `kind: risk` records next to the export,
+# and prints an argument-free summary that the Grafana rule "Agent session scored
+# high risk" reads. The redacted arguments of candidate sessions leave the cluster
+# for TypeSafe: the operator's egress decision of 2026-10-06, recorded in the
+# script header. Exits non-zero on a `high` session, like --ungated.
 #
 # It reads the database as kagent_audit_ro — the SELECT-only role. It cannot mutate
 # the evidence it audits. Proven: DELETE/UPDATE/INSERT/DDL are all denied by Postgres.
@@ -175,7 +187,7 @@ def _cronjob(name, schedule, container, *, backoff=0, failed_history=7):
     }
 
 
-def build(script_src: str, taxonomy_src: str, acknowledged_src: str) -> list[dict]:
+def build(script_src: str, taxonomy_src: str, acknowledged_src: str, risk_src: str) -> list[dict]:
     code_cm = {
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -186,6 +198,7 @@ def build(script_src: str, taxonomy_src: str, acknowledged_src: str) -> list[dic
         },
         "data": {
             "agent-audit.py": script_src,
+            "agent-audit-risk.py": risk_src,
             "agent-capability-taxonomy.yaml": taxonomy_src,
             "agent-audit-acknowledged.yaml": acknowledged_src,
         },
@@ -245,14 +258,57 @@ def build(script_src: str, taxonomy_src: str, acknowledged_src: str) -> list[dic
         failed_history=3,
     )
 
-    return [code_cm, ungated, export]
+    # --- risk triage. After the export so a failed Jev day never blocks the
+    # durable copy. Re-reads the same 25h window with the SELECT-only role, scores
+    # it, uploads `-risk.jsonl` beside the export, prints the summary line. backoff
+    # 0: a `high` verdict exits 1 on purpose and must not be retried (each retry
+    # would bill Jev again and emit a second summary line).
+    risk = _cronjob(
+        "agent-audit-risk", "30 2 * * *",
+        _container(
+            "agent-audit-risk",
+            "'psycopg[binary]==3.2.3' 'pyyaml==6.0.2' 'boto3==1.35.71'",
+            "export KEY=\"dt=$(date -u +%Y-%m-%d)/$(date -u +%H%M%S)-risk.jsonl\"\n"
+            "python /opt/audit/agent-audit.py --export --since 25h "
+            "> /scratch/record.jsonl\n"
+            "set +e\n"
+            "python /opt/audit/agent-audit-risk.py --records /scratch/record.jsonl "
+            "--out /scratch/risk.jsonl --taxonomy /opt/audit/agent-capability-taxonomy.yaml "
+            "--max-sessions 50\n"
+            "RC=$?\n"
+            "set -e\n"
+            "echo \"uploading $(wc -l < /scratch/risk.jsonl) risk records to ${KEY}\" >&2\n"
+            "python -c \"import boto3,os;"
+            "boto3.client('s3',"
+            "aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],"
+            "aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],"
+            "region_name='us-east-1')"
+            ".upload_file('/scratch/risk.jsonl',"
+            "'asela-agent-audit-record', os.environ['KEY'])\"\n"
+            "echo \"uploaded s3://asela-agent-audit-record/${KEY}\" >&2\n"
+            "exit $RC\n",
+            extra_env=[
+                {"name": "TYPESAFE_API_KEY", "valueFrom": {"secretKeyRef": {
+                    "name": "agent-audit-risk-credentials", "key": "typesafe-api-key"}}},
+                {"name": "AWS_ACCESS_KEY_ID", "valueFrom": {"secretKeyRef": {
+                    "name": "agent-audit-s3-creds", "key": "username"}}},
+                {"name": "AWS_SECRET_ACCESS_KEY", "valueFrom": {"secretKeyRef": {
+                    "name": "agent-audit-s3-creds", "key": "attribute.secret"}}},
+            ],
+        ),
+        backoff=0,
+        failed_history=7,
+    )
+
+    return [code_cm, ungated, export, risk]
 
 
 def render(repo: Path) -> str:
     script_src = (repo / SCRIPT).read_text()
     taxonomy_src = (repo / TAXONOMY).read_text()
     acknowledged_src = (repo / ACKNOWLEDGED).read_text()
-    docs = build(script_src, taxonomy_src, acknowledged_src)
+    risk_src = (repo / RISK_SCRIPT).read_text()
+    docs = build(script_src, taxonomy_src, acknowledged_src, risk_src)
     body = "\n---\n".join(
         yaml.safe_dump(d, sort_keys=False, width=10_000, default_flow_style=False)
         for d in docs
