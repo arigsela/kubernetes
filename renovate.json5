@@ -48,6 +48,16 @@
       ],
       versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}',
     },
+    {
+      // The Renovate version CI validates the config with must match the one
+      // the workflow runs (renovate-version in .github/workflows/renovate.yaml),
+      // or a config the runner accepts can fail CI, or the reverse.
+      customType: 'regex',
+      managerFilePatterns: ['/^\\.github/workflows/validate\\.yaml$/'],
+      matchStrings: ['renovate@(?<currentValue>\\d+\\.\\d+\\.\\d+) renovate-config-validator'],
+      depNameTemplate: 'ghcr.io/renovatebot/renovate',
+      datasourceTemplate: 'docker',
+    },
   ],
 
   // Never edit these. tests/ fixtures hold bad images on purpose; the audit
@@ -108,6 +118,12 @@
         'base-apps/istio-ztunnel.yaml',
       ],
       groupName: 'istio',
+    },
+    {
+      description: 'Renovate itself: the workflow image and the CI validator pin move in one PR.',
+      matchPackageNames: ['ghcr.io/renovatebot/renovate'],
+      groupName: 'renovate',
+      pinDigests: false,
     },
     {
       description: 'Gateway API stays on v1.5.x until Istio 1.31: Istio 1.30.x is built against gateway-api v1.5.1, and v1.6 support (TCPRoute/UDPRoute at v1, istio#61540) only lands in 1.31. See base-apps/istio-gateway-api.yaml. Lift this together with the Istio 1.31 upgrade.',
