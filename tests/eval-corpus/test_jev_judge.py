@@ -240,7 +240,12 @@ def test_select_judge_returns_callables(monkeypatch):
 
 def test_main_table_shows_tier(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("TYPESAFE_API_KEY", "k")
-    monkeypatch.setattr(se, "_http_post", lambda p, h, t: _body(facts=(0.9, 0.9, 0.9, 0.9, 0.9)))
+    def fake_post(payload, headers, timeout):
+        asked = __import__("json").loads(payload)["questions"]
+        n_facts = sum(1 for k in asked if k.startswith("fact_"))
+        return _body(facts=(0.9,) * n_facts)
+
+    monkeypatch.setattr(se, "_http_post", fake_post)
     answers = tmp_path / "a.jsonl"
     corpus = se.load_corpus(REPO)
     answers.write_text("\n".join(
@@ -302,3 +307,30 @@ def test_main_treats_null_answer_as_no_answer(tmp_path, capsys):
     results = __import__("json").loads(capsys.readouterr().out.split("\n0/")[0])
     assert next(r for r in results if r["id"] == first)["decided_by"] == "no-answer"
     assert rc == 1
+
+
+# --------------------------------------------------------- final-review fixes
+
+def test_classify_rejects_unexpected_keys():
+    body = _body(facts=(0.9, 0.9))
+    body["answers"]["fact_7"] = {"noul": 0.9}           # a key the request never sent
+    with pytest.raises(se.JevError, match="fact_7"):
+        se.classify_jev(_entry(), body)
+
+
+def test_main_table_shows_degraded_jev(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+
+    def down(p, h, t):
+        raise OSError("down")
+
+    monkeypatch.setattr(se, "_http_post", down)
+    monkeypatch.setattr(se, "anthropic_judge", lambda e, a: {"pass": True, "rationale": "x"})
+    answers = tmp_path / "a.jsonl"
+    first = next(iter(se.load_corpus(REPO)))
+    answers.write_text(__import__("json").dumps({"id": first, "answer": "kagent-controller kagent-ui"}) + "\n")
+    se.main(["--answers", str(answers), "--judge", "cascade", "--repo-root", str(REPO)])
+    out = capsys.readouterr().out
+    assert "degraded=" in out and "down" in out
+    assert "degraded to Sonnet" in out

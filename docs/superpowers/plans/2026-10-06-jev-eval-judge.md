@@ -614,7 +614,7 @@ def test_main_table_shows_tier(tmp_path, monkeypatch, capsys):
     assert rc in (0, 1)
 ```
 
-The fake body answers five facts so every corpus entry (max four `must_include`) has its keys; `classify_jev` ignores extra keys.
+The fake transport parses the request and answers exactly the fact questions it was asked; `classify_jev` rejects a body with keys the request never sent (final review, finding 1).
 
 - [ ] **Step 2: Run the tests to verify they fail**
 

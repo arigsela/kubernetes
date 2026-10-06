@@ -74,3 +74,14 @@ def test_main_writes_jsonl_and_fails_on_missing_answer(tmp_path, monkeypatch):
     lines = [json.loads(l) for l in out.read_text().splitlines()]
     assert lines == [{"id": "one", "answer": "A1"}, {"id": "two", "answer": None}]
     assert rc == 1
+
+
+def test_extract_text_ignores_failed_task_message():
+    """A failed/canceled/rejected task's status message is an error, not an answer."""
+    for state in ("failed", "canceled", "rejected"):
+        result = {"status": {"state": state,
+                             "message": {"parts": [{"kind": "text", "text": "internal error"}]}}}
+        assert cap.extract_text(result) is None, state
+    ok = {"status": {"state": "completed",
+                     "message": {"parts": [{"kind": "text", "text": "hi"}]}}}
+    assert cap.extract_text(ok) == "hi"
