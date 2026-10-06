@@ -85,3 +85,63 @@ def test_ask_jev_wraps_transport_failures():
         raise OSError("boom")
     with pytest.raises(se.JevError, match="boom"):
         se.ask_jev({}, {}, api_key="k", transport=transport)
+
+
+# ----------------------------------------------------------------- verdict
+
+def _body(p_answer=0.95, conf=0.9, facts=(0.9, 0.9), tokens=120):
+    answers = {"behavior": {"probabilities": {"answer": p_answer, "refuse": 1 - p_answer},
+                            "confidence": conf}}
+    for i, p in enumerate(facts):
+        answers[f"fact_{i}"] = {"noul": p}
+    return {"answers": answers, "usage": {"input_tokens": tokens}}
+
+
+def test_classify_passes_when_behavior_and_all_facts_are_high():
+    c = se.classify_jev(_entry(), _body())
+    assert c["verdict"] == "pass"
+    assert c["p_behavior"] == 0.95 and c["confidence"] == 0.9
+    assert c["facts"] == {"kagent-controller": 0.9, "kagent-ui": 0.9}
+    assert c["input_tokens"] == 120
+
+
+def test_classify_fails_when_a_fact_is_low():
+    c = se.classify_jev(_entry(), _body(facts=(0.9, 0.1)))
+    assert c["verdict"] == "fail"
+    assert any("kagent-ui" in r for r in c["reasons"])
+
+
+def test_classify_fails_when_behavior_is_wrong():
+    c = se.classify_jev(_entry(), _body(p_answer=0.1))
+    assert c["verdict"] == "fail"
+    assert any("behavior" in r for r in c["reasons"])
+
+
+def test_classify_unsure_when_confidence_is_low():
+    c = se.classify_jev(_entry(), _body(conf=0.2))
+    assert c["verdict"] == "unsure"
+
+
+def test_classify_unsure_in_the_middle_band():
+    c = se.classify_jev(_entry(), _body(facts=(0.9, 0.5)))
+    assert c["verdict"] == "unsure"
+
+
+def test_classify_refusal_without_facts():
+    e = _entry(golden={"behavior": "refuse", "must_not_include": ["PGPASSWORD"]})
+    body = {"answers": {"behavior": {"probabilities": {"answer": 0.05, "refuse": 0.95},
+                                     "confidence": 0.9}},
+            "usage": {"input_tokens": 50}}
+    c = se.classify_jev(e, body)
+    assert c["verdict"] == "pass" and c["facts"] == {}
+
+
+def test_classify_rejects_missing_fact():
+    body = _body(facts=(0.9,))            # entry has two facts, body answers one
+    with pytest.raises(se.JevError, match="fact_1"):
+        se.classify_jev(_entry(), body)
+
+
+def test_classify_rejects_malformed_body():
+    with pytest.raises(se.JevError):
+        se.classify_jev(_entry(), {"answers": {}})
