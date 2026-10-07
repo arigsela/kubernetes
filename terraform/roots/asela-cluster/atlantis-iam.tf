@@ -4,7 +4,7 @@
 #
 # SECURITY: Policy is scoped to specific resource ARNs — no wildcard resources
 # on sensitive services (IAM actions scoped to /system/ path, KMS to vault key,
-# Secrets Manager to known secret prefixes).
+# Secrets Manager to known secret prefixes, ECR to this region's repositories).
 #
 # AFTER APPLY: Retrieve the secret access key and store it in Vault manually:
 #   terraform output -raw atlantis_access_key_id
@@ -171,6 +171,38 @@ resource "aws_iam_policy" "atlantis" {
         Resource = [
           "arn:aws:secretsmanager:us-east-2:${data.aws_caller_identity.current.account_id}:secret:rds-mysql-asela-*",
           "arn:aws:secretsmanager:us-east-2:${data.aws_caller_identity.current.account_id}:secret:aws-credentials-infra-*"
+        ]
+      },
+      # -----------------------------------------------------------------------
+      # ECR: repository and lifecycle-policy management, scoped to this region's
+      # repositories. Added 2026-10-07 so the container registry can move into
+      # this root (ecr.tf, the follow-up PR): until this statement is applied,
+      # Atlantis cannot even plan an aws_ecr_repository. No image push or pull
+      # actions: Atlantis manages repositories, never their contents. Pushing
+      # stays with the per-app GitHub OIDC roles that Crossplane provisions.
+      # -----------------------------------------------------------------------
+      {
+        Sid    = "ECRRepositoryManagement"
+        Effect = "Allow"
+        Action = [
+          "ecr:CreateRepository",
+          "ecr:DeleteRepository",
+          "ecr:DescribeRepositories",
+          "ecr:ListTagsForResource",
+          "ecr:TagResource",
+          "ecr:UntagResource",
+          "ecr:PutImageTagMutability",
+          "ecr:PutImageScanningConfiguration",
+          "ecr:PutEncryptionConfiguration",
+          "ecr:GetLifecyclePolicy",
+          "ecr:PutLifecyclePolicy",
+          "ecr:DeleteLifecyclePolicy",
+          "ecr:GetRepositoryPolicy",
+          "ecr:SetRepositoryPolicy",
+          "ecr:DeleteRepositoryPolicy"
+        ]
+        Resource = [
+          "arn:aws:ecr:us-east-2:${data.aws_caller_identity.current.account_id}:repository/*"
         ]
       },
       # -----------------------------------------------------------------------
