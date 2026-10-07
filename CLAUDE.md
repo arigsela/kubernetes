@@ -25,7 +25,7 @@ This is a GitOps repository for a homelab k3s cluster. Argo CD deploys everythin
   - Each application directory can contain its own `secret-store.yaml` for Vault integration
 - `/appsets/managed-apps/` - Per-app configs for the `managed-apps` ApplicationSet
 - `/terraform/` - Infrastructure as Code
-  - `/roots/asela-cluster/` - The only active root (Argo CD install, IAM, Vault KMS key and credentials, Atlantis IAM)
+  - `/roots/asela-cluster/` - The only active root (Argo CD install, IAM, Vault KMS key and credentials, Atlantis IAM, the ECR repositories and their lifecycle policy)
   - `/modules/` - `argocd` (in use); `application-sets` and `kube-secrets` are no longer called by the root
 - `/ansible/` - Host layer: the Ubuntu hypervisor and the three k3s VMs (see `ansible/README.md`)
   - `/playbooks/` - `bootstrap.yml`, `site.yml` (baseline), `patch.yml` (VMs), `patch-hypervisor.yml`, `k3s-authn.yml`
