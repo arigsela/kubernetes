@@ -94,21 +94,3 @@ resource "aws_ecr_lifecycle_policy" "this" {
     ]
   })
 }
-
-# -----------------------------------------------------------------------------
-# One-time import of the 9 existing repositories and their lifecycle policies.
-# Remove these blocks in the PR after this one has applied (they are no-ops
-# once the resources are in state, but they are noise).
-# -----------------------------------------------------------------------------
-
-import {
-  for_each = local.ecr_repositories
-  to       = aws_ecr_repository.this[each.key]
-  id       = each.key
-}
-
-import {
-  for_each = local.ecr_repositories
-  to       = aws_ecr_lifecycle_policy.this[each.key]
-  id       = each.key
-}
