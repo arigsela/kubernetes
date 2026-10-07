@@ -28,18 +28,19 @@ spec:
           tolerations:
           - key: node-role.kubernetes.io/control-plane
             effect: NoSchedule
+        # Background and cleanup controllers OFF (2026-10-07). Kyverno is
+        # reporting-only (SPEC §T.72, §T.80): 0 ClusterPolicy, 0 CleanupPolicy and
+        # no cleanup.kyverno.io/ttl labels, so neither controller has any work
+        # (generate/mutateExisting; TTL and cleanup policies). Each still held
+        # 80-125Mi (mostly its binary's page cache) against a 128Mi limit.
+        # Re-enable before adding a generate, mutateExisting or cleanup policy.
+        # The cleanup controller creates its two webhook configs and TLS Secrets
+        # at runtime, outside the chart; delete those by hand once the
+        # Deployment is pruned (see the PR that made this change).
         backgroundController:
-          nodeSelector:
-            node.kubernetes.io/workload: infrastructure
-          tolerations:
-          - key: node-role.kubernetes.io/control-plane
-            effect: NoSchedule
+          enabled: false
         cleanupController:
-          nodeSelector:
-            node.kubernetes.io/workload: infrastructure
-          tolerations:
-          - key: node-role.kubernetes.io/control-plane
-            effect: NoSchedule
+          enabled: false
         reportsController:
           nodeSelector:
             node.kubernetes.io/workload: infrastructure
