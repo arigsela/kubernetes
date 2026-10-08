@@ -50,12 +50,12 @@ curl -s https://dex.arigsela.com/.well-known/openid-configuration | head
   ConfigMap change. Any edit inside the `config.yaml: |` block counts, comments
   included.
 
-### Every Dex login fails at once (Vault, Argo CD, kubectl, agent-audit)
+### Every Dex login fails at once (Vault, Argo CD, kubectl, agent-audit, Jupyter)
 - **Symptom:** `dex.arigsela.com` answers `403` or times out from home; kubectl's
   OIDC context gets `Unauthorized`.
 - **Cause:** usually a home WAN IP rotation — the Dex rule in
   `base-apps/istio-ingress/authorizationpolicy.yaml` is IP-restricted, and in-cluster
-  clients (Argo CD, agent-audit-web's oauth2-proxy, the API server) reach Dex through
+  clients (Argo CD, the agent-audit-web and Jupyter oauth2-proxies, the API server) reach Dex through
   that public hostname via hairpin NAT too. `wan-ip-monitor`
   fixes DNS automatically and opens a PR for the allow-list; merging it is the fix
   (see the wan-ip-monitor and istio-ingress runbooks). If Dex itself is down, see

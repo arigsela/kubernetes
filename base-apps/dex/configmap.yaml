@@ -6,7 +6,7 @@
 # reachability of dex.arigsela.com from the Vault pod.
 #
 # Secrets ($GITHUB_CLIENT_ID/$GITHUB_CLIENT_SECRET/$VAULT_CLIENT_SECRET/
-# $AGENT_AUDIT_CLIENT_SECRET) are
+# $AGENT_AUDIT_CLIENT_SECRET/$JUPYTER_CLIENT_SECRET) are
 # substituted from the dex-secrets Secret at startup (Dex expands $ENV refs when
 # the file is loaded via `dex serve`).
 apiVersion: v1
@@ -100,6 +100,19 @@ data:
         secretEnv: AGENT_AUDIT_CLIENT_SECRET
         redirectURIs:
           - https://agent-audit.arigsela.com/oauth2/callback
+
+      # jupyter, added 2026-10-08 (design §3.2, amended). CONFIDENTIAL with PKCE,
+      # the same shape and reasoning as agent-audit: the client is an oauth2-proxy
+      # sidecar that can keep a secret.
+      #
+      # Dex admits ANY GitHub account, so this client grants nothing by itself:
+      # the sidecar's authenticated-emails-file (k8s-secrets/jupyter, never
+      # committed) is the allow-list.
+      - id: jupyter
+        name: Jupyter
+        secretEnv: JUPYTER_CLIENT_SECRET
+        redirectURIs:
+          - https://jupyter.arigsela.com/oauth2/callback
 
     connectors:
       - type: github

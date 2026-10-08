@@ -76,6 +76,29 @@ plus a static-token bypass path for the agent — was rejected because **the byp
 path becomes the entire security boundary** while looking like a footnote in the
 config. One path, one credential, one thing to get right.
 
+> **Amended 2026-10-08: Dex in front of both clients, with no token-only path.**
+> The rejection above was of a *bypass*: a public route that accepts the static
+> token alone while the browser goes through Dex. The amendment adds Dex without
+> one, by moving the agent off the public hostname:
+>
+> - **Browser:** an oauth2-proxy sidecar (Dex client `jupyter`, PKCE, an email
+>   allow-list from Vault) is the only thing the Service and the Gateway reach.
+>   After the GitHub login it injects `Authorization: token <JUPYTER_TOKEN>`
+>   upstream, so the browser never holds the token.
+> - **Claude Code:** `kubectl port-forward` on the OIDC kubectl context. The API
+>   server authenticates that context against Dex and RBAC admits only
+>   `oidc:arigsela`, so the agent's path also starts with the GitHub identity.
+> - **Jupyter** listens on `127.0.0.1:8888` and still requires the token: the
+>   inner layer behind both paths, not a path of its own.
+>
+> Still one principal and one credential; now there are two ways in, and both are
+> gated by the same identity provider. The cost is that Claude Code needs a
+> port-forward running and a Dex outage blocks it too (break-glass: the x509
+> admin kubeconfig). The trap the original concern pointed at still exists in a
+> new form: oauth2-proxy injects the token header on skip-auth routes as well,
+> so a single `--skip-auth-route` on the sidecar would recreate the bypass.
+> `oauth2-proxy-config.yaml` and `docs.md` say so next to the config.
+
 It also means the agent half needs nothing from the kagent guardrail stack: no
 entry in `agent-capability-taxonomy.yaml`, no capability class, no HITL approval
 wiring. Those controls govern *kagent agents* binding *kagent tools*. Claude Code
@@ -389,9 +412,10 @@ what changes and what does not:
 
 - **Unchanged:** the S3 bucket and IAM user (separate Application, by design);
   the notebooks git repo; the NetworkPolicy shape.
-- **Changes:** the agent stops calling `jupyter.arigsela.com/api/kernels` and
-  starts creating `Sandbox` CRs. The token stops being shared between two
-  clients and becomes browser-only.
+- **Changes:** the agent stops calling `/api/kernels` (over the port-forward,
+  since the 2026-10-08 amendment to §3.2) and starts creating `Sandbox` CRs.
+  The token stops being shared between two clients and is held only by the
+  oauth2-proxy sidecar.
 - **The thing to avoid meanwhile:** adding a *second* authentication path or a
   kagent tool pointing at this deployment. Either would make the migration a
   breaking change for callers rather than an additive one.

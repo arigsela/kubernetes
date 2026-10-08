@@ -18,6 +18,14 @@ spec:
     metadata:
       labels:
         app: jupyter
+      annotations:
+        # Roll the pod when the oauth2-proxy alpha config changes; the proxy
+        # reads it only at startup and there is no reloader in this cluster.
+        # Value is sha256 of the ConfigMap's alpha-config.yaml, first 16 hex:
+        #   python3 -c "import hashlib,yaml; print(hashlib.sha256(
+        #     yaml.safe_load(open('base-apps/jupyter/oauth2-proxy-config.yaml'))
+        #     ['data']['alpha-config.yaml'].encode()).hexdigest()[:16])"
+        checksum/oauth2-proxy-config: "6fe1c2590e279494"
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
@@ -61,11 +69,19 @@ spec:
         fsGroup: 100
         runAsNonRoot: true
       containers:
+        # Jupyter binds 127.0.0.1:8888. There are two ways in, and both start
+        # with a GitHub login through Dex:
+        #   - the browser, through the oauth2-proxy sidecar below (the Service
+        #     targets 4180, never 8888);
+        #   - Claude Code, through `kubectl port-forward` on the OIDC kubectl
+        #     context, which the API server authenticates against Dex.
+        # Neither the Gateway nor any other pod can reach 8888 directly.
         - name: jupyter
           image: quay.io/jupyter/scipy-notebook@sha256:2479174ae36ec84373f3c352cb6d5801382c0aa6642e739f04bea409f6cedae1
           env:
-            # Jupyter's native token auth. Same credential for the browser and
-            # for Claude Code's /api/kernels calls.
+            # Jupyter's native token auth, kept as the inner layer. The browser
+            # never types it: oauth2-proxy injects it after the GitHub login.
+            # Claude Code sends it itself over the port-forward.
             - name: JUPYTER_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -87,10 +103,12 @@ spec:
               value: "asela-jupyter-scratch"
           args:
             - "start-notebook.py"
-            # Bind all interfaces inside the pod.
-            - "--ServerApp.ip=0.0.0.0"
-            # Without this the server refuses connections whose Host header is
-            # not localhost, which is every request arriving via the Gateway.
+            # Loopback only: the oauth2-proxy sidecar and a kubectl port-forward
+            # are the only clients (see the note above this container).
+            - "--ServerApp.ip=127.0.0.1"
+            # Still required on loopback. A request from 127.0.0.1 whose Host
+            # header is not localhost is refused as DNS rebinding, and every
+            # request from the sidecar carries Host: jupyter.arigsela.com.
             - "--ServerApp.allow_remote_access=True"
             # Belt-and-braces, not load-bearing: jupyter_server's origin check
             # short-circuits and passes whenever the request's Origin host
@@ -111,19 +129,21 @@ spec:
               # A runaway cell must not evict neighbours on the node.
               memory: "4Gi"
               cpu: "2000m"
-          # TCP check, not HTTP: /api requires a token, so an unauthenticated
-          # HTTP probe can't tell "wedged" from "working" and would fail
-          # permanently, taking the pod out of Ready forever.
+          # A TCP connect, run as exec because Jupyter listens on loopback and
+          # kubelet probes the pod IP. Kept a bare socket connect rather than an
+          # HTTP call so it stays independent of Jupyter's auth (see docs.md).
+          # timeoutSeconds 5: spawning python for an exec probe takes 1.4-2.2 s
+          # on these nodes, so the 1 s default would be unpassable.
           livenessProbe:
-            tcpSocket:
-              port: 8888
+            exec:
+              command: ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8888), 3).close()"]
             initialDelaySeconds: 60
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 6
           readinessProbe:
-            tcpSocket:
-              port: 8888
+            exec:
+              command: ["python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8888), 3).close()"]
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -150,6 +170,66 @@ spec:
             - name: git-credentials
               mountPath: /etc/jupyter-secrets
               readOnly: true
+        # GitHub login (via Dex) in front of Jupyter. The settings that only the
+        # alpha config can express, including the injected Jupyter token, are in
+        # oauth2-proxy-config.yaml; read its header before adding any flag here.
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916
+          args:
+            - --alpha-config=/etc/oauth2-proxy/config/alpha-config.yaml
+            - --redirect-url=https://jupyter.arigsela.com/oauth2/callback
+            # THE access control: Dex admits any GitHub account. One email, from Vault.
+            - --authenticated-emails-file=/etc/oauth2-proxy/secrets/allowed-emails
+            - --cookie-secret-file=/etc/oauth2-proxy/secrets/cookie-secret
+            - --cookie-name=_jupyter
+            - --cookie-secure=true
+            - --cookie-samesite=lax
+            # A working day. There is no refresh (Dex issues no refresh token
+            # without offline_access), so after 12h the next request goes back
+            # through the GitHub login; open kernel websockets are unaffected.
+            - --cookie-expire=12h
+            - --skip-provider-button=true
+            - --silence-ping-logging=true
+            # Jupyter logs its own requests; logging them twice only doubles
+            # what Loki stores. Login events stay logged (--auth-logging).
+            - --request-logging=false
+          ports:
+            - containerPort: 4180
+              name: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            periodSeconds: 10
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: oauth2-proxy-config
+              mountPath: /etc/oauth2-proxy/config
+              readOnly: true
+            # Mounted in THIS container only. The jupyter container, where
+            # arbitrary notebook code runs, cannot see the client secret or the
+            # cookie secret.
+            - name: oauth2-secrets
+              mountPath: /etc/oauth2-proxy/secrets
+              readOnly: true
       volumes:
         - name: jupyter-home
           persistentVolumeClaim:
@@ -161,3 +241,12 @@ spec:
               - key: github-token
                 path: github-token
             defaultMode: 0400
+        - name: oauth2-proxy-config
+          configMap:
+            name: jupyter-oauth2-proxy
+        - name: oauth2-secrets
+          secret:
+            secretName: jupyter-oauth2
+            # World-readable within the one container that mounts it: the proxy
+            # runs as 65532, which is neither the owner nor in fsGroup 100.
+            defaultMode: 0444

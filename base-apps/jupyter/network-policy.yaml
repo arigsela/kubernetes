@@ -30,14 +30,17 @@ spec:
     - Egress
 
   ingress:
-    # Only the ingress Gateway may reach the notebook server.
+    # Only the ingress Gateway may reach the pod, and only oauth2-proxy's port.
+    # Jupyter itself (8888) listens on loopback and is not listed: a kubectl
+    # port-forward enters the pod's network namespace directly, so it needs no
+    # rule here.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-ingress
       ports:
         - protocol: TCP
-          port: 8888
+          port: 4180
 
   egress:
     # DNS. Deliberately unrestricted by destination: kube-dns lives in the
@@ -85,6 +88,12 @@ spec:
     # HTTPS to the public internet ONLY — S3, PyPI, GitHub. Every private
     # range is excluded, so PostgreSQL, Vault, Loki, Grafana, ClickHouse and
     # the Kubernetes API are all unreachable from a notebook kernel.
+    #
+    # The oauth2-proxy sidecar shares this policy (it is per pod, not per
+    # container) and needs no exception of its own: it reaches Dex at
+    # dex.arigsela.com, which resolves to the public WAN IP and hairpins back
+    # in, exactly like agent-audit-web's proxy. Do NOT add an in-cluster rule
+    # for Dex; it would open that path to the notebook kernel as well.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

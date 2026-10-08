@@ -1,0 +1,64 @@
+# oauth2-proxy alpha config for the jupyter sidecar (deployments.yaml).
+#
+# Alpha config, not flags, for one reason: it is the only way to inject a STATIC
+# upstream header. The proxy sends `Authorization: token <JUPYTER_TOKEN>` to
+# Jupyter on every authenticated request, so the browser signs in with GitHub
+# (via Dex) and never sees Jupyter's token prompt. Jupyter treats a
+# token-authenticated request as exempt from its XSRF check, so the Lab UI's
+# writes and kernel websockets work through this header alone (verified against
+# jupyter_server 2.21, 2026-10-08).
+#
+# NEVER add --skip-auth-route, --skip-auth-regex or --skip-auth-preflight to
+# this proxy. oauth2-proxy injects these headers on skipped routes too (tested
+# against v7.15.5, 2026-10-08): a skipped route would hand the Jupyter token,
+# and so code execution, to any unauthenticated caller.
+#
+# The header is read from the file ONCE, at startup. Rotating the Jupyter token
+# therefore needs a pod restart, which it already did (JUPYTER_TOKEN is an env
+# var on the jupyter container).
+#
+# oauth2-proxy rejects the legacy flags this file replaces (--upstream,
+# --client-id, --client-secret-file, --provider*, --scope, --oidc-*,
+# --code-challenge-method, --http-address). Put those settings here, not in args.
+#
+# oauth2-proxy does not watch this file. The pod template carries a checksum of
+# it (checksum/oauth2-proxy-config in deployments.yaml) so an edit rolls the pod;
+# update that annotation with every change here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jupyter-oauth2-proxy
+  namespace: jupyter
+data:
+  alpha-config.yaml: |
+    server:
+      bindAddress: 0.0.0.0:4180
+    upstreamConfig:
+      upstreams:
+        - id: jupyter
+          path: /
+          uri: http://127.0.0.1:8888
+          # Jupyter's websocket origin check compares Origin with Host, and both
+          # must stay jupyter.arigsela.com. Defaults, kept explicit because the
+          # kernel channels depend on them.
+          passHostHeader: true
+          proxyWebSockets: true
+    providers:
+      - id: dex
+        provider: oidc
+        name: GitHub (via Dex)
+        clientID: jupyter
+        clientSecretFile: /etc/oauth2-proxy/secrets/client-secret
+        code_challenge_method: S256
+        scope: openid email profile
+        oidcConfig:
+          issuerURL: https://dex.arigsela.com
+          emailClaim: email
+          audienceClaims: [aud]
+    injectRequestHeaders:
+      # preserveRequestValue defaults to false: an Authorization header sent by
+      # the client is stripped, never forwarded. A caller cannot supply its own.
+      - name: Authorization
+        values:
+          - secretSource:
+              fromFile: /etc/oauth2-proxy/secrets/upstream-authorization
