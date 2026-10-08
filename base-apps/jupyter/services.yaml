@@ -8,8 +8,10 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - port: 8888
-      targetPort: 8888
+    # oauth2-proxy. Jupyter's own port (8888, loopback) is deliberately absent;
+    # Claude Code reaches it with `kubectl port-forward deploy/jupyter 8888`.
+    - port: 4180
+      targetPort: 4180
       protocol: TCP
       name: http
   selector:

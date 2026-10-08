@@ -23,5 +23,6 @@ spec:
             type: PathPrefix
             value: /
       backendRefs:
+        # oauth2-proxy, which signs the browser in with GitHub (via Dex).
         - name: jupyter
-          port: 8888
+          port: 4180

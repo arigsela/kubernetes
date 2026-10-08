@@ -1,12 +1,12 @@
 ---
 type: "Kubernetes App Guide"
 title: "Dex"
-description: "OIDC provider fronting GitHub — human SSO for Vault, Argo CD, kubectl (kubelogin) and agent-audit-web"
+description: "OIDC provider fronting GitHub — human SSO for Vault, Argo CD, kubectl (kubelogin), agent-audit-web and Jupyter"
 app: dex
 catalog_entity: dex
 kind: docs
 namespace: dex
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-08
 status: stable
 tags: [oidc, authentication, github, vault]
 sources:
@@ -62,9 +62,10 @@ installed by the Helm chart rather than by a manifest here.
 | Argo CD | public (PKCE) | none, by design | `terraform/roots/asela-cluster/argocd.tf` |
 | kubectl (kubelogin) | public (PKCE) | none, by design | `ansible/roles/k3s_node/files/authn/authn-config.yaml` (API server) |
 | agent-audit-web (oauth2-proxy) | confidential + PKCE | `agent-audit-client-secret` from Vault | `base-apps/agent-audit-web/` |
+| Jupyter (oauth2-proxy sidecar) | confidential + PKCE | `jupyter-client-secret` from Vault | `base-apps/jupyter/` |
 
-All four clients are `staticClients` in `configmap.yaml`: `vault`, `argocd`,
-`kubernetes`, `agent-audit`.
+All five clients are `staticClients` in `configmap.yaml`: `vault`, `argocd`,
+`kubernetes`, `agent-audit`, `jupyter`.
 
 **Dex is a single point of failure for human login to every relying party**, and
 each handles that differently:
@@ -79,6 +80,9 @@ each handles that differently:
   (`docs/troubleshooting/kubectl-oidc.md`). So "use kubectl" only rescues an Argo CD
   lockout if you reach for the admin context.
 - **agent-audit-web** has no local fallback: nobody can log in until Dex is back.
+- **Jupyter** loses both ways in: the browser login and Claude Code's OIDC
+  port-forward. Break-glass is a port-forward on the x509 admin kubeconfig plus the
+  Jupyter token (jupyter runbook).
 
 Worth remembering before restarting or reconfiguring this app. A home WAN IP
 rotation that leaves the Dex allow-list stale has the same effect on logins made
@@ -92,7 +96,7 @@ CRDs on first start. State (auth requests, refresh tokens) lives as CRs in-clust
 so no external database is required.
 
 ## Secrets
-`dex-secrets` (`external-secret.yaml`) resolves four values from Vault through the
+`dex-secrets` (`external-secret.yaml`) resolves five values from Vault through the
 namespace `SecretStore` (`secret-store.yaml`, Vault kubernetes-auth role `dex`,
 path `k8s-secrets`, key `dex`):
 
@@ -102,6 +106,7 @@ path `k8s-secrets`, key `dex`):
 | `github-client-secret` | the GitHub OAuth app client secret |
 | `vault-client-secret` | the shared secret Vault uses to authenticate to Dex |
 | `agent-audit-client-secret` | the shared secret agent-audit-web's oauth2-proxy uses (also in `k8s-secrets/agent-audit-web`; rotate both) |
+| `jupyter-client-secret` | the shared secret the jupyter pod's oauth2-proxy uses (also in `k8s-secrets/jupyter` as `oauth2-client-secret`; rotate both) |
 
 No secret value is committed to Git — only the `ExternalSecret` mapping.
 

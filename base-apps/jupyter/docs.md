@@ -1,12 +1,12 @@
 ---
 type: "Kubernetes App Guide"
 title: "JupyterLab Workspace"
-description: "Single-workspace JupyterLab for interactive Python, served to a browser and to Claude Code via /api/kernels."
+description: "Single-workspace JupyterLab for interactive Python: a browser behind a GitHub login (oauth2-proxy + Dex), and Claude Code via a kubectl port-forward."
 app: jupyter
 catalog_entity: jupyter
 kind: docs
 namespace: jupyter
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-08
 status: stable
 tags: [python, notebooks, jupyter]
 sources:
@@ -16,6 +16,8 @@ sources:
   - base-apps/jupyter/external-secret.yaml
   - base-apps/jupyter/secret-store.yaml
   - base-apps/jupyter/httproute.yaml
+  - base-apps/jupyter/oauth2-proxy-config.yaml
+  - base-apps/dex/configmap.yaml
   - base-apps/jupyter-aws-infrastructure/iam-policy.yaml
   - base-apps/postgresql/cnpg-cluster.yaml
 ---
@@ -23,10 +25,15 @@ sources:
 # JupyterLab Workspace
 
 ## What it is
-Interactive Python in the cluster at `jupyter.arigsela.com`. It serves two clients that are the same principal: a human in a browser, and Claude Code on the operator's laptop calling `/api/kernels`. Batch Python belongs in Argo Workflows; this is for exploration.
+Interactive Python in the cluster at `jupyter.arigsela.com`. It serves two clients that are the same principal: a human in a browser, and Claude Code on the operator's laptop calling `/api/kernels`. Both sign in through GitHub via Dex. Batch Python belongs in Argo Workflows; this is for exploration.
 
 ## Architecture & data flow
-One `Deployment` of the upstream `quay.io/jupyter/scipy-notebook` image, digest-pinned, behind the `main` Istio Gateway. Jupyter Server serves the Lab UI and the kernel API from the same process on port 8888, and both clients present the same token — there is deliberately no second authentication path.
+One `Deployment` of the upstream `quay.io/jupyter/scipy-notebook` image, digest-pinned, behind the `main` Istio Gateway. Jupyter Server serves the Lab UI and the kernel API from the same process, on `127.0.0.1:8888` only. Two ways in, and both start with a GitHub login through Dex (design §3.2, amended 2026-10-08):
+
+- **Browser:** Gateway → `Service/jupyter:4180` → an **oauth2-proxy sidecar** (Dex client `jupyter`, PKCE, an email allow-list from Vault) → Jupyter. After the login the proxy injects `Authorization: token <JUPYTER_TOKEN>` into every forwarded request, so the browser never sees Jupyter's token page.
+- **Claude Code:** `kubectl --context homelab-oidc port-forward deploy/jupyter 8888` (the API server authenticates that context against Dex), then `Authorization: token <…>` itself.
+
+The Jupyter token stays as the inner layer behind both. No public endpoint accepts the token on its own: that was the "static-token bypass path" the original design rejected, and this layout avoids it.
 
 State is split three ways. Notebooks live in `arigsela/notebooks` on GitHub. The 20Gi `local-path` PVC (`pvc.yaml`) mounts the **whole home** at `/home/jovyan`, holding scratch data and `~/.local`. Bulk data lives in S3 `asela-jupyter-scratch`, provisioned by `base-apps/jupyter-aws-infrastructure/` with an IAM user scoped to that one bucket.
 
@@ -35,9 +42,15 @@ State is split three ways. Notebooks live in `arigsela/notebooks` on GitHub. The
 - Isolation: `network-policy.yaml`
 - Secrets: `external-secret.yaml` / `secret-store.yaml`, from Vault `k8s-secrets/jupyter` (`token`, `github-token`), Vault role `jupyter`
 - AWS: `base-apps/jupyter-aws-infrastructure/`, connection Secret `jupyter-s3-creds`
+- GitHub login: the `oauth2-proxy` container in `deployments.yaml`, its alpha config in `oauth2-proxy-config.yaml`, the `jupyter-oauth2` ExternalSecret in `external-secret.yaml` (`oauth2-client-secret`, `oauth2-cookie-secret`, `allowed-emails` in `k8s-secrets/jupyter`), and the `jupyter` client in `base-apps/dex/configmap.yaml` (`jupyter-client-secret` in `k8s-secrets/dex`)
 - Exposure: `httproute.yaml`, `certificate.yaml`, `reference-grant.yaml`, plus the `https-jupyter` listener in `base-apps/istio-ingress/gateway.yaml` and the restricted rule in `authorizationpolicy.yaml`
 
 ## Gotchas & tribal knowledge
+- **Never add a skip-auth route to the oauth2-proxy sidecar** (`--skip-auth-route`, `--skip-auth-regex`, `--skip-auth-preflight`). oauth2-proxy injects its configured headers on skipped routes too (tested against v7.15.5, 2026-10-08), so a skipped route would hand the Jupyter token, and with it code execution, to an unauthenticated caller. If an API client needs in, it uses the port-forward.
+- **The injected token header is read once, at proxy startup**, from the `upstream-authorization` key that `jupyter-oauth2` templates from `k8s-secrets/jupyter` `token`. A token rotation therefore needs both ExternalSecrets synced and then a pod restart, or the browser gets Jupyter's token page (runbook).
+- **oauth2-proxy runs on alpha config** (`oauth2-proxy-config.yaml`) because only alpha config can inject a static header. It refuses the legacy flags that config replaces (`--upstream`, `--client-id`, `--provider*`, `--http-address`, …), so those settings go in the ConfigMap, and the pod template's `checksum/oauth2-proxy-config` annotation must be updated with any edit (the recipe is in the comment beside it).
+- **The sidecar shares the pod's NetworkPolicy and needs no Dex exception.** It reaches `dex.arigsela.com` at the public WAN IP, which the internet egress rule already allows, and hairpins back in (as agent-audit-web's proxy does). An in-cluster rule for Dex would open that path to the notebook kernel as well.
+- **`--ServerApp.allow_remote_access=True` is still needed on loopback.** Jupyter refuses a request from `127.0.0.1` whose `Host` is not localhost (DNS-rebinding protection), and every request from the sidecar carries `Host: jupyter.arigsela.com`.
 - **The PVC mounts the whole home, not `work/`.** This is deliberate: it makes `~/.local` persistent so `pip install --user -r requirements.txt` survives restarts without a custom image. It also shadows whatever the image ships in `/home/jovyan`.
 - **`fsGroup` must be `100`.** The image runs as `jovyan` (1000) in group `users` (100). A wrong `fsGroup` leaves the mounted home unwritable and the server exits at startup.
 - **`--ServerApp.allow_origin` is belt-and-braces, not load-bearing.** `jupyter_server`'s origin check already passes here because the request's `Origin` and `Host` both resolve to `jupyter.arigsela.com` behind this Gateway; the flag is explicit insurance if that ever stops holding, not the fix for a websocket 403 — see runbook.md.
@@ -49,8 +62,8 @@ State is split three ways. Notebooks live in `arigsela/notebooks` on GitHub. The
 - **Bulk data belongs in S3 (`asela-jupyter-scratch`), not the PVC.** Not a style preference — see above.
 - **`enableServiceLinks: false` is load-bearing, not tidiness.** Kubernetes injects Docker-link-style env vars for every Service in the namespace, so `Service/jupyter` produces `JUPYTER_PORT=tcp://10.43.x.x:8888` — and `jupyter_server` reads `JUPYTER_PORT` expecting an integer. With service links on, the container dies at startup with `ValueError: invalid literal for int() with base 10: 'tcp://...:8888'`, which looks like a Jupyter config bug and is actually a name collision between the Service and the app's own env var. Hit on the first live deploy. Turning links off is also correct posture: the NetworkPolicy blocks all but two in-cluster endpoints, both reached by DNS name, so service-discovery env vars buy nothing.
 - **`strategy: Recreate`.** `local-path` is ReadWriteOnce, so a rolling update deadlocks on the volume.
-- **Liveness and readiness probes are `tcpSocket` on 8888, not `httpGet`.** This keeps the probe independent of Jupyter's auth semantics, which are easy to get wrong: `/api` is in fact the *only* unauthenticated endpoint (see the table below), so an `httpGet` probe against it would work — but one against `/api/status`, the obvious "health check" choice, returns 403 forever and would take the pod out of `Ready` permanently. If you do switch to HTTP, `/api` is the only safe target.
-- **Measured unauthenticated surface (2026-08-17), for when you need to reason about the auth boundary rather than guess at it:**
+- **The jupyter container's probes are `exec` socket connects to `127.0.0.1:8888`.** Kubelet probes the pod IP and Jupyter listens on loopback, so `tcpSocket`/`httpGet` cannot work; `timeoutSeconds: 5` because spawning python takes 1.4–2.2 s on these nodes. A bare connect keeps the probe independent of Jupyter's auth semantics, which are easy to get wrong: `/api` is the *only* unauthenticated endpoint (see the table below), while `/api/status`, the obvious "health check" choice, returns 403 without a token. If you do switch the exec to HTTP, `/api` is the only safe target.
+- **Measured unauthenticated surface of Jupyter itself (2026-08-17)**, i.e. what a caller on the port-forward without a token sees. Through the public hostname, every path except oauth2-proxy's own `/ping` and `/oauth2/*` now redirects to Dex before Jupyter is reached:
 
   | Path | Unauthenticated |
   |---|---|
@@ -58,5 +71,5 @@ State is split three ways. Notebooks live in `arigsela/notebooks` on GitHub. The
   | `/api/status`, `/api/kernels`, `/api/contents`, `/api/sessions`, `/api/terminals` | 403 |
   | `POST /api/kernels` | 403 — no unauthenticated code execution |
   | `/lab` | 302 to login |
-- **Rotating the token logs out both clients**, because both use it.
+- **Rotating the token only affects Claude Code**, which holds it. The browser never held it; the proxy picks up the new one when the pod restarts.
 - **The GitHub PAT is mounted at `/etc/jupyter-secrets/github-token`, outside the home, and read by a git credential helper at invocation time.** It is deliberately never written to `~/.git-credentials`: the home is the PVC, so a copy there would survive rotation in Vault and outlive the secret it came from.
