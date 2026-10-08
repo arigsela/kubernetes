@@ -103,7 +103,15 @@ Then call `http://127.0.0.1:8888/api/...` with `Authorization: token <token>` (f
 **Break-glass when Dex is down:** the same port-forward with the x509 admin kubeconfig (`docs/troubleshooting/kubectl-oidc.md`), then open `http://127.0.0.1:8888/login` in a browser and paste the token.
 
 ### Provision the GitHub login secrets (one-time; done before the 2026-10-08 change merged)
-From a laptop with Vault port-forwarded and a `vault login -method=oidc` session. `kv patch` adds fields and keeps the existing ones; `kv put` would wipe `token` and `github-token`:
+From a laptop, with `kubectl -n vault port-forward svc/vault 8200:8200` running in another terminal. `kv patch` adds fields and keeps the existing ones; `kv put` would wipe `token` and `github-token`.
+
+```bash
+export VAULT_ADDR=http://127.0.0.1:8200   # the port-forward is plain HTTP; the CLI defaults to https
+vault token lookup >/dev/null 2>&1 || vault login -method=oidc
+ALLOWED=$(vault kv get -mount=k8s-secrets -field=allowed-emails agent-audit-web) && echo "allow-list: $ALLOWED"
+```
+
+Continue only if that printed the email. The `&&` writes the Dex half only if the jupyter half succeeded, so the two copies of the client secret cannot diverge:
 
 ```bash
 CLIENT_SECRET=$(openssl rand -hex 32)
@@ -111,12 +119,12 @@ COOKIE_SECRET=$(openssl rand -base64 32 | tr -- '+/' '-_')   # 32 random bytes, 
 vault kv patch -mount=k8s-secrets jupyter \
   oauth2-client-secret="$CLIENT_SECRET" \
   oauth2-cookie-secret="$COOKIE_SECRET" \
-  allowed-emails="$(vault kv get -mount=k8s-secrets -field=allowed-emails agent-audit-web)"
+  allowed-emails="$ALLOWED" && \
 vault kv patch -mount=k8s-secrets dex jupyter-client-secret="$CLIENT_SECRET"
-unset CLIENT_SECRET COOKIE_SECRET
+unset CLIENT_SECRET COOKIE_SECRET ALLOWED
 ```
 
-`allowed-emails` reuses agent-audit-web's value: the same operator, the same verified GitHub primary email.
+Verify by key names only: `vault kv get -mount=k8s-secrets -format=json jupyter | jq '.data.data | keys'` (and the same for `dex`). `allowed-emails` reuses agent-audit-web's value: the same operator, the same verified GitHub primary email.
 
 ### Install a package permanently
 Add it to `requirements.txt` in `arigsela/notebooks`, then from a JupyterLab terminal: `pip install --user -r ~/work/notebooks/requirements.txt`. It persists because `~/.local` is on the PVC.
