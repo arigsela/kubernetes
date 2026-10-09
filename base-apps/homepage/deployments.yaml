@@ -109,7 +109,7 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 128Mi
+              memory: 192Mi
             limits:
               # cpu is required alongside memory: the repo's native
               # require-resource-limits admission policy (audit-only) flags any
