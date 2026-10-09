@@ -101,6 +101,18 @@ switches body inspection back off for that one anchored path, using the same
 `ctl:requestBodyAccess` action as `9010`. Every other webhook stays
 body-inspected, and the endpoint remains gated by n8n Header Auth.
 
+**Body-inspection exclusion: `/webhook/interview-janitor` (rule `9014`).** The
+interview-labs janitor (a GitHub Actions workflow) posts its findings to n8n's
+"Interview Janitor to Slack" workflow as JSON whose `text` is a machine-written
+report: one finding per line, plus Terraform and aws-nuke error tails when
+something fails. Its first real post, on 2026-10-09, was blocked: the line
+`  task definition family lab1-zz-shop (active revisions)` after a newline
+tripped `932235` (`task` is a Unix command name), scoring 5. The lines carry
+resource names and error output that change every run, so `9014` exempts that
+one anchored path the same way `9013` does. The workflow checks the caller's
+`X-Janitor-Token` header against a 256-bit token before it uses the body, and
+the body is only escaped and posted to Slack.
+
 Enforcement was enabled **without** the 7-day observation window the plan calls
 for. The window's job is to surface false positives from real traffic rather
 than invented payloads, and it has not run — so treat unexplained breakage on
@@ -148,7 +160,7 @@ first panel watches Wasm load errors rather than only rule hits. An empty
 |---|---|
 | Which hosts are inspected | rule `9000` scope regex, `wasmplugin.yaml` |
 | Whether a host blocks or logs | rules `9001`–`9003` (present = log only) |
-| Body inspection | rules `9010` (n8n `/webhook`, `/webhook-test`, `/mcp-server`, path-scoped), `9011` (oncall); `9013` switches it back off for `/webhook/newsletter-digest` only |
+| Body inspection | rules `9010` (n8n `/webhook`, `/webhook-test`, `/mcp-server`, path-scoped), `9011` (oncall); `9013` and `9014` switch it back off for `/webhook/newsletter-digest` and `/webhook/interview-janitor` only |
 | CRS tuning (allow-lists) | rule `9100`, between the two `Include` lines |
 | CRS exclusions | end of the `default` directives list |
 | Log verbosity | `SecDebugLogLevel` |
