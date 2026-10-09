@@ -46,6 +46,9 @@ The janitor posts to `https://n8n.arigsela.com/webhook/interview-janitor` and fa
 - **403 with an empty body:** the WAF scored the janitor's JSON body. Read the rule ids in the gateway log as in the WAF symptom above. The janitor keeps its messages short so this stays rare.
 - **404:** the workflow isn't active or registered; see the 404 symptom.
 
+### Symptom: `#oncall-alerts` says "Interview sandbox: janitor silent for N h"
+The workflow's watchdog has had no janitor check-in for 30 hours or more. Look at the janitor workflow's runs in the private interview-labs repo: late or missing scheduled runs, a failed run, or every post failing (a 500 or 403 above fails the run). A pod restart or re-import can reset the watchdog's clock (static data), which delays an alert but never fakes one.
+
 ### Symptom: the newsletter/feed digest arrives as a Gmail draft instead of an email
 The digest skills (`newsletter-digest-n8n`, and `feed-digest`, which borrows its token) POST to `https://n8n.arigsela.com/webhook/newsletter-digest` and fall back to a Gmail draft on **any** non-2xx, so a draft is the only symptom.
 - **Check:** in n8n, workflow **"Newsletter Digest — Send"** (id `qX9W779auOovEQe9`): Webhook (Header Auth) → validate `subject`/`to`/`html_body` (400 `{"error":"missing required fields"}` if any is empty) → Send Email via the `SMTP account` credential (Gmail SMTP, app password) → 200 `{"status":"sent","message_id":...}`. No execution for the run means the request never got past auth or the WAF:
