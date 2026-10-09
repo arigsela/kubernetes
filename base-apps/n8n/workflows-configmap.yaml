@@ -11,7 +11,8 @@
 # to the pod lifecycle, so the main container always boots with the workflow
 # active and its webhook registered. To make a workflow EDIT take effect, the pod
 # must roll — the Deployment carries a `checksum/workflows` pod annotation for
-# exactly that: bump it (sha256 of grafana-alerts.json) when editing here, or
+# exactly that: bump it (sha256 of every workflow here; the one-liner is in the
+# annotation's comment) when editing here, or
 # `kubectl rollout restart deploy/n8n -n n8n`.
 #
 # wan-ip-rotated.json — the endpoint base-apps/wan-ip-monitor posts to
@@ -36,6 +37,20 @@
 # material in Git): the HTTP node reads {{ $env.SLACK_BOT_TOKEN }}, injected
 # into the n8n Deployment from the n8n-secrets Secret (Vault key n8n,
 # property slack-bot-token).
+#
+# interview-janitor.json — where the interview-labs janitor (a GitHub Actions
+# workflow in a private repo) posts its findings:
+# https://n8n.arigsela.com/webhook/interview-janitor. Its caller runs outside the
+# cluster, so the request crosses the Gateway's public webhook path and the WAF,
+# and the workflow authenticates it: the X-Janitor-Token header must equal
+# $env.INTERVIEW_JANITOR_TOKEN (Vault key n8n, property interview-janitor-token).
+# With no token configured, every call is rejected. Four nodes:
+#   Webhook (POST /webhook/interview-janitor, answers with the last node)
+#     → Code (check the token, format the Slack message)
+#     → HTTP Request (Slack chat.postMessage to #oncall-alerts)
+#     → Code (fail unless Slack answered ok).
+# Answering with the last node is what tells the caller it worked: a bad token
+# or a Slack error comes back as a 500, which fails the janitor run.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -191,6 +206,82 @@ data:
         },
         "Format Scan Report": {
           "main": [[{ "node": "Post Scan to Slack", "type": "main", "index": 0 }]]
+        }
+      },
+      "settings": { "executionOrder": "v1" }
+    }
+  interview-janitor.json: |
+    {
+      "id": "interview-janitor",
+      "name": "Interview Janitor to Slack",
+      "active": true,
+      "nodes": [
+        {
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "interview-janitor",
+            "responseMode": "lastNode",
+            "options": {}
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-000000000001",
+          "name": "Janitor Webhook",
+          "type": "n8n-nodes-base.webhook",
+          "typeVersion": 2,
+          "position": [0, 0],
+          "webhookId": "e4c9f4a3-7d9a-4d34-b333-00000000000a"
+        },
+        {
+          "parameters": {
+            "jsCode": "const req = $input.first().json;\nconst expected = String($env.INTERVIEW_JANITOR_TOKEN || '');\nconst given = String((req.headers || {})['x-janitor-token'] || '');\nlet diff = expected.length < 32 || given.length !== expected.length ? 1 : 0;\nfor (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);\nif (diff !== 0) throw new Error('unauthorized: missing or wrong X-Janitor-Token');\nconst p = req.body || {};\nconst esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst title = esc(String(p.title || 'Interview sandbox').slice(0, 200));\nconst body = esc(String(p.text || '').slice(0, 3000)).replace(/```/g, \"'''\");\nconst url = String(p.url || '');\nconst link = /^https:\\/\\/github\\.com\\/arigsela\\/[\\w.-]+\\/actions\\/runs\\/\\d+$/.test(url) ? '\\n<' + url + '|Open the GitHub run>' : '';\nconst text = ':broom: *' + title + '*' + (body ? '\\n```' + body + '```' : '') + link;\nreturn [{ json: { slack: { channel: '#oncall-alerts', text: text, unfurl_links: false } } }];"
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-000000000002",
+          "name": "Check Token and Format",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [220, 0]
+        },
+        {
+          "parameters": {
+            "method": "POST",
+            "url": "https://slack.com/api/chat.postMessage",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                { "name": "Authorization", "value": "=Bearer {{ $env.SLACK_BOT_TOKEN }}" },
+                { "name": "Content-Type", "value": "application/json" }
+              ]
+            },
+            "sendBody": true,
+            "specifyBody": "json",
+            "jsonBody": "={{ JSON.stringify($json.slack) }}",
+            "options": {}
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-000000000003",
+          "name": "Post Janitor to Slack",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.2,
+          "position": [440, 0]
+        },
+        {
+          "parameters": {
+            "jsCode": "const r = $input.first().json;\nif (r.ok !== true) throw new Error('Slack did not accept the message: ' + (r.error || 'no error given'));\nreturn [{ json: { ok: true } }];"
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-000000000004",
+          "name": "Check Slack Reply",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [660, 0]
+        }
+      ],
+      "connections": {
+        "Janitor Webhook": {
+          "main": [[{ "node": "Check Token and Format", "type": "main", "index": 0 }]]
+        },
+        "Check Token and Format": {
+          "main": [[{ "node": "Post Janitor to Slack", "type": "main", "index": 0 }]]
+        },
+        "Post Janitor to Slack": {
+          "main": [[{ "node": "Check Slack Reply", "type": "main", "index": 0 }]]
         }
       },
       "settings": { "executionOrder": "v1" }

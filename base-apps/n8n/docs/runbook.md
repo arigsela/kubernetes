@@ -40,6 +40,12 @@ sources:
 - **Check:** the Coraza WAF blocks before n8n sees the request, so there is no execution. Tell the two 403s apart in the gateway access log (`kubectl -n istio-ingress logs deploy/main-istio`): a WAF 403 has an empty body and no `via_upstream`; an n8n auth 403 has the body `Authorization data is wrong!` and `via_upstream`. Bodies on `/webhook*` and `/mcp-server*` are inspected (rule 9010 in `base-apps/istio-waf/wasmplugin.yaml`); a known, accepted false positive is a JSON body carrying filesystem paths (`../x`, `/var/log`, CRS 930110/930120). Small test payloads often pass where real ones don't, so reproduce with a realistic body.
 - **Fix:** add a scoped exclusion after the CRS include (e.g. `SecRuleUpdateTargetById <rule> "!ARGS_POST:json.<field>"`), or, for a payload that can never converge, a per-path body exemption like rule 9013. Never raise the anomaly threshold. To take n8n out of enforcement temporarily, re-add its `DetectionOnly` line (rule 9003, commented in the file).
 
+### Symptom: the interview janitor's GitHub run fails at the Slack step
+The janitor posts to `https://n8n.arigsela.com/webhook/interview-janitor` and fails its run on any non-2xx.
+- **500:** the workflow threw. Open the failed execution of **Interview Janitor to Slack** in n8n: `unauthorized` means the `X-Janitor-Token` header doesn't match `INTERVIEW_JANITOR_TOKEN` (Vault property missing or rotated without a pod restart; see the rotation how-to); `Slack did not accept the message` carries Slack's error code.
+- **403 with an empty body:** the WAF scored the janitor's JSON body. Read the rule ids in the gateway log as in the WAF symptom above. The janitor keeps its messages short so this stays rare.
+- **404:** the workflow isn't active or registered; see the 404 symptom.
+
 ### Symptom: the newsletter/feed digest arrives as a Gmail draft instead of an email
 The digest skills (`newsletter-digest-n8n`, and `feed-digest`, which borrows its token) POST to `https://n8n.arigsela.com/webhook/newsletter-digest` and fall back to a Gmail draft on **any** non-2xx, so a draft is the only symptom.
 - **Check:** in n8n, workflow **"Newsletter Digest — Send"** (id `qX9W779auOovEQe9`): Webhook (Header Auth) → validate `subject`/`to`/`html_body` (400 `{"error":"missing required fields"}` if any is empty) → Send Email via the `SMTP account` credential (Gmail SMTP, app password) → 200 `{"status":"sent","message_id":...}`. No execution for the run means the request never got past auth or the WAF:
@@ -62,3 +68,6 @@ Edit manifests here and PR; Argo CD auto-syncs on merge (`prune: true`, `selfHea
 
 ### Rotate the Slack bot token or another Vault-backed value
 Update the property under Vault key `n8n` (e.g. `slack-bot-token`); ESO re-syncs `n8n-secrets` within the 1h `refreshInterval`, then restart the pod (`kubectl -n n8n rollout restart deploy/n8n`) since the values are env vars. Never rotate `encryption-key` this way (see above).
+
+### Rotate the interview janitor token
+The token lives in two places: Vault (`k8s-secrets/n8n`, property `interview-janitor-token`) and the `NOTIFY_WEBHOOK_TOKEN` Actions secret of the private interview-labs repo. Its `scripts/notify-setup.sh` writes both from one generated value without printing it. Then force the ESO re-sync (`kubectl -n n8n annotate externalsecret n8n-secrets force-sync=$(date +%s) --overwrite`) and restart the pod as above. Until the restart, janitor posts fail with a 500 (the running pod still holds the old token).
