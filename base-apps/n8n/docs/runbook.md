@@ -17,7 +17,6 @@ sources:
   - base-apps/n8n/workflows-configmap.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
   - base-apps/istio-waf/wasmplugin.yaml
-  - n8n-workflows/newsletter-digest-send.json
 ---
 
 # n8n runbook
@@ -54,11 +53,11 @@ The workflow's watchdog has had no janitor check-in for 30 hours or more. Look a
 
 ### Symptom: the newsletter/feed digest arrives as a Gmail draft instead of an email
 The digest skills (`newsletter-digest-n8n`, and `feed-digest`, which borrows its token) POST to `https://n8n.arigsela.com/webhook/newsletter-digest` and fall back to a Gmail draft on **any** non-2xx, so a draft is the only symptom.
-- **Check:** in n8n, workflow **"Newsletter Digest — Send"** (id `qX9W779auOovEQe9`): Webhook (Header Auth) → validate `subject`/`to`/`html_body` (400 `{"error":"missing required fields"}` if any is empty) → Send Email via the `SMTP account` credential (Gmail SMTP, app password) → 200 `{"status":"sent","message_id":...}`. No execution for the run means the request never got past auth or the WAF:
+- **Check:** in n8n, workflow **"Newsletter Digest — Send"** (id `qX9W779auOovEQe9`, `newsletter-digest-send.json` in `workflows-configmap.yaml`): Webhook (Header Auth) → validate `subject`/`to`/`html_body` (400 `{"error":"missing required fields"}` if any is empty) → Send Email via the `SMTP account` credential (Gmail SMTP, app password) → 200 `{"status":"sent","message_id":...}`. No execution for the run means the request never got past auth or the WAF:
   - **403 `Authorization data is wrong!`** (auth failures create no execution): token drift. The token lives in exactly two places, the n8n Header Auth credential **"Newsletter Digest Webhook Token"** (id `SaXQfVQf0KtjbuR6`, header `Authorization: Bearer <64-hex>`) and the skill's own copy. There is **no Vault copy**. Cheap check that sends no email: POST `{}` with the skill's token; `400 missing required fields` means auth passed.
   - **403 with an empty body:** the WAF. Rule 9013 exempts exactly `/webhook/newsletter-digest` from body inspection, because the HTML email body scores far over the threshold every day. If the path or rule changed, that's the cause. Verify with a realistic HTML body and an empty `subject`: n8n answers 400 and nothing is sent.
   - **5xx or an errored execution:** the SMTP send failed (e.g. a revoked Gmail app password on `SMTP account`).
-- **Fix:** for drift, make the n8n credential match the skill's token (edit the credential in the UI from an allow-listed IP; on 2026-09-24 it was done with `n8n export:credentials --decrypted` → edit → `n8n import:credentials` in the pod, no restart needed). Compare values by sha256 prefix and never print them. Delete any decrypted export afterwards. The workflow's backup export is `n8n-workflows/newsletter-digest-send.json`; re-export it after editing the workflow.
+- **Fix:** for drift, make the n8n credential match the skill's token (edit the credential in the UI from an allow-listed IP; on 2026-09-24 it was done with `n8n export:credentials --decrypted` → edit → `n8n import:credentials` in the pod, no restart needed). Compare values by sha256 prefix and never print them. Delete any decrypted export afterwards. To change the workflow itself, edit `newsletter-digest-send.json` in `workflows-configmap.yaml` and bump `checksum/workflows`; an edit in the UI is overwritten at the next pod start.
 
 ### Symptom: pod CrashLoopBackOff, or n8n runs but reports it cannot decrypt existing credentials/workflows
 - **Check:** `kubectl -n n8n get pods` and `kubectl -n n8n logs deploy/n8n --tail=200` (also `-c import-workflows` for the init container). First rule out normal slow startup — both probes use `initialDelaySeconds: 240`, so the pod is expected to take up to 4 minutes before probes even begin. If logs show Postgres connection errors, see the 503 symptom above. If logs show credential/decryption errors instead, check whether `N8N_ENCRYPTION_KEY` (`external-secrets.yaml`, Vault key `n8n`/`encryption-key`) was rotated in Vault — n8n cannot decrypt previously stored credentials with a different key than the one used to save them.
