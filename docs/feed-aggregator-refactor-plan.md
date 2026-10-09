@@ -4,6 +4,10 @@
 > `claude-digest-generator.json`, `devops-digest-generator.json` and
 > `docs/sql/feed_articles_schema.sql`. These workflows are not in the n8n pod's declarative import
 > (`base-apps/n8n/workflows-configmap.yaml`), so whether they still run cannot be told from the repo.
+>
+> **Retired 2026-10-09.** All three had been inactive in n8n since March 2026; the `feed-digest`
+> skill replaced them. Their exports were removed from `n8n-workflows/` (git history has them).
+> The `feed_articles` schema file is kept as a record.
 
 ## Overview
 

@@ -65,6 +65,21 @@
 # or a Slack error comes back as a 500, which fails the janitor run. Static data
 # may not survive a re-import; the watchdog then restarts its clock rather than
 # alerting.
+#
+# newsletter-digest-send.json — the email sender the newsletter-digest-n8n and
+# feed-digest skills POST to: https://n8n.arigsela.com/webhook/newsletter-digest
+# (the public webhook path; the WAF exempts its body, rule 9013). Authored in the
+# UI and kept only as a hand export in n8n-workflows/ until 2026-10-09. It keeps
+# its UI id, qX9W779auOovEQe9, so the import upserts the existing workflow.
+#   Webhook (Header Auth, answers from a Respond node)
+#     → IF subject, to and html_body are all non-empty
+#         yes → Send Email (SMTP) → Respond 200 {"status": "sent", ...}
+#         no  → Respond 400 {"error": "missing required fields"}
+# Unlike the workflows above, it uses two n8n credential objects, by id: the
+# Header Auth "Newsletter Digest Webhook Token" (SaXQfVQf0KtjbuR6) and "SMTP
+# account" (DtjHnOSdz1h7Xpuw). Only the workflow is in Git; the credentials stay
+# in n8n's encrypted database with no Vault copy (base-apps/n8n/runbook.md). A
+# recreated credential gets a new id, which must then be updated here.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -463,4 +478,153 @@ data:
         }
       },
       "settings": { "executionOrder": "v1", "timezone": "UTC" }
+    }
+  newsletter-digest-send.json: |
+    {
+      "id": "qX9W779auOovEQe9",
+      "name": "Newsletter Digest — Send",
+      "active": true,
+      "nodes": [
+        {
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "newsletter-digest",
+            "authentication": "headerAuth",
+            "responseMode": "responseNode",
+            "options": {}
+          },
+          "id": "079b06ce-7729-4624-a07d-2576bbcdc04f",
+          "name": "Webhook",
+          "type": "n8n-nodes-base.webhook",
+          "typeVersion": 2,
+          "position": [-1088, 16],
+          "webhookId": "newsletter-digest",
+          "credentials": {
+            "httpHeaderAuth": {
+              "id": "SaXQfVQf0KtjbuR6",
+              "name": "Newsletter Digest Webhook Token"
+            }
+          }
+        },
+        {
+          "parameters": {
+            "conditions": {
+              "options": {
+                "version": 2,
+                "leftValue": "",
+                "caseSensitive": true,
+                "typeValidation": "strict"
+              },
+              "conditions": [
+                {
+                  "id": "subject-not-empty",
+                  "leftValue": "={{ $json.body.subject }}",
+                  "rightValue": "",
+                  "operator": {
+                    "type": "string",
+                    "operation": "notEmpty",
+                    "singleValue": true
+                  }
+                },
+                {
+                  "id": "html-body-not-empty",
+                  "leftValue": "={{ $json.body.html_body }}",
+                  "rightValue": "",
+                  "operator": {
+                    "type": "string",
+                    "operation": "notEmpty",
+                    "singleValue": true
+                  }
+                },
+                {
+                  "id": "to-not-empty",
+                  "leftValue": "={{ $json.body.to }}",
+                  "rightValue": "",
+                  "operator": {
+                    "type": "string",
+                    "operation": "notEmpty",
+                    "singleValue": true
+                  }
+                }
+              ],
+              "combinator": "and"
+            },
+            "options": {}
+          },
+          "id": "97542994-7664-4645-8366-614859e1cb1e",
+          "name": "Validate Payload",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 2.2,
+          "position": [-864, 16]
+        },
+        {
+          "parameters": {
+            "fromEmail": "arigsela@gmail.com",
+            "toEmail": "={{ $json.body.to }}",
+            "subject": "={{ $json.body.subject }}",
+            "html": "={{ $json.body.html_body }}",
+            "options": {}
+          },
+          "id": "bf51dcbc-87c5-412f-84f9-21632e47fa36",
+          "name": "Send Email",
+          "type": "n8n-nodes-base.emailSend",
+          "typeVersion": 2.1,
+          "position": [-640, -64],
+          "webhookId": "9004b83c-31a5-4f86-a918-7434666285d7",
+          "credentials": {
+            "smtp": {
+              "id": "DtjHnOSdz1h7Xpuw",
+              "name": "SMTP account"
+            }
+          }
+        },
+        {
+          "parameters": {
+            "respondWith": "json",
+            "responseBody": "={{ { \"status\": \"sent\", \"message_id\": $('Send Email').item.json.messageId, \"sent_at\": $now.toISO() } }}",
+            "options": {}
+          },
+          "id": "dc516e30-a99c-41ac-ae77-047073df4086",
+          "name": "Respond Success",
+          "type": "n8n-nodes-base.respondToWebhook",
+          "typeVersion": 1.1,
+          "position": [-416, -64]
+        },
+        {
+          "parameters": {
+            "respondWith": "json",
+            "responseBody": "={{ { \"error\": \"missing required fields\" } }}",
+            "options": {
+              "responseCode": 400
+            }
+          },
+          "id": "3c135b38-ec73-4cfc-9be3-4fddc9cac3b5",
+          "name": "Respond Missing Fields",
+          "type": "n8n-nodes-base.respondToWebhook",
+          "typeVersion": 1.1,
+          "position": [-640, 112]
+        }
+      ],
+      "connections": {
+        "Webhook": {
+          "main": [
+            [{ "node": "Validate Payload", "type": "main", "index": 0 }]
+          ]
+        },
+        "Validate Payload": {
+          "main": [
+            [{ "node": "Send Email", "type": "main", "index": 0 }],
+            [{ "node": "Respond Missing Fields", "type": "main", "index": 0 }]
+          ]
+        },
+        "Send Email": {
+          "main": [
+            [{ "node": "Respond Success", "type": "main", "index": 0 }]
+          ]
+        }
+      },
+      "settings": {
+        "executionOrder": "v1",
+        "binaryMode": "separate"
+      }
     }

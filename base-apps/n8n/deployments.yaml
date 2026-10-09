@@ -24,7 +24,7 @@ spec:
         # or add a workflow, recompute this — else the pod won't roll and the
         # change won't take effect. (Or just
         # `kubectl rollout restart deploy/n8n -n n8n`.)
-        checksum/workflows: "31a8723c95366a6e"
+        checksum/workflows: "a1def4dd3a66badd"
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
@@ -55,6 +55,8 @@ spec:
           n8n update:workflow --id=image-scan-report --active=true
           n8n import:workflow --input=/workflows/interview-janitor.json
           n8n update:workflow --id=interview-janitor --active=true
+          n8n import:workflow --input=/workflows/newsletter-digest-send.json
+          n8n update:workflow --id=qX9W779auOovEQe9 --active=true
         env:
         - name: DB_TYPE
           value: "postgresdb"

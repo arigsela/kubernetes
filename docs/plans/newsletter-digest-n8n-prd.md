@@ -4,9 +4,9 @@
 **Status:** Draft — ready for implementation planning *(original)*
 **Last updated:** 2026-04-22
 
-> **Status 2026-09-30: implemented.** The n8n workflow is `n8n-workflows/newsletter-digest-send.json`
-> (added 2026-04-22, `219ff56`), served at `/webhook/newsletter-digest`; it is not in the n8n pod's
-> declarative import. Operational facts live in `base-apps/n8n/runbook.md`; the WAF body-inspection
+> **Status 2026-09-30: implemented.** The n8n workflow (added 2026-04-22, `219ff56`) is served at
+> `/webhook/newsletter-digest`. Since 2026-10-09 it is `newsletter-digest-send.json` in
+> `base-apps/n8n/workflows-configmap.yaml`, imported at pod start. Operational facts live in `base-apps/n8n/runbook.md`; the WAF body-inspection
 > exemption for this path (rule `9013`) is in `base-apps/istio-waf/docs.md`.
 
 ---

@@ -62,7 +62,7 @@ Also cross-cutting, elsewhere in the repo: backup & recovery in
 | `idp-migration-guide.md` | record | Onboarding apps via Backstage + the Crossplane XApplication (superseded by the New App template, `templates/new-app/`) |
 | `kubernetes-networking-and-service-mesh.md` | living | Networking, mTLS, and service-mesh primer, plus how this cluster uses it |
 | `istio-ambient-mesh-implementation-plan.md` | record | How the Istio ambient dataplane was installed (Dec 2025) |
-| `feed-aggregator-refactor-plan.md` | record | Feed-aggregator n8n workflows (`n8n-workflows/`, schema in `sql/feed_articles_schema.sql`) |
+| `feed-aggregator-refactor-plan.md` | record | Feed-aggregator n8n workflows, retired 2026-10-09 (schema in `sql/feed_articles_schema.sql`) |
 
 ## Troubleshooting
 
