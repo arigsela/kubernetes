@@ -135,6 +135,20 @@ spec:
         # Uses ctl:requestBodyAccess, the same action 9010 proves works in this
         # parser (Gate B4) - not ctl:ruleRemoveTarget*, which is unproven here.
         - SecRule REQUEST_URI "@rx ^/webhook/newsletter-digest(\?|$)" "id:9013,phase:1,pass,nolog,t:lowercase,ctl:requestBodyAccess=Off"
+        # 9014 does the same for the interview-labs janitor (n8n workflow
+        # "Interview Janitor to Slack", base-apps/n8n/workflows-configmap.yaml).
+        # Its JSON "text" is a machine-written report, one finding per line, plus
+        # Terraform and aws-nuke error tails when something fails. Measured
+        # 2026-10-09 on its first real post: the leftover line
+        # "\n  task definition family lab1-zz-shop (active revisions)" tripped
+        # 932235 (a newline, then `task`, a Unix command name) -> score 5 -> 403.
+        # Resource names and error output change every run, the same
+        # non-converging case as 9013, so the same scope rules apply: the exact
+        # anchored path, after 9010, headers and URI still inspected. The
+        # workflow's first node rejects any call whose X-Janitor-Token header
+        # does not match its 256-bit token (constant-time compare) before the
+        # body is used; the body is only escaped and posted to Slack.
+        - SecRule REQUEST_URI "@rx ^/webhook/interview-janitor(\?|$)" "id:9014,phase:1,pass,nolog,t:lowercase,ctl:requestBodyAccess=Off"
 
         # ── LOGGING ────────────────────────────────────────────────────────
         # 3 logs rule matches. Upstream's example uses 9 = every internal

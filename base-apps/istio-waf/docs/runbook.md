@@ -66,7 +66,8 @@ fallback, until rule `9013` exempted `/webhook/newsletter-digest` on 2026-09-24.
   when one argument trips a rule (see Tuning and the known `930110` false
   positive in docs.md). Only for a payload that changes every run, like the
   digest, turn body inspection off for that one anchored path the way `9013`
-  does — placed after `9010`. Never raise the anomaly threshold.
+  does (and `9014`, for the interview janitor's reports) — placed after `9010`.
+  Never raise the anomaly threshold.
 
 ### Symptom: no detections at all, ever
 This is the dangerous one — it looks identical to "no attacks."

@@ -43,7 +43,7 @@ sources:
 ### Symptom: the interview janitor's GitHub run fails at the Slack step
 The janitor posts to `https://n8n.arigsela.com/webhook/interview-janitor` and fails its run on any non-2xx.
 - **500:** the workflow threw. Open the failed execution of **Interview Janitor to Slack** in n8n: `unauthorized` means the `X-Janitor-Token` header doesn't match `INTERVIEW_JANITOR_TOKEN` (Vault property missing or rotated without a pod restart; see the rotation how-to); `Slack did not accept the message` carries Slack's error code.
-- **403 with an empty body:** the WAF scored the janitor's JSON body. Read the rule ids in the gateway log as in the WAF symptom above. The janitor keeps its messages short so this stays rare.
+- **403 with an empty body:** the WAF. The body is exempt on this path (rule `9014`), so look for a header or URI match, or a change to that rule, in the gateway log as in the WAF symptom above.
 - **404:** the workflow isn't active or registered; see the 404 symptom.
 
 ### Symptom: `#oncall-alerts` says "Interview sandbox: janitor silent for N h"
