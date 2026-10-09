@@ -42,6 +42,16 @@ spec:
         cleanupController:
           enabled: false
         reportsController:
+          # 256Mi limit, not the chart's 128Mi (2026-10-09). Unlike the two
+          # controllers above, this one has work (VAP reports, hourly background
+          # scan), so it stays on. Its Go heap is 30-44Mi and RSS a flat ~62Mi,
+          # but since the 2026-09-30 node reboot ~50Mi of its binary's page cache
+          # is charged to the pod. Limits count page cache, so the working set sat
+          # at 113-118Mi, on the 90% line of "Container near memory limit".
+          # Requests stay at the chart's 64Mi (about the RSS); Helm merges maps.
+          resources:
+            limits:
+              memory: 256Mi
           nodeSelector:
             node.kubernetes.io/workload: infrastructure
           tolerations:
