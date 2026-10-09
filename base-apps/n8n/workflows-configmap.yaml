@@ -39,18 +39,25 @@
 # property slack-bot-token).
 #
 # interview-janitor.json — where the interview-labs janitor (a GitHub Actions
-# workflow in a private repo) posts its findings:
+# workflow in a private repo) checks in on every run:
 # https://n8n.arigsela.com/webhook/interview-janitor. Its caller runs outside the
 # cluster, so the request crosses the Gateway's public webhook path and the WAF,
 # and the workflow authenticates it: the X-Janitor-Token header must equal
 # $env.INTERVIEW_JANITOR_TOKEN (Vault key n8n, property interview-janitor-token).
-# With no token configured, every call is rejected. Four nodes:
+# With no token configured, every call is rejected.
 #   Webhook (POST /webhook/interview-janitor, answers with the last node)
-#     → Code (check the token, format the Slack message)
-#     → HTTP Request (Slack chat.postMessage to #oncall-alerts)
-#     → Code (fail unless Slack answered ok).
+#     → Code (check the token, record the check-in in the workflow's static
+#       data, format the message)
+#     → IF findings ("post" not false in the body)
+#         yes → HTTP Request (Slack chat.postMessage to #oncall-alerts)
+#               → Code (fail unless Slack answered ok)
+#         no  → Code (answer ok; all-clear runs never reach Slack)
+#   Schedule (every 6 h) → Code (janitor silent 30 h or more? at most one
+#     alert a day) → the same Slack post.
 # Answering with the last node is what tells the caller it worked: a bad token
-# or a Slack error comes back as a 500, which fails the janitor run.
+# or a Slack error comes back as a 500, which fails the janitor run. Static data
+# may not survive a re-import; the watchdog then restarts its clock rather than
+# alerting.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -232,13 +239,35 @@ data:
         },
         {
           "parameters": {
-            "jsCode": "const req = $input.first().json;\nconst expected = String($env.INTERVIEW_JANITOR_TOKEN || '');\nconst given = String((req.headers || {})['x-janitor-token'] || '');\nlet diff = expected.length < 32 || given.length !== expected.length ? 1 : 0;\nfor (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);\nif (diff !== 0) throw new Error('unauthorized: missing or wrong X-Janitor-Token');\nconst p = req.body || {};\nconst esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst title = esc(String(p.title || 'Interview sandbox').slice(0, 200));\nconst body = esc(String(p.text || '').slice(0, 3000)).replace(/```/g, \"'''\");\nconst url = String(p.url || '');\nconst link = /^https:\\/\\/github\\.com\\/arigsela\\/[\\w.-]+\\/actions\\/runs\\/\\d+$/.test(url) ? '\\n<' + url + '|Open the GitHub run>' : '';\nconst text = ':broom: *' + title + '*' + (body ? '\\n```' + body + '```' : '') + link;\nreturn [{ json: { slack: { channel: '#oncall-alerts', text: text, unfurl_links: false } } }];"
+            "jsCode": "const req = $input.first().json;\nconst expected = String($env.INTERVIEW_JANITOR_TOKEN || '');\nconst given = String((req.headers || {})['x-janitor-token'] || '');\nlet diff = expected.length < 32 || given.length !== expected.length ? 1 : 0;\nfor (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);\nif (diff !== 0) throw new Error('unauthorized: missing or wrong X-Janitor-Token');\nconst p = req.body || {};\nconst sd = $getWorkflowStaticData('global');\nsd.lastSeen = new Date().toISOString();\nsd.lastTitle = String(p.title || '').slice(0, 200);\ndelete sd.lastAlert;\nif (p.post === false) return [{ json: { post: 'no' } }];\nconst esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst title = esc(String(p.title || 'Interview sandbox').slice(0, 200));\nconst body = esc(String(p.text || '').slice(0, 3000)).replace(/```/g, \"'''\");\nconst url = String(p.url || '');\nconst link = /^https:\\/\\/github\\.com\\/arigsela\\/[\\w.-]+\\/actions\\/runs\\/\\d+$/.test(url) ? '\\n<' + url + '|Open the GitHub run>' : '';\nconst text = ':broom: *' + title + '*' + (body ? '\\n```' + body + '```' : '') + link;\nreturn [{ json: { post: 'yes', slack: { channel: '#oncall-alerts', text: text, unfurl_links: false } } }];"
           },
           "id": "e4c9f4a3-7d9a-4d34-b333-000000000002",
           "name": "Check Token and Format",
           "type": "n8n-nodes-base.code",
           "typeVersion": 2,
           "position": [220, 0]
+        },
+        {
+          "parameters": {
+            "conditions": {
+              "options": { "version": 2, "leftValue": "", "caseSensitive": true, "typeValidation": "strict" },
+              "conditions": [
+                {
+                  "id": "post-to-slack",
+                  "leftValue": "={{ $json.post }}",
+                  "rightValue": "yes",
+                  "operator": { "type": "string", "operation": "equals" }
+                }
+              ],
+              "combinator": "and"
+            },
+            "options": {}
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-000000000005",
+          "name": "Findings?",
+          "type": "n8n-nodes-base.if",
+          "typeVersion": 2.2,
+          "position": [440, 0]
         },
         {
           "parameters": {
@@ -260,17 +289,49 @@ data:
           "name": "Post Janitor to Slack",
           "type": "n8n-nodes-base.httpRequest",
           "typeVersion": 4.2,
-          "position": [440, 0]
+          "position": [660, -100]
         },
         {
           "parameters": {
-            "jsCode": "const r = $input.first().json;\nif (r.ok !== true) throw new Error('Slack did not accept the message: ' + (r.error || 'no error given'));\nreturn [{ json: { ok: true } }];"
+            "jsCode": "const r = $input.first().json;\nif (r.ok !== true) throw new Error('Slack did not accept the message: ' + (r.error || 'no error given'));\nreturn [{ json: { ok: true, posted: true } }];"
           },
           "id": "e4c9f4a3-7d9a-4d34-b333-000000000004",
           "name": "Check Slack Reply",
           "type": "n8n-nodes-base.code",
           "typeVersion": 2,
-          "position": [660, 0]
+          "position": [880, -100]
+        },
+        {
+          "parameters": {
+            "jsCode": "return [{ json: { ok: true, posted: false } }];"
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-000000000006",
+          "name": "Checked In",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [660, 100]
+        },
+        {
+          "parameters": {
+            "rule": {
+              "interval": [{ "field": "cronExpression", "expression": "0 */6 * * *" }]
+            }
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-000000000007",
+          "name": "Every 6 Hours",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "typeVersion": 1.2,
+          "position": [220, -300]
+        },
+        {
+          "parameters": {
+            "jsCode": "const sd = $getWorkflowStaticData('global');\nconst now = Date.now();\nif (!sd.lastSeen) {\n  sd.lastSeen = new Date(now).toISOString();\n  sd.lastTitle = '(watch started: no check-in recorded yet)';\n  return [];\n}\nconst silentH = Math.floor((now - Date.parse(sd.lastSeen)) / 3600000);\nif (silentH < 30) return [];\nif (sd.lastAlert && now - Date.parse(sd.lastAlert) < 24 * 3600000) return [];\nsd.lastAlert = new Date(now).toISOString();\nconst esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst text = ':warning: *Interview sandbox: janitor silent for ' + silentH + ' h*\\n'\n  + 'No check-in since ' + sd.lastSeen + ' (' + esc(sd.lastTitle || 'unknown') + '). '\n  + 'The daily run (11:00 UTC) should check in every day: look at the janitor workflow in GitHub Actions '\n  + '(late, failed, or not scheduled). Repeats daily while silent.';\nreturn [{ json: { slack: { channel: '#oncall-alerts', text: text, unfurl_links: false } } }];"
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-000000000008",
+          "name": "Janitor Silent?",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [440, -300]
         }
       ],
       "connections": {
@@ -278,10 +339,22 @@ data:
           "main": [[{ "node": "Check Token and Format", "type": "main", "index": 0 }]]
         },
         "Check Token and Format": {
-          "main": [[{ "node": "Post Janitor to Slack", "type": "main", "index": 0 }]]
+          "main": [[{ "node": "Findings?", "type": "main", "index": 0 }]]
+        },
+        "Findings?": {
+          "main": [
+            [{ "node": "Post Janitor to Slack", "type": "main", "index": 0 }],
+            [{ "node": "Checked In", "type": "main", "index": 0 }]
+          ]
         },
         "Post Janitor to Slack": {
           "main": [[{ "node": "Check Slack Reply", "type": "main", "index": 0 }]]
+        },
+        "Every 6 Hours": {
+          "main": [[{ "node": "Janitor Silent?", "type": "main", "index": 0 }]]
+        },
+        "Janitor Silent?": {
+          "main": [[{ "node": "Post Janitor to Slack", "type": "main", "index": 0 }]]
         }
       },
       "settings": { "executionOrder": "v1" }
