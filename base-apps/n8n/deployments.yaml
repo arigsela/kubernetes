@@ -24,7 +24,7 @@ spec:
         # or add a workflow, recompute this — else the pod won't roll and the
         # change won't take effect. (Or just
         # `kubectl rollout restart deploy/n8n -n n8n`.)
-        checksum/workflows: "eb14574689f870ee"
+        checksum/workflows: "5d6c2eb54ee31c77"
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
@@ -53,6 +53,8 @@ spec:
           n8n update:workflow --id=wan-ip-rotated --active=true
           n8n import:workflow --input=/workflows/image-scan-report.json
           n8n update:workflow --id=image-scan-report --active=true
+          n8n import:workflow --input=/workflows/interview-janitor.json
+          n8n update:workflow --id=interview-janitor --active=true
         env:
         - name: DB_TYPE
           value: "postgresdb"
@@ -147,6 +149,16 @@ spec:
             secretKeyRef:
               name: n8n-secrets
               key: slack-bot-token
+
+        # Shared secret the interview-janitor workflow checks callers against
+        # (X-Janitor-Token header). Optional so n8n still starts while the Vault
+        # property is missing; the workflow then rejects every call.
+        - name: INTERVIEW_JANITOR_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: interview-janitor-token
+              optional: true
 
         # n8n blocks $env access in expressions by default; without this the
         # grafana-alerts workflow dies with "ExpressionError: access to env
