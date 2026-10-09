@@ -46,6 +46,9 @@ The janitor posts to `https://n8n.arigsela.com/webhook/interview-janitor` and fa
 - **403 with an empty body:** the WAF. The body is exempt on this path (rule `9014`), so look for a header or URI match, or a change to that rule, in the gateway log as in the WAF symptom above.
 - **404:** the workflow isn't active or registered; see the 404 symptom.
 
+### Symptom: `#oncall-alerts` says "Interview sandbox: n8n could not start the janitor (HTTP N)"
+n8n starts the interview janitor itself (daily 11:00 UTC, Sundays 12:00 UTC) with a GitHub `workflow_dispatch` call. **401**: the fine-grained token `INTERVIEW_JANITOR_GH_TOKEN` is missing or expired; **403/404**: it lacks Actions read and write on `arigsela/interview-labs`, or the workflow file moved. Replace it with `scripts/schedule-setup.sh` in the interview-labs repo (it checks the new token by starting a harmless `claims` run, then writes Vault `k8s-secrets/n8n` property `interview-janitor-gh-token`), then force the ESO re-sync and restart the pod as in the token-rotation how-to.
+
 ### Symptom: `#oncall-alerts` says "Interview sandbox: janitor silent for N h"
 The workflow's watchdog has had no janitor check-in for 30 hours or more. Look at the janitor workflow's runs in the private interview-labs repo: late or missing scheduled runs, a failed run, or every post failing (a 500 or 403 above fails the run). A pod restart or re-import can reset the watchdog's clock (static data), which delays an alert but never fakes one.
 

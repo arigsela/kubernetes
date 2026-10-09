@@ -24,7 +24,7 @@ spec:
         # or add a workflow, recompute this — else the pod won't roll and the
         # change won't take effect. (Or just
         # `kubectl rollout restart deploy/n8n -n n8n`.)
-        checksum/workflows: "dbeda2d105a0153d"
+        checksum/workflows: "31a8723c95366a6e"
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
@@ -158,6 +158,17 @@ spec:
             secretKeyRef:
               name: n8n-secrets
               key: interview-janitor-token
+              optional: true
+
+        # Fine-grained GitHub token (Actions: Read and write on
+        # arigsela/interview-labs only) the interview-janitor workflow uses to
+        # start the janitor through workflow_dispatch. Optional for the same
+        # reason; without it every start fails and is posted to #oncall-alerts.
+        - name: INTERVIEW_JANITOR_GH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: n8n-secrets
+              key: interview-janitor-gh-token
               optional: true
 
         # n8n blocks $env access in expressions by default; without this the

@@ -54,6 +54,13 @@
 #         no  → Code (answer ok; all-clear runs never reach Slack)
 #   Schedule (every 6 h) → Code (janitor silent 30 h or more? at most one
 #     alert a day) → the same Slack post.
+#   Schedule (daily 11:00 UTC; Sundays 12:00 UTC) → Code (task daily or
+#     nuke-dry-run) → HTTP Request (GitHub workflow_dispatch of janitor.yml on
+#     main, with $env.INTERVIEW_JANITOR_GH_TOKEN, a fine-grained token: Actions
+#     Read and write on arigsela/interview-labs only; Vault key n8n, property
+#     interview-janitor-gh-token) → Code (anything but 2xx → the same Slack
+#     post). n8n is the janitor's scheduler because GitHub's own schedule never
+#     fired in that repo. The workflow's timezone is UTC.
 # Answering with the last node is what tells the caller it worked: a bad token
 # or a Slack error comes back as a 500, which fails the janitor run. Static data
 # may not survive a re-import; the watchdog then restarts its clock rather than
@@ -332,6 +339,86 @@ data:
           "type": "n8n-nodes-base.code",
           "typeVersion": 2,
           "position": [440, -300]
+        },
+        {
+          "parameters": {
+            "rule": {
+              "interval": [{ "field": "cronExpression", "expression": "0 11 * * *" }]
+            }
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-000000000009",
+          "name": "Daily 11:00 UTC",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "typeVersion": 1.2,
+          "position": [0, 300]
+        },
+        {
+          "parameters": {
+            "rule": {
+              "interval": [{ "field": "cronExpression", "expression": "0 12 * * 0" }]
+            }
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-00000000000b",
+          "name": "Sundays 12:00 UTC",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "typeVersion": 1.2,
+          "position": [0, 500]
+        },
+        {
+          "parameters": {
+            "jsCode": "return [{ json: { task: 'daily' } }];"
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-00000000000c",
+          "name": "Daily Task",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [220, 300]
+        },
+        {
+          "parameters": {
+            "jsCode": "return [{ json: { task: 'nuke-dry-run' } }];"
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-00000000000d",
+          "name": "Sunday Task",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [220, 500]
+        },
+        {
+          "parameters": {
+            "method": "POST",
+            "url": "https://api.github.com/repos/arigsela/interview-labs/actions/workflows/janitor.yml/dispatches",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                { "name": "Authorization", "value": "=Bearer {{ $env.INTERVIEW_JANITOR_GH_TOKEN }}" },
+                { "name": "Accept", "value": "application/vnd.github+json" },
+                { "name": "X-GitHub-Api-Version", "value": "2022-11-28" },
+                { "name": "Content-Type", "value": "application/json" }
+              ]
+            },
+            "sendBody": true,
+            "specifyBody": "json",
+            "jsonBody": "={{ JSON.stringify({ ref: 'main', inputs: { task: $json.task } }) }}",
+            "options": {
+              "response": { "response": { "fullResponse": true, "neverError": true } }
+            }
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-00000000000e",
+          "name": "Start Janitor Run",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.2,
+          "position": [440, 400]
+        },
+        {
+          "parameters": {
+            "jsCode": "const r = $input.first().json;\nconst code = Number(r.statusCode || 0);\nif (code >= 200 && code < 300) return [];\nconst esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst raw = typeof r.body === 'string' ? r.body : JSON.stringify(r.body === undefined ? '' : r.body);\nconst detail = esc(String(raw).slice(0, 300));\nconst text = ':x: *Interview sandbox: n8n could not start the janitor (HTTP ' + (code || 'no status') + ')*\\n'\n  + 'GitHub refused the workflow_dispatch call' + (detail && detail !== '\"\"' ? ': ' + detail : '') + '\\n'\n  + 'Check the fine-grained token INTERVIEW_JANITOR_GH_TOKEN (Actions: Read and write on arigsela/interview-labs; '\n  + 'it may have expired); scripts/schedule-setup.sh in interview-labs replaces it.';\nreturn [{ json: { slack: { channel: '#oncall-alerts', text: text, unfurl_links: false } } }];"
+          },
+          "id": "e4c9f4a3-7d9a-4d34-b333-00000000000f",
+          "name": "Run Started?",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [660, 400]
         }
       ],
       "connections": {
@@ -355,7 +442,25 @@ data:
         },
         "Janitor Silent?": {
           "main": [[{ "node": "Post Janitor to Slack", "type": "main", "index": 0 }]]
+        },
+        "Daily 11:00 UTC": {
+          "main": [[{ "node": "Daily Task", "type": "main", "index": 0 }]]
+        },
+        "Sundays 12:00 UTC": {
+          "main": [[{ "node": "Sunday Task", "type": "main", "index": 0 }]]
+        },
+        "Daily Task": {
+          "main": [[{ "node": "Start Janitor Run", "type": "main", "index": 0 }]]
+        },
+        "Sunday Task": {
+          "main": [[{ "node": "Start Janitor Run", "type": "main", "index": 0 }]]
+        },
+        "Start Janitor Run": {
+          "main": [[{ "node": "Run Started?", "type": "main", "index": 0 }]]
+        },
+        "Run Started?": {
+          "main": [[{ "node": "Post Janitor to Slack", "type": "main", "index": 0 }]]
         }
       },
-      "settings": { "executionOrder": "v1" }
+      "settings": { "executionOrder": "v1", "timezone": "UTC" }
     }
