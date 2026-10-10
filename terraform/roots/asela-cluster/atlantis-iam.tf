@@ -4,7 +4,8 @@
 #
 # SECURITY: Policy is scoped to specific resource ARNs — no wildcard resources
 # on sensitive services (IAM actions scoped to /system/ path, KMS to vault key,
-# Secrets Manager to known secret prefixes, ECR to this region's repositories).
+# Secrets Manager to known secret prefixes, ECR to this region's repositories,
+# Budgets to this account's budgets).
 #
 # AFTER APPLY: Retrieve the secret access key and store it in Vault manually:
 #   terraform output -raw atlantis_access_key_id
@@ -203,6 +204,28 @@ resource "aws_iam_policy" "atlantis" {
         ]
         Resource = [
           "arn:aws:ecr:us-east-2:${data.aws_caller_identity.current.account_id}:repository/*"
+        ]
+      },
+      # -----------------------------------------------------------------------
+      # Budgets: read and change this account's cost budgets. Added 2026-10-10 so
+      # monthly-budget can move into this root (budgets.tf, the follow-up PR):
+      # until this statement is applied, Atlantis cannot read or import an
+      # aws_budgets_budget. ViewBudget covers its notifications and subscribers,
+      # ModifyBudget creating, updating and deleting them. No budget actions
+      # (budgets:*Action*): those can apply IAM policies and SCPs.
+      # -----------------------------------------------------------------------
+      {
+        Sid    = "BudgetsManagement"
+        Effect = "Allow"
+        Action = [
+          "budgets:ViewBudget",
+          "budgets:ModifyBudget",
+          "budgets:ListTagsForResource",
+          "budgets:TagResource",
+          "budgets:UntagResource"
+        ]
+        Resource = [
+          "arn:aws:budgets::${data.aws_caller_identity.current.account_id}:budget/*"
         ]
       },
       # -----------------------------------------------------------------------
