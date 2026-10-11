@@ -1,6 +1,6 @@
 # kagent 1.0 Feasibility Spikes Implementation Plan
 
-**Status:** Approved — ready to execute
+**Status:** Superseded 2026-10-11 by [kagent-1-0-on-k8s-1-37-implementation-plan.md](kagent-1-0-on-k8s-1-37-implementation-plan.md) (in place on prod, no spike VM)
 **Date:** 2026-09-26
 **Owner:** Ari Sela
 **Prior research:** [docs/research/2026-07-16-agent-substrate-in-kagent.md](../research/2026-07-16-agent-substrate-in-kagent.md)

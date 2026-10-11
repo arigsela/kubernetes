@@ -79,7 +79,8 @@ Also cross-cutting, elsewhere in the repo: backup & recovery in
 | `plans/k3s-1.36-upgrade-plan.md` | record | The full record of the k3s v1.35.6 → v1.36.4 hop; the reusable procedure is in `base-apps/system-upgrade-controller/runbook.md` |
 | `plans/k3s-1.36-api-scan.md` | record | Deprecated-API scan for 1.36 (read by `tests/k3s-upgrade/`; don't move it) |
 | `plans/k8s-136-features-implementation-plan.md` | record | Adopting five Kubernetes 1.34–1.36 features after the 1.36 hop |
-| `plans/kagent-1-0-feasibility-spikes-implementation-plan.md` | active | Feasibility spikes before a kagent 1.0 upgrade |
+| `plans/kagent-1-0-on-k8s-1-37-implementation-plan.md` | active | k3s 1.36 → 1.37 hop, then kagent 0.10.3 → 1.0.0-alpha11 in place, with Sonnet/Haiku 5.5 |
+| `plans/kagent-1-0-feasibility-spikes-implementation-plan.md` | superseded | Feasibility spikes before a kagent 1.0 upgrade; replaced 2026-10-11 by the in-place plan above |
 | `plans/cve-remediation-automation-implementation-plan.md` | active | Proactive CVE remediation: KEV/EPSS in the weekly scan, and Renovate for this repo |
 | `plans/argocd-drift-diagnosis.md` | record | Why each `ignoreDifferences` exists (cited by several Applications) |
 | `plans/vault-auto-unseal-implementation-plan.md` | record | Moving Vault from Shamir to AWS KMS auto-unseal |
