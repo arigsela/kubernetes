@@ -334,7 +334,8 @@ hostname in `MANAGED_HOSTNAMES` in `base-apps/wan-ip-monitor/cronjob.yaml`.
   the runbook's alpha-bump procedure.
 - **Nodes.** Worker pods can't run on `k3s-control-01` (tainted; Substrate's atelet doesn't
   tolerate it), so all sessions run on the two workers. The WorkerPool has no pod anti-affinity:
-  after a drain both workers can land on one node and stay there.
+  after a drain both workers can land on one node and stay there (seen 2026-10-11 after
+  `patch.yml`; open as SPEC T102).
 - **Reboots and drains** interrupt agents: a drain evicts workers and may crash a turn in flight,
   a worker that survives a reboot keeps its name but gets a new IP its actors never learn
   (substrate#1837, `ansible/playbooks/patch.yml` deletes a rebooted node's workers), and resume is

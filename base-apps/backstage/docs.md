@@ -28,8 +28,8 @@ sources:
 
 ## What it is
 The internal developer portal / software catalog (Backstage), running a custom
-image, `backstage-portal`, from ECR (tag in `deployments.yaml`, `v1.4.14` at
-review; `imagePullPolicy: Always`). The image is built from the portal repo,
+image, `backstage-portal`, from ECR (tag in `deployments.yaml`, `v1.5.0` since
+2026-10-11; `imagePullPolicy: Always`). The image is built from the portal repo,
 `arigsela/backstage` (checked out at `~/git/backstage`). It is the platform's
 software catalog UI, scaffolder and TechDocs site, and (per the RBAC below) also
 ingests live cluster/Crossplane resources and renders kagent agent detail cards.
@@ -37,9 +37,10 @@ ingests live cluster/Crossplane resources and renders kagent agent detail cards.
 Recent portal releases, per the bump commits on `deployments.yaml`: a home page
 launchpad at `/` (v1.4.8), removal of the `smoketestapp` XRD (whose template
 the ingestor generated) and of the old Node.js/application/decommission/kagent
-example templates (v1.4.10), and the **New Application** scaffolder template (v1.4.11, name
+example templates (v1.4.10), the **New Application** scaffolder template (v1.4.11, name
 availability check v1.4.12; the template itself lives in this repo at
-`templates/new-app/template.yaml`, see below).
+`templates/new-app/template.yaml`, see below), and kagent 1.0 support (v1.5.0,
+`arigsela/backstage#41`: agent entities, the agent card and the A2A client).
 
 **Backstage's config is not in this directory.** `app-config.yaml` and
 `app-config.production.yaml` (catalog locations, the TeraSky
@@ -129,12 +130,9 @@ action send A2A v1 `SendMessage` to the kagent controller's gateway,
 `X-User-Id: backstage-portal`. kagent 0.10's per-agent Services and the
 `agents.platform.ai/a2a-endpoint` annotation contract are gone.
 
-**Portal image lag (2026-10-11).** The ingestor config, the agent card and the
-A2A client above are portal code: they moved to kagent 1.0 in
-`arigsela/backstage#41` (merged 2026-10-11) and take effect only with the first
-portal image built after it. Until `deployments.yaml` moves past `v1.4.14`, the
-running portal still speaks kagent 0.10, so agent entities, agent cards and skill
-suggestions don't work against 1.0, even though the RBAC here is ready.
+The ingestor config, the agent card and the A2A client above are portal code,
+moved to kagent 1.0 in `arigsela/backstage#41` and shipped in portal `v1.5.0`
+(2026-10-11). An older portal image speaks kagent 0.10 and finds no agents.
 
 ## TechDocs
 Backstage renders each in-scope app's docs as TechDocs (the "Docs" tab). The
