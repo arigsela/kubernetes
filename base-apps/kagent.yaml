@@ -1,3 +1,16 @@
+# kagent 1.0.0-alpha11 (plan docs/plans/kagent-1-0-on-k8s-1-37-implementation-plan.md, Task 5.4).
+# Merged at the cutover, AFTER kagent 0.10 is removed (Task 5.3): 0.10 and 1.x cannot share a
+# cluster, and there is no in-place upgrade or conversion (SPEC §R.44). Needs, already in place:
+#   * Agent Substrate (base-apps/substrate*.yaml): agents run as Substrate actors.
+#   * database kagent_v1 and Secret kagent-postgres (base-apps/postgresql/init-kagent-v1-db.yaml,
+#     base-apps/kagent/kagent-postgres-external-secret.yaml).
+#   * kagent-crds 1.0.0-alpha11 (base-apps/kagent-crds.yaml), which also carries the kmcp CRDs.
+# The agents themselves (AgentTemplates, Harnesses, Agents, ModelConfigs) live in
+# base-apps/kagent/ and are synced by the kagent-secrets app; none is rendered by this chart.
+#
+# Images are pinned by digest through each `tag` ("<version>@sha256:..."), because the chart's
+# image helpers take a tag but no digest key. Renovate does not see these (Helm valuesObject):
+# its kagent-substrate group PR note says to re-pin them.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -9,136 +22,125 @@ metadata:
     argocd.argoproj.io/sync-wave: "0"
 spec:
   project: default
-  # No ignoreDifferences: the agents whose tools/memory we customize are no longer
-  # rendered by this chart. They are owned in Git under base-apps/kagent/agents/,
-  # so Argo reconciles and self-heals them like any other manifest.
   source:
     chart: kagent
     repoURL: ghcr.io/kagent-dev/kagent/helm
-    targetRevision: 0.10.3
+    targetRevision: 1.0.0-alpha11
     helm:
       valuesObject:
-        # Database: use existing PostgreSQL with pgvector
+        # Database: kagent_v1 on the shared pgvector Postgres. 1.0 removed url/urlFile; the
+        # connection string comes from Secret kagent-postgres (key connectionString). The
+        # controller assumes role kagent_owner and works in schema kagent; pgvector is
+        # pre-installed in schema extensions (the controller checks, and refuses to start if
+        # it is missing). The 0.10 database `kagent` is the read-only archive.
         database:
           postgres:
-            bundled:
-              enabled: false
-            urlFile: /etc/kagent/secrets/db-url
+            connectionStringSecretRef:
+              name: kagent-postgres
+              key: connectionString
+            role: kagent_owner
+            schema: kagent
+            vectorSchema: extensions
             vectorEnabled: true
 
-        # Mount the database URL secret.
         controller:
-          # No OPENSHELL_GATEWAY_URL: openshell was removed (03270eb), and the
-          # controller exits at startup if it cannot dial a configured gateway.
-          # Leaving it unset disables the AgentHarness controller instead.
-          volumes:
-            - name: db-secret
-              secret:
-                secretName: kagent-db-credentials
-                items:
-                  - key: db-url
-                    path: db-url
-          volumeMounts:
-            - name: db-secret
-              mountPath: /etc/kagent/secrets
-              readOnly: true
+          image:
+            tag: "1.0.0-alpha11@sha256:ae898c7e84c4adeaff7f1f5c1a6ad1a418dd3266e42cf11083b465c1010ab512"
+          # Default agent image. Each Harness names its own (golang-adk, by digest), so this is a
+          # fallback; pinned the same way so nothing runs by tag.
+          agentImage:
+            tag: "1.0.0-alpha11@sha256:29409dfe1a030b50da3ff3f72599752cb5824a50f6aa136c16bf2b1678aa89b8"
+          # The A2A base advertised in agent cards (JSON-RPC <url>/agents/<ns>/<name>, gRPC <url>)
+          # and the push-notification JWT issuer. External clients ("ask hk", Backstage) reach the
+          # agents through the kagent-mcp HTTPRoute (/agents/kagent/ -> kagent-controller:8083),
+          # behind the IP allow-list. Agent pods do not use this: the controller injects the
+          # in-cluster http://kagent-controller.kagent:8083 into them.
+          a2aGatewayUrl: https://kagent-mcp.arigsela.com
+          # Sessions idle for 30 days are deleted (chart default 7 days). A homelab agent is often
+          # picked up again weeks later, and an idle session costs only rows in kagent_v1: its
+          # actor is suspended and its snapshot sits in rustfs. Running tasks and turns waiting
+          # for approval never expire; audit history and memory are kept either way.
+          sessionIdleTTL: "720h"
+          # Agents run as Agent Substrate actors (base-apps/substrate.yaml). These are the names
+          # the substrate release (named `substrate`, in ate-system) renders; `kagent install`
+          # uses the same two values.
+          #
+          # Standalone sandboxes (workspaces outside an agent) stay off: they need
+          # sandbox.guestImage.digest, left empty on purpose. Nothing here uses them.
+          substrate:
+            enabled: true
+            ateApiEndpoint: dns:///api.ate-system.svc:443
+            atenetRouterURL: http://atenet-router.ate-system.svc:80
 
-        # LLM provider: use Anthropic with existing secret. Generates the chart's
-        # default-model-config. No agent in git uses it any more (they reference
-        # model-configs/anthropic-claude-*-5-5.yaml); it stays as the chart default
-        # for UI-created agents, which ! pick runtime: go for a 5.x model (SPEC §T.94).
-        providers:
-          default: anthropic
-          anthropic:
-            provider: Anthropic
-            model: claude-haiku-5-5
-            apiKeySecretRef: kagent-anthropic
-            apiKeySecretKey: ANTHROPIC_API_KEY
+        # The WorkerPool every Harness references (substrate.workerPoolRef: kagent-default).
+        # ate-controller runs it as a Deployment of gVisor workers in `kagent` (UID 0, 13
+        # capabilities, seccomp/AppArmor Unconfined; see base-apps/substrate.yaml). Workers are
+        # shared: actors from every agent land on any free worker, and the worker's limits are
+        # the envelope its sandboxes share (Substrate docs/api-guide.md, "Worker Capacity").
+        # Sizing: the 0.10 agents each ran at 100m-1000m CPU and 256Mi-1Gi memory; two workers
+        # of up to 2 CPU / 4Gi each cover several concurrent sessions, and idle actors are
+        # suspended to free their worker. Workers cannot run on k3s-control-01 (tainted, no
+        # toleration), so they spread over the two workers. Revisit after the Phase 5 acceptance.
+        substrateWorkerPool:
+          create: true
+          name: kagent-default
+          replicas: 2
+          sandboxClass: gvisor
+          workerImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.5.0-alpha2@sha256:5869cdace628f93d39d913e41f91f2862db8bb7ca8ae2c6c756ee31015b3d719
+          template:
+            resources:
+              requests:
+                cpu: 250m
+                memory: 1Gi
+              limits:
+                cpu: "2"
+                memory: 4Gi
 
-        # No ui.image override: the chart's upstream UI image is used. The Node 20
-        # ECR fork (2026-05) was retired 2026-09-27 after upstream ui:0.10.2
-        # (Node 24) ran clean on all three nodes, which have x86-64-v2.
+        ui:
+          image:
+            tag: "1.0.0-alpha11@sha256:fd26a91bfa3b4dacaf92bc6affa4f67bf21d71b04536d7a999653dfcad519606"
 
-        # Agent enablement.
-        #
-        # IMPORTANT: these are TOP-LEVEL chart keys (Helm subchart aliases —
-        # the subchart conditions are `k8s-agent.enabled`, `helm-agent.enabled`,
-        # ...). The chart has NO `agents:` map. This block previously nested them
-        # under `agents:`, which Helm silently ignored, so none of it took effect:
-        # every bundled agent ran enabled with default resources, including the
-        # promql/cilium agents we believed were off.
-        #
-        # The two write-capable agents we actually use (k8s, istio) are disabled
-        # here and owned in Git instead, under base-apps/kagent/agents/. They
-        # need two fields the chart cannot express — spec.declarative.memory and
-        # the HITL requireApproval gates on their destructive tools — which we
-        # previously applied out-of-band with kubectl. Argo overwrote those
-        # patches on every sync, silently removing the human-approval gate from
-        # tools like k8s_delete_resource. ignoreDifferences does not prevent this
-        # (it only suppresses drift detection), and RespectIgnoreDifferences is
-        # ignored during sync when combined with ServerSideApply —
-        # argoproj/argo-cd#8970 / #9678, reproduced on this cluster. Owning the
-        # CRs makes both fields declarative and self-healed by Argo.
-        #
-        # observability-agent is gone entirely: 34 of its 36 tools came from
-        # grafana-mcp, which is disabled below. Its chart copy stays off too, or
-        # the chart would render it straight back.
-        k8s-agent:
-          enabled: false
-        istio-agent:
-          enabled: false
-        # Not used in this cluster. helm/kgateway/argo-rollouts are write-capable
-        # and would need approval gates we no longer have a mechanism for, so
-        # they are off rather than left running ungated. promql/cilium were meant
-        # to be off already — the broken `agents:` nesting meant they have been
-        # running all along.
-        helm-agent:
-          enabled: false
-        kgateway-agent:
-          enabled: false
-        argo-rollouts-agent:
-          enabled: false
-        promql-agent:
-          enabled: false
-        cilium-manager-agent:
-          enabled: false
-        cilium-debug-agent:
-          enabled: false
-        cilium-policy-agent:
-          enabled: false
-        observability-agent:
-          enabled: false
+        # No chart default ModelConfig. Every agent references a ModelConfig in git
+        # (base-apps/kagent/model-configs/), so `default-model-config` would only be an
+        # unreviewed model for UI-created agents. The chart renders it whenever `providers` is
+        # set and has no off switch; null removes the key.
+        providers: null
 
-        # grafana-mcp never worked here: it ran on chart defaults, pointed at
-        # grafana.kagent:3000 (Grafana lives in `logging`) with no service-account
-        # token, so every initialize returned Forbidden.
-        grafana-mcp:
-          enabled: false
+        kmcp:
+          image:
+            tag: "0.4.0@sha256:18caabf70adbba87519f2ec64f2834f9f355f046fa72b7f7351d770bcc7c0583"
 
-        # OpenTelemetry tracing → Coroot OTLP receiver
-        # The tool server's RBAC is NOT the chart's. rbac.create=false keeps the
-        # kagent-tools ServiceAccount and drops the chart's `*` ClusterRole and
-        # binding (Argo prunes them); base-apps/cluster-rbac/kagent-tools.yaml
-        # binds a "cluster-admin minus Secrets" role instead. Why: one SA serves
-        # every agent's tools, and on 2026-07-15 the read-only k8s-reader listed
-        # every Secret through it. Verify: tests/agent-capability/test_kagent_tools_rbac.py.
+        # The tool server's RBAC is NOT the chart's. rbac.create=false keeps the kagent-tools
+        # ServiceAccount and drops the chart's `*` ClusterRole and binding;
+        # base-apps/cluster-rbac/kagent-tools.yaml binds "cluster-admin minus Secrets" instead.
+        # Why: one SA serves every agent's tools, and on 2026-07-15 the read-only k8s-reader
+        # listed every Secret through it. Verify: tests/agent-capability/test_kagent_tools_rbac.py.
         kagent-tools:
           rbac:
             create: false
+          tools:
+            image:
+              tag: "0.3.0@sha256:cb89eb76216195a90cac73846b447525b6e6e33e45154d1ded9621bf11340315"
+
+        # grafana-mcp never worked here (it pointed at grafana.kagent:3000; Grafana lives in
+        # `logging`) and nothing binds it.
+        grafana-mcp:
+          enabled: false
+
+        # OpenTelemetry → Coroot's OTLP receiver (gRPC 4317; http:// = no TLS). 1.0 replaced
+        # otel.tracing/logging with one exporter and per-signal switches. Metrics stay with
+        # Prometheus; Coroot does not take OTLP metrics here.
         otel:
-          tracing:
+          exporter:
+            otlp:
+              endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
+              protocol: grpc
+          traces:
             enabled: true
-            exporter:
-              otlp:
-                endpoint: "coroot-coroot.coroot.svc.cluster.local:4317"
-                protocol: "grpc"
-                insecure: true
-          logging:
+          logs:
             enabled: true
-            exporter:
-              otlp:
-                endpoint: "coroot-coroot.coroot.svc.cluster.local:4317"
-                insecure: true
+          metrics:
+            enabled: false
 
   destination:
     server: https://kubernetes.default.svc
