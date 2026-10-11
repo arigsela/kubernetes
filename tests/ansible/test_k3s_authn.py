@@ -13,16 +13,25 @@ from conftest import ANSIBLE, needs_docker, node_exec, node_read, node_write, ru
 SRC = ANSIBLE / "roles" / "k3s_node" / "files" / "authn"
 SHIPPED_AUTHN = (SRC / "authn-config.yaml").read_text()
 SHIPPED_DROPIN = (SRC / "config.yaml.d" / "10-authn.yaml").read_text()
+SHIPPED_BUNDLED = (SRC / "config.yaml.d" / "20-disable-bundled.yaml").read_text()
+NEXT_K3S = "rancher/k3s:v1.37.1-k3s1"   # the hop target (SPEC §T.96): validate against it before the hop
 
 
-def source_dir(tmp_path, authn=SHIPPED_AUTHN, dropin=SHIPPED_DROPIN):
+def source_dir(tmp_path, authn=SHIPPED_AUTHN, dropin=SHIPPED_DROPIN, bundled=SHIPPED_BUNDLED):
     src = tmp_path / "authn"
     (src / "config.yaml.d").mkdir(parents=True)
     if authn is not None:
         (src / "authn-config.yaml").write_text(authn)
     if dropin is not None:
         (src / "config.yaml.d" / "10-authn.yaml").write_text(dropin)
+    if bundled is not None:
+        (src / "config.yaml.d" / "20-disable-bundled.yaml").write_text(bundled)
     return src
+
+
+def node_has_shipped_dropins(node):
+    node_write(node, "/etc/rancher/k3s/config.yaml.d/10-authn.yaml", SHIPPED_DROPIN)
+    node_write(node, "/etc/rancher/k3s/config.yaml.d/20-disable-bundled.yaml", SHIPPED_BUNDLED)
 
 
 def no_node_inventory(tmp_path):
@@ -56,6 +65,20 @@ def test_an_oidc_flag_in_the_dropin_is_refused_but_a_comment_is_not(tmp_path):
     src = source_dir(tmp_path / "ok", dropin="# no --oidc-* flags here, by design\nkube-apiserver-arg+:\n  - authentication-config=/etc/rancher/k3s/authn-config.yaml\n")
     r = run_playbook("k3s-authn.yml", no_node_inventory(tmp_path), "--tags", "static", "-e", f"authn_src={src}")
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_a_dropin_that_replaces_the_disable_list_is_refused(tmp_path):
+    """`disable:` would REPLACE the node's config.yaml list (`disable: [traefik]`) and bring Traefik
+    back; only `disable+:` (append) may ship."""
+    src = source_dir(tmp_path, bundled="disable:\n  - gateway-api-crd\n")
+    r = run_playbook("k3s-authn.yml", no_node_inventory(tmp_path), "--tags", "static", "-e", f"authn_src={src}")
+    assert r.returncode != 0 and "REPLACES the node's config.yaml list" in r.stdout, r.stdout + r.stderr
+
+
+def test_the_bundled_dropin_disables_gateway_api_crd():
+    """SPEC §R.42 / §V.83: k3s 1.37's bundled Gateway API CRDs would take the CRDs from Argo."""
+    import yaml
+    assert yaml.safe_load(SHIPPED_BUNDLED) == {"disable+": ["gateway-api-crd"]}
 
 
 def test_shipped_files_pass_the_static_guards(tmp_path):
@@ -96,6 +119,14 @@ def test_a_file_the_api_server_rejects_fails_validation(tmp_path):
 def test_the_shipped_files_validate(tmp_path):
     r = run_playbook("k3s-authn.yml", no_node_inventory(tmp_path), "--tags", "validate")
     assert r.returncode == 0 and "anonymous → 401" in r.stdout, r.stdout + r.stderr
+
+
+@needs_docker
+def test_the_shipped_files_validate_on_the_next_k3s_and_keep_gateway_api_crd_out(tmp_path):
+    """On 1.37 k3s bundles gateway-api-crd; with the drop-in mounted it must not be installed."""
+    r = run_playbook("k3s-authn.yml", no_node_inventory(tmp_path), "--tags", "validate", "-e", f"k3s_image={NEXT_K3S}")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert f"validated in {NEXT_K3S}" in r.stdout and "not installed: gateway-api-crd" in r.stdout, r.stdout
 
 
 # ---- play 2: the node ------------------------------------------------------------------------
@@ -199,7 +230,7 @@ def test_an_oidc_flag_already_on_the_node_is_refused(tmp_path, node, inventory_f
 @needs_docker
 def test_already_installed_does_nothing(tmp_path, node, inventory_for, node_env, api_401):
     node_write(node, "/etc/rancher/k3s/authn-config.yaml", SHIPPED_AUTHN)
-    node_write(node, "/etc/rancher/k3s/config.yaml.d/10-authn.yaml", SHIPPED_DROPIN)
+    node_has_shipped_dropins(node)
     r = run_playbook("k3s-authn.yml", inventory_for("k3s_control"), *install_args(api_401), env=node_env)
     assert r.returncode == 0 and "already installed" in r.stdout, r.stdout + r.stderr
     assert only_read_k3s_unit(node), "k3s was touched: " + node_read(node, "/var/log/systemctl.log")
@@ -211,7 +242,7 @@ def test_already_installed_does_nothing(tmp_path, node, inventory_for, node_env,
 def test_an_instant_hot_reload_is_seen(tmp_path, node, inventory_for, node_env, api_401):
     """Regression: a config with no issuers reloads in under a second, before an installer that
     read its baseline AFTER writing the file could look. The baseline must come first."""
-    node_write(node, "/etc/rancher/k3s/config.yaml.d/10-authn.yaml", SHIPPED_DROPIN)   # drop-in unchanged
+    node_has_shipped_dropins(node)   # drop-ins unchanged
     r = run_playbook("k3s-authn.yml", inventory_for("k3s_control"), *install_args(api_401), env=node_env)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "reloaded (success counter 6)" in r.stdout, r.stdout
@@ -232,6 +263,20 @@ def test_a_dropin_change_restarts_and_the_api_returns(tmp_path, node, inventory_
     assert len(backups) == 1
     assert node_read(node, f"/etc/rancher/k3s/authn-backup/{backups[0]}/config.yaml.d/10-authn.yaml") == "# old drop-in\n"
     assert node_exec(node, "stat -c %a /etc/rancher/k3s/config.yaml.d/10-authn.yaml").stdout.strip() == "600"
+
+
+@needs_docker
+def test_a_new_bundled_dropin_alone_restarts_once(tmp_path, node, inventory_for, node_env, api_401):
+    """The upgrade path for SPEC §T.96: authn already installed, only 20-disable-bundled.yaml is new."""
+    node_write(node, "/etc/rancher/k3s/authn-config.yaml", SHIPPED_AUTHN)
+    node_write(node, "/etc/rancher/k3s/config.yaml.d/10-authn.yaml", SHIPPED_DROPIN)
+    r = run_playbook("k3s-authn.yml", inventory_for("k3s_control"), *install_args(api_401), env=node_env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert node_read(node, "/etc/rancher/k3s/config.yaml.d/20-disable-bundled.yaml") == SHIPPED_BUNDLED
+    assert node_read(node, "/var/log/systemctl.log").count("restart k3s") == 1
+    backups = node_exec(node, "ls /etc/rancher/k3s/authn-backup").stdout.split()
+    assert node_exec(node, f"test -e /etc/rancher/k3s/authn-backup/{backups[0]}/.no-20-disable-bundled.yaml").returncode == 0
+    assert node_exec(node, "stat -c %a /etc/rancher/k3s/config.yaml.d/20-disable-bundled.yaml").stdout.strip() == "600"
 
 
 @needs_docker
