@@ -1,0 +1,25 @@
+# rule 6: read template binds the admin k8s-agent template as a subagent.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: bad-read-delegates-to-admin
+  namespace: kagent
+  labels:
+    capability.homelab/class: read
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: agent-docs
+        requireApproval: false
+        tools:
+          - get_file_contents
+    - subAgent:
+        name: operator
+        description: fixture subagent
+        templateRef:
+          name: k8s-agent

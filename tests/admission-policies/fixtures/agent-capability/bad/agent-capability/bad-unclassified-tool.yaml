@@ -1,0 +1,21 @@
+# rule 2: binds a tool absent from the taxonomy (fail-closed), even in a gated binding.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: bad-unclassified-tool
+  namespace: kagent
+  labels:
+    capability.homelab/class: admin
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+        requireApproval: true
+        tools:
+          - k8s_get_resources
+          - k8s_brand_new_tool_from_chart_bump

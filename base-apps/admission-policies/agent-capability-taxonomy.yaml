@@ -12,8 +12,8 @@
 #
 # NOTE: nothing reads this ConfigMap at admission time. The policy embeds the lists
 # inline instead. A runtime lookup would be DRYer but is a dependency evaluated for
-# EVERY Agent, and with failurePolicy Fail any lookup failure (RBAC, sync ordering,
-# schema) would deny ALL Agent writes, wedging the kagent app. Inlining makes the
+# EVERY AgentTemplate, and with failurePolicy Fail any lookup failure (RBAC, sync ordering,
+# schema) would deny ALL AgentTemplate writes, wedging the kagent app. Inlining makes the
 # artifact we test byte-for-byte the artifact that ships. See the generator.
 #
 # Three classifications, ordered read < write < destructive:
@@ -22,18 +22,20 @@
 #                manifest but do not apply it (k8s_generate_resource,
 #                istio_generate_manifest, istio_generate_waypoint) are `read` —
 #                they return YAML to the caller.
-#   write        mutates state. Must appear in the tool ref's requireApproval.
+#   write        mutates state. May only be bound in an MCP binding with
+#                requireApproval: true (kagent 1.0 gates per binding, not per tool).
 #   destructive  removes state, or is an arbitrary-code escape hatch whose blast
 #                radius is not bounded by its name (k8s_execute_command). Must
-#                appear in requireApproval, and only an `admin` agent may bind it.
+#                be in a requireApproval: true binding, and only an `admin` agent may bind it.
 #
-# FAIL-CLOSED: a tool bound by an Agent but absent from all three lists is
+# FAIL-CLOSED: a tool bound by an AgentTemplate but absent from all three lists is
 # DENIED. This is deliberate. A chart upgrade that introduces new tools cannot
 # silently widen any agent's capability — the new tools must be triaged and
 # classified here first. If a sync fails with "tool not in taxonomy", that is
 # the control working, not a bug.
 #
-# The lists are JSON arrays because Kyverno reads them with parse_json().
+# The lists are JSON arrays (a Kyverno parse_json() legacy); the generator, the CI
+# validator and the agent-audit scripts all json.loads() them.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -104,7 +106,7 @@ data:
     ]
 
   # --------------------------------------------------------------- write (13)
-  # Every tool here MUST appear in requireApproval wherever it is bound.
+  # Every tool here MUST be in a requireApproval: true binding wherever it is bound.
   # The four k8s label/annotation mutators matter more than they look: Argo CD
   # sync behaviour and Kyverno matching are both label/annotation-driven, so an
   # agent holding them can disable the very controls that hold it in.
@@ -128,10 +130,24 @@ data:
     ]
 
   # ---------------------------------------------------------- destructive (3)
-  # Only an `admin` agent may bind these, and only with requireApproval.
+  # Only an `admin` agent may bind these, and only in a requireApproval: true binding.
   destructive: |
     [
       "k8s_delete_resource",
       "k8s_execute_command",
       "istio_delete_waypoint"
+    ]
+
+  # ------------------------------------------------------ runtime images (2)
+  # Not a tool class: the image repositories a kagent 1.0 Harness may run. Everything above is
+  # enforced INSIDE the runtime: the per-binding tool selection and requireApproval gate are
+  # honoured by kagent's own ADK runtimes, and a byo/claude/codex Harness or any other image
+  # may expose a whole MCP server and never pause (SPEC §R.45). So a Harness must use the
+  # `kagent` runtime and one of these repositories (pin by digest, the CRD requires it).
+  #   golang-adk  the Go ADK, the chart's default runtime (harnesses/*.yaml)
+  #   kagent-adk  the Python ADK, the documented fallback via a workload.command override
+  runtime-images: |
+    [
+      "ghcr.io/kagent-dev/kagent/golang-adk",
+      "ghcr.io/kagent-dev/kagent/kagent-adk"
     ]

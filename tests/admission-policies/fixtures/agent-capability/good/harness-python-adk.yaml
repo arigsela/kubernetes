@@ -1,0 +1,22 @@
+# The documented fallback: the Python ADK image on the kagent runtime via a command override.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata:
+  name: good-python-adk
+  namespace: kagent
+spec:
+  kagent: {}
+  workload:
+    image: ghcr.io/kagent-dev/kagent/kagent-adk:1.0.0-alpha11@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    command:
+      - "/.kagent/.venv/bin/kagent-adk"
+      - "static"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+  substrate:
+    workerPoolRef:
+      name: kagent-default
+    snapshotPolicy:
+      location: s3://ate-snapshots/kagent/

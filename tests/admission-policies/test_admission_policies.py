@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from conftest import (FIXTURES, api_server_panics, expected_pull_secrets, policy_docs,
-                      policy_files, real_agent_files)
+                      policy_files, real_kagent_files)
 
 SUITES = sorted(p.name for p in FIXTURES.iterdir() if p.is_dir() and p.name != "crds")
 GOOD = sorted(FIXTURES.glob("*/good/*.yaml"))
@@ -39,12 +39,29 @@ def test_bad_fixture_is_flagged_by_its_policy(cluster, path):
     assert expected in fired, f"{_id(path)} fired {fired}, expected {expected}:\n{out}"
 
 
-@pytest.mark.parametrize("path", real_agent_files(), ids=lambda p: p.stem)
-def test_real_agents_update_without_warnings(cluster, path):
-    """Every Agent actually deployed must pass every policy — on UPDATE, the path a sync
-    takes. A policy that flags a real agent would block that agent the day it enforces."""
+@pytest.mark.parametrize("path", real_kagent_files(),
+                         ids=lambda p: "/".join(p.relative_to(p.parents[1]).with_suffix("").parts))
+def test_real_kagent_manifests_update_without_warnings(cluster, path):
+    """Every kagent object actually deployed (Agents, AgentTemplates incl. build-orchestrator,
+    Harnesses, ModelConfigs, MCP servers) must pass every policy — on UPDATE, the path a sync
+    takes. A policy that flags a real object would block it the day it enforces."""
     verdict, fired, out = cluster.verdict(path.read_text(), update=True)
-    assert verdict == "allow", f"real agent {path.stem} got {verdict} from {fired}:\n{out}"
+    assert verdict == "allow", f"real {path.name} got {verdict} from {fired}:\n{out}"
+
+
+def test_real_kagent_manifests_are_all_there():
+    """The harness must exercise the real agents, not a subset: seven Agents and their seven
+    AgentTemplates. A glob that silently found nothing would make the test above vacuous."""
+    kinds = {}
+    for p in real_kagent_files():
+        for d in yaml.safe_load_all(p.read_text()):
+            if d:
+                kinds.setdefault(d["kind"], set()).add(d["metadata"]["name"])
+    want = {"homelab-knowledge", "k8s-reader", "k8s-agent", "istio-agent", "build-orchestrator",
+            "skill-suggester", "dungeon-crawler-carl-agent"}
+    assert kinds.get("Agent") == want, kinds.get("Agent")
+    assert kinds.get("AgentTemplate") == want, kinds.get("AgentTemplate")
+    assert kinds.get("Harness"), "no Harness found"
 
 
 @pytest.mark.parametrize("path", MUTATE, ids=_id)
@@ -139,7 +156,8 @@ def test_every_policy_has_bad_fixtures():
 # Resource (plural) -> kind, for the resources the policies match. Extend with a new policy.
 KINDS = {"pods": "Pod", "deployments": "Deployment", "statefulsets": "StatefulSet",
          "daemonsets": "DaemonSet", "jobs": "Job", "cronjobs": "CronJob", "services": "Service",
-         "agents": "Agent", "externalsecrets": "ExternalSecret"}
+         "agents": "Agent", "agenttemplates": "AgentTemplate", "harnesses": "Harness",
+         "externalsecrets": "ExternalSecret"}
 
 
 def test_every_matched_kind_has_a_bad_fixture():
@@ -176,3 +194,40 @@ def test_every_policy_has_a_message():
     for name, vap in _by_kind("ValidatingAdmissionPolicy").items():
         for v in vap["spec"]["validations"]:
             assert v.get("message") or v.get("messageExpression"), f"{name} has a silent validation"
+
+
+def _served_crd_versions():
+    out = set()
+    for f in sorted((FIXTURES / "crds").glob("*.yaml")):
+        for d in yaml.safe_load_all(f.read_text()):
+            if d and d.get("kind") == "CustomResourceDefinition":
+                for v in d["spec"]["versions"]:
+                    if v.get("served"):
+                        out.add((d["spec"]["group"], v["name"], d["spec"]["names"]["plural"]))
+    return out
+
+
+def test_kagent_policies_match_a_served_version():
+    """SPEC §V.84: a guardrail must not pass vacuously. A policy that matches a kagent
+    group/version/resource the (real, rendered) CRDs do not serve matches NOTHING: after a
+    kagent API bump it would admit everything while looking green. Bump the CRD fixture with
+    the chart, and this fails until every kagent policy is moved to the new version."""
+    served = _served_crd_versions()
+    for name, vap in _by_kind("ValidatingAdmissionPolicy").items():
+        for rule in vap["spec"]["matchConstraints"]["resourceRules"]:
+            for group in rule["apiGroups"]:
+                if not group.endswith("kagent.dev"):
+                    continue
+                for version in rule["apiVersions"]:
+                    for res in rule["resources"]:
+                        assert (group, version, res) in served, (
+                            f"{name} matches {group}/{version} {res}, which the kagent CRDs "
+                            f"in fixtures/crds do not serve")
+        pk = vap["spec"].get("paramKind")
+        if pk and pk["apiVersion"].split("/")[0].endswith("kagent.dev"):
+            group, version = pk["apiVersion"].split("/")
+            kinds = {(d["spec"]["group"], d["spec"]["names"]["kind"])
+                     for f in sorted((FIXTURES / "crds").glob("*.yaml"))
+                     for d in yaml.safe_load_all(f.read_text()) if d}
+            assert (group, pk["kind"]) in kinds, f"{name}: paramKind {pk} is not a served CRD"
+            assert any(g == group and v == version for g, v, _ in served), pk

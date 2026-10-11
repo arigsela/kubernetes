@@ -1,0 +1,27 @@
+# rule 4: write template binds a destructive tool.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: bad-write-binds-destructive
+  namespace: kagent
+  labels:
+    capability.homelab/class: write
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+        requireApproval: false
+        tools:
+          - k8s_get_resources
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+        requireApproval: true
+        tools:
+          - k8s_execute_command

@@ -1,0 +1,18 @@
+# rule 1: no capability.homelab/class label.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: bad-no-class
+  namespace: kagent
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+        requireApproval: false
+        tools:
+          - k8s_get_resources
