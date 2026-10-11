@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
 """Capture fresh answers from a kagent agent for the eval corpus.
 
-    kubectl port-forward -n kagent svc/kagent-controller 8083:8083 &
     ./scripts/capture-eval-answers.py --out /tmp/answers.jsonl
     ./scripts/score-eval.py --answers /tmp/answers.jsonl --judge
 
-Talks A2A JSON-RPC (`message/send`) to the agent's endpoint, which the kagent
-controller serves at /api/a2a/<namespace>/<agent>/. One session per question, so
-answers do not bleed into each other. The `memory` category expects state saved
-in an earlier conversation; pass `--category repo-factual --category
-security-refusal` to leave it out when that state is not there.
+Talks A2A v1 JSON-RPC (`SendMessage`) to the agent's endpoint on the kagent 1.0
+controller, /agents/<namespace>/<agent>, through kagent-mcp.arigsela.com (IP
+allow-listed). From off-network, port-forward and pass the origin:
+
+    kubectl port-forward -n kagent svc/kagent-controller 8083:8083 &
+    ./scripts/capture-eval-answers.py --endpoint http://127.0.0.1:8083 --out /tmp/answers.jsonl
+
+The client is scripts/kagent_a2a.py, shared with scripts/ask-hk. One session
+per question (no contextId), so answers do not bleed into each other. Sessions
+are created as X-User-Id `eval-capture` so they can be told apart from real
+conversations, and so the eval's memory never mixes with the owner's: kagent 1.0
+keys memory by (agent, user). The `memory` category therefore expects state
+saved earlier AS `eval-capture`; seed it with
+
+    scripts/ask-hk --user eval-capture "My favorite color is octarine. Please save that."
+
+or pass `--category repo-factual --category security-refusal` to leave it out.
 
 The output is NOT committed: an answer can contain anything the agent said,
 and the scorer's whole point is to check that it said nothing secret.
@@ -19,14 +30,17 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import urllib.request
-import uuid
 from pathlib import Path
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import kagent_a2a as a2a  # noqa: E402
+
 CORPUS_DIR = "tests/eval-corpus"
-DEFAULT_ENDPOINT = "http://127.0.0.1:8083/api/a2a/kagent/homelab-knowledge/"
+DEFAULT_AGENT = "kagent/homelab-knowledge"
+DEFAULT_ENDPOINT = a2a.PUBLIC_BASE + a2a.agent_path(DEFAULT_AGENT)
+DEFAULT_USER = "eval-capture"
 
 
 def load_entries(repo_root: Path) -> list[dict]:
@@ -37,59 +51,36 @@ def load_entries(repo_root: Path) -> list[dict]:
     return out
 
 
-def _text_parts(parts) -> list[str]:
-    return [p["text"] for p in (parts or [])
-            if isinstance(p, dict) and p.get("kind") == "text" and isinstance(p.get("text"), str)]
-
-
-FAILED_STATES = {"failed", "canceled", "rejected"}   # A2A TaskState values that carry an error
-
-
 def extract_text(result: dict) -> str | None:
-    """All text parts of the task's artifacts, else of its status message, else None.
+    """The answer in a SendMessage result: artifact text, else status-message text.
 
-    A failed, canceled or rejected task puts its error text in status.message;
-    that is a tooling failure, not an answer, and must not be scored as one."""
-    status = result.get("status") or {}
-    if str(status.get("state", "")).lower() in FAILED_STATES:
-        return None
-    texts: list[str] = []
-    for art in (result.get("artifacts") or []):
-        texts += _text_parts(art.get("parts"))
-    if not texts:
-        texts = _text_parts(((result.get("status") or {}).get("message") or {}).get("parts"))
-    return "\n".join(texts) if texts else None
+    None for a failed, canceled or rejected task (its status message is the
+    error, not an answer), for a task that has not finished, and when the agent
+    said nothing in text."""
+    return a2a.parse_result(result).answer
 
 
-def _http_post(url: str, payload: bytes, timeout: float) -> dict:
-    req = urllib.request.Request(url, data=payload, method="POST",
-                                 headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.load(resp)
-
-
-def send_message(endpoint: str, question: str, *, transport=None, timeout: float = 120) -> dict:
-    rpc_id = str(uuid.uuid4())
-    payload = json.dumps({
-        "jsonrpc": "2.0", "id": rpc_id, "method": "message/send",
-        "params": {"message": {"role": "user", "messageId": str(uuid.uuid4()),
-                               "parts": [{"kind": "text", "text": question}]}},
-    }).encode()
-    body = (transport or _http_post)(endpoint, payload, timeout)
-    if body.get("error"):
-        raise RuntimeError(f"A2A error: {body['error'].get('message', body['error'])}")
-    return body.get("result") or {}
+def send_message(endpoint: str, question: str, *, transport=None,
+                 timeout: float = a2a.DEFAULT_TIMEOUT, user: str = DEFAULT_USER) -> dict:
+    """One SendMessage in a new session; returns the JSON-RPC result."""
+    return a2a.send_message(endpoint, question, user=user, timeout=timeout, transport=transport)
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True, type=Path, help="answers.jsonl to write")
-    ap.add_argument("--endpoint", default=DEFAULT_ENDPOINT)
+    ap.add_argument("--endpoint", default=DEFAULT_ENDPOINT,
+                    help="agent URL, or a bare origin to append /agents/%s to "
+                         "(default: %%(default)s)" % DEFAULT_AGENT)
+    ap.add_argument("--user", default=DEFAULT_USER, help="X-User-Id (default: %(default)s)")
+    ap.add_argument("--timeout", type=float, default=a2a.DEFAULT_TIMEOUT,
+                    help="seconds per question (default: %(default)s)")
     ap.add_argument("--category", action="append", help="only these categories (repeatable)")
     ap.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parent.parent)
     args = ap.parse_args(argv)
 
+    endpoint = a2a.resolve_endpoint(args.endpoint, DEFAULT_AGENT)
     entries = load_entries(args.repo_root)
     if args.category:
         entries = [e for e in entries if e.get("category") in set(args.category)]
@@ -98,7 +89,8 @@ def main(argv=None) -> int:
     with args.out.open("w") as fh:
         for e in entries:
             try:
-                answer = extract_text(send_message(args.endpoint, e["question"]))
+                answer = extract_text(send_message(endpoint, e["question"],
+                                                   user=args.user, timeout=args.timeout))
             except (RuntimeError, OSError, ValueError) as err:
                 print(f"  {e['id']}: {err}", file=sys.stderr)
                 answer = None

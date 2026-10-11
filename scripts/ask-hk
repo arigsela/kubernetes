@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Ask a kagent agent a question over A2A (default: homelab-knowledge, "ask hk").
+
+    scripts/ask-hk "Which apps use the letsencrypt-route53 issuer?"
+    scripts/ask-hk --context <id> "And which of those are public?"
+    echo "a long question" | scripts/ask-hk -
+
+Prints the agent's answer, then `context: <id>` on its own line. The first call
+(no --context) starts a new conversation; pass that id back with --context to
+continue it. The conversation belongs to the --user identity, so a follow-up has
+to use the same one.
+
+kagent 1.0 serves A2A for every Agent on the controller at
+/agents/<namespace>/<name>; kagent-mcp.arigsela.com routes /agents/kagent/ there,
+behind the Gateway's IP allow-list (so off-network calls get HTTP 403). With a
+port-forward instead:
+
+    kubectl port-forward -n kagent svc/kagent-controller 8083:8083 &
+    scripts/ask-hk --endpoint http://127.0.0.1:8083 "..."
+
+--endpoint takes a bare origin (the /agents/<ns>/<name> path is appended) or a
+full agent URL (used as-is).
+
+Exit status: 0 answered; 2 the agent is waiting for input or approval (answer it
+in the kagent UI, or reply with --context); 1 the task failed or the call errored.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import kagent_a2a as a2a  # noqa: E402
+
+DEFAULT_AGENT = "kagent/homelab-knowledge"
+
+
+def main(argv=None, *, stdin=None, stdout=None, stderr=None, transport=None) -> int:
+    stdin = stdin or sys.stdin
+    stdout = stdout or sys.stdout
+    stderr = stderr or sys.stderr
+    ap = argparse.ArgumentParser(prog="ask-hk", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("question", help='the question, or "-" to read it from stdin')
+    ap.add_argument("--context", help="continue this conversation (the id a previous call printed)")
+    ap.add_argument("--agent", default=DEFAULT_AGENT, help="namespace/name (default: %(default)s)")
+    ap.add_argument("--endpoint", default=a2a.PUBLIC_BASE,
+                    help="gateway origin or full agent URL (default: %(default)s)")
+    ap.add_argument("--user", default=os.environ.get("KAGENT_USER_ID", a2a.DEFAULT_USER),
+                    help="X-User-Id that owns the conversation "
+                         "(default: $KAGENT_USER_ID or %(default)s)")
+    ap.add_argument("--timeout", type=float, default=a2a.DEFAULT_TIMEOUT,
+                    help="seconds to wait for the answer (default: %(default)s)")
+    args = ap.parse_args(argv)
+
+    question = stdin.read() if args.question == "-" else args.question
+    if not question.strip():
+        print("ask-hk: the question is empty", file=stderr)
+        return 1
+    try:
+        url = a2a.resolve_endpoint(args.endpoint, args.agent)
+    except ValueError as err:
+        print(f"ask-hk: {err}", file=stderr)
+        return 1
+
+    try:
+        reply = a2a.parse_result(a2a.send_message(
+            url, question, context_id=args.context, user=args.user,
+            timeout=args.timeout, transport=transport))
+    except (a2a.A2AError, OSError, ValueError) as err:
+        # A timeout does not cancel the agent: the answer still lands in the
+        # conversation, visible in the kagent UI.
+        print(f"ask-hk: {err}", file=stderr)
+        if args.context:
+            print(f"context: {args.context}", file=stdout)
+        return 1
+
+    body, rc = None, 0
+    if reply.failed:
+        print(f"ask-hk: task {reply.task_id} ended in {reply.state}"
+              + (f": {reply.status_text}" if reply.status_text else ""), file=stderr)
+        rc = 1
+    elif reply.waiting:
+        # What the agent is waiting on (an approval, a question) is in status.message.
+        body = "\n".join(t for t in (reply.text, reply.status_text) if t) or None
+        print(f"ask-hk: the agent is waiting ({reply.state}); answer with --context "
+              "or in the kagent UI", file=stderr)
+        rc = 2
+    elif not reply.completed:
+        print(f"ask-hk: task {reply.task_id} came back unfinished ({reply.state}); "
+              "it may still be running, see the kagent UI", file=stderr)
+        rc = 1
+    else:
+        body = reply.answer
+        if body is None:
+            print("ask-hk: the agent returned no text", file=stderr)
+            rc = 1
+    if body:
+        print(body.rstrip("\n"), file=stdout)
+
+    context = reply.context_id or args.context
+    if context:
+        print(f"context: {context}", file=stdout)
+    return rc
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

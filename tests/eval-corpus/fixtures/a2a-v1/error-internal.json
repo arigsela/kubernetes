@@ -1,0 +1,18 @@
+{
+  "jsonrpc": "2.0",
+  "id": "8d0f1c1e-3b0a-4f43-9d55-2f7b4c1f6a10",
+  "error": {
+    "code": -32603,
+    "message": "internal error",
+    "data": [
+      {
+        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+        "reason": "INTERNAL_ERROR",
+        "domain": "a2a-protocol.org",
+        "metadata": {
+          "timestamp": "2026-10-11T14:02:00Z"
+        }
+      }
+    ]
+  }
+}

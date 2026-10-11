@@ -1,0 +1,25 @@
+{
+  "jsonrpc": "2.0",
+  "id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+  "result": {
+    "task": {
+      "id": "6c7d8e9f-0a1b-4c2d-8e3f-4a5b6c7d8e9f",
+      "contextId": "7b1e4d2a-9c3f-4e8b-a1d6-5f2e3c4b5a69",
+      "status": {
+        "state": "TASK_STATE_FAILED",
+        "timestamp": "2026-10-11T14:07:00.000Z",
+        "message": {
+          "messageId": "0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d",
+          "contextId": "7b1e4d2a-9c3f-4e8b-a1d6-5f2e3c4b5a69",
+          "taskId": "6c7d8e9f-0a1b-4c2d-8e3f-4a5b6c7d8e9f",
+          "role": "ROLE_AGENT",
+          "parts": [
+            {
+              "text": "model call failed: 529 overloaded_error"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
