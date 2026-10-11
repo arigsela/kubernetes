@@ -23,6 +23,8 @@ metadata:
   annotations:
     terasky.backstage.io/add-to-catalog: "true"
     terasky.backstage.io/component-type: kagent-agent
+    # The entity's Kubernetes tab: the Agent and its AgentTemplate both carry this label.
+    terasky.backstage.io/kubernetes-label-selector: app.kubernetes.io/name=k8s-agent
     backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/k8s-agent.yaml
     backstage.io/owner: group:default/platform-engineering
 spec:

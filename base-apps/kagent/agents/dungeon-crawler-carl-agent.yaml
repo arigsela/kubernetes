@@ -23,6 +23,8 @@ metadata:
   annotations:
     terasky.backstage.io/add-to-catalog: "true"
     terasky.backstage.io/component-type: kagent-agent
+    # The entity's Kubernetes tab: the Agent and its AgentTemplate both carry this label.
+    terasky.backstage.io/kubernetes-label-selector: app.kubernetes.io/name=dungeon-crawler-carl-agent
     # 0.10 UI chat path, carried over verbatim; check it against the 1.0 UI at cutover.
     terasky.backstage.io/links: '[{"url":"https://kagent.arigsela.com/agents/kagent/dungeon-crawler-carl-agent/chat","title":"Chat with this agent","icon":"chat"}]'
     backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/dungeon-crawler-carl-agent.yaml
