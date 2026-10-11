@@ -31,7 +31,7 @@ spec:
         # No command:/args: here - the image CMD carries the loopback bind and
         # --no-access-log (request lines would put ?q= search text in Loki).
         - name: app
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agent-audit-web:v0.2.0@sha256:d2bbd9cc7d09149f210cd0becebeac3f34e370264d2095425825dfeae4344d7e
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agent-audit-web:v0.3.0@sha256:73164feabe5946def91075960b406a4407690ceeb80d88372b0a2bbd772ffb27
           env:
             - name: AUDIT_DB_HOST
               value: postgresql.postgresql.svc.cluster.local
