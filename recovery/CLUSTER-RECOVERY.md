@@ -54,8 +54,9 @@ kubectl get pv -o custom-columns='NS:.spec.claimRef.namespace,PVC:.spec.claimRef
 ## Gaps
 
 1. **Nothing backs up the k3s datastore or Vault on a schedule.** An artifact exists only
-   when someone runs the scripts. The last recorded full set is from the 1.36 hop on
-   2026-09-24 (`SPEC.md` §T.21).
+   when someone runs the scripts. The last recorded full set is from the 1.37 hop on
+   2026-10-11 (`SPEC.md` §T.96): `s3://mysql-backups-asela-cluster/{k3s,pg,vault}/`, including a
+   one-off dump of the plain `postgresql` Deployment (`pg/pgvector-postgresql-all-20261011T184229Z.sql.gz`).
 2. **The plain `postgresql` Deployment has no backup of any kind.** That covers the root DB,
    `kagent` (agent history, and the source for the agent audit), `homelab_agent`, Backstage,
    and n8n if its docs are right. `pg-backup.sh` only targets the CNPG cluster: its default
@@ -140,7 +141,7 @@ artifact and its `.sha256` in the same directory:
 
 ```bash
 # same version (corrupt datastore): starts the installed binary
-sudo ./k3s-restore.sh --artifact k3s-backups/<file>.tar.gz --expect-version v1.36.4+k3s1
+sudo ./k3s-restore.sh --artifact k3s-backups/<file>.tar.gz --expect-version v1.37.1+k3s1
 
 # rolling back an upgrade: reinstall the old version too. The installer rewrites the unit, so pass the flags again
 sudo INSTALL_K3S_VERSION=<prior> INSTALL_K3S_EXEC="server --write-kubeconfig-mode=644" \
@@ -313,7 +314,7 @@ which shuts the VMs down cleanly first. Take backups before you run it.
 
 ```bash
 ssh -i ~/.ssh/ari_sela_key asela@10.0.1.101 virsh -c qemu:///system list --all   # 3 VMs running
-kubectl get nodes                                          # 3 Ready, v1.36.4+k3s1
+kubectl get nodes                                          # 3 Ready, v1.37.1+k3s1
 kubectl get pods -A | grep -v -e Running -e Completed      # anything stuck?
 kubectl -n vault exec vault-0 -- vault status              # Sealed false, Seal Type awskms
 kubectl -n postgresql get cluster postgresql-cluster       # healthy, 2 instances ready
@@ -358,7 +359,7 @@ kubectl -n postgresql exec <primary> -c postgres -- \
 
 ## Hosts
 
-From `ansible/inventory/`. All three nodes run k3s `v1.36.4+k3s1`.
+From `ansible/inventory/`. All three nodes run k3s `v1.37.1+k3s1` (since 2026-10-11).
 
 | Host | IP | Role |
 |---|---|---|
