@@ -129,6 +129,13 @@ action send A2A v1 `SendMessage` to the kagent controller's gateway,
 `X-User-Id: backstage-portal`. kagent 0.10's per-agent Services and the
 `agents.platform.ai/a2a-endpoint` annotation contract are gone.
 
+**Portal image lag (2026-10-11).** The ingestor config, the agent card and the
+A2A client above are portal code: they moved to kagent 1.0 in
+`arigsela/backstage#41` (merged 2026-10-11) and take effect only with the first
+portal image built after it. Until `deployments.yaml` moves past `v1.4.14`, the
+running portal still speaks kagent 0.10, so agent entities, agent cards and skill
+suggestions don't work against 1.0, even though the RBAC here is ready.
+
 ## TechDocs
 Backstage renders each in-scope app's docs as TechDocs (the "Docs" tab). The
 source is not `docs.md`/`runbook.md` directly: `scripts/gen-techdocs.py`

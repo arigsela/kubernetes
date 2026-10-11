@@ -44,7 +44,8 @@ The k3s hop procedure, then SUC's failure modes. `<target>` below is a k3s relea
 - **Announce the window, and have console access to `k3s-control-01`.** The control-plane hop takes `kubectl` and Argo away. Have diagnostics in hand first.
 - **Who is affected** (placement at the last hop; re-check with `kubectl get pods -A -o wide --field-selector spec.nodeName=<node>`):
   - `k3s-control-01` (manual): API, Argo, `kubectl`, and Atlantis (its PVC lives there). Running apps keep serving.
-  - `k3s-worker-01`: Vault, CNPG (donetick), the pgvector `postgresql` (n8n, kagent, agent-audit), Prometheus, Coroot, Ollama, oncall-agent.
+  - `k3s-worker-01`: Vault, CNPG (donetick), the pgvector `postgresql` (n8n, kagent, Substrate, agent-audit), Prometheus, Coroot, Ollama, oncall-agent.
+  - Either worker: kagent's Substrate worker pods (`kagent-default`, every agent session) and Substrate's single-replica components. Agents are briefly unavailable while a worker drains, and a node reboot leaves stale workers behind (substrate#1837): `ansible/playbooks/patch.yml` deletes them, any other reboot needs it by hand. After the hop, check `kubectl get pods -n kagent -l ate.dev/worker-pool -o wide` and ask an agent a question (`base-apps/kagent/runbook.md`).
   - `k3s-worker-02`: n8n, Grafana, Jupyter, qwen, Coroot ClickHouse.
 
 ### 1. Back up (§V.1, §V.6, §V.28, §V.21)

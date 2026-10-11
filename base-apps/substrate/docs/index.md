@@ -39,8 +39,9 @@ Agent Substrate (kagent-dev's fork of agent-substrate, `0.5.0-alpha2`) is the ru
 1.0 runs its agents on. Each agent session is an **actor**: a process in a gVisor sandbox inside
 a pre-warmed **worker** pod. Idle actors are snapshotted and suspended, freeing the worker; the
 next request restores the snapshot, possibly on another node. kagent 1.0 cannot run without it.
-It is installed on its own first (plan Phase 4, a go/no-go) while kagent 0.10.3 is still running;
-kagent 1.0 starts using it at the cutover (plan Phase 5).
+It was installed on its own first (plan Phase 4, a go/no-go, while kagent 0.10.3 still ran), and
+kagent 1.0 has run on it since the cutover on 2026-10-11 (plan Phase 5). kagent's side of it, the
+WorkerPool `kagent-default` and the Harnesses, is in `base-apps/kagent/docs.md`.
 
 ## Architecture & data flow
 Four Argo apps, created in this order by the master app (sync waves), mirroring
@@ -56,7 +57,7 @@ Four Argo apps, created in this order by the master app (sync waves), mirroring
 Waves only order Application creation; each app converges on its own (a pod whose Secret is not
 there yet waits in ContainerCreating).
 
-Request path once kagent 1.0 runs: the kagent controller calls ate-api-server at
+Request path: the kagent controller calls ate-api-server at
 `dns:///api.ate-system.svc:443` (gRPC, TLS with pod certificates) to create ActorTemplates and
 actors, and reaches running actors through `http://atenet-router.ate-system.svc:80`. These names
 exist only because the release is called `substrate`. kagent's WorkerPool `kagent-default` (kagent

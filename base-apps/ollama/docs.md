@@ -15,6 +15,8 @@ sources:
   - models/nomic-embed-text/Dockerfile
   - scripts/build-model-image.sh
   - base-apps/kagent/embedding-model-config.yaml
+  - base-apps/kagent/harnesses/kagent-memory.yaml
+  - base-apps/kagent/harnesses/kagent-chat.yaml
 ---
 
 # ollama
@@ -40,6 +42,6 @@ The main container exposes port `11434` (`services.yaml`, Service `ollama`, `Clu
 Main container: requests `cpu: 250m` / `memory: 1Gi`, limits `cpu: 3` / `memory: 2Gi` (`OLLAMA_KEEP_ALIVE=-1` keeps the ~274MB model resident, so the cold reload never lands on a kagent call). No GPU is requested. The model file lives in the node's image store, not in the pod's memory or ephemeral storage.
 
 ## Who consumes it
-- kagent's `ModelConfig` `embedding-model-config` (`base-apps/kagent/embedding-model-config.yaml`, provider `Ollama`, model `nomic-embed-text`), used as `memory.modelConfig` by kagent's Declarative agents with a `memory` block. It is the only consumer.
+- kagent's `ModelConfig` `embedding-model-config` (`base-apps/kagent/embedding-model-config.yaml`, provider `Ollama`, model `nomic-embed-text`). Since kagent 1.0 (2026-10-11) it is referenced by the memory-enabled Harnesses, `kagent-memory` and `kagent-chat` (`spec.kagent.memory.modelConfigRef` in `base-apps/kagent/harnesses/`), not by the agents themselves; six of the seven agents run on one of them (all but `k8s-reader`). It is the only consumer.
 
-kagent's memory stores vectors made with this exact model, which is why its digest is asserted at build time.
+kagent's memory stores vectors made with this exact model (768 dimensions, pgvector in database `kagent_v1`), which is why its digest is asserted at build time. Memory resets at every kagent alpha bump (a clean-database migration) and memories expire after kagent's default 15 days, so a model change today would invalidate little; it is still a migration, not a bump.

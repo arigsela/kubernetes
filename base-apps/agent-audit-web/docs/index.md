@@ -50,7 +50,8 @@ browser ─TLS─▶ Istio gateway `main` (per-host IP allow-list: gateway-allow
              ├─ oauth2-proxy :4180   OIDC via Dex (GitHub), PKCE, one-email allow-list
              │     └─▶ upstream http://127.0.0.1:8000
              └─ app (uvicorn/FastAPI) bound to 127.0.0.1:8000 ONLY
-                   ├─▶ postgresql.postgresql.svc:5432  db kagent, role kagent_audit_web_ro
+                   ├─▶ postgresql.postgresql.svc:5432  role kagent_audit_web_ro
+                   │     db kagent (kagent 0.10, read-only archive) and kagent_v1 (kagent 1.0)
                    │     (SELECT-only; read-only transactions; short statement timeout)
                    └─▶ S3 s3://asela-agent-audit-record  IAM user agent-audit-web-s3-read
                          (s3:ListBucket + s3:GetObject on this bucket only)
@@ -59,6 +60,7 @@ browser ─TLS─▶ Istio gateway `main` (per-host IP allow-list: gateway-allow
 - **Two layers of access control.** The gateway's IP allow-list (`base-apps/istio-ingress/authorizationpolicy.yaml`) and then oauth2-proxy. Dex admits any GitHub account, so oauth2-proxy's `authenticated-emails-file` - one email, from Vault, never in git - is the real allow-list.
 - **The app has no authentication of its own.** Its image CMD binds `127.0.0.1:8000`, so the sidecar is the only way in; the Service exposes only `4180`. Do not add `command:`/`args:` to the app container: the CMD also carries `--no-access-log`.
 - **Probes are `exec`**, because kubelet cannot reach a loopback port. `/readyz` is 200 while the database **or** the archive works, so one source going down degrades the pages (a banner) instead of taking the app out of the Service.
+- **Two kagent databases since 2026-10-11.** `AUDIT_DB_NAME` is kagent 0.10's `kagent`, a read-only archive since the kagent 1.0 cutover; `AUDIT_DB_V1_NAME` is kagent 1.0's `kagent_v1` (schema `kagent`, Vault `agent-audit-web-db`/`db-name-v1`). Only app v0.3.0 and later read `kagent_v1`. The deployed v0.2.0 ignores it, so until the image is bumped the UI doesn't read kagent 1.0's database: 1.0 sessions can only appear through the daily S3 export, up to a day late.
 - **Sessions deleted from kagent** still appear from the S3 archive, labelled "archive only". The database wins per session.
 - **Risk records** (`kind: risk`, written by the `agent-audit-risk` CronJob as `dt=<date>/<time>-risk.jsonl`) are read since v0.2.0 as a per-session sidecar (never merged with the database; newest `scored_at` wins): a verdict badge and Risk block on `/sessions/<id>`, a Risk column on Findings, and `/risk` listing `high` and `review` sessions. The Grafana rule "Agent session scored high risk" links there.
 
