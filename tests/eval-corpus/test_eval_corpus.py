@@ -165,3 +165,52 @@ def test_miner_keeps_ordinary_answer_text():
     )
     pairs = mine.iter_pairs(rows, "homelab_knowledge")
     assert pairs[0]["candidate_answer"] == "the kagent namespace"
+
+
+# ------------------------------------------------ miner: kagent 1.0 (--source v1)
+#
+# The rows are the kagent v1.0.0-alpha11 fixture tests/agent-audit/ uses (written by
+# kagent's own persistence code). Its `eval` session is homelab-knowledge: question
+# 1 is answered in a streamed artifact (two partial chunks, then the final replace),
+# question 2 calls a docs tool and answers with a token in the text.
+
+def _v1_rows(agent="homelab_knowledge"):
+    import base64
+    import json
+    from datetime import datetime
+
+    doc = json.loads((REPO / "tests/agent-audit/fixtures/kagent-v1/events.json").read_text())
+
+    def b(v):
+        return base64.b64decode(v) if v is not None else None
+
+    raw = [(datetime.fromisoformat(at), sid, b(sd), name, ns, b(data))
+           for at, sid, sd, name, ns, data in doc["rows"]]
+    return [r for r in mine.aa.v1_rows(raw) if agent in r[1]], doc["scenarios"]
+
+
+def test_v1_miner_pairs_each_task_question_with_its_answer():
+    rows, scenarios = _v1_rows()
+    pairs = mine.iter_pairs_v1(rows)
+    assert [p["question"] for p in pairs] == ["Which namespace runs Vault?", "And its storage backend?"]
+    assert {p["session"] for p in pairs} == {scenarios["eval"]}
+
+
+def test_v1_miner_counts_a_streamed_answer_once():
+    pairs = mine.iter_pairs_v1(_v1_rows()[0])
+    assert pairs[0]["candidate_answer"] == "Vault runs in the `vault` namespace."
+
+
+def test_v1_miner_redacts_a_secret_in_the_answer_text():
+    pairs = mine.iter_pairs_v1(_v1_rows()[0])
+    assert "hvs." not in pairs[1]["candidate_answer"]
+    assert mine.aa.REDACTED in pairs[1]["candidate_answer"]
+
+
+def test_v1_miner_leaves_out_tool_calls_and_approvals():
+    """A k8s-agent task with a gated delete: the answer is the agent's text only,
+    never the call, the approval prompt or the human's decision."""
+    rows, scenarios = _v1_rows("k8s_agent")
+    pair = next(p for p in mine.iter_pairs_v1(rows) if p["session"] == scenarios["approved-delete"])
+    assert pair["question"] == "Delete the configmap audit-fixture in namespace scratch."
+    assert pair["candidate_answer"] == "I'll delete it. Deleted configmap scratch/audit-fixture."

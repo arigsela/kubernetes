@@ -484,7 +484,7 @@ def test_cronjob_ships_and_uses_the_acknowledged_file():
     )
     gen = importlib.util.module_from_spec(gen_spec)
     gen_spec.loader.exec_module(gen)
-    code_cm, ungated, _, _ = gen.build("script", "taxonomy", "acks", "risk")
+    code_cm, ungated, _, _, _ = gen.build("script", "taxonomy", "acks", "risk")
     assert code_cm["data"]["agent-audit-acknowledged.yaml"] == "acks"
     container = ungated["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]
     assert "--acknowledged /opt/audit/agent-audit-acknowledged.yaml" in " ".join(container["args"])
@@ -498,7 +498,7 @@ def test_risk_cronjob_document_is_pinned():
         "gen_agent_audit_cronjob", repo / "scripts" / "gen-agent-audit-cronjob.py")
     gen = importlib.util.module_from_spec(gen_spec)
     gen_spec.loader.exec_module(gen)
-    code_cm, _, _, risk = gen.build("script", "taxonomy", "acks", "risk")
+    code_cm, _, _, risk, _ = gen.build("script", "taxonomy", "acks", "risk")
     es = yaml.safe_load((repo / "base-apps/postgresql/external-secrets-agent-audit-risk.yaml").read_text())
     assert "agent-audit-risk.py" in code_cm["data"]
     assert risk["metadata"]["name"] == "agent-audit-risk"
