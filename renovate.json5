@@ -131,10 +131,42 @@
       allowedVersions: '<1.6.0',
     },
     {
-      description: 'The kagent chart and its CRDs move together.',
+      // kagent 1.0 is built against one Substrate version (1.0.0-alpha11 -> 0.5.0-alpha2, its
+      // go.mod), and every alpha so far has needed clean databases. So the five charts move in
+      // ONE PR, and only when someone ticks it on the Dependency Dashboard: a Substrate-only
+      // update waits there instead of arriving as a PR. The image digests pinned in the values
+      // are NOT seen by Renovate (Helm valuesObject); the PR note lists them.
+      description: 'kagent and Agent Substrate charts move in lockstep, never Substrate alone, and only on approval.',
       matchManagers: ['argocd'],
-      matchFileNames: ['base-apps/kagent.yaml', 'base-apps/kagent-crds.yaml'],
-      groupName: 'kagent',
+      matchFileNames: [
+        'base-apps/kagent.yaml',
+        'base-apps/kagent-crds.yaml',
+        'base-apps/substrate-crds.yaml',
+        'base-apps/substrate-podcert.yaml',
+        'base-apps/substrate.yaml',
+      ],
+      groupName: 'kagent-substrate',
+      dependencyDashboardApproval: true,
+      automerge: false,
+      prBodyNotes: [
+        '**kagent + Substrate lockstep.** Bump Substrate only to the version this kagent release is built against (`go.mod` / `kagent install` in the kagent tag), never on its own. Re-pin every `@sha256` image in the values of `base-apps/kagent.yaml`, `substrate-podcert.yaml` and `substrate.yaml` (and the recorded component digests in its header), re-render with `helm template --kube-version` and re-check the Substrate prerequisites (`base-apps/substrate/docs.md`).',
+      ],
+    },
+    {
+      description: 'An alpha/beta kagent or Substrate bump is a clean-database migration, not an upgrade (every kagent 1.0 alpha so far required one).',
+      matchManagers: ['argocd'],
+      matchFileNames: [
+        'base-apps/kagent.yaml',
+        'base-apps/kagent-crds.yaml',
+        'base-apps/substrate-crds.yaml',
+        'base-apps/substrate-podcert.yaml',
+        'base-apps/substrate.yaml',
+      ],
+      matchCurrentValue: '/-(alpha|beta|rc)/',
+      addLabels: ['clean-db-migration'],
+      prBodyNotes: [
+        '**Clean-database migration.** A pre-release bump of kagent or Substrate has needed empty databases so far: plan it like the 1.0 cutover (archive `kagent_v1`, recreate it and `substrate` through the postgresql init Jobs, restart). Do not merge it as a routine bump.',
+      ],
     },
     {
       description: 'Pin images in Kubernetes manifests by digest: a re-pushed tag (python:3.12-slim gets OS fixes under the same tag) then arrives as a PR, and what runs is exactly what was reviewed.',
