@@ -51,7 +51,9 @@ HEADER = """\
 #
 # WHAT IT WATCHES FOR
 #
-# A write/destructive tool invoked with NO approval request in its session. That is
+# A write/destructive tool invoked without an approval: on kagent 1.0 judged per
+# call (the gate never fired for it, or it ran without an approved decision); on the
+# 0.10 archive, no approval request in its session. That is
 # not a hypothetical: k8s-agent executed arbitrary shell commands inside the VAULT
 # POD, reading /vault/data (Vault's storage backend), 14 times on 2026-07-09, with
 # no human approval — because Argo was silently stripping requireApproval on every
@@ -63,7 +65,9 @@ HEADER = """\
 # WHAT IT EMITS, AND WHAT IT DELIBERATELY DOES NOT
 #
 # It runs `agent-audit.py --summary`: an ARGUMENT-FREE JSON line — counts, agent
-# names, tool names. Never arguments.
+# names, tool names. Never arguments. On kagent 1.0 the line also counts what it
+# scanned (events, tool calls, undecodable rows) and is a warning when it could not
+# read the record, so a broken audit never reports "ok".
 #
 # That omission is the design, not an oversight. The full --ungated output carries
 # tool ARGUMENTS, and those are only BEST-EFFORT redacted; a secret can hide in a
@@ -104,19 +108,40 @@ HEADER = """\
 #
 # It reads the database as kagent_audit_ro — the SELECT-only role. It cannot mutate
 # the evidence it audits. Proven: DELETE/UPDATE/INSERT/DDL are all denied by Postgres.
+#
+# WHICH DATABASE
+#
+# The three scheduled jobs read kagent 1.0 (`--source v1`: database kagent_v1, key
+# audit-database-v1, schema kagent). kagent 0.10's database (`kagent`, key
+# audit-database) is a read-only archive since the cutover; nothing new lands in it,
+# so it is not scanned on a schedule. agent-audit-archive below is the same --summary
+# against it, SUSPENDED, with its own pod label so it never feeds the Grafana rules.
+# Run it on demand:
+#
+#   kubectl create job -n postgresql --from=cronjob/agent-audit-archive agent-audit-archive-manual
+#   kubectl logs -n postgresql -l app=agent-audit-archive --tail=1
+#
+# or from a laptop: `scripts/agent-audit.py --source v010 --ungated` with the DSN in
+# that script's connect() help pointed at the archive database.
 """
 
 
-DB_ENV = [
-    {"name": "HOME", "value": "/scratch"},
-    {"name": "PIP_CACHE_DIR", "value": "/scratch/.cache"},
-    {"name": "AUDIT_USER", "valueFrom": {"secretKeyRef": {
-        "name": "kagent-audit-credentials", "key": "audit-user"}}},
-    {"name": "AUDIT_PASSWORD", "valueFrom": {"secretKeyRef": {
-        "name": "kagent-audit-credentials", "key": "audit-password"}}},
-    {"name": "AUDIT_DB", "valueFrom": {"secretKeyRef": {
-        "name": "kagent-audit-credentials", "key": "audit-database"}}},
-]
+def db_env(database_key: str) -> list[dict]:
+    """The SELECT-only credential, pointed at one of the two databases."""
+    return [
+        {"name": "HOME", "value": "/scratch"},
+        {"name": "PIP_CACHE_DIR", "value": "/scratch/.cache"},
+        {"name": "AUDIT_USER", "valueFrom": {"secretKeyRef": {
+            "name": "kagent-audit-credentials", "key": "audit-user"}}},
+        {"name": "AUDIT_PASSWORD", "valueFrom": {"secretKeyRef": {
+            "name": "kagent-audit-credentials", "key": "audit-password"}}},
+        {"name": "AUDIT_DB", "valueFrom": {"secretKeyRef": {
+            "name": "kagent-audit-credentials", "key": database_key}}},
+    ]
+
+
+V1_DB = "audit-database-v1"       # kagent 1.0: database kagent_v1
+ARCHIVE_DB = "audit-database"     # kagent 0.10: database kagent, read-only archive
 
 SECURITY_CONTEXT = {
     "allowPrivilegeEscalation": False,
@@ -138,7 +163,7 @@ VOLUMES = [
 ]
 
 
-def _container(name, pip_pkgs, script, extra_env=()):
+def _container(name, pip_pkgs, script, extra_env=(), database_key=V1_DB):
     return {
         "name": name,
         "image": "python:3.12-slim",
@@ -152,7 +177,7 @@ def _container(name, pip_pkgs, script, extra_env=()):
             "@postgresql.postgresql.svc.cluster.local:5432/${AUDIT_DB}\"\n"
             + script
         ],
-        "env": DB_ENV + list(extra_env),
+        "env": db_env(database_key) + list(extra_env),
         "volumeMounts": VOLUME_MOUNTS,
         "resources": {
             "requests": {"cpu": "50m", "memory": "128Mi"},
@@ -162,12 +187,15 @@ def _container(name, pip_pkgs, script, extra_env=()):
     }
 
 
-def _cronjob(name, schedule, container, *, backoff=0, failed_history=7):
+def _cronjob(name, schedule, container, *, backoff=0, failed_history=7, app="agent-audit",
+             suspend=False):
+    spec = {"suspend": True} if suspend else {}
     return {
         "apiVersion": "batch/v1",
         "kind": "CronJob",
-        "metadata": {"name": name, "namespace": "postgresql", "labels": {"app": "agent-audit"}},
+        "metadata": {"name": name, "namespace": "postgresql", "labels": {"app": app}},
         "spec": {
+            **spec,
             "schedule": schedule,
             "concurrencyPolicy": "Forbid",
             "failedJobsHistoryLimit": failed_history,
@@ -175,7 +203,7 @@ def _cronjob(name, schedule, container, *, backoff=0, failed_history=7):
             "jobTemplate": {"spec": {
                 "backoffLimit": backoff,
                 "template": {
-                    "metadata": {"labels": {"app": "agent-audit"}},
+                    "metadata": {"labels": {"app": app}},
                     "spec": {
                         "restartPolicy": "Never",
                         "nodeSelector": {"node.kubernetes.io/workload": "application"},
@@ -214,7 +242,7 @@ def build(script_src: str, taxonomy_src: str, acknowledged_src: str, risk_src: s
         _container(
             "agent-audit",
             "'psycopg[binary]==3.2.3' 'pyyaml==6.0.2'",
-            "exec python /opt/audit/agent-audit.py --summary "
+            "exec python /opt/audit/agent-audit.py --source v1 --summary "
             "--taxonomy /opt/audit/agent-capability-taxonomy.yaml "
             "--acknowledged /opt/audit/agent-audit-acknowledged.yaml\n",
         ),
@@ -233,7 +261,7 @@ def build(script_src: str, taxonomy_src: str, acknowledged_src: str, risk_src: s
             # write the redacted JSONL, then PutObject it under dt=YYYY-MM-DD/.
             # KEY is exported so the boto3 one-liner sees it via os.environ.
             "export KEY=\"dt=$(date -u +%Y-%m-%d)/$(date -u +%H%M%S).jsonl\"\n"
-            "python /opt/audit/agent-audit.py --export --since 25h "
+            "python /opt/audit/agent-audit.py --source v1 --export --since 25h "
             "> /scratch/record.jsonl\n"
             "echo \"exporting $(wc -l < /scratch/record.jsonl) records to ${KEY}\"\n"
             "python -c \"import boto3,os;"
@@ -270,7 +298,7 @@ def build(script_src: str, taxonomy_src: str, acknowledged_src: str, risk_src: s
             "agent-audit-risk",
             "'psycopg[binary]==3.2.3' 'pyyaml==6.0.2' 'boto3==1.35.71'",
             "export KEY=\"dt=$(date -u +%Y-%m-%d)/$(date -u +%H%M%S)-risk.jsonl\"\n"
-            "python /opt/audit/agent-audit.py --export --since 25h "
+            "python /opt/audit/agent-audit.py --source v1 --export --since 25h "
             "> /scratch/record.jsonl\n"
             "set +e\n"
             "python /opt/audit/agent-audit-risk.py --records /scratch/record.jsonl "
@@ -303,7 +331,26 @@ def build(script_src: str, taxonomy_src: str, acknowledged_src: str, risk_src: s
         failed_history=7,
     )
 
-    return [code_cm, ungated, export, risk]
+    # --- the kagent 0.10 archive, on demand only (see the header). Same check as
+    # agent-audit-ungated against the read-only 0.10 database. Suspended: nothing new
+    # lands there. Its own pod label keeps its summary line out of the Grafana rules,
+    # which select app=agent-audit and must only ever see kagent 1.0's result.
+    archive = _cronjob(
+        "agent-audit-archive", "0 7 * * *",
+        _container(
+            "agent-audit-archive",
+            "'psycopg[binary]==3.2.3' 'pyyaml==6.0.2'",
+            "exec python /opt/audit/agent-audit.py --source v010 --summary "
+            "--taxonomy /opt/audit/agent-capability-taxonomy.yaml "
+            "--acknowledged /opt/audit/agent-audit-acknowledged.yaml\n",
+            database_key=ARCHIVE_DB,
+        ),
+        app="agent-audit-archive",
+        suspend=True,
+        failed_history=1,
+    )
+
+    return [code_cm, ungated, export, risk, archive]
 
 
 def render(repo: Path) -> str:

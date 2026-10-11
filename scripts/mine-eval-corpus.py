@@ -13,11 +13,17 @@ thing being evaluated. Scoring it against itself is circular. So this tool label
 the mined answer `candidate_answer`, never `golden` — a reminder that a step of
 human verification stands between this output and the corpus.
 
-WHERE THE DATA COMES FROM
-kagent's Postgres `event` table (ADK format). Each event has an `author`
-("user" | the agent name | "system") and content.parts[].text. Within a session,
-ordered by created_at, a `user` turn is a question and the agent turns until the
-next user turn are its answer; the last non-partial agent turn is the final answer.
+WHERE THE DATA COMES FROM (--source)
+v1 (default): kagent 1.0's `kagent.session_task_event` (A2A protobuf, decoded by
+agent-audit.py). Each user turn is one A2A task: the question is the task's first
+user message with text, the answer is the text the agent streamed into the task's
+artifacts (append/replace applied, so a streamed answer counts once). Tool calls
+and approval messages are not text and are left out.
+v010: kagent 0.10's `event` table (ADK JSON), the archive. Each event has an
+`author` ("user" | the agent name | "system") and content.parts[].text. Within a
+session, ordered by created_at, a `user` turn is a question and the agent turns
+until the next user turn are its answer; the last non-partial agent turn is the
+final answer.
 
 REDACTION
 Question and answer text is free-form and can contain secrets — a user pasting a
@@ -34,6 +40,7 @@ import argparse
 import importlib.util
 import json
 import os
+import struct
 import sys
 from pathlib import Path
 
@@ -114,7 +121,66 @@ def iter_pairs(rows, agent: str):
     return out
 
 
-def fetch_rows(conn, agent: str):
+def _v1_task_id(event: dict) -> str:
+    for key in ("message", "status_update", "artifact_update"):
+        task_id = (event.get(key) or {}).get("task_id")
+        if task_id:
+            return task_id
+    return (event.get("task") or {}).get("id") or ""
+
+
+def _plain_text(parts) -> str:
+    """Text parts only: a tool-call DataPart is not part of an answer."""
+    return " ".join(p["text"].strip() for p in parts or []
+                    if isinstance(p.get("text"), str) and p["text"].strip())
+
+
+def iter_pairs_v1(rows):
+    """Yield {question, candidate_answer, session, at} from kagent 1.0 rows.
+
+    rows: (created_at, agent_id, session_id, protobuf bytes) oldest first, already
+    filtered to one agent (fetch_rows). Rows that do not decode are skipped here;
+    agent-audit.py --summary is what reports them.
+    """
+    tasks: dict[tuple[str, str], dict] = {}
+    for created_at, _agent, session_id, raw in rows:
+        try:
+            event = aa.decode_event_v1(raw)
+        except (aa.ProtoError, struct.error):
+            continue
+        task = tasks.setdefault((session_id, _v1_task_id(event)),
+                                {"session": session_id, "question": None, "at": None, "artifacts": {}})
+        user_messages = [event["message"]] if event.get("message") else []
+        user_messages += (event.get("task") or {}).get("history") or []
+        for message in user_messages:
+            text = _plain_text(message.get("parts"))
+            if message.get("role") == aa.ROLE_USER and text and task["question"] is None:
+                task["question"] = text
+                task["at"] = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at)
+        update = event.get("artifact_update") or {}
+        artifacts = [(update["artifact"], update.get("append", False))] if update.get("artifact") else []
+        artifacts += [(a, False) for a in (event.get("task") or {}).get("artifacts") or []]
+        for artifact, append in artifacts:
+            texts = task["artifacts"].setdefault(artifact.get("artifact_id", ""), [])
+            if not append:
+                texts.clear()
+            texts.append(_plain_text(artifact.get("parts")))
+    out = []
+    for task in tasks.values():
+        answer = " ".join(t for texts in task["artifacts"].values() for t in texts if t)
+        if task["question"] and answer:
+            out.append({
+                "question": _redact_text(task["question"]),
+                "candidate_answer": _redact_text(answer),
+                "session": task["session"],
+                "at": task["at"],
+            })
+    return out
+
+
+def fetch_rows(conn, agent: str, source: str = "v010"):
+    if source == "v1":
+        return aa.fetch_events(conn, agent=agent, source="v1")
     sql = """
         SELECT e.created_at, s.agent_id, s.id, e.data
         FROM event e JOIN session s ON s.id = e.session_id
@@ -140,12 +206,16 @@ def main(argv=None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--agent", default="homelab_knowledge",
                     help="agent_id substring to mine (default: homelab_knowledge)")
+    ap.add_argument("--source", choices=aa.SOURCES, default="v1",
+                    help="v1 (default): kagent 1.0 (database kagent_v1); v010: the "
+                         "kagent 0.10 archive (database kagent). AGENT_AUDIT_DSN must "
+                         "point at the matching database.")
     args = ap.parse_args(argv)
 
     conn = aa.connect()
     with conn:
-        rows = fetch_rows(conn, args.agent)
-    pairs = iter_pairs(rows, args.agent)
+        rows = fetch_rows(conn, args.agent, args.source)
+    pairs = iter_pairs_v1(rows) if args.source == "v1" else iter_pairs(rows, args.agent)
 
     for p in pairs:
         print(json.dumps(p, sort_keys=True))
