@@ -1,0 +1,21 @@
+# Removals pluto does not know yet (pluto v5.24.4 has no entry at or after v1.37).
+# Passed to `pluto detect-files --additional-versions` by test_api_scan.py, so the
+# 1.37 target is not vacuous (SPEC §R.40, §T.95).
+#
+# Source: kubernetes/kubernetes CHANGELOG-1.37 — #138572 drops scheduling.k8s.io/v1alpha2
+# entirely; #140184 promotes Workload and PodGroup to v1beta1.
+deprecated-versions:
+  - version: scheduling.k8s.io/v1alpha2
+    kind: Workload
+    deprecated-in: v1.37.0
+    removed-in: v1.37.0
+    replacement-api: scheduling.k8s.io/v1beta1
+    replacement-available-in: v1.37.0
+    component: k8s
+  - version: scheduling.k8s.io/v1alpha2
+    kind: PodGroup
+    deprecated-in: v1.37.0
+    removed-in: v1.37.0
+    replacement-api: scheduling.k8s.io/v1beta1
+    replacement-available-in: v1.37.0
+    component: k8s
