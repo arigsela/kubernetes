@@ -1,0 +1,45 @@
+# Substrate's certificate controller: signs PodCertificateRequests for three signers
+# (servicedns / podidentity / postgres .podcert.ate.dev) and publishes their ClusterTrustBundles.
+# Every Substrate component and the kagent controller authenticate with those certificates.
+# ClusterTrustBundle, ClusterTrustBundleProjection and PodCertificateRequest are GA and on by
+# default on 1.37 (SPEC §R.43): no feature gates. Start at base-apps/substrate/docs.md.
+#
+# Its three CA pool Secrets (service-dns-ca-pool, pod-identity-ca-pool, postgres-ca-pool) come
+# from Vault through base-apps/substrate/external-secret-ca-pools.yaml. The chart mounts all
+# three even though the postgres signer is unused here (password auth, not client certificates).
+#
+# Release name = Application name = `substrate-podcert`, so the chart renders bare resource
+# names (podcertificate-controller, ...). Moved only with kagent (renovate.json5).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: substrate-podcert
+  namespace: argo-cd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    chart: substrate-podcert
+    repoURL: ghcr.io/kagent-dev/substrate/helm
+    targetRevision: 0.5.0-alpha2
+    helm:
+      releaseName: substrate-podcert
+      valuesObject:
+        image:
+          # The chart renders one component image, <registry>/<repository>/podcertcontroller:<tag>,
+          # so the shared tag can carry the digest. (The substrate chart cannot do this: four
+          # components share one tag there. See base-apps/substrate.yaml.)
+          tag: v0.5.0-alpha2@sha256:f6c33a1ab8a9f177cbf78bde11ef5a0ca98e1e6bce4ed6e6317bb2c57464d220
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: podcertificate-controller-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

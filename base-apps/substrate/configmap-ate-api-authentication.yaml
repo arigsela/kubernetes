@@ -1,0 +1,28 @@
+# ate-api-server's caller authentication (--authentication-config): it accepts Kubernetes
+# ServiceAccount tokens issued for the audience api.ate-system.svc (the kagent controller
+# presents one), and uses the same issuer for actor identity JWTs.
+#
+# Same content `kagent install` writes (ensureAPIAuthentication in substrate_init.go @ kagent
+# v1.0.0-alpha11). It reads the issuer from the API server's discovery document; on this
+# cluster (read 2026-10-11):
+#   kubectl get --raw /.well-known/openid-configuration
+#   {"issuer":"https://kubernetes.default.svc.cluster.local",
+#    "jwks_uri":"https://10.0.1.50:6443/openid/v1/jwks", ...}
+# That is the in-cluster issuer, so ate-api-server must fetch discovery and the JWKS with the
+# pod's own CA and ServiceAccount token (certificateAuthorityFile / discoveryTokenFile); the
+# CLI adds the same two lines for this case. If k3s is ever started with a different
+# --service-account-issuer, update `issuer` here or every token is rejected.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ate-api-authentication
+  namespace: ate-system
+data:
+  authentication.yaml: |-
+    actorIdentityJWTProvider: kubernetes
+    jwtProviders:
+    - name: kubernetes
+      issuer: https://kubernetes.default.svc.cluster.local
+      audiences: [api.ate-system.svc]
+      certificateAuthorityFile: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      discoveryTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token

@@ -1,0 +1,39 @@
+# Agent Substrate CRDs (ate.dev: WorkerPool, SandboxConfig, CSIDriverConfig). Substrate is the
+# actor runtime kagent 1.0 runs its agents on. One of four Substrate apps; start at
+# base-apps/substrate/docs.md.
+#
+# Install order, mirroring the kagent CLI (go/core/cli/internal/commands/install.go @ v1.0.0-alpha11):
+#   substrate-crds (-4) -> substrate-config (-3: namespaces, CA pools, DB Secrets, auth config)
+#   -> substrate-podcert (-2) -> substrate (-1) -> kagent (0).
+# The waves only order Application CREATION in the master app. Each app then converges on its
+# own: a pod whose Secret is not there yet waits in ContainerCreating and starts when it lands.
+#
+# Version: moved ONLY together with kagent (renovate.json5 group `kagent-substrate`). kagent
+# 1.0.0-alpha11 is built against Substrate v0.5.0-alpha2; every alpha bump is a clean-database
+# migration (SPEC §R.44).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: substrate-crds
+  namespace: argo-cd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  project: default
+  source:
+    chart: substrate-crds
+    repoURL: ghcr.io/kagent-dev/substrate/helm
+    targetRevision: 0.5.0-alpha2
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ate-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Cluster-scoped CRDs only, so no CreateNamespace. ServerSideApply as for kagent-crds:
+      # no last-applied annotation on the CRDs, and field ownership stays with Argo.
+      - ServerSideApply=true

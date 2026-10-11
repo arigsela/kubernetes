@@ -1,0 +1,142 @@
+# Warns before Substrate's CAs expire. They are valid 365 days from generation and nothing renews
+# them (kagent-dev/substrate#1931); when one lapses, pod certificates stop issuing and every
+# Substrate call fails.
+#
+# Every 6 h a Job reads the five CA certificates (public halves only, from the same Vault key the
+# CA pool Secrets come from) and prints one JSON line per CA plus a summary line:
+#   {"check":"substrate-ca-expiry","summary":true,"min_days_left":341,"warn_days":30}
+# Alloy ships stdout to Loki; the Grafana rule `substrate-ca-expiry`
+# (base-apps/logging/grafana-alerting.yaml) fires when min_days_left < 30, and ALSO when no
+# summary line arrived for 13 h (noDataState: Alerting): a checker that stopped running must not
+# look like healthy CAs. Rotation: runbook.md "Rotate the Substrate CAs".
+#
+# The JWT pool (actor-id-jwt-pool) is a bare signing key with no expiry, so it is not checked.
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: substrate-ca-public-certs
+  namespace: ate-system
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-substrate
+    kind: SecretStore
+  target:
+    name: substrate-ca-public-certs
+    creationPolicy: Owner
+  # Certificates only, never the -key properties.
+  data:
+    - secretKey: actor-id-ca-pool.crt
+      remoteRef:
+        key: substrate-cas
+        property: actor-id-ca-pool-crt
+    - secretKey: egress-mitm-ca-pool.crt
+      remoteRef:
+        key: substrate-cas
+        property: egress-mitm-ca-pool-crt
+    - secretKey: service-dns-ca-pool.crt
+      remoteRef:
+        key: substrate-cas
+        property: service-dns-ca-pool-crt
+    - secretKey: pod-identity-ca-pool.crt
+      remoteRef:
+        key: substrate-cas
+        property: pod-identity-ca-pool-crt
+    - secretKey: postgres-ca-pool.crt
+      remoteRef:
+        key: substrate-cas
+        property: postgres-ca-pool-crt
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: substrate-ca-expiry
+  namespace: ate-system
+  labels:
+    app.kubernetes.io/name: substrate-ca-expiry
+    app.kubernetes.io/part-of: substrate
+spec:
+  schedule: "17 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app: substrate-ca-expiry
+            app.kubernetes.io/name: substrate-ca-expiry
+            app.kubernetes.io/part-of: substrate
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          nodeSelector:
+            node.kubernetes.io/workload: application
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: check
+              # Reused for its openssl 3.0 CLI (Ed25519-capable); the postgresql init Jobs pin
+              # the same digest, so no new image enters the cluster.
+              image: pgvector/pgvector:0.8.7-pg18@sha256:2358fcba361ed2233a5ed81b5fe4ca779ccb304120ce531a3bf51c0ed7e2bc11
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  now=$(date +%s)
+                  min=""
+                  count=0
+                  for f in /certs/*.crt; do
+                    [ -s "$f" ] || continue
+                    name=$(basename "$f" .crt)
+                    end=$(openssl x509 -in "$f" -noout -enddate | cut -d= -f2)
+                    end_s=$(date -d "$end" +%s)
+                    days=$(( (end_s - now) / 86400 ))
+                    printf '{"check":"substrate-ca-expiry","ca":"%s","not_after":"%s","days_left":%d}\n' \
+                      "$name" "$(date -u -d "$end" +%Y-%m-%dT%H:%M:%SZ)" "$days"
+                    if [ -z "$min" ] || [ "$days" -lt "$min" ]; then min=$days; fi
+                    count=$((count + 1))
+                  done
+                  if [ "$count" -ne 5 ]; then
+                    # No summary line: the alert's no-data path fires instead of a false "fine".
+                    printf '{"check":"substrate-ca-expiry","error":"expected 5 CA certificates, read %d"}\n' "$count"
+                    exit 1
+                  fi
+                  printf '{"check":"substrate-ca-expiry","summary":true,"min_days_left":%d,"warn_days":%d}\n' \
+                    "$min" "$WARN_DAYS"
+                  # Alloy only tails pods it sees Running (base-apps/logging/alloy-config.yaml keeps
+                  # phase=Running). This check finishes in well under a second, so stay up long
+                  # enough to be discovered, or the line never reaches Loki and the rule goes no-data.
+                  sleep 90
+              env:
+                - name: WARN_DAYS
+                  value: "30"
+              volumeMounts:
+                - name: certs
+                  mountPath: /certs
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+          volumes:
+            - name: certs
+              secret:
+                secretName: substrate-ca-public-certs

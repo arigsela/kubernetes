@@ -1,0 +1,20 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: substrate
+  namespace: ate-system
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    # The chart labels pods with `app` only (no app.kubernetes.io/*).
+    backstage.io/kubernetes-label-selector: 'app in (ate-api-server,ate-controller,atelet,atenet-router,atenet-egress,k8s-credential-provider,rustfs)'
+    backstage.io/kubernetes-namespace: ate-system
+  tags: [substrate, kagent, gvisor, actors, sandbox]
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/platform
+  system: default/platform-ai
+  dependsOn:
+    - resource:vault/vault
+    - resource:postgresql/postgresql

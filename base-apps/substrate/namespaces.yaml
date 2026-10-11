@@ -1,0 +1,26 @@
+# The two namespaces Substrate runs in. Declared here rather than left to CreateNamespace on the
+# chart apps, because this app (substrate-config, wave -3) puts SecretStores and ExternalSecrets
+# into BOTH of them before the charts sync. Creating those in a namespace that does not exist yet
+# fails the sync, and Argo does not retry a failed auto-sync of the same revision.
+#
+# Prune=false: deleting a Namespace deletes everything in it, the chart apps' objects included.
+# A renamed or moved file must not be able to do that as a side effect.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ate-system
+  labels:
+    app.kubernetes.io/part-of: substrate
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: podcertificate-controller-system
+  labels:
+    app.kubernetes.io/part-of: substrate
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false
