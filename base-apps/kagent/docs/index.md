@@ -20,7 +20,8 @@ sources:
   - base-apps/kagent/external-secrets.yaml
   - base-apps/kagent/eso-agent-docs-mcp-serviceaccount.yaml
   - base-apps/kagent/agent-docs-mcp-secret-store.yaml
-  - base-apps/kagent/model-configs/anthropic-claude-sonnet-4-6.yaml
+  - base-apps/kagent/model-configs/anthropic-claude-sonnet-5-5.yaml
+  - base-apps/kagent/model-configs/anthropic-claude-haiku-5-5.yaml
   - base-apps/kagent/mcp-basic-auth-external-secret.yaml
   - base-apps/kagent/agents/homelab-knowledge.yaml
   - base-apps/kagent/agents/k8s-reader.yaml
@@ -69,7 +70,6 @@ Each agent carries a `capability.homelab/class` label (`read`/`admin`) checked a
 ## Model configs
 - **`anthropic-claude-sonnet-5-5`** and **`anthropic-claude-haiku-5-5`** (`model-configs/`) — Claude Sonnet 5.5 for the agents that reason over several tools (`homelab-knowledge`, `k8s-agent`, `istio-agent`, `build-orchestrator`) and Haiku 5.5 for the rest. Both use the Vault-backed `kagent-anthropic` key, set `anthropic.maxTokens: 16000` (the Go runtime's 8192 default caps thinking plus answer and truncates silently, kagent-dev/kagent#2895) and no sampling parameters (the 5.5 models reject them). Agents on them ! run `runtime: go` (above).
 - **`default-model-config`** — the chart's default `ModelConfig`, generated from the `providers` block in `kagent.yaml` (Anthropic, `claude-haiku-5-5`). No agent in git uses it; it is the default for agents created in the UI, which must also pick the Go runtime.
-- **`anthropic-claude-sonnet-4-6`** (`model-configs/anthropic-claude-sonnet-4-6.yaml`) — a sonnet-tier `ModelConfig` serving `claude-sonnet-4-6`, used by `homelab-knowledge` (it needs larger context and more reliable tool-calling for multi-step delegation). It stays on 4.6 because `claude-sonnet-5` breaks kagent's python runtime on multi-step tool loops (see the manifest header and the runbook). Its `apiKeySecret` (`anthropic-claude-sonnet-4-6`) is a dedicated key, **not** the shared `kagent-anthropic` one, and it is the one agent credential here that is **not in Vault** — see *Secrets & database*.
 - **`embedding-model-config`** (`embedding-model-config.yaml`) — points at **Ollama** (`http://ollama.ollama.svc.cluster.local:11434`, model `nomic-embed-text`), used as `memory.modelConfig` by every Declarative agent that has a `memory` block (all but `k8s-reader`) for RAG/embedding recall. This is why the `kagent` component depends on `ollama`.
 
 ## Tools via MCP servers
@@ -109,7 +109,7 @@ Each Vault policy grants `read` on exactly one path (`k8s-secrets/data/<key>`). 
 
 `kagent-mcp-basic-auth` has had **no consumer since T52** (2026-07-31): it was the htpasswd for the old nginx `/mcp` ingress, and basic auth was dropped in the move to Gateway API (see *Exposure*). Its ExternalSecret, SecretStore and ESO ServiceAccount still sync but gate nothing; they are candidates for removal.
 
-**Exception — not in Vault:** the `anthropic-claude-sonnet-4-6` Secret (the `apiKeySecret` of the ModelConfig of the same name) was created by the kagent UI, has no ExternalSecret, and carries an **ownerReference to the ModelConfig**. Renaming or deleting that ModelConfig makes Argo prune it and the garbage collector delete the Secret, losing the key. To rotate the key, update the Secret directly; to rename, move the key into Vault + ESO first (manifest header).
+Every agent credential here is in Vault. The last exception, the UI-created `anthropic-claude-sonnet-4-6` key (owner-referenced to its ModelConfig), was retired on 2026-10-11 with that ModelConfig (SPEC §T.94).
 
 The broad `vault-backend` `SecretStore` is **gone**. It authenticated as the namespace's `default` ServiceAccount against Vault role `kagent`, which could read the monolithic `k8s-secrets/kagent` key holding every credential at once. Its last consumer was `kagent-anthropic-secrets`, an `ExternalSecret` that existed only in-cluster (tracked by a since-deleted Argo app `kagent-config`); it is now adopted here (`kagent-anthropic-external-secret.yaml`) and scoped like everything else, and the broad store, the `kagent` Vault role/policy and the monolithic key have all been removed.
 
