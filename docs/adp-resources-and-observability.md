@@ -9,6 +9,12 @@ Pulled live from the cluster + Crossplane on 2026-07-15.
 - **Managed by:** Argo CD + Crossplane from `base-apps/` (delete the console
   resource and Argo recreates it — to remove, delete the manifests).
 
+> **2026-10-11: kagent 1.0.** The agents moved to kagent 1.0.0-alpha11 on Agent Substrate:
+> each conversation is a gVisor actor in a shared worker pod (`kagent-default-*`), and the
+> record lives in database `kagent_v1` (the 0.10 database `kagent` is a read-only archive).
+> The AWS resources below are unchanged; the CLI, log queries and policy list in sections 2
+> and 3 are updated for 1.0. See `base-apps/kagent/docs.md`.
+
 ---
 
 ## 1. AWS resources created for this work
@@ -47,7 +53,7 @@ Source of truth: `base-apps/agent-audit-aws-infrastructure/` (except the two han
 |---|---|---|
 | **Grafana** | https://grafana.arigsela.com | Agent alert rules, Falco detections, all agent logs (via Loki). Most relevant. |
 | **Coroot** | https://coroot.arigsela.com | Agent traces (kagent OTel spans), service maps. |
-| **kagent UI** | https://kagent.arigsela.com | The agents themselves — chat, sessions. |
+| **kagent UI** | https://kagent.arigsela.com | The agents themselves — chat, sessions, tool approvals. |
 | **n8n** | https://n8n.arigsela.com | The alert-delivery workflow (`grafana-alerts` webhook). |
 | **Agent audit** | https://agent-audit.arigsela.com | The agent action record: findings, calls, session timelines, token trends (read-only, redacted, SSO). |
 | **Argo CD** | https://argocd.arigsela.com | Every app we created: `kagent`, `admission-policies`, `agent-audit-aws-infrastructure`, … |
@@ -58,22 +64,28 @@ Source of truth: `base-apps/agent-audit-aws-infrastructure/` (except the two han
 # Falco runtime detections (previously silent; un-muted in O3)
 {namespace="falco"} | json | rule=~".+"
 
-# Every agent tool call
+# Agent tool calls (kagent 1.0: actor output from the Substrate worker pods, each line
+# labelled with the session, ate.actor.name, and the agent, ate.template.name)
 {namespace="kagent"} |= "function_call"
 
 # The scheduled agent-audit finding
 {namespace="postgresql", app="agent-audit"} | json
 ```
 
+The log stream is best-effort; the authoritative record of every call and approval is the
+database (`kagent_v1`), read through `scripts/agent-audit.py` or agent-audit-web.
+
 ---
 
 ## 3. The agent action record — CLI view
 
 ```bash
-# the two scheduled jobs
+# the scheduled jobs (all read kagent 1.0's kagent_v1)
 kubectl get cronjob -n postgresql | grep agent-audit
 #   agent-audit-export    30 1 * * *   (daily → S3)
+#   agent-audit-risk      30 2 * * *   (daily → risk scores beside the export, alert on high)
 #   agent-audit-ungated   0 7 * * *    (daily → alert on ungated tool use)
+#   agent-audit-archive   suspended    (the same check against the 0.10 archive, on demand)
 
 # last run's findings
 kubectl logs -n postgresql -l app=agent-audit --tail=20
@@ -81,7 +93,7 @@ kubectl logs -n postgresql -l app=agent-audit --tail=20
 # the admission contracts are enforced natively by the API server
 kubectl get validatingadmissionpolicy,validatingadmissionpolicybinding | grep agent-
 #   agent-identity-{scoped-store,no-monolithic-key,mcp-toolnames},
-#   agent-capability, agent-capability-delegation — each binding [Deny]
+#   agent-capability, agent-capability-{delegation,refs,runtime} — each binding [Deny]
 ```
 
 For browsing, use https://agent-audit.arigsela.com; the CLI below is still the way to script it.
@@ -92,10 +104,13 @@ Run the audit tool by hand (read-only `kagent_audit_ro` role):
 kubectl port-forward -n postgresql svc/postgresql 5432:5432 &
 U=$(kubectl get secret kagent-audit-credentials -n postgresql -o jsonpath='{.data.audit-user}' | base64 -d)
 P=$(kubectl get secret kagent-audit-credentials -n postgresql -o jsonpath='{.data.audit-password}' | base64 -d)
-export AGENT_AUDIT_DSN="postgresql://$U:$P@127.0.0.1:5432/kagent"
+export AGENT_AUDIT_DSN="postgresql://$U:$P@127.0.0.1:5432/kagent_v1"
 
-python scripts/agent-audit.py --ungated   # gated tools invoked with no approval
+python scripts/agent-audit.py --ungated   # write/destructive calls without an approved decision
 python scripts/agent-audit.py --cost       # per-agent token spend
+
+# the kagent 0.10 archive: database kagent, --source v010
+AGENT_AUDIT_DSN="postgresql://$U:$P@127.0.0.1:5432/kagent" python scripts/agent-audit.py --source v010 --ungated
 ```
 
 ---
@@ -104,7 +119,8 @@ python scripts/agent-audit.py --cost       # per-agent token spend
 
 | Tool | Role here | Link |
 |---|---|---|
-| kagent | Runs the AI agents on Kubernetes | https://kagent.dev |
+| kagent | Runs the AI agents on Kubernetes (1.0.0-alpha11) | https://kagent.dev |
+| Agent Substrate | kagent 1.0's runtime: each session a gVisor actor, snapshotted when idle | https://github.com/kagent-dev/substrate |
 | ValidatingAdmissionPolicy (Kubernetes API server) | Enforces the identity & capability contracts at admission (`base-apps/admission-policies/`) | https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/ |
 | Kyverno | Reports only: writes PolicyReports for those policies, enforces nothing | https://kyverno.io |
 | Falco | Runtime threat detection (un-muted in O3) | https://falco.org |
@@ -121,6 +137,7 @@ python scripts/agent-audit.py --cost       # per-agent token spend
 
 | Pillar | Path |
 |---|---|
+| Agents | `base-apps/kagent/` (`agent-templates/`, `harnesses/`, `agents/`), `base-apps/substrate/` |
 | Identity | `base-apps/kagent/*secret-store*.yaml`, `templates/agent-identity/`, `scripts/validate-agent-identity.py` |
 | Security / Capability | `base-apps/admission-policies/agent-capability*.yaml`, `scripts/gen-agent-capability-policy.py`, `scripts/validate-agent-capability.py` |
 | Observability | `base-apps/postgresql/agent-audit-cronjob.yaml`, `base-apps/agent-audit-aws-infrastructure/`, `base-apps/logging/grafana-alerting.yaml`, `scripts/agent-audit.py` |

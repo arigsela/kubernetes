@@ -1,6 +1,6 @@
 # kagent 1.0 on Kubernetes 1.37 Implementation Plan
 
-**Status:** Approved 2026-10-11 — executing
+**Status:** Executed 2026-10-11 — see SPEC T94-T100. (Approved 2026-10-11.) This is now a record; the living docs are `base-apps/kagent/docs.md`, `base-apps/kagent/runbook.md` and `base-apps/substrate/`.
 **Owner:** Ari Sela
 **Supersedes:** [`kagent-1-0-feasibility-spikes-implementation-plan.md`](kagent-1-0-feasibility-spikes-implementation-plan.md) and its 2026-09-26 "second cluster" decision
 **SPEC:** §T.89 (1.36 → 1.37 hop) and the kagent 1.0 rows added with this plan
