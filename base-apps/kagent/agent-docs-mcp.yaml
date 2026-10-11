@@ -9,6 +9,11 @@ metadata:
 spec:
   # Read the agent-docs from arigsela/kubernetes@main over MCP. Read-only,
   # single-repo (token scope) — see agent-docs-mcp-external-secret.yaml.
+  #
+  # kagent 1.0 still serves this CRD (mcpservers.kagent.dev v1alpha1, from the kmcp 0.4.0
+  # subchart of kagent-crds 1.0.0-alpha11); every field below is in that schema, unchanged.
+  # Agents cannot bind it directly: they bind the RemoteMCPServer `agent-docs`
+  # (agent-docs-mcp-remote.yaml) that points at the Service this deploys.
   transportType: stdio
   deployment:
     image: ghcr.io/github/github-mcp-server:v1.14.0@sha256:7aaeeec9ae4fe9a736d100c1ff0798f3c219b5009e05f5d3945fcacb13cc196b

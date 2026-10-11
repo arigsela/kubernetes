@@ -1,0 +1,84 @@
+# k8s-reader — the read-only half of the Kubernetes capability.
+#
+# Why this agent exists: homelab-knowledge used to delegate live-cluster questions to
+# k8s-agent, which made its EFFECTIVE capability admin (delegation is capability-transitive).
+# Splitting the capability kept the useful half: this agent binds ONLY tools the capability
+# taxonomy classifies `read`, so there is no mutating tool to reach. k8s-agent remains the
+# `admin` operator agent for humans who need to act.
+#
+# On kagent 1.0 homelab-knowledge binds these same eight tools itself (a 1.0 sub-agent is a
+# hand-off that never returns its answer), so nothing delegates here any more; this agent is
+# for humans and A2A clients that want a read-only investigator.
+#
+# AgentTemplate = WHAT (api.kagent.dev/v1alpha3); its Agent (../agents/k8s-reader.yaml) runs it
+# on ../harnesses/kagent-stateless.yaml (no memory, as on 0.10).
+#
+# Contract: templates/agent-identity/README.md (identity) and the capability taxonomy at
+# base-apps/admission-policies/agent-capability-taxonomy.yaml.
+#
+# Dropped in 1.0: a2aConfig.skills. The skill it advertised on 0.10, kept for the record:
+#   - cluster-inspection: Cluster Inspection. Reads Kubernetes resource state, events, logs and
+#     cluster configuration to answer questions and diagnose problems. ("Why is the pod X in
+#     namespace Y crashlooping?", "Show me recent events for the deployment Z.", "What are the
+#     resource requests and limits on this StatefulSet?", "Which pods are not Running right
+#     now?") Tags: kubernetes, diagnostics, read-only.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: k8s-reader
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: k8s-reader
+    arigsela.com/idp-managed: "true"
+    # Binds only read-classified k8s tools. No approval gate needed: nothing to gate.
+    capability.homelab/class: read
+spec:
+  description: A read-only Kubernetes investigator. Inspects cluster state, events and logs to diagnose problems. Cannot create, modify, or delete anything.
+  # Haiku 5.5: single-domain investigation, speed over depth.
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: |-
+    You are a read-only Kubernetes investigator.
+
+    ## What you can do
+
+    You inspect cluster state: resources, events, pod logs, cluster
+    configuration, and service connectivity. You diagnose problems and explain
+    what you find, clearly and with evidence.
+
+    ## What you cannot do
+
+    You hold NO mutating tools. You cannot create, patch, apply, label,
+    annotate, delete, or exec. This is enforced by the capability contract,
+    not by your own restraint — the tools are simply not bound to you.
+
+    When a question requires a change to the cluster, do not attempt it and do
+    not pretend you have. Say plainly what change you believe is needed and
+    why, and tell the user that acting on it requires the `k8s-agent` operator
+    agent, which gates every mutating call behind human approval.
+
+    ## How to work
+
+    Gather evidence before concluding. Prefer describing a resource and reading
+    its events and logs over guessing from names. Quote what you actually saw —
+    the status, the event message, the log line — rather than paraphrasing it.
+    If the evidence does not support a conclusion, say so.
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+        # Every tool here is classified `read` in the capability taxonomy. Adding a mutating
+        # tool fails CI and is denied at admission: a `read` agent may not bind `write` or
+        # `destructive` tools, with or without approval.
+        requireApproval: false
+        tools:
+          - k8s_get_resources
+          - k8s_get_resource_yaml
+          - k8s_get_pod_logs
+          - k8s_describe_resource
+          - k8s_get_events
+          - k8s_get_cluster_configuration
+          - k8s_get_available_api_resources
+          - k8s_check_service_connectivity
