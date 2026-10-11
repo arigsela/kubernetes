@@ -16,7 +16,14 @@
 #
 # Usage:
 #   pg-backup.sh --dest <dir|s3://bucket/prefix> [--namespace NS] [--cluster NAME]
-#                [--database DB] [--exec-cmd CMD] [--dry-run]
+#                [--database DB] [--exec-cmd CMD] [--stage-dir DIR | --stream] [--dry-run]
+#
+# Transfer (§B.25): streaming a large dump through `kubectl exec` was cut short at ~129 MB
+# on 2026-10-11, silently over SPDY. So by default the dump is STAGED in the pod
+# (--stage-dir, default /controller: writable on CNPG pods), checksummed there, and copied
+# out in 16 MiB chunks whose concatenation must match the in-pod sha256. --stream keeps the
+# old single-stream path. Either way the artifact must end with pg_dump's completion marker,
+# or it is deleted and the run fails.
 
 set -euo pipefail
 
@@ -28,6 +35,9 @@ ALL_DATABASES=0
 DEST=""
 EXEC_CMD=""
 DRY_RUN=0
+STAGE_DIR=""
+STREAM=0
+CHUNK=16777216
 
 die() { echo "pg-backup: $*" >&2; exit 1; }
 
@@ -40,6 +50,8 @@ while [ $# -gt 0 ]; do
     --all)       ALL_DATABASES=1; shift ;;
     --container) CONTAINER="${2:-}"; shift 2 ;;
     --exec-cmd)  EXEC_CMD="${2:-}"; shift 2 ;;
+    --stage-dir) STAGE_DIR="${2:-}"; shift 2 ;;
+    --stream)    STREAM=1; shift ;;
     --dry-run)   DRY_RUN=1; shift ;;
     -h|--help)   sed -n '2,20p' "$0" >&2; exit 2 ;;
     *)           die "unknown argument: $1" ;;
@@ -97,6 +109,7 @@ if [ -z "$EXEC_CMD" ]; then
     [ -n "$PRIMARY" ] || die "could not resolve the primary pod for cluster '$CLUSTER' in '$NAMESPACE'"
     # -c pins the container so kubectl's "Defaulted container" notice stays off the wire.
     EXEC_CMD="kubectl exec -n $NAMESPACE $PRIMARY -c $CONTAINER --"
+    [ "$STREAM" -eq 1 ] || STAGE_DIR="${STAGE_DIR:-/controller}"
   else
     EXEC_CMD="kubectl exec -n $NAMESPACE <primary> -c $CONTAINER --"
   fi
@@ -126,16 +139,61 @@ ARTIFACT="$OUT_DIR/$NAME"
 #
 # --all uses pg_dumpall so the artifact also carries globals (roles, grants). Restoring
 # databases without their roles leaves you with data nobody can log in to read.
-echo "pg-backup: dumping '$LABEL' ..."
 if [ "$ALL_DATABASES" -eq 1 ]; then
+  DUMP_CMD="pg_dumpall -U postgres --clean"
+  MARKER="-- PostgreSQL database cluster dump complete"
+else
+  DUMP_CMD="pg_dump -U postgres --clean --if-exists -d $DATABASE"
+  MARKER="-- PostgreSQL database dump complete"
+fi
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+echo "pg-backup: dumping '$LABEL' ..."
+if [ -n "$STAGE_DIR" ] && [ "$STREAM" -eq 0 ]; then
+  REMOTE="$STAGE_DIR/pg-backup-$STAMP.sql.gz"
   # shellcheck disable=SC2086
-  $EXEC_CMD pg_dumpall -U postgres --clean | gzip -c > "$ARTIFACT"
+  trap '$EXEC_CMD rm -f "$REMOTE" >/dev/null 2>&1 || true' EXIT
+  # A dump that dies midway leaves no completion marker; the check below catches it.
+  # shellcheck disable=SC2086
+  $EXEC_CMD sh -c "$DUMP_CMD | gzip -c > '$REMOTE'" \
+    || die "the dump failed inside the pod (staged at $REMOTE)"
+  # shellcheck disable=SC2086
+  REMOTE_SIZE="$($EXEC_CMD stat -c %s "$REMOTE")"
+  # shellcheck disable=SC2086
+  REMOTE_SHA="$($EXEC_CMD sha256sum "$REMOTE" | cut -d' ' -f1)"
+  : > "$ARTIFACT"
+  CHUNKS=$(( (REMOTE_SIZE + CHUNK - 1) / CHUNK ))
+  i=0
+  while [ "$i" -lt "$CHUNKS" ]; do
+    # shellcheck disable=SC2086
+    $EXEC_CMD dd if="$REMOTE" bs="$CHUNK" skip="$i" count=1 status=none >> "$ARTIFACT" \
+      || { rm -f "$ARTIFACT"; die "copying chunk $i of $CHUNKS failed"; }
+    i=$((i + 1))
+  done
+  if [ "$(sha256_of "$ARTIFACT")" != "$REMOTE_SHA" ]; then
+    rm -f "$ARTIFACT"
+    die "the copied artifact does not match the in-pod sha256 ($REMOTE_SHA) — refusing to record it"
+  fi
 else
   # shellcheck disable=SC2086
-  $EXEC_CMD pg_dump -U postgres --clean --if-exists -d "$DATABASE" | gzip -c > "$ARTIFACT"
+  $EXEC_CMD $DUMP_CMD | gzip -c > "$ARTIFACT"
 fi
 
 [ -s "$ARTIFACT" ] || die "dump produced an empty artifact — refusing to record it as a backup"
+
+# A cut-short stream still gzips cleanly and still looks like SQL (§B.25). The last lines
+# must carry pg_dump's own completion marker.
+gzip -t "$ARTIFACT" 2>/dev/null || { rm -f "$ARTIFACT"; die "the artifact is not a valid gzip stream — refusing to record it"; }
+TAIL="$(gzip -dc "$ARTIFACT" | tail -n 20)"
+case "$TAIL" in
+  *"$MARKER"*) ;;
+  *) rm -f "$ARTIFACT"
+     die "TRUNCATED: the dump does not end with '$MARKER' — refusing to record it as a backup" ;;
+esac
 
 if command -v sha256sum >/dev/null 2>&1; then
   ( cd "$OUT_DIR" && sha256sum "$NAME" > "$NAME.sha256" )

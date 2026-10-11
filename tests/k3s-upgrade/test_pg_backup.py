@@ -169,3 +169,45 @@ def test_pg_dump_artifact_restores(tmp_path, pg_container):
 
     rows = psql("SELECT name FROM chores;", db="app").stdout
     assert "take-out-bins" in rows, "dump did not restore the seeded row"
+
+
+def test_pg_backup_refuses_a_truncated_dump(tmp_path):
+    """§B.25: `kubectl exec` cut a 129 MB dump short and the script recorded it as a backup.
+    A stream that ends without pg_dump's completion marker must fail and leave nothing behind."""
+    stub = tmp_path / "cut-short"
+    stub.write_text("#!/bin/sh\nprintf -- '--\\n-- PostgreSQL database dump\\n--\\nCOPY t (v) FROM stdin;\\nrow1\\n'\n")
+    stub.chmod(0o755)
+    dest = tmp_path / "out"
+    result = run("--dest", str(dest), "--database", "app", "--exec-cmd", str(stub))
+    assert result.returncode != 0
+    assert "TRUNCATED" in result.stderr, result.stderr
+    assert not list(dest.glob("*.sql.gz*")), "a truncated artifact was left behind"
+
+
+def test_pg_backup_accepts_a_complete_streamed_dump(tmp_path):
+    stub = tmp_path / "complete"
+    stub.write_text("#!/bin/sh\nprintf -- '--\\n-- PostgreSQL database dump\\n--\\n\\n--\\n-- PostgreSQL database dump complete\\n--\\n'\n")
+    stub.chmod(0o755)
+    dest = tmp_path / "out"
+    result = run("--dest", str(dest), "--database", "app", "--exec-cmd", str(stub))
+    assert result.returncode == 0, result.stderr
+    assert len(list(dest.glob("pg-*-app-*.sql.gz"))) == 1
+
+
+@pytest.mark.slow
+@requires_docker
+def test_staged_dumpall_round_trips(tmp_path, pg_container):
+    """The default kubectl path stages the dump in the pod and copies it out in chunks; the
+    copy must match the in-pod sha256 and carry the cluster completion marker."""
+    dest = tmp_path / "staged"
+    result = run(
+        "--dest", str(dest), "--all", "--stage-dir", "/tmp",
+        "--exec-cmd", f"docker exec -e PGPASSWORD={PG_PASSWORD} {pg_container}",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    artifact = next(dest.glob("pg-*-all-*.sql.gz"))
+    dump = subprocess.run(["gunzip", "-c", str(artifact)], capture_output=True, text=True, check=True).stdout
+    assert dump.rstrip().endswith("-- PostgreSQL database cluster dump complete\n--") or \
+        "-- PostgreSQL database cluster dump complete" in dump.splitlines()[-3:], dump[-300:]
+    leftover = _docker("exec", pg_container, "sh", "-c", "ls /tmp/pg-backup-* 2>/dev/null | wc -l")
+    assert leftover.stdout.strip() == "0", "the staged dump was left in the pod"
