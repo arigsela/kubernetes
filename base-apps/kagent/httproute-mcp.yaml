@@ -33,3 +33,24 @@ spec:
       backendRefs:
         - name: kagent-controller
           port: 8083
+    # A2A for the kagent namespace's Agents (kagent 1.0). 1.0 has no per-agent
+    # Service: the controller serves every Agent at POST /agents/<ns>/<name>
+    # (JSON-RPC, A2A v1) and GET .../.well-known/agent-card.json. Its /mcp has no
+    # create-session or invoke-by-agent tool, so scripts/ask-hk and
+    # scripts/capture-eval-answers.py send A2A here instead.
+    #
+    # Scoped to /agents/kagent/ on purpose: other namespaces' Agents stay
+    # unreachable from outside (PathPrefix matches whole path segments, and Go's
+    # mux splits on the escaped path, so %2F cannot climb into another namespace).
+    # A2A is unauthenticated (insecure mode: X-User-Id is the identity), so the
+    # host-wide allow-list in istio-ingress/authorizationpolicy.yaml is the only
+    # control here, exactly as for /mcp. Its rule matches this host with no path,
+    # so it already covers this rule. No timeout: answers take minutes, and Istio
+    # sets none by default.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /agents/kagent/
+      backendRefs:
+        - name: kagent-controller
+          port: 8083
