@@ -349,7 +349,8 @@ hostname in `MANAGED_HOSTNAMES` in `base-apps/wan-ip-monitor/cronjob.yaml`.
   `kagent-agent-docs-mcp`, then a forced ExternalSecret sync and an `agent-docs-mcp` restart.
 - **`kagent-builtin-prompts`** is still rendered by the 1.0 chart; `homelab-knowledge`,
   `k8s-agent` and `istio-agent` include its `safety-guardrails` and `kubernetes-context` snippets
-  through `promptTemplate.dataSources`.
+  (and `k8s-agent` also `tool-usage-best-practices`) through `promptTemplate.dataSources`.
+  Removing the ConfigMap, or a chart bump that renames a snippet, breaks those prompts.
 - The 0.10 A2A skills (`a2aConfig.skills`) are gone: 1.0 generates the agent card. The skills each
   agent advertised are kept as comments in its AgentTemplate.
 
