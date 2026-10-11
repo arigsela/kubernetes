@@ -4,6 +4,11 @@ ansible_ssh_private_key_file: ~/.ssh/ari_sela_key
 ansible_python_interpreter: /usr/bin/python3
 
 # playbooks/patch.yml and patch-hypervisor.yml
+# drain_timeout stays 300 with Substrate: evicting a worker pod crashes an agent turn in flight on
+# it (substrate#1526) however long the drain waits.
 drain_timeout: 300     # seconds kubectl drain may take per node
 reboot_timeout: 600    # seconds a host may take to come back
+# patch.yml refuses while the k3s nodes' CPU flags differ (substrate#1657). Pass
+# -e cpu_flags_preflight=false only for a known kernel-defined flag difference mid-run.
+cpu_flags_preflight: true
 k3s_api_url: https://10.0.1.50:6443

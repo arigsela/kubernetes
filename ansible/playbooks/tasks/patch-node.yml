@@ -16,6 +16,9 @@
     fail_msg: "cluster is not healthy (a node is NotReady or cordoned); fix that by hand, then re-run"
     quiet: true
 
+- name: Pre-flight — identical CPU flags on every k3s node (Substrate snapshots)
+  ansible.builtin.import_tasks: cpu-flags-preflight.yml
+
 - name: Upgrade packages
   ansible.builtin.apt:
     update_cache: true
@@ -84,3 +87,34 @@
         (this_node.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | map(attribute='status') | first) == 'True'
       retries: 60
       delay: 5
+
+    # kagent-dev/substrate#1837: a Substrate worker pod that lives through a reboot comes back
+    # with the same name and a NEW pod IP, and ate-api-server keeps its actors RUNNING at the old
+    # address — unreachable, with no health signal. The drain above normally evicts the workers
+    # (ate-controller runs them as a Deployment per WorkerPool, labelled ate.dev/worker-pool), so
+    # this is usually a no-op: it catches any that were not evicted. Deleting them makes the
+    # Deployment create fresh workers that register their current address. Nothing found,
+    # nothing deleted (and nothing at all before Substrate is installed).
+    - name: Find Substrate worker pods (substrate#1837) on {{ inventory_hostname }}
+      kubernetes.core.k8s_info:
+        kind: Pod
+        label_selectors:
+          - ate.dev/worker-pool
+        field_selectors:
+          - spec.nodeName={{ inventory_hostname }}
+      register: substrate_workers
+      delegate_to: localhost
+      become: false
+
+    - name: Delete them so their WorkerPool re-creates them with a current address
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Pod
+        name: "{{ item.metadata.name }}"
+        namespace: "{{ item.metadata.namespace }}"
+        state: absent
+      loop: "{{ substrate_workers.resources }}"
+      loop_control:
+        label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+      delegate_to: localhost
+      become: false

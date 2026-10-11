@@ -1,0 +1,46 @@
+---
+# Pre-flight for patch.yml: refuse to patch while the k3s nodes' CPU flags differ.
+#
+# Why: Substrate (kagent 1.0's sandbox runtime) snapshots an agent's gVisor sandbox with the CPU
+# feature set of the node it ran on, and restoring it on a node that lacks any of those features
+# fails (kagent-dev/substrate#1657: one WorkerPool must be one CPU model). The three k3s VMs
+# expose identical flags today (70 flags, all equal, read 2026-10-11); this catches the day one
+# of them stops doing so, e.g. a VM re-created with a different CPU model.
+#
+# Reads the `flags` line of /proc/cpuinfo on EVERY k3s node, --limit or not (delegated reads).
+# That line also lists kernel-defined flags (pti, md_clear, ...), so a kernel update that adds
+# one can trip this mid-run, with one node already rebooted onto the new kernel: the message
+# names the flags. If only kernel-defined flags differ, finish the run with
+# -e cpu_flags_preflight=false; otherwise fix the VM's CPU model first.
+- name: Pre-flight — read every k3s node's CPU flags (substrate#1657)
+  ansible.builtin.command:
+    argv:
+      - awk
+      - "-F: "
+      - "/^flags/ {print $2; exit}"
+      - "{{ cpu_flags_file | default('/proc/cpuinfo') }}"
+  register: cpu_flags
+  changed_when: false
+  check_mode: false  # read-only; must really run so --check reaches the same verdict
+  become: false
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['k3s_nodes'] }}"
+  when: cpu_flags_preflight | default(true) | bool
+
+- name: Pre-flight — refuse to patch while the k3s nodes' CPU flags differ
+  ansible.builtin.assert:
+    that:
+      - cpu_flag_sets | length == groups['k3s_nodes'] | length
+      - cpu_flag_sets | select | list | length == cpu_flag_sets | length
+      - cpu_flag_sets | unique | length == 1
+    fail_msg: >-
+      The k3s nodes' CPU flags differ, so a Substrate snapshot taken on one may not restore on
+      another (kagent-dev/substrate#1657). Compared with {{ cpu_flags.results[0].item }}:
+      {% for r in cpu_flags.results[1:] %}{{ r.item }} has extra {{ r.stdout.split() | difference(cpu_flags.results[0].stdout.split()) }}
+      and lacks {{ cpu_flags.results[0].stdout.split() | difference(r.stdout.split()) }}; {% endfor %}
+      A node with no flags at all could not be read. If only kernel-defined flags differ because
+      one node already runs a newer kernel, finish the run with -e cpu_flags_preflight=false.
+    quiet: true
+  vars:
+    cpu_flag_sets: "{{ cpu_flags.results | map(attribute='stdout') | map('split') | map('sort') | map('join', ' ') | list }}"
+  when: cpu_flags_preflight | default(true) | bool
