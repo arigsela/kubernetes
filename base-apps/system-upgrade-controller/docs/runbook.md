@@ -32,8 +32,9 @@ The k3s hop procedure, then SUC's failure modes. `<target>` below is a k3s relea
 ## How-to: the next k3s hop (exactly one minor)
 
 ### 0. Preconditions: is this hop allowed yet?
-- **The target is on the k3s `stable` channel, and it is one minor up** (§V.3; minors can't be skipped). For 1.36 → 1.37, the gates are listed in §T.89.
+- **The target is on the k3s `stable` channel, and it is one minor up** (§V.3; minors can't be skipped). For 1.36 → 1.37 the `stable` gate was waived by decision on 2026-10-11 (§T.89 amended: `v1.37.1+k3s1` from `latest`).
 - **Every platform component states support for the target minor**, or you have explicitly accepted the risk, as with Kyverno on 1.36 (§V.2, §T.72). Record the matrix check in `SPEC.md` §R. Known blocker: CNPG 1.31 drops in-tree `barmanObjectStore`, so §T.79 (the Barman Cloud Plugin) comes before any CNPG 1.31 bump.
+- **k3s bundled components that overlap Argo-owned resources are disabled first** (§V.83). 1.37 bundles `gateway-api-crd`, which would take the Gateway API CRDs from the `istio-gateway-api` app (§R.42); `ansible/roles/k3s_node/files/authn/config.yaml.d/20-disable-bundled.yaml` disables it. Read the target's release notes for new bundled manifests and extend that drop-in.
 - **Removed APIs:** add the target to `TARGETS` in `tests/k3s-upgrade/test_api_scan.py` and run it. pluto only knows built-in APIs, so also check CRD version removals by hand. That blind spot was the ESO `v1beta1` trap (§R.3, §V.26).
 - **Bump the k3s pins to the target and validate the authn config on it before the hop:**
   - `K3S_IMAGE` in `tests/admission-policies/conftest.py`;
@@ -82,7 +83,9 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=<target> \
   INSTALL_K3S_EXEC="server --write-kubeconfig-mode=644" sh -
 diff ~/k3s.service.pre-hop /etc/systemd/system/k3s.service   # expect no change
 ```
-The installer regenerates the unit from `INSTALL_K3S_EXEC`, so always pass it. `/etc/rancher/k3s/` (`config.yaml` with `disable: traefik`, `config.yaml.d/10-authn.yaml`) is left untouched. The moment the API answers, do **step 5 on `k3s-control-01`**, then step 6.
+Before the installer, install any changed node drop-ins with `cd ansible && ansible-playbook playbooks/k3s-authn.yml` (it validates them in a throwaway k3s of the target, restarts k3s on the *current* version with auto-rollback, and checks anonymous → 401). Take the cold k3s artifact after that restart, immediately before the installer.
+
+The installer regenerates the unit from `INSTALL_K3S_EXEC`, so always pass it. `/etc/rancher/k3s/` (`config.yaml` with `disable: traefik`, `config.yaml.d/10-authn.yaml`, `config.yaml.d/20-disable-bundled.yaml`) is left untouched. The moment the API answers, do **step 5 on `k3s-control-01`**, then step 6.
 
 After the control-plane hop, the gate may fail **only** on `master-app` and the apps you paused. That's the open §T.87, and operator judgement waved it through on 2026-09-24. Any other failure means stop.
 
@@ -124,7 +127,9 @@ Every node must be `Ready`, every app Synced+Healthy, Vault unsealed and CNPG he
 2. `scripts/hop-verify.sh gate` should be green apart from artifact age.
 3. CNPG archives a **new** WAL segment after the restart (`pg_stat_archiver.last_archived_time` later than the hop), donetick answers, and `kubectl get certificates -A` is all Ready.
 4. Authn still holds: `kubectl --context homelab-oidc auth whoami` returns `oidc:arigsela`, and `curl -sk -o /dev/null -w '%{http_code}\n' https://10.0.1.50:6443/api` returns `401` (§V.79, `docs/troubleshooting/kubectl-oidc.md`).
-5. Record the hop in `SPEC.md` via the spec skill: the §T entry, each §V.9 window, and the §T.46 evidence per node.
+5. No bundled component took over an Argo-owned resource: `kubectl get helmcharts -A` lists nothing unexpected (empty on 1.37), and the Gateway API CRDs still carry `gateway.networking.k8s.io/bundle-version: v1.5.1` with `istio-gateway-api` Synced (§V.83).
+6. cAdvisor series still carry pod labels: in Grafana Explore, `count(container_memory_working_set_bytes{pod!=""})` is non-zero (kube-state-metrics#3142 watch item on 1.37).
+7. Record the hop in `SPEC.md` via the spec skill: the §T entry, each §V.9 window, and the §T.46 evidence per node.
 
 ## Failure modes
 ### Symptom: new pods on a node stuck `ContainerCreating` after a hop (existing pods fine)
