@@ -100,11 +100,18 @@ spec:
           image:
             tag: "1.0.0-alpha11@sha256:fd26a91bfa3b4dacaf92bc6affa4f67bf21d71b04536d7a999653dfcad519606"
 
-        # No chart default ModelConfig. Every agent references a ModelConfig in git
-        # (base-apps/kagent/model-configs/), so `default-model-config` would only be an
-        # unreviewed model for UI-created agents. The chart renders it whenever `providers` is
-        # set and has no off switch; null removes the key.
-        providers: null
+        # The chart ALWAYS renders `default-model-config`: Argo drops a `null` value, so
+        # `providers: null` left the chart default in place (OpenAI gpt-4.1-mini, no key) on
+        # 2026-10-11. Point it at Anthropic Haiku 5.5 on the Vault-backed key instead, so the
+        # default for UI-created agents is a reviewed, working model. No agent in git uses it:
+        # they reference base-apps/kagent/model-configs/.
+        providers:
+          default: anthropic
+          anthropic:
+            provider: Anthropic
+            model: claude-haiku-5-5
+            apiKeySecretRef: kagent-anthropic
+            apiKeySecretKey: ANTHROPIC_API_KEY
 
         kmcp:
           image:
