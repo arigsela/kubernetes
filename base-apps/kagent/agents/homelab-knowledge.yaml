@@ -23,14 +23,15 @@ spec:
   description: Answers questions about the homelab GitOps repo, base-apps deployments, and live cluster state by delegating to k8s and helm specialists
   type: Declarative
   declarative:
-    # Sonnet (claude-sonnet-4-6 — sonnet-5 breaks kagent's python runtime, see
-    # the ModelConfig header; not the default haiku): this agent ingests k8s-agent/helm-agent
-    # live-state replies on top of its doc reads, so it needs the larger context
-    # headroom and more reliable tool-calling for the atlas→index→app traversal.
-    modelConfig: anthropic-claude-sonnet-4-6
+    # Sonnet 5.5 on the Go runtime (not the default haiku): this agent ingests
+    # k8s-reader's live-state replies on top of its doc reads, so it needs the
+    # context headroom and reliable tool-calling for the atlas→index→app traversal.
+    # Go, not python: the python runtime cannot replay a 5.x model's thinking
+    # blocks (see model-configs/anthropic-claude-sonnet-5-5.yaml, SPEC §T.94).
+    modelConfig: anthropic-claude-sonnet-5-5
     memory:
       modelConfig: embedding-model-config
-    runtime: python
+    runtime: go
     stream: true
     promptTemplate:
       dataSources:
