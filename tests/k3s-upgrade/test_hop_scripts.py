@@ -204,7 +204,7 @@ case "$a" in
   *"get mutatingadmissionpolicies -o json"*|*"get mutatingadmissionpolicybindings -o json"*)
                                                      echo '{"items": []}' ;;
   *"create --dry-run=server -f -"*)  cat >/dev/null; cat "$d/deny.out" ;;
-  *"get agents.kagent.dev"*)         cat "$d/agents.json" ;;
+  *"get agenttemplates.api.kagent.dev"*) [ -f "$d/agents.json" ] && cat "$d/agents.json" ;;
   *"replace --dry-run=server -f -"*) cat >/dev/null; cat "$d/replace.out" ;;
   *"run hop-verify-ecr"*)            cat "$d/ecr.out" ;;
   *) exit 0 ;;
@@ -234,25 +234,31 @@ def _run_admission_check(tmp_path, files):
     return [l.strip() for l in out.splitlines() if "§T.72" in l]
 
 
-AGENT = {"items": [{"metadata": {"name": "k8s-reader", "namespace": "kagent"}, "spec": {}}]}
+# kagent 1.0: the capability class (and so the delegation policy's parameter) is on the
+# AgentTemplate, api.kagent.dev/v1alpha3.
+AGENT = {"items": [{"apiVersion": "api.kagent.dev/v1alpha3", "kind": "AgentTemplate",
+                    "metadata": {"name": "k8s-reader", "namespace": "kagent",
+                                 "labels": {"capability.homelab/class": "read"}},
+                    "spec": {}}]}
+HEALTHY = {
+    "vaps.json": {"items": [_vap("agent-capability"), _vap("require-labels")]},
+    "vapbs.json": {"items": [{"spec": {"policyName": "agent-capability"}},
+                             {"spec": {"policyName": "require-labels"}}]},
+    "deny.out": "Error from server (Forbidden): ValidatingAdmissionPolicy "
+                "'agent-identity-no-monolithic-key' with binding "
+                "'agent-identity-no-monolithic-key' denied request: ...",
+    "agents.json": AGENT,
+    "replace.out": "agenttemplate.api.kagent.dev/k8s-reader replaced (server dry run)",
+    "ecr.out": "ecr-registry",
+}
 
 
 def test_admission_check_passes_a_healthy_cluster(tmp_path):
-    lines = _run_admission_check(tmp_path, {
-        "vaps.json": {"items": [_vap("agent-capability"), _vap("require-labels")]},
-        "vapbs.json": {"items": [{"spec": {"policyName": "agent-capability"}},
-                                 {"spec": {"policyName": "require-labels"}}]},
-        "deny.out": "Error from server (Forbidden): ValidatingAdmissionPolicy "
-                    "'agent-identity-no-monolithic-key' with binding "
-                    "'agent-identity-no-monolithic-key' denied request: ...",
-        "agents.json": AGENT,
-        "replace.out": "agent.kagent.dev/k8s-reader replaced (server dry run)",
-        "ecr.out": "ecr-registry",
-    })
+    lines = _run_admission_check(tmp_path, HEALTHY)
     fails = [l for l in lines if l.startswith("FAIL")]
     assert not fails, "\n".join(lines)
     for want in ("typeChecking clean", "every policy has a binding", "is DENIED",
-                 "delegation policy synced", "gets ecr-registry"):
+                 "delegation policy synced: a live AgentTemplate", "gets ecr-registry"):
         assert any(want in l and l.startswith("PASS") for l in lines), (want, lines)
 
 
@@ -263,14 +269,38 @@ def test_admission_check_catches_each_failure(tmp_path):
         "vapbs.json": {"items": [{"spec": {"policyName": "agent-capability"}}]},
         "deny.out": "externalsecret.external-secrets.io/hop-verify-deny-probe created (server dry run)",
         "agents.json": AGENT,
-        "replace.out": "The agents \"k8s-reader\" is invalid: failed to configure binding: "
-                       "paramKind kind Agent not yet synced to use for admission",
+        "replace.out": "The agenttemplates \"k8s-reader\" is invalid: failed to configure binding: "
+                       "paramKind kind AgentTemplate not yet synced to use for admission",
         "ecr.out": "",
     })
     text = "\n".join(lines)
     for want in ("typeChecking warnings: agent-capability", "WITHOUT a binding (inactive): orphan-policy",
                  "ADMITTED", "still not synced after 2 tries", "got no ecr-registry"):
         assert any(want in l and l.startswith("FAIL") for l in lines), (want, text)
+
+
+@pytest.mark.parametrize("answer", [None, {"items": []}, "not json"],
+                         ids=["no-output", "no-items", "garbage"])
+def test_admission_check_fails_on_an_empty_agent_template_answer(tmp_path, answer):
+    """§V.74: an empty API answer must FAIL, not pass and not be a note. No read/write
+    AgentTemplate means a wrong resource name, a missing CRD (e.g. still probing the 0.10
+    agents.kagent.dev) or a failed call, and the delegation policy goes unprobed."""
+    files = dict(HEALTHY)
+    files.pop("agents.json")
+    if answer is not None:
+        files["agents.json"] = answer
+    lines = _run_admission_check(tmp_path, files)
+    assert any("AgentTemplate found (empty API answer)" in l and l.startswith("FAIL")
+               for l in lines), "\n".join(lines)
+    assert not any("delegation policy synced" in l for l in lines), "\n".join(lines)
+
+
+def test_hop_verify_probes_the_v1alpha3_agent_template():
+    """The probe must ask for the resource that carries the class label in kagent 1.0. The
+    0.10 agents.kagent.dev would answer empty after the cutover."""
+    t = HOP_VERIFY.read_text()
+    assert "agenttemplates.api.kagent.dev" in t
+    assert "agents.kagent.dev" not in t
 
 
 # --- §T.28 / §V.35 ------------------------------------------------------------------
