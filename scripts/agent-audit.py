@@ -206,6 +206,18 @@ def load_gated_tools(repo_root: Path, taxonomy_path: Path | None = None) -> set[
 # --------------------------------------------------------------- extraction
 
 
+def _either(node: dict, snake: str, camel: str):
+    """A key as the Python ADK writes it (snake_case) or the Go ADK (camelCase).
+
+    kagent 0.10's Python runtime stores event.model_dump_json(); its Go runtime
+    (`runtime: go`, every agent since 2026-10-11) stores json.Marshal(event), and
+    genai's Go types tag their fields in camelCase. Both land in the same `event`
+    table, so a walker that knows only one spelling is blind to the other runtime.
+    """
+    value = node.get(snake)
+    return value if value is not None else node.get(camel)
+
+
 def iter_calls(event_rows):
     """Yield one redacted record per tool invocation.
 
@@ -221,23 +233,24 @@ def iter_calls(event_rows):
 
         def walk(node):
             if isinstance(node, dict):
-                fc = node.get("function_call")
+                fc = _either(node, "function_call", "functionCall")
                 if isinstance(fc, dict) and fc.get("name"):
                     found.append({
                         "kind": "call",
                         "tool": fc["name"],
                         "args": redact_args(fc.get("args")),
                     })
-                fr = node.get("function_response")
+                fr = _either(node, "function_response", "functionResponse")
                 if isinstance(fr, dict) and fr.get("name"):
                     found.append({
                         "kind": "response",
                         "tool": fr["name"],
                         "response": summarize_response(fr.get("response")),
                     })
-                um = node.get("usage_metadata")
-                if isinstance(um, dict) and um.get("total_token_count"):
-                    found.append({"kind": "usage", "tokens": um["total_token_count"]})
+                um = _either(node, "usage_metadata", "usageMetadata")
+                tokens = _either(um, "total_token_count", "totalTokenCount") if isinstance(um, dict) else None
+                if tokens:
+                    found.append({"kind": "usage", "tokens": tokens})
                 for v in node.values():
                     walk(v)
             elif isinstance(node, list):
