@@ -6,7 +6,7 @@ app: postgresql
 catalog_entity: postgresql
 kind: runbook
 namespace: postgresql
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-11
 status: stable
 tags: [database, stateful, pgvector, cnpg]
 sources:
@@ -14,6 +14,12 @@ sources:
   - base-apps/postgresql/external-secrets.yaml
   - base-apps/postgresql/external-secrets-kagent.yaml
   - base-apps/postgresql/init-kagent-db.yaml
+  - base-apps/postgresql/external-secrets-kagent-v1.yaml
+  - base-apps/postgresql/init-kagent-v1-db.yaml
+  - base-apps/postgresql/external-secrets-substrate.yaml
+  - base-apps/postgresql/init-substrate-db.yaml
+  - base-apps/postgresql/init-kagent-audit-role.yaml
+  - scripts/provision-kagent-1-0-vault.sh
   - base-apps/postgresql/pvc.yaml
   - base-apps/postgresql/cnpg-cluster.yaml
   - base-apps/postgresql/cnpg-scheduled-backup.yaml
@@ -34,24 +40,33 @@ sources:
 - **Check:** `kubectl -n postgresql get externalsecret postgresql-credentials` (look at `STATUS`/`READY`) and `kubectl -n postgresql get secret postgresql-credentials`; then `kubectl -n postgresql describe pod -l app=postgresql` for the exact `CreateContainerConfigError` reason.
 - **Fix:** if Vault itself is sealed/down, that's the `vault` app's runbook, not this one. If Vault is healthy but this namespace's `ExternalSecret` still fails, the `SecretStore`'s `auth.kubernetes.role: postgresql` (`secret-store.yaml`) likely doesn't match the Vault role/policy for this namespace — open a PR correcting the role name or Vault-side policy binding.
 
-### Symptom: `init-kagent-db` Job fails / hits `BackoffLimitExceeded`, kagent has no database
-`init-kagent-db.yaml` runs once to create the `kagent` role/database and enable `pgvector`, using both `postgresql-credentials` (root user) and `kagent-db-credentials` (from `external-secrets-kagent.yaml`, Vault key `kagent-db` via SecretStore `vault-kagent-db`). It loops on `pg_isready` before creating anything, but if either Secret is missing/stale when the Job's `backoffLimit: 5` is exhausted, or the root user's password rotated in Vault without the pod restarting, the SQL step fails.
-- **Check:** `kubectl -n postgresql get job init-kagent-db` and `kubectl -n postgresql logs job/init-kagent-db --all-containers`; also confirm both `kubectl -n postgresql get secret postgresql-credentials kagent-db-credentials` exist.
-- **Fix:** the `init-*` Jobs are Argo CD **Sync hooks** (deleted on success), not desired-state resources, so `selfHeal` does not recreate them: once both Secrets are present and valid, trigger a sync of the `postgresql` app (Argo CD UI "Sync") and every init hook re-runs - they are all idempotent. If the recurring cause is a race between Secret sync and Job start, open a PR adding an explicit wait/retry or an `initContainer` check against the Secrets.
+### Symptom: an `init-*` database Job fails / hits `BackoffLimitExceeded`, kagent or Substrate has no database
+Three Jobs create databases on the plain instance, each with the root user from `postgresql-credentials` plus its own credential Secret:
+
+| Job | Creates | Credential Secret (Vault key) |
+|---|---|---|
+| `init-kagent-v1-db` | `kagent_v1`, role `kagent_owner`, schema `kagent`, pgvector in `extensions` (kagent 1.0) | `kagent-v1-db-credentials` (`kagent-db`, `v1-*`) |
+| `init-substrate-db` | `substrate`, its roles and schema (Agent Substrate) | `substrate-db-credentials` (`substrate-db`) |
+| `init-kagent-db` | the `kagent` owner role, and the database only if missing (the 0.10 archive) | `kagent-db-credentials` (`kagent-db`) |
+
+They loop on `pg_isready` first. They fail when a Secret is missing or stale, when the root password rotated in Vault without the pod restarting, or (`init-kagent-v1-db`, `init-substrate-db`) when a role or schema already exists with the wrong attributes or owner: those two refuse to bend an existing object and say so. Both also have `activeDeadlineSeconds: 900`, so Vault properties that were never provisioned fail the sync visibly instead of hanging it.
+- **Check:** `kubectl -n postgresql get jobs` and `kubectl -n postgresql logs job/<name> --all-containers`; confirm the Secrets exist (`kubectl -n postgresql get externalsecret`).
+- **Fix:** the `init-*` Jobs are Argo CD **Sync hooks** (deleted on success), not desired-state resources, so `selfHeal` does not recreate them: once the Secrets are present and valid, trigger a sync of the `postgresql` app (Argo CD UI "Sync") and every init hook re-runs; they are all idempotent. Missing Vault properties: `scripts/provision-kagent-1-0-vault.sh` writes `kagent-db` `v1-*` and `substrate-db`. A conflicting role or schema: read the Job's message and fix the object by hand, or drop and recreate the database if it is disposable (see the kagent runbook's alpha-bump procedure). Then restart the consumer (`kagent-controller` or Substrate's `ate-api-server`); both read their connection string once, at startup.
+- **Expected noise, not a failure:** `init-kagent-db` and the two audit-role Jobs log `cannot execute … in a read-only transaction` for the `kagent` archive (read-only since 2026-10-11). psql runs without `ON_ERROR_STOP`, so the Jobs still succeed and the archive's existing grants stand.
 
 ### Symptom: a merged change to an `init-*` Job's SQL has no effect
-The init Jobs (`init-kagent-db`, `init-kagent-audit-role`, `init-agent-audit-web-role`) are Sync hooks, and hooks are not part of Argo CD's desired-state diff: a PR that changes **only** hook Jobs leaves the app `Synced` at the new revision without running a sync, so the new SQL never executes (seen 2026-09-27 with the audit roles' default-privileges fix).
+The init Jobs (`init-kagent-v1-db`, `init-substrate-db`, `init-kagent-db`, `init-kagent-audit-role`, `init-agent-audit-web-role`) are Sync hooks, and hooks are not part of Argo CD's desired-state diff: a PR that changes **only** hook Jobs leaves the app `Synced` at the new revision without running a sync, so the new SQL never executes (seen 2026-09-27 with the audit roles' default-privileges fix).
 - **Check:** `kubectl -n argo-cd get application postgresql -o jsonpath='{.status.operationState.startedAt}'` is older than the merge.
-- **Fix:** trigger one sync of the `postgresql` app (Argo CD UI "Sync"); every init hook re-runs, idempotently. Then verify the effect (e.g. `SELECT pg_get_userbyid(defaclrole), defaclacl FROM pg_default_acl;` in database `kagent`).
+- **Fix:** trigger one sync of the `postgresql` app (Argo CD UI "Sync"); every init hook re-runs, idempotently. Then verify the effect (e.g. `SELECT pg_get_userbyid(defaclrole), defaclacl FROM pg_default_acl;` in database `kagent_v1`).
 
 ### Symptom: plain `postgresql` pod stuck `Pending` after a node failure/drain
-Storage is a single `local-path` `PersistentVolumeClaim` (`pvc.yaml`, `10Gi`, `ReadWriteOnce`), which `local-path-provisioner` binds to whichever node first created it. The `Deployment` also has `nodeSelector: node.kubernetes.io/workload: application` (`deployments.yaml`). There is no StatefulSet, replica, or backup, so this is a single point of failure for every database on the instance (root DB, `kagent`, and the other consumers listed in docs.md). This entry is about the plain Deployment, not the CNPG cluster.
+Storage is a single `local-path` `PersistentVolumeClaim` (`pvc.yaml`, `10Gi`, `ReadWriteOnce`), which `local-path-provisioner` binds to whichever node first created it. The `Deployment` also has `nodeSelector: node.kubernetes.io/workload: application` (`deployments.yaml`). There is no StatefulSet, replica, or backup, so this is a single point of failure for every database on the instance (root DB, `kagent_v1`, `substrate`, the `kagent` archive, and the other consumers listed in docs.md). While it is down, every kagent agent is down too. This entry is about the plain Deployment, not the CNPG cluster.
 - **Check:** `kubectl -n postgresql get pod -l app=postgresql -o wide` (look for `Pending`/`ContainerCreating` and the assigned node) and `kubectl -n postgresql get pvc postgresql-pvc -o wide` to see which node the underlying `local-path` volume lives on.
 - **Fix:** if the original node is truly gone, the local-path volume's data is gone with it — there is no cross-node replica to fail over to. Recovery means recreating `postgresql-pvc` from whatever external backup exists (none is defined in this directory) and restoring dumps manually; longer term, open a PR to add a periodic `pg_dump` CronJob or move to a replicated/operator-managed Postgres if this instance's availability requirements have grown.
 
 ### Symptom: `agent-audit-ungated` Job failed
 Expected behaviour when there are open findings: the Job exits non-zero if a write/destructive tool ran in a session with no approval request and the call isn't acknowledged in `scripts/agent-audit-acknowledged.yaml`. The Grafana alert "Agent invoked a gated tool with NO approval" fires from the same summary line.
-- **Check:** `kubectl -n postgresql logs -l app=agent-audit` shows the summary JSON (counts, agents, tools; never arguments; `acknowledged_invocations` is the triaged calls it left out). To see the arguments, run `scripts/agent-audit.py --ungated` yourself against `kagent` with the SELECT-only `kagent-audit-credentials` (the script prints the port-forward recipe). Rows marked `ack` are already triaged; the unmarked ones are new.
+- **Check:** `kubectl -n postgresql logs -l app=agent-audit` shows the summary JSON (counts, agents, tools; never arguments; `acknowledged_invocations` is the triaged calls it left out). To see the arguments, run `scripts/agent-audit.py --ungated` yourself against `kagent_v1` with the SELECT-only `kagent-audit-credentials` (the script prints the port-forward recipe; `--source v010` with Secret key `audit-database` reads the 0.10 archive). A summary line with `problems` set is not a finding: the audit could not read the record (often a new event shape after a kagent bump; see `scripts/agent-audit.py`, "kagent 1.0: the record"). Rows marked `ack` are already triaged; the unmarked ones are new.
 - **Fix:** a real finding means an agent's `requireApproval` is missing or being stripped, so fix it in the agent's manifest. Once it is fixed, acknowledge the session in `scripts/agent-audit-acknowledged.yaml` (session, agent, `through` = the `at` of its last call from `--ungated --format json`, and a reason naming the fix) and re-run `scripts/gen-agent-audit-cronjob.py`. If the session is already listed (a resumed session), don't add a second entry, which is rejected as a duplicate: move that entry's `through` forward to the new last call instead. Don't acknowledge a finding that hasn't been fixed: the alert would go quiet while the gate is still open. A connection or credential error is the `kagent-audit-credentials` ExternalSecret or the `kagent_audit_ro` role (re-run the Sync hooks). To change the CronJobs, edit `scripts/agent-audit.py` or the generator and re-run `scripts/gen-agent-audit-cronjob.py`. Never hand-edit `agent-audit-cronjob.yaml`.
 
 ### Provision the agent-audit-risk Vault credential (once)

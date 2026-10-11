@@ -36,13 +36,14 @@ sources:
   `kubectl delete validatingadmissionpolicybinding <name>`. That disables the policy at once,
   and Argo re-creates it at the next sync, so fix git first.
 
-### Symptom: an Agent write is denied with `failed to configure binding: paramKind ... not yet synced`
+### Symptom: an AgentTemplate write is denied with `failed to configure binding: paramKind ... not yet synced`
 - `agent-capability-delegation` could not evaluate yet: the API server has not synced its
-  Agent informer, which happens for a few seconds after the policy is (re)created and after
-  every API-server restart (k3s restart, upgrade). With `failurePolicy: Fail` that denies.
-- **Fix:** retry (Argo does on its own). If it persists beyond a minute, check the API server
-  is healthy (`kubectl get --raw /readyz`) and the Agent CRD is served
-  (`kubectl get agents -A`).
+  AgentTemplate informer (the policy's param kind since kagent 1.0), which happens for a few
+  seconds after the policy is (re)created and after every API-server restart (k3s restart,
+  upgrade). With `failurePolicy: Fail` that denies read/write-class templates.
+- **Fix:** retry (Argo does on its own; `scripts/hop-verify.sh` rides it out). If it persists
+  beyond a minute, check the API server is healthy (`kubectl get --raw /readyz`) and the CRD is
+  served (`kubectl get agenttemplates.api.kagent.dev -A`).
 
 ### Symptom: `Warning: Validation failed for ValidatingAdmissionPolicy '<name>'` on apply
 - A policy in **shadow** (`[Warn, Audit]`) flagged the object. Nothing was blocked. Once it
@@ -74,17 +75,18 @@ sources:
 - **Emergency:** `kubectl delete mutatingadmissionpolicybinding <name>`, then fix git (Argo
   re-creates the binding at the next sync).
 
-### Symptom: PolicyReports have no results for Agents (agent-capability, agent-identity-mcp-toolnames)
+### Symptom: PolicyReports have no results for kagent objects (agent-capability, agent-capability-refs, agent-capability-runtime, agent-identity-mcp-toolnames)
 - Kyverno's reports controller evaluates the agent policies in the background, so it must
-  list and watch `kagent.dev` Agents. That access comes only from the
-  `kyverno:read-kagent-agents` ClusterRole in `kyverno-reports-rbac.yaml`, which aggregates
-  into the reports controller via the `rbac.kyverno.io/aggregate-to-reports-controller: "true"`
-  label. Without it the controller reports nothing for Agents; admission is unaffected (the
-  API server evaluates the policies itself).
+  list and watch kagent 1.0's `api.kagent.dev` `agenttemplates`, `agents` and `harnesses`.
+  That access comes only from the `kyverno:read-kagent-agents` ClusterRole in
+  `kyverno-reports-rbac.yaml`, which aggregates into the reports controller via the
+  `rbac.kyverno.io/aggregate-to-reports-controller: "true"` label. Without it the controller
+  reports nothing for them; admission is unaffected (the API server evaluates the policies
+  itself).
 - **Check:** `kubectl get clusterrole kyverno:read-kagent-agents`, and
-  `kubectl auth can-i list agents.kagent.dev --as=system:serviceaccount:kyverno:kyverno-reports-controller`.
+  `kubectl auth can-i list agenttemplates.api.kagent.dev --as=system:serviceaccount:kyverno:kyverno-reports-controller`.
   The controller's log names the missing permission (`requires permissions get,list,watch for
-  resource kagent.dev/v1alpha2/Agent`).
+  resource …`).
 - **Also check** the policy carries `reports.kyverno.io/enabled: "true"` (docs.md,
   "Reporting"). `agent-capability-delegation` deliberately does not, so it never appears.
 

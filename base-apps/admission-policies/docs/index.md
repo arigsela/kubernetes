@@ -34,8 +34,8 @@ Admission rules that run **inside the Kubernetes API server**, as CEL expression
 replaced every Kyverno ClusterPolicy (docs/plans/k8s-136-features-implementation-plan.md,
 Phase 3); the `kyverno-policies` app is retired. This app also holds the capability taxonomy
 ConfigMap (`agent-capability-taxonomy.yaml`, source for the generated `agent-capability.yaml`)
-and `kyverno-reports-rbac.yaml`, the Agent read access Kyverno's reports controller needs to
-report on these policies.
+and `kyverno-reports-rbac.yaml`, the read access to kagent's `api.kagent.dev` objects that
+Kyverno's reports controller needs to report on these policies.
 
 Why: Kyverno enforces through an admission **webhook** served by a single pod, and runs with
 `forceFailurePolicyIgnore=true`. So whenever that pod is down or slow, its "Enforce" policies
@@ -70,24 +70,33 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
 - `agent-identity.yaml`: the agent identity contract (templates/agent-identity/README.md), as
   three policies: `agent-identity-scoped-store` (no `vault-backend` SecretStore in `kagent`),
   `agent-identity-no-monolithic-key` (nothing reads the destroyed Vault key `kagent`, cluster
-  wide), `agent-identity-mcp-toolnames` (McpServer tool refs must list `toolNames`).
+  wide), `agent-identity-mcp-toolnames` (every MCP binding of a kagent 1.0 `AgentTemplate`,
+  `api.kagent.dev/v1alpha3`, must list its `tools`; an empty list is a bind-all).
   **Enforcing** (`[Deny]`, `failurePolicy: Fail`); the Kyverno ClusterPolicy it replaced is
   deleted. Compared with the Kyverno version it also covers per-item `sourceRef.storeRef` and
   `dataFrom[].extract`, which the Kyverno rules missed.
 - `agent-capability.yaml` is **generated** by `scripts/gen-agent-capability-policy.py` from
   `base-apps/admission-policies/agent-capability-taxonomy.yaml`. That is the same script and
   taxonomy that generated the Kyverno version (now deleted); CI runs it with
-  `--check`. It holds two policies:
-  - `agent-capability` (rules 1-5): declared class, every bound tool classified, the class
-    permits the tools, and mutating tools sit behind `requireApproval`.
-  - `agent-capability-delegation` (rules 6-7): no delegating to a higher class. The policy
-    uses the **Agent kind as its parameter** with `paramRef.selector: {}`, so the API server
-    evaluates it once per Agent in the request's namespace, each one a potential delegate. A
-    delegate whose class label is missing or not read/write counts as admin.
+  `--check`. Since the kagent 1.0 cutover (2026-10-11) it matches `api.kagent.dev/v1alpha3` and
+  holds four policies:
+  - `agent-capability` (rules 1-5, on `AgentTemplate`s, where the class label lives): declared
+    class, every bound tool classified, the class permits the tools, and a write/destructive
+    tool sits in an MCP binding with `requireApproval: true` (approval is per binding in 1.0).
+  - `agent-capability-delegation` (rules 6-7): no `subAgent` of a higher class. The policy uses
+    the **AgentTemplate kind as its parameter** with `paramRef.selector: {}`, so the API server
+    evaluates it once per AgentTemplate in the request's namespace, each one a potential
+    sub-agent. A sub-agent template whose class label is missing or not read/write counts as
+    admin.
+  - `agent-capability-refs` (rule 8): an `Agent` must reference a template and a Harness
+    (`templateRef`/`harnessRef`); an inline `spec.template` or `spec.harness` would bypass the
+    other checks.
+  - `agent-capability-runtime` (rule 9): a `Harness` must use the `kagent` runtime on an image
+    from the taxonomy's `runtime-images` list; rules 1-7 are enforced inside that runtime.
 
-  **Enforcing** (`[Deny]`, `failurePolicy: Fail`); the Kyverno ClusterPolicy is deleted. Both
-  agent files ran in shadow first, and before the flip every live Agent and ExternalSecret was
-  replayed against the enforcing policies (with the real CRDs) and admitted.
+  **Enforcing** (`[Deny]`, `failurePolicy: Fail`); the Kyverno ClusterPolicy is deleted. The
+  0.10 versions ran in shadow first and were replayed against every live object before the
+  flip; the v1alpha3 versions shipped in the same sync as the new CRDs (SPEC §V.84).
 - Five **audit-only** workload-hygiene policies, one file each. They are `[Warn, Audit]` and
   `failurePolicy: Ignore` **permanently**; they report, never block:
   - `disallow-latest-tag` flags an image with no tag or `:latest` (a digest counts as pinned).
@@ -112,8 +121,9 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   verified live before being widened. It is the only mechanism: Kyverno's
   `inject-ecr-pull-secret` ClusterPolicy has been deleted.
 - Tests: `tests/admission-policies/` boots a real k3s of the cluster's version in Docker,
-  creates the cluster's real Agents (`base-apps/kagent/agents/`: the delegation policy's
-  parameters, and each must also re-apply with zero warnings), and server-side dry-runs
+  installs the kagent CRDs from `fixtures/crds/`, creates the cluster's real kagent objects
+  (every AgentTemplate, Harness and Agent in `base-apps/kagent/`: the AgentTemplates are the
+  delegation policy's parameters, and each must also re-apply with zero warnings), and server-side dry-runs
   `fixtures/<suite>/good/*.yaml` (must pass clean against EVERY policy) and
   `fixtures/<suite>/bad/<policy>/*.yaml` (must be flagged by that policy). Mutation fixtures,
   `fixtures/<suite>/mutate/<policy>/*.yaml`, are created as **real Pods**, and their admitted
@@ -145,12 +155,13 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   mutate fixtures (real pods) and the panic check test it.
 - **A parameterised policy denies until its param informer syncs.** After
   `agent-capability-delegation` is created, and after every **API-server restart** (k3s restart
-  or upgrade), the API server needs a moment to sync its informer for the param kind (Agent).
-  Until then the policy cannot evaluate, and with `failurePolicy: Fail` it **denies**
-  read/write-class Agent writes: `failed to configure binding: paramKind ... not yet synced to
-  use for admission`. Seconds, self-healing; an Argo sync in that window fails once and
-  retries. Admin-class Agents are not matched, and nothing else is affected. The harness waits
-  it out before creating Agents (it once failed a whole CI run).
+  or upgrade), the API server needs a moment to sync its informer for the param kind
+  (AgentTemplate since kagent 1.0). Until then the policy cannot evaluate, and with
+  `failurePolicy: Fail` it **denies** read/write-class AgentTemplate writes: `failed to configure
+  binding: paramKind ... not yet synced to use for admission`. Seconds, self-healing; an Argo
+  sync in that window fails once and retries. Admin-class templates are not matched, and nothing
+  else is affected. The harness waits it out before creating the kagent objects (it once failed
+  a whole CI run).
 - **The harness uses minimal typed CRDs** (`fixtures/crds/`), copied from the real schemas for
   the paths the policies read. A policy reading a new field needs that field added there, or
   type checking fails with `undefined field`.
