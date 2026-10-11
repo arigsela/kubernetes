@@ -42,11 +42,9 @@ locals {
 
   # Repositories on their way out (step 1 above). Same settings as before the
   # move, so the only change is force_delete.
-  ecr_repositories_retiring = {
-    # The LangGraph BYO kagent agent, retired 2026-10-11 (kagent 1.0 plan,
-    # Task 5.2): kagent-langgraph does not implement kagent 1.0's BYO contract.
-    "homelab-agent" = { image_tag_mutability = "MUTABLE", scan_on_push = true }
-  }
+  # Empty between retirements. homelab-agent went through both steps on
+  # 2026-10-11 (kagent 1.0 plan, Task 5.2).
+  ecr_repositories_retiring = {}
 }
 
 resource "aws_ecr_repository" "this" {
@@ -85,11 +83,6 @@ resource "aws_ecr_repository" "retiring" {
   encryption_configuration {
     encryption_type = "AES256"
   }
-}
-
-moved {
-  from = aws_ecr_repository.this["homelab-agent"]
-  to   = aws_ecr_repository.retiring["homelab-agent"]
 }
 
 # Every repository keeps its two newest tagged images and nothing else.
