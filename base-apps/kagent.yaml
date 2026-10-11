@@ -43,12 +43,15 @@ spec:
               mountPath: /etc/kagent/secrets
               readOnly: true
 
-        # LLM provider: use Anthropic with existing secret
+        # LLM provider: use Anthropic with existing secret. Generates the chart's
+        # default-model-config. No agent in git uses it any more (they reference
+        # model-configs/anthropic-claude-*-5-5.yaml); it stays as the chart default
+        # for UI-created agents, which ! pick runtime: go for a 5.x model (SPEC §T.94).
         providers:
           default: anthropic
           anthropic:
             provider: Anthropic
-            model: claude-haiku-4-5-20251001
+            model: claude-haiku-5-5
             apiKeySecretRef: kagent-anthropic
             apiKeySecretKey: ANTHROPIC_API_KEY
 

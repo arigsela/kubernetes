@@ -22,15 +22,15 @@ spec:
     expert in the book dungeon crawler carl
   type: Declarative
   declarative:
-    modelConfig: default-model-config
+    modelConfig: anthropic-claude-haiku-5-5
     memory:
       modelConfig: embedding-model-config
-    runtime: python
+    # Go, not python: the python runtime cannot replay a 5.x model's thinking blocks
+    # (model-configs/anthropic-claude-haiku-5-5.yaml, SPEC §T.94).
+    runtime: go
     stream: true
-    context:
-      compaction:
-        compactionInterval: 5
-        overlapSize: 2
+    # No context.compaction: the Go runtime ignores it (kagent-dev/kagent#2728).
+    # kagent 1.0 moves compaction to the Harness, where Go supports it (SPEC §T.97).
     systemMessage: |
       you are an expert in dungeon crawler carl book, its characters and its story/plot.
 
