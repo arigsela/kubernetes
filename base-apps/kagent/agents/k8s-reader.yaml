@@ -39,9 +39,10 @@ spec:
   description: A read-only Kubernetes investigator. Inspects cluster state, events and
     logs to diagnose problems. Cannot create, modify, or delete anything.
   declarative:
-    modelConfig: default-model-config
-    # Pinned: kagent 0.10 changed the CRD default runtime from python to go.
-    runtime: python
+    # Haiku 5.5 on the Go runtime: the python runtime cannot replay a 5.x model's
+    # thinking blocks (see model-configs/anthropic-claude-haiku-5-5.yaml).
+    modelConfig: anthropic-claude-haiku-5-5
+    runtime: go
     a2aConfig:
       skills:
       - id: cluster-inspection
