@@ -57,11 +57,16 @@ def test_api_scan_clean(target, directory):
 def test_the_1_37_target_catches_a_planted_removal():
     """The 1.37 target must not be vacuous: a scheduling.k8s.io/v1alpha2 object (dropped in 1.37,
     kubernetes#138572) has to be reported. The planted dir lives under $HOME because colima only
-    shares $HOME with its VM; a /tmp mount would be silently empty and the scan would pass."""
+    shares $HOME with its VM, and it is world-readable because pluto runs as non-root: in both
+    failure modes pluto sees nothing and reports the scan clean."""
     planted = Path(tempfile.mkdtemp(dir=Path.home()))
     try:
-        (planted / "workload.yaml").write_text(
+        # mkdtemp is 0700 and pluto runs as a non-root user: an unreadable dir also scans "clean".
+        planted.chmod(0o755)
+        manifest = planted / "workload.yaml"
+        manifest.write_text(
             "apiVersion: scheduling.k8s.io/v1alpha2\nkind: Workload\nmetadata:\n  name: planted\n")
+        manifest.chmod(0o644)
         result = pluto_scan(planted, "v1.37.0")
     finally:
         shutil.rmtree(planted)
