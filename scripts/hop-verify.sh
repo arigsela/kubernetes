@@ -330,10 +330,14 @@ print(" ".join(unbound))' || true)
     *) bad "§T.72 enforcement probe inconclusive: $(printf '%s' "$out" | head -1 | cut -c1-140)" ;;
   esac
   # 4. the parameterised policy (agent-capability-delegation) DENIES until the API server has
-  #    synced its Agent informer, i.e. for a few seconds after every API-server restart. Re-apply
-  #    a real read/write Agent, riding out only that window (docs.md gotcha, runbook).
+  #    synced its AgentTemplate informer, i.e. for a few seconds after every API-server restart.
+  #    Re-apply a real read/write AgentTemplate (kagent 1.0, api.kagent.dev/v1alpha3: the
+  #    capability class lives on the template), riding out only that window (docs.md gotcha,
+  #    runbook). An EMPTY answer FAILS (§V.74): the cluster always has read templates
+  #    (homelab-knowledge, k8s-reader), so none means a wrong resource name, a missing CRD or a
+  #    failed API call, and the policy would go unprobed while the gate read green.
   local agent tries=0
-  agent=$(kubectl get agents.kagent.dev -A -l 'capability.homelab/class in (read,write)' -o json 2>/dev/null | python3 -c '
+  agent=$(kubectl get agenttemplates.api.kagent.dev -A -l 'capability.homelab/class in (read,write)' -o json 2>/dev/null | python3 -c '
 import sys, json
 try: items = json.load(sys.stdin)["items"]
 except Exception: items = []
@@ -343,7 +347,7 @@ if items:
         o["metadata"].pop(k, None)
     print(json.dumps(o))' || true)
   if [ -z "$agent" ]; then
-    note "§T.72 no read/write Agent to probe the delegation policy with"
+    bad "§T.72 no read/write AgentTemplate found (empty API answer): the delegation policy was NOT probed"
   else
     while :; do
       out=$(printf '%s' "$agent" | kubectl replace --dry-run=server -f - 2>&1 || true)
@@ -352,9 +356,9 @@ if items:
       sleep "${HOP_VERIFY_SYNC_SLEEP:-2}"
     done
     case "$out" in
-      *"not yet synced"*) bad "§T.72 delegation policy still not synced after ${tries} tries: Agent writes are being DENIED" ;;
-      *denied*|*forbidden*|*rror*) bad "§T.72 a live Agent is DENIED on update: $(printf '%s' "$out" | head -1 | cut -c1-140)" ;;
-      *) ok "§T.72 delegation policy synced: a live Agent updates cleanly (after $tries retries)" ;;
+      *"not yet synced"*) bad "§T.72 delegation policy still not synced after ${tries} tries: AgentTemplate writes are being DENIED" ;;
+      *denied*|*forbidden*|*rror*) bad "§T.72 a live AgentTemplate is DENIED on update: $(printf '%s' "$out" | head -1 | cut -c1-140)" ;;
+      *) ok "§T.72 delegation policy synced: a live AgentTemplate updates cleanly (after $tries retries)" ;;
     esac
   fi
   # 5. the ECR pull-secret mutation still mutates
