@@ -181,6 +181,62 @@ def test_approval_in_one_session_does_not_excuse_another():
     assert out[0]["session"] == "s2"
 
 
+# -------------------------- kagent 0.10's Go runtime writes camelCase event JSON
+#
+# Since 2026-10-11 every agent runs `runtime: go` on kagent 0.10.3, whose session
+# service stores json.Marshal(*adk session.Event). genai's Go types tag their fields
+# in camelCase (functionCall, functionResponse, usageMetadata/totalTokenCount); the
+# Python runtime wrote snake_case. These three lines are what that Go code emits
+# (generated with google.golang.org/adk/v2 session.Event + encoding/json).
+
+GO_EVENTS = [
+    '{"content":{"parts":[{"functionCall":{"id":"toolu_go_exec","args":{"command":"vault status",'
+    '"namespace":"vault","pod_name":"vault-0"},"name":"k8s_execute_command"}}],"role":"model"},'
+    '"usageMetadata":{"candidatesTokenCount":2,"promptTokenCount":40,"totalTokenCount":42},"id":"ev-1",'
+    '"timestamp":"2026-10-11T18:40:00Z","invocationId":"e-1","author":"k8s_agent","actions":{}}',
+    '{"content":{"parts":[{"functionResponse":{"id":"toolu_go_exec","name":"k8s_execute_command",'
+    '"response":{"error":"error tool \\"k8s_execute_command\\" requires confirmation, please approve or reject"}}}],'
+    '"role":"user"},"id":"ev-2","timestamp":"2026-10-11T18:40:00Z","invocationId":"e-1","author":"k8s_agent","actions":{}}',
+    '{"content":{"parts":[{"functionCall":{"id":"adk-confirm-1","args":{"originalFunctionCall":{"id":"toolu_go_exec",'
+    '"args":{"command":"vault status","namespace":"vault","pod_name":"vault-0"},"name":"k8s_execute_command"},'
+    '"toolConfirmation":{"hint":"approve?","confirmed":false,"payload":null}},"name":"adk_request_confirmation"}}],'
+    '"role":"model"},"id":"ev-3","timestamp":"2026-10-11T18:40:00Z","invocationId":"e-1","author":"k8s_agent",'
+    '"actions":{},"longRunningToolIds":["adk-confirm-1"]}',
+]
+
+
+def _go_rows(lines, session="s-go"):
+    at = datetime(2026, 10, 11, 18, 40, tzinfo=timezone.utc)
+    return [(at, "kagent__NS__k8s_agent", session, line) for line in lines]
+
+
+def test_go_runtime_tool_calls_are_seen():
+    """The walker that only knew `function_call` saw none of these."""
+    records = {r["kind"]: r for r in aa.iter_calls(_go_rows(GO_EVENTS[:1]))}
+    assert set(records) == {"call", "usage"}
+    assert records["call"]["tool"] == "k8s_execute_command"
+    assert records["call"]["args"]["command"] == "vault status"
+    assert records["usage"]["tokens"] == 42
+
+
+def test_go_runtime_response_is_summarised_never_emitted():
+    records = list(aa.iter_calls(_go_rows(GO_EVENTS[1:2])))
+    assert records == [{**records[0], "kind": "response", "tool": "k8s_execute_command"}]
+    assert set(records[0]["response"]) == {"present", "bytes", "sha256_12"}
+    assert "requires confirmation" not in json.dumps(records)
+
+
+def test_go_runtime_ungated_call_is_a_finding():
+    records = list(aa.iter_calls(_go_rows(GO_EVENTS[:1])))
+    assert len(aa.report_ungated(records, gated={"k8s_execute_command"})) == 1
+
+
+def test_go_runtime_confirmation_request_gates_the_session():
+    records = list(aa.iter_calls(_go_rows(GO_EVENTS)))
+    assert any(r["kind"] == "call" and r["tool"] == aa.CONFIRM_TOOL for r in records)
+    assert aa.report_ungated(records, gated={"k8s_execute_command"}) == []
+
+
 # ------------------------------------------------- taxonomy is the one source
 
 def test_gated_tools_come_from_the_capability_taxonomy():
