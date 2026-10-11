@@ -13,7 +13,8 @@ sources:
   - base-apps/kagent.yaml
   - base-apps/kagent-secrets.yaml
   - base-apps/kagent/embedding-model-config.yaml
-  - base-apps/kagent/model-configs/anthropic-claude-sonnet-4-6.yaml
+  - base-apps/kagent/model-configs/anthropic-claude-sonnet-5-5.yaml
+  - base-apps/kagent/model-configs/anthropic-claude-haiku-5-5.yaml
   - base-apps/kagent/agents/homelab-knowledge.yaml
   - base-apps/kagent/agents/k8s-reader.yaml
   - base-apps/kagent/agents/homelab-agent.yaml
@@ -35,7 +36,7 @@ sources:
 
 ### Symptom: an `Agent` is not `Ready` (chat/A2A calls fail)
 - **Check:** `kubectl -n kagent get agents` for the `Ready` column, then `kubectl -n kagent describe agent <name>` for the condition/reason. Also confirm the `ModelConfig` it references exists: `kubectl -n kagent get modelconfigs` — every Declarative agent sets `spec.declarative.modelConfig` (`anthropic-claude-sonnet-5-5` or `anthropic-claude-haiku-5-5`), and those with a `memory` block (all but `k8s-reader`) also reference `embedding-model-config`; a missing or misnamed `ModelConfig` leaves the agent unable to reconcile. Check the controller logs for the underlying error: `kubectl -n kagent logs deploy/kagent-controller --tail=100`.
-- **Fix:** if a `ModelConfig` reference is wrong, open a PR fixing the `modelConfig` name in the agent's manifest (or, for the chart's `default-model-config`, the `providers` block in `base-apps/kagent.yaml`) — Argo CD self-heals on merge. If the Anthropic key itself needs rotating, see *Rotate a Vault-backed secret* (and the non-Vault exception there for `anthropic-claude-sonnet-4-6`).
+- **Fix:** if a `ModelConfig` reference is wrong, open a PR fixing the `modelConfig` name in the agent's manifest (or, for the chart's `default-model-config`, the `providers` block in `base-apps/kagent.yaml`) — Argo CD self-heals on merge. If the Anthropic key itself needs rotating, see *Rotate a Vault-backed secret*.
 
 ### Symptom: every multi-step question fails (single-turn questions still work)
 - **Check:** the agent's pod logs for `NotImplementedError: Not supported yet: ... thought=True thought_signature=None`. It fires on the second request of a tool loop, so a one-shot "hello" passes and hides it.
@@ -81,8 +82,6 @@ Every ExternalSecret here is credential-scoped: each resolves through its **own*
 | `kagent-mcp-basic-auth` — orphaned, no consumer since T52 | `vault-kagent-mcp-basic-auth` | `k8s-secrets/kagent-mcp-basic-auth` (property `auth`) — nothing to rotate |
 
 Update the value in Vault directly (never in Git) — External Secrets Operator picks it up within the `refreshInterval` (1h), or force it immediately: `kubectl -n kagent annotate externalsecret <name> force-sync=$(date +%s) --overwrite`. Env-var consumers (`homelab-agent`) need a pod restart after the Secret changes.
-
-**Not in Vault:** `anthropic-claude-sonnet-4-6` (the key behind `homelab-knowledge`'s ModelConfig) was created by the kagent UI and has no ExternalSecret. Rotate it by patching the Secret's `ANTHROPIC_API_KEY` in-cluster. Never delete or rename the ModelConfig to "reset" it: the Secret is owner-referenced to it and is garbage-collected with it. The durable fix is to move the key into Vault + ESO first.
 
 If an `ExternalSecret` goes `SecretSyncedError` with a Vault **403 permission denied**, the Vault side of its scope is missing or wrong — check that the policy `<role>` grants `read` on that exact path, and that the kubernetes-auth role binds the right ESO ServiceAccount in the `kagent` namespace. (A 403 rather than a 404 is what you get when the *policy* doesn't cover the path, even if the key doesn't exist.)
 
