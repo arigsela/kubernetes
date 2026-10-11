@@ -110,12 +110,24 @@ through that token only if it belongs to this SA:
   (`secretstores`/`pushsecrets`/`externalsecrets`) and
   `protection.crossplane.io` — what the TeraSky `kubernetes-ingestor` needs to
   discover XRDs/Compositions and walk composed resources into catalog entities.
-- `backstage-kagent-read` — read on `kagent.dev` `agents`/`modelconfigs`/
-  `remotemcpservers`. The kagent entity-page card fetches the live `Agent` CRD
-  through the Kubernetes plugin proxy at render time, because the kagent
-  controller drops multi-line annotations, so the annotation-based card
-  originally tried couldn't work. Without this role the card shows "Could not
-  load agent details".
+- `backstage-kagent-read` — read on kagent 1.0's `api.kagent.dev` `agents`/
+  `agenttemplates`/`modelconfigs`/`remotemcpservers`. Two readers depend on it.
+  The `kubernetes-ingestor` creates the agent catalog entities from the
+  `Agent` objects themselves (`agents.api.kagent.dev/v1alpha3`, through the
+  portal's `kubernetesIngestor.components.customWorkloadTypes`): kagent 1.0 has
+  no per-agent Deployment for it to find, so each `Agent` carries the
+  `terasky.backstage.io/add-to-catalog` and `component-type: kagent-agent`
+  annotations. The entity-page card fetches the live `Agent` and its
+  `AgentTemplate` (model, MCP bindings, approvals, sub-agents) through the
+  Kubernetes plugin proxy at render time. Without this role there are no agent
+  entities and the card shows "Could not load agent details".
+
+The portal also *calls* agents, without any RBAC: the scaffolder's skill
+suggestions (`kagent-suggest` → `skill-suggester`) and the `kagent:agent:invoke`
+action send A2A v1 `SendMessage` to the kagent controller's gateway,
+`http://kagent-controller.kagent.svc.cluster.local:8083/agents/<ns>/<name>`, as
+`X-User-Id: backstage-portal`. kagent 0.10's per-agent Services and the
+`agents.platform.ai/a2a-endpoint` annotation contract are gone.
 
 ## TechDocs
 Backstage renders each in-scope app's docs as TechDocs (the "Docs" tab). The
