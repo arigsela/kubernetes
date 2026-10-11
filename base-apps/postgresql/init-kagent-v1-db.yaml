@@ -1,0 +1,179 @@
+# Prepares database `kagent_v1` for kagent 1.0 on this (pgvector) Postgres. kagent 1.0 neither
+# creates its database nor installs pgvector; its controller only runs migrations, as role
+# kagent_owner, in schema `kagent`, and refuses to start if pgvector is not already in schema
+# `extensions` (helm/README.md and go/core/pkg/migrations/runner.go @ kagent v1.0.0-alpha11).
+#
+# What it creates — the same identities `kagent install` makes for its bundled database
+# (bundled_postgres.sql), with a password instead of a client certificate:
+#   * database kagent_v1; CONNECT revoked from PUBLIC and granted to the login user only
+#   * NOLOGIN role kagent_owner; login user (Vault kagent-db/v1-user) NOINHERIT, member of it
+#   * schema kagent owned by kagent_owner; CREATE on public revoked
+#   * schema extensions with pgvector (`vector`); USAGE for kagent_owner, nothing for PUBLIC
+# The 0.10 `kagent` database is NOT touched (it becomes the read-only archive at cutover).
+# Anyone else who needs to read kagent_v1 (the audit role) must be granted CONNECT explicitly.
+#
+# Idempotent (re-runs on every postgresql sync; the password follows Vault). A role or schema
+# that exists with the wrong attributes or owner fails the Job loudly instead of being bent.
+# A hook-only change does not trigger auto-sync: after changing ONLY this file, sync the
+# postgresql app once by hand.
+#
+# Wave 1: after the ExternalSecret that feeds it (wave 0) is healthy. activeDeadlineSeconds: if
+# the Vault properties were never provisioned, fail the sync visibly instead of hanging it.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-kagent-v1-db
+  namespace: postgresql
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 5
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app: init-kagent-v1-db
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      restartPolicy: OnFailure
+      containers:
+        - name: init-kagent-v1-db
+          image: pgvector/pgvector:0.8.7-pg18@sha256:2358fcba361ed2233a5ed81b5fe4ca779ccb304120ce531a3bf51c0ed7e2bc11
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              PG_HOST="postgresql.postgresql.svc.cluster.local"
+              PG_PORT="5432"
+              export PGPASSWORD="$POSTGRES_PASSWORD"
+
+              until pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$POSTGRES_USER"; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+
+              # CREATE DATABASE cannot run inside a transaction, so it is its own step.
+              psql --no-psqlrc -v ON_ERROR_STOP=1 -h "$PG_HOST" -p "$PG_PORT" \
+                -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v v1_db="$V1_DB" <<'EOSQL'
+              SELECT format('CREATE DATABASE %I', :'v1_db')
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'v1_db')\gexec
+              EOSQL
+
+              # psql does not expand :variables inside a dollar-quoted block, so they are handed
+              # to it as transaction-local settings, the way Substrate's setup.sql does.
+              psql --no-psqlrc -v ON_ERROR_STOP=1 -h "$PG_HOST" -p "$PG_PORT" \
+                -U "$POSTGRES_USER" -d "$V1_DB" \
+                -v v1_user="$V1_USER" -v v1_password="$V1_PASSWORD" <<'EOSQL'
+              BEGIN;
+              SELECT set_config('kagent_v1_setup.login_user', :'v1_user', true) AS login_user,
+                     set_config('kagent_v1_setup.login_password', :'v1_password', true) AS login_password
+              \gset
+
+              DO $setup$
+              DECLARE
+                  login_user text := current_setting('kagent_v1_setup.login_user');
+                  login_password text := current_setting('kagent_v1_setup.login_password');
+                  managed record;
+                  role_attrs record;
+                  schema_owner text;
+                  vector_schema text;
+              BEGIN
+                  PERFORM pg_advisory_xact_lock(hashtextextended('homelab:kagent-v1-db-setup', 0));
+                  IF login_user = '' OR login_password = '' THEN
+                      RAISE EXCEPTION 'kagent v1 login user or password is empty (Vault kagent-db/v1-*)';
+                  END IF;
+
+                  FOR managed IN SELECT * FROM (VALUES
+                      ('kagent_owner', false),
+                      (login_user, true)
+                  ) AS roles(name, can_login) LOOP
+                      SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolinherit
+                        INTO role_attrs FROM pg_roles WHERE rolname = managed.name;
+                      IF NOT FOUND THEN
+                          IF managed.can_login THEN
+                              EXECUTE format('CREATE ROLE %I LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION', managed.name);
+                          ELSE
+                              EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION', managed.name);
+                          END IF;
+                      ELSIF role_attrs.rolcanlogin <> managed.can_login OR role_attrs.rolsuper
+                         OR role_attrs.rolcreatedb OR role_attrs.rolcreaterole OR role_attrs.rolreplication
+                         OR (managed.can_login AND role_attrs.rolinherit) THEN
+                          RAISE EXCEPTION 'PostgreSQL role "%" exists with conflicting attributes', managed.name;
+                      END IF;
+                  END LOOP;
+                  EXECUTE format('ALTER ROLE %I PASSWORD %L', login_user, login_password);
+                  EXECUTE format('GRANT kagent_owner TO %I', login_user);
+
+                  SELECT pg_get_userbyid(nspowner) INTO schema_owner FROM pg_namespace WHERE nspname = 'kagent';
+                  IF NOT FOUND THEN
+                      CREATE SCHEMA kagent AUTHORIZATION kagent_owner;
+                  ELSIF schema_owner <> 'kagent_owner' THEN
+                      RAISE EXCEPTION 'schema "kagent" is owned by "%", not "kagent_owner"', schema_owner;
+                  END IF;
+                  REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+                  REVOKE ALL ON SCHEMA kagent FROM PUBLIC;
+
+                  CREATE SCHEMA IF NOT EXISTS extensions;
+                  SELECT n.nspname INTO vector_schema
+                    FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+                   WHERE e.extname = 'vector';
+                  IF NOT FOUND THEN
+                      CREATE EXTENSION vector SCHEMA extensions;
+                  ELSIF vector_schema <> 'extensions' THEN
+                      RAISE EXCEPTION 'pgvector is in schema "%", kagent 1.0 requires "extensions"', vector_schema;
+                  END IF;
+                  REVOKE ALL ON SCHEMA extensions FROM PUBLIC;
+                  GRANT USAGE ON SCHEMA extensions TO kagent_owner;
+
+                  EXECUTE format('REVOKE CONNECT, TEMPORARY ON DATABASE %I FROM PUBLIC', current_database());
+                  EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), login_user);
+              END
+              $setup$;
+              COMMIT;
+              EOSQL
+
+              echo "kagent_v1 database ready: role kagent_owner, schema kagent, pgvector in schema extensions"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: n8n-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: n8n-password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: database-name
+            - name: V1_DB
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-v1-db-credentials
+                  key: db-name
+            - name: V1_USER
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-v1-db-credentials
+                  key: user
+            - name: V1_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-v1-db-credentials
+                  key: password
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
