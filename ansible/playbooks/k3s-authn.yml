@@ -1,10 +1,14 @@
 ---
-# k3s-authn.yml — install kube-apiserver's structured authentication config on the control plane.
+# k3s-authn.yml — install kube-apiserver's structured authentication config, and the other k3s
+# server drop-ins, on the control plane (SPEC §V.81: the only installer for node-level k3s config).
 # Port of scripts/install-authn-config.sh (removed 2026-09); every guard kept. Source of truth:
-# roles/k3s_node/files/authn/{authn-config.yaml,config.yaml.d/10-authn.yaml}.
+# roles/k3s_node/files/authn/{authn-config.yaml,config.yaml.d/*.yaml}:
+#   10-authn.yaml           points kube-apiserver at authn-config.yaml
+#   20-disable-bundled.yaml k3s bundled components this cluster must not run (SPEC §V.83)
 #
 #   ansible-playbook playbooks/k3s-authn.yml --check   # the old --dry-run: validate, read the node, report
 #   ansible-playbook playbooks/k3s-authn.yml           # install
+#   ... -e k3s_image=rancher/k3s:v1.37.1-k3s1         # validate against the NEXT version before a hop
 #
 # Play 1 (workstation): static guards, then the files are mounted into a throwaway k3s of the
 #   cluster's version: the API must come up, load the config, and answer anonymous with 401.
@@ -26,9 +30,10 @@
   tags: [validate]
   vars:
     authn_src: "{{ playbook_dir }}/../roles/k3s_node/files/authn"
-    authn_files:
-      - authn-config.yaml
+    authn_dropins:
       - config.yaml.d/10-authn.yaml
+      - config.yaml.d/20-disable-bundled.yaml
+    authn_files: "{{ ['authn-config.yaml'] + authn_dropins }}"
     k3s_image: rancher/k3s:v1.36.4-k3s1   # the cluster's version; bump with it
     authn_validate_name: "install-authn-validate-{{ 1000000 | random }}"
     # colima and Docker Desktop only share $HOME with their VM: stage the files there.
@@ -46,7 +51,7 @@
 
     - name: Refuse on a missing source file
       ansible.builtin.assert:
-        that: src_stat.results | map(attribute='stat.exists') | list == [true, true]
+        that: src_stat.results | rejectattr('stat.exists') | list | length == 0
         fail_msg: "missing {{ src_stat.results | rejectattr('stat.exists') | map(attribute='item') | join(', ') }} under {{ authn_src }}"
         quiet: true
       tags: [static]
@@ -54,7 +59,8 @@
     - name: Read the candidate files
       ansible.builtin.set_fact:
         authn_cfg: "{{ lookup('file', authn_src + '/authn-config.yaml') | from_yaml }}"
-        dropin_text: "{{ lookup('file', authn_src + '/config.yaml.d/10-authn.yaml') }}"
+        dropin_text: "{{ query('file', *(authn_dropins | map('regex_replace', '^', authn_src ~ '/') | list)) | join('\n') }}"
+        disabled_bundled: "{{ (lookup('file', authn_src + '/config.yaml.d/20-disable-bundled.yaml') | from_yaml)['disable+'] | default([]) }}"
       tags: [static]
 
     - name: REFUSED unless authn-config.yaml carries anonymous disabled
@@ -76,7 +82,16 @@
     - name: REFUSED if the drop-in sets an --oidc-* flag
       ansible.builtin.assert:
         that: dropin_text | regex_replace('(?m)^\s*#.*$', '') is not search('oidc-')
-        fail_msg: "REFUSED: 10-authn.yaml sets an --oidc-* flag (exclusive with --authentication-config)"
+        fail_msg: "REFUSED: a config.yaml.d drop-in sets an --oidc-* flag (exclusive with --authentication-config)"
+        quiet: true
+      tags: [static]
+
+    - name: REFUSED if a drop-in REPLACES the disable list
+      ansible.builtin.assert:
+        that: dropin_text | regex_replace('(?m)^\s*#.*$', '') is not search('(?m)^disable:')
+        fail_msg: >-
+          REFUSED: a drop-in sets `disable:`, which REPLACES the node's config.yaml list
+          (`disable: [traefik]`) and brings Traefik back. Use `disable+:` to append.
         quiet: true
       tags: [static]
 
@@ -170,9 +185,27 @@
             validate_certs: false
             status_code: [401]
 
+        # k3s records one Addon per bundled manifest it deploys. Wait until it has deployed coredns
+        # (so the manifests were processed), then a disabled component must have no Addon/HelmChart.
+        - name: Wait for k3s to deploy its bundled manifests
+          ansible.builtin.command: docker exec {{ authn_validate_name }} kubectl -n kube-system get addon coredns -o name
+          register: val_addons
+          until: val_addons.rc == 0
+          retries: 60
+          delay: 2
+          changed_when: false
+
+        - name: Disabled bundled components must not be installed
+          ansible.builtin.command: docker exec {{ authn_validate_name }} kubectl get addons,helmcharts -A -o name
+          register: val_bundled
+          changed_when: false
+          failed_when: >-
+            val_bundled.rc != 0 or
+            (val_bundled.stdout_lines | map('regex_replace', '^.*/', '') | intersect(disabled_bundled) | length) > 0
+
         - name: Validated
           ansible.builtin.debug:
-            msg: "2. validated in {{ k3s_image }}: API up, config loaded, anonymous → 401"
+            msg: "2. validated in {{ k3s_image }}: API up, config loaded, anonymous → 401, not installed: {{ disabled_bundled | join(', ') }}"
       rescue:
         - name: Last log lines of the validation k3s
           ansible.builtin.command: docker logs --tail 15 {{ authn_validate_name }}
@@ -214,9 +247,10 @@
   tags: [install]
   vars:
     authn_src: "{{ playbook_dir }}/../roles/k3s_node/files/authn"
-    authn_files:
-      - authn-config.yaml
+    authn_dropins:
       - config.yaml.d/10-authn.yaml
+      - config.yaml.d/20-disable-bundled.yaml
+    authn_files: "{{ ['authn-config.yaml'] + authn_dropins }}"
     k3s_dir: /etc/rancher/k3s
     ready_timeout: 240    # seconds to wait for /readyz after a restart
     reload_timeout: 90    # seconds to wait for a hot reload
@@ -241,11 +275,15 @@
           --anonymous-auth=false when given this file, and the default is ENABLED.
         quiet: true
 
-    - name: REFUSED if the drop-in sets an --oidc-* flag (install re-check)
+    - name: REFUSED if a drop-in sets an --oidc-* flag or replaces the disable list (install re-check)
       ansible.builtin.assert:
-        that: lookup('file', authn_src ~ '/config.yaml.d/10-authn.yaml') | regex_replace('(?m)^\s*#.*$', '') is not search('oidc-')
-        fail_msg: "REFUSED: 10-authn.yaml sets an --oidc-* flag (exclusive with --authentication-config)"
+        that:
+          - _dropins_text is not search('oidc-')
+          - _dropins_text is not search('(?m)^disable:')
+        fail_msg: "REFUSED: a config.yaml.d drop-in sets an --oidc-* flag, or `disable:` instead of `disable+:`"
         quiet: true
+      vars:
+        _dropins_text: "{{ query('file', *(authn_dropins | map('regex_replace', '^', authn_src ~ '/') | list)) | join('\n') | regex_replace('(?m)^\\s*#.*$', '') }}"
 
     # ---- 3. node preflight (read-only) ------------------------------------------------------
     - name: Read the node's k3s config and unit
@@ -272,13 +310,22 @@
 
     - name: Decide what changed
       ansible.builtin.set_fact:
-        changed_authn: "{{ (installed.results[0].stat.checksum | default('')) != (lookup('file', authn_src + '/authn-config.yaml', rstrip=False) | hash('sha256')) }}"
-        changed_dropin: "{{ (installed.results[1].stat.checksum | default('')) != (lookup('file', authn_src + '/config.yaml.d/10-authn.yaml', rstrip=False) | hash('sha256')) }}"
+        file_changes: "{{ file_changes | default([]) + [{'name': item.item, 'changed': (item.stat.checksum | default('')) != _src_sha}] }}"
+      vars:
+        _src_sha: "{{ lookup('file', authn_src ~ '/' ~ item.item, rstrip=False) | hash('sha256') }}"
+      loop: "{{ installed.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Summarise the changes
+      ansible.builtin.set_fact:
+        changed_authn: "{{ file_changes | selectattr('name', 'equalto', 'authn-config.yaml') | map(attribute='changed') | first }}"
+        changed_dropin: "{{ file_changes | rejectattr('name', 'equalto', 'authn-config.yaml') | selectattr('changed') | list | length > 0 }}"
         backup_dir: "{{ k3s_dir }}/authn-backup/{{ lookup('pipe', 'date -u +%Y%m%dT%H%M%SZ') }}"
 
     - name: Node preflight
       ansible.builtin.debug:
-        msg: "3. node preflight: ok (changed: authn-config.yaml={{ changed_authn }} 10-authn.yaml={{ changed_dropin }})"
+        msg: "3. node preflight: ok (changed: {{ file_changes | map(attribute='name') | zip(file_changes | map(attribute='changed')) | map('join', '=') | join(' ') }})"
 
     - name: Already installed
       ansible.builtin.debug:
@@ -324,18 +371,14 @@
         owner: root
         group: root
         mode: "0600"
-      loop:
-        - {name: authn-config.yaml, changed: "{{ changed_authn }}"}
-        - {name: config.yaml.d/10-authn.yaml, changed: "{{ changed_dropin }}"}
+      loop: "{{ file_changes }}"
       loop_control:
         label: "{{ item.name }}"
       when: item.changed | bool
 
     - name: Rename into place
       ansible.builtin.command: mv {{ k3s_dir }}/{{ item.name }}.tmp {{ k3s_dir }}/{{ item.name }}  # noqa: command-instead-of-module
-      loop:
-        - {name: authn-config.yaml, changed: "{{ changed_authn }}"}
-        - {name: config.yaml.d/10-authn.yaml, changed: "{{ changed_dropin }}"}
+      loop: "{{ file_changes }}"
       loop_control:
         label: "{{ item.name }}"
       when: item.changed | bool

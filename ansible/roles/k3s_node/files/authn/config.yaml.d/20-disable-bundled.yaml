@@ -1,0 +1,15 @@
+# k3s config drop-in: bundled components this cluster must NOT run (SPEC §V.83).
+# Installed to /etc/rancher/k3s/config.yaml.d/20-disable-bundled.yaml by ansible/playbooks/k3s-authn.yml
+# (a change here needs a k3s restart; the playbook does it and waits for /readyz).
+#
+# `disable+` APPENDS to the node's /etc/rancher/k3s/config.yaml (`disable: [traefik]`). A plain
+# `disable:` here would REPLACE that list and bring Traefik back; the playbook refuses it.
+#
+# gateway-api-crd: k3s 1.37 bundles Gateway API v1.6.1 CRDs (+ a `safe-upgrades` admission policy)
+# as a HelmChart with takeOwnership/forceConflicts. It takes the CRDs away from the Argo app
+# `istio-gateway-api` (pinned v1.5.1), whose next sync is then refused ("Installing CRDs with
+# version before v1.5.0 is prohibited") and never retried (SPEC §R.42). k3s skips a bundled
+# manifest by file name, and `--disable traefik` does not cover this one (k3s#14677).
+# On 1.36 the name matches nothing and is ignored.
+disable+:
+  - gateway-api-crd
