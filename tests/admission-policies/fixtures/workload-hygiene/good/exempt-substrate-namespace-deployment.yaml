@@ -1,0 +1,21 @@
+# ate-system is excluded (Agent Substrate's chart workloads, base-apps/substrate.yaml): no
+# app.kubernetes.io/name, latest, privileged, no limits — all allowed there.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exempt-substrate
+  namespace: ate-system
+spec:
+  selector:
+    matchLabels:
+      app: atelet
+  template:
+    metadata:
+      labels:
+        app: atelet
+    spec:
+      containers:
+      - name: app
+        image: nginx:latest
+        securityContext:
+          privileged: true

@@ -33,7 +33,10 @@ FIXTURES = Path(__file__).parent / "fixtures"
 # Pinned to the cluster's version (SPEC T21). Bump together with the cluster.
 K3S_IMAGE = "rancher/k3s:v1.37.1-k3s1"
 NAME = "admission-harness-pytest"
-NAMESPACES = ["kagent", "team-a", "postgresql", "admission-test"]
+# ate-system / podcertificate-controller-system: the hygiene policies' Substrate exclusion
+# (fixtures/workload-hygiene/good/exempt-*-namespace-deployment.yaml).
+NAMESPACES = ["kagent", "team-a", "postgresql", "admission-test",
+              "ate-system", "podcertificate-controller-system"]
 NOT_MANIFESTS = {"catalog-info.yaml", "mkdocs.yml"}
 EXPECT = "test.homelab/expect-pull-secrets"
 

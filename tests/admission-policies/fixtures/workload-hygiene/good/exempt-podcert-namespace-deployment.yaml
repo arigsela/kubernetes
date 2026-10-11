@@ -1,0 +1,21 @@
+# podcertificate-controller-system is excluded (Substrate's certificate controller,
+# base-apps/substrate-podcert.yaml): no app.kubernetes.io/name, latest, privileged, no limits.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exempt-podcert
+  namespace: podcertificate-controller-system
+spec:
+  selector:
+    matchLabels:
+      app: podcertificate-controller
+  template:
+    metadata:
+      labels:
+        app: podcertificate-controller
+    spec:
+      containers:
+      - name: controller
+        image: nginx:latest
+        securityContext:
+          privileged: true
