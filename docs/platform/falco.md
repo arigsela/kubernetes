@@ -16,7 +16,7 @@ It has no sidecar or sink of its own. Detections travel Falco stdout â†’ Alloy â
   | Rule | Priority | Alerts? |
   |---|---|---|
   | `Terminal shell in container` | NOTICE | No. Loki only (fires on every `kubectl exec -it`). |
-  | `Contact K8S API Server From Container` | NOTICE | Yes, except from namespaces `argo-cd`, `backstage` and `kagent`, and from three known Argo callers in `argo-workflows` (see below). |
+  | `Contact K8S API Server From Container` | NOTICE | Yes, except from namespaces `argo-cd`, `backstage`, `kagent`, `ate-system` and `podcertificate-controller-system`, and from three known Argo callers in `argo-workflows` (see below). |
   | `Read sensitive file untrusted` | WARNING | Yes, from any namespace. |
 
 - **Output threshold `priority: notice`.** Falco's `priority` is an output filter: anything below it is dropped before stdout. It was `warning` until 2026-07-14, which silently discarded both NOTICE rules. Falco ran for months with zero detections while reporting healthy.
@@ -26,10 +26,10 @@ It has no sidecar or sink of its own. Detections travel Falco stdout â†’ Alloy â
   sum(count_over_time({namespace="falco"} |= "priority" | json
     | (rule="Read sensitive file untrusted"
        or rule="Contact K8S API Server From Container"
-       and output_fields_k8s_ns_name!~"argo-cd|backstage|kagent"
+       and output_fields_k8s_ns_name!~"argo-cd|backstage|kagent|ate-system|podcertificate-controller-system"
        and <three argo-workflows exclusions>) [1h]))  > 0
   ```
-  LogQL binds `and` tighter than `or`, so every exclusion applies only to the API-contact rule. `argo-workflows` is not excluded as a namespace: the Argo server has no login, so an unexpected API call there is worth an alert. Only these three callers are dropped, each pinned to its binary:
+  LogQL binds `and` tighter than `or`, so every exclusion applies only to the API-contact rule. `ate-system` and `podcertificate-controller-system` (added 2026-10-11) are Agent Substrate's controllers, API clients by design; Substrate's worker pods run in `kagent`, already excluded. `argo-workflows` is not excluded as a namespace: the Argo server has no login, so an unexpected API call there is worth an alert. Only these three callers are dropped, each pinned to its binary:
   - `/usr/bin/argoexec` in Argo's `wait`/`init` containers, which every step pod uses to report its result;
   - `/usr/bin/workflow-controller`;
   - `python3` in image-scan's `discover-images` pod, which lists pods by design.
@@ -57,6 +57,7 @@ Or read the pods directly: `kubectl logs -n falco -l app.kubernetes.io/name=falc
 - **`notice` is deliberate, not maximal.** `informational`/`debug` would bury the signal. That's why the alert filters on specific rule names instead of any Falco line.
 - **Rule names are case-sensitive**, and it's `K8S`. **A missing rule stops Falco loading the whole override file**: "Rule has 'enabled' key but no rule by that name already exists". Two rules were dropped for that reason when the stable pack removed them: `Write below etc` and `Launch Package Management Process in Container`.
 - **Overrides need the explicit schema** (`override: {enabled: replace}` + `enabled: true`). Falco 0.40+ doesn't load the bare `enabled: true` form.
+- **Falco doesn't see inside kagent's agent sandboxes.** Since 2026-10-11 every agent session runs as a gVisor actor in a Substrate worker pod (`kagent-default-*` in `kagent`). gVisor serves the sandboxed process's system calls in its own user-space kernel, so Falco's host-level view shows the sandbox runtime, not what the agent runs inside it. Falco's gVisor integration isn't configured. What an agent does to the cluster still goes through the `kagent-tools` pod and the API server, which the agent audit record covers.
 - **The alert depends on Falco's JSON field names** (`rule`, `output_fields.k8s.ns.name` â†’ `output_fields_k8s_ns_name` after `| json`). An upgrade that renames or stops populating them breaks the alert silently.
 
 ## Runbook

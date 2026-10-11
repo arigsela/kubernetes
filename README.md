@@ -137,10 +137,18 @@ GitOps infrastructure for a homelab k3s cluster: automated deployment, secret ma
   - Thresholds and 26 "hot components" come from calibration on the last 200 PRs: none of the 43 PRs that later needed a fix was labelled skip ([report](https://github.com/arigsela/claude-agents/blob/main/pr-triage/calibration/kubernetes-2026-09.md))
 - **Explain and learn** - the [`pr-explainer`](https://github.com/arigsela/claude-agents/tree/main/skills/pr-explainer) and [`review-retro`](https://github.com/arigsela/claude-agents/tree/main/skills/review-retro) Claude Code skills: `/pr-explainer <n>` turns a GitOps PR into a rendered-manifest resource map with must-read hunks; `/review-retro <n>` compares a `/code-review` session with the fixes that followed
 
+### AI Agents (kagent)
+
+- **kagent 1.0** (`1.0.0-alpha11`) - each agent is an `AgentTemplate` (model, prompt, tools), a `Harness` (runtime) and an `Agent` that binds them, all in `base-apps/kagent/`
+- **Agent Substrate** (`0.5.0-alpha2`) - every conversation runs as a gVisor-sandboxed actor in a shared worker pod, suspended to a snapshot when idle; model API keys are injected at egress, never handed to the agent
+- **Seven agents** on Claude Sonnet 5.5 / Haiku 5.5, from the read-only `homelab-knowledge` ("ask hk": `scripts/ask-hk`) to the approval-gated `k8s-agent` and `istio-agent`
+- **Access** - A2A at `kagent-mcp.arigsela.com/agents/kagent/<agent>` and the UI at `kagent.arigsela.com`, both behind the IP allow-list
+- Details: [`base-apps/kagent/docs.md`](base-apps/kagent/docs.md), [`base-apps/substrate/docs.md`](base-apps/substrate/docs.md)
+
 ### Agent Guardrails (kagent)
 
-- **Identity contract** - every agent's credentials are path-scoped to it; enforced at admission by native ValidatingAdmissionPolicies and mirrored in CI
-- **Capability contract** - per-agent `read`/`write`/`admin` classes, a fail-closed tool taxonomy, human approval on mutating tools, and no escalation through delegation
+- **Identity contract** - every agent's credentials are path-scoped to it and every tool binding is explicit; enforced at admission by native ValidatingAdmissionPolicies and mirrored in CI, both failing closed on agent manifests they don't understand
+- **Capability contract** - per-template `read`/`write`/`admin` classes, a fail-closed tool taxonomy, human approval on every tool binding that can mutate, no escalation through sub-agents, and only the pinned `kagent` runtime
 - **Action record** - every agent tool call, redacted, exported daily to S3 and browsable at `agent-audit.arigsela.com`
 - **Evaluation** - a golden-answer corpus and scorer (`tests/eval-corpus/`, `scripts/score-eval.py`)
 - Details: [`docs/adp-engineering-deep-dive.md`](docs/adp-engineering-deep-dive.md)
@@ -235,7 +243,7 @@ The full list, with a description and namespace per app, is generated in [`base-
 | **Edge** | Istio Gateway, Coraza WAF, wan-ip-monitor |
 | **Identity & policy** | Dex, native admission policies, Kyverno (reports only) |
 | **Developer platform** | Backstage, Atlantis, Argo Workflows, Jupyter |
-| **AI agents** | kagent, Ollama (embeddings), oncall-agent, agent-audit-web |
+| **AI agents** | kagent 1.0, Agent Substrate (gVisor actors), Ollama (embeddings), oncall-agent, agent-audit-web |
 | **Observability** | Loki, Grafana, Prometheus, Alloy, Coroot, Falco |
 | **Apps** | n8n, Donetick, Homepage, Weather Kitchen |
 
@@ -303,7 +311,8 @@ rules:
 | **Identity** | Dex (OIDC), native admission policies |
 | **Certificates** | Cert-Manager, Let's Encrypt |
 | **Observability** | Prometheus, Loki, Grafana, Alloy, Coroot, Falco |
-| **Database** | PostgreSQL (CloudNativePG) |
+| **AI agents** | kagent 1.0, Agent Substrate (gVisor), Claude Sonnet/Haiku 5.5, MCP, A2A |
+| **Database** | PostgreSQL (CloudNativePG, plus a pgvector instance) |
 | **Cloud** | AWS (S3, IAM, ECR, KMS, Route 53) |
 
 ## Deployment Workflow

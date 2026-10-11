@@ -10,6 +10,16 @@ Companion docs:
 - `base-apps/admission-policies/docs.md` — the admission-policies app (rollout stages,
   reporting, test harness, gotchas)
 
+> **2026-10-11: kagent 1.0.** The agent API moved from `kagent.dev/v1alpha2`
+> (`Agent.spec.declarative`) to `api.kagent.dev/v1alpha3`, where an agent is an
+> `AgentTemplate` (model, prompt, tools, class label), a `Harness` (runtime) and an `Agent`
+> that references both. The policies and CI validators were rewritten for it and shipped in
+> the same sync as the new CRDs (SPEC §V.84); both fail closed on agent manifests they don't
+> understand. This doc shows the v1alpha3 rules. Rules 1–7 keep their meaning; approval moved
+> from a per-tool list to a per-binding flag, delegation became sub-agents, and rules 8–9 are
+> new. The evaluation miner reads 1.0's record by default. Plan:
+> `docs/plans/kagent-1-0-on-k8s-1-37-implementation-plan.md`.
+
 ---
 
 # Part 1 — The admission policies
@@ -66,24 +76,24 @@ that let `postgresql/kagent-db-credentials` (a kagent credential living in anoth
 namespace) rot silently until the rule was widened.
 
 ### `agent-identity-mcp-toolnames`
-Matches `Agent`, denies an McpServer tool ref with an empty or missing `toolNames`:
+Matches `AgentTemplate` (`api.kagent.dev/v1alpha3`), denies an MCP binding with an empty or
+missing `tools` list:
 
 ```yaml
 - expression: >-
-    !has(object.spec.declarative) || !has(object.spec.declarative.tools)
-    || object.spec.declarative.tools.all(t,
-         !has(t.type) || t.type != 'McpServer'
-         || (has(t.mcpServer) && has(t.mcpServer.toolNames) && size(t.mcpServer.toolNames) > 0))
+    object.spec.?tools.orValue([]).all(t,
+         !has(t.mcp) || size(t.mcp.?tools.orValue([])) > 0)
 ```
 
-Every optional field is guarded with `has()`: with `failurePolicy: Fail`, a CEL runtime
-error on a missing field would *deny*. Empty `toolNames` = implicit bind-all = denied.
-This is the **floor**: it guarantees a non-empty list exists for the capability policy to
-check against.
+Every optional field is read through `?`/`orValue` or guarded with `has()`: with
+`failurePolicy: Fail`, a CEL runtime error on a missing field would *deny*. An empty `tools`
+list = implicit bind-all (every tool the server has, including ones a later upgrade adds) =
+denied. This is the **floor**: it guarantees an explicit list exists for the capability
+policy to check against.
 
 ---
 
-## `agent-capability` — 7 rules in 2 policies, GENERATED, the "what" contract
+## `agent-capability` — 9 rules in 4 policies, GENERATED, the "what" contract
 
 File: `base-apps/admission-policies/agent-capability.yaml` (generated)
 
@@ -94,48 +104,53 @@ ConfigMap listing every tool as `read` / `write` / `destructive`). CI fails if t
 committed policy drifts (`--check`).
 
 **Why generate instead of a runtime lookup?** A policy *could* read the ConfigMap at
-admission. But that lookup would be evaluated for *every* Agent write, and with
-`failurePolicy: Fail` any failure (RBAC, sync ordering, schema) would deny **all** Agent
-writes, wedging the app. Inlining the tool lists as CEL variables means **the policy we
+admission. But that lookup would be evaluated for *every* AgentTemplate write, and with
+`failurePolicy: Fail` any failure (RBAC, sync ordering, schema) would deny **all** of them,
+wedging the app. Inlining the tool lists as CEL variables means **the policy we
 test is byte-for-byte the policy that ships**; the duplication is policed by the
 generator + CI drift check.
 
 ### Rules 1–5 — policy `agent-capability` (single-object, no RBAC)
-Variables: `cls` (the `capability.homelab/class` label), `mcp` (the McpServer tool refs),
-and the inlined lists `classified`, `mutating` (write ∪ destructive) and `destructive`.
+Matches `AgentTemplate`s: the class label and the tools live on the template, not on the
+`Agent`. Variables: `cls` (the `capability.homelab/class` label), `mcp` (the MCP bindings,
+`spec.tools[].mcp`), and the inlined lists `classified`, `mutating` (write ∪ destructive)
+and `destructive`.
 
-1. `cls in ['read', 'write', 'admin']` — every Agent declares a class; there is no default.
+1. `cls in ['read', 'write', 'admin']` — every template declares a class; there is no default.
 2. Every bound tool is in `classified`. **Fail-closed**: a tool not in the taxonomy is
    denied, so a chart upgrade cannot silently hand agents new powers.
-3. A `read` agent binds no `mutating` tool.
-4. A `write` agent binds no `destructive` tool.
-5. Every mutating tool is in **that tool ref's** `requireApproval`:
+3. A `read` template binds no `mutating` tool.
+4. A `write` template binds no `destructive` tool.
+5. Every mutating tool sits in a binding with `requireApproval: true`:
 
 ```yaml
 - expression: >-
-    variables.mcp.all(t, t.mcpServer.?toolNames.orValue([]).all(n,
-      !(n in variables.mutating) || n in t.mcpServer.?requireApproval.orValue([])))
+    variables.mcp.all(b, b.?requireApproval.orValue(false)
+      || b.?tools.orValue([]).all(n, !(n in variables.mutating)))
 ```
 
-CEL iterates per tool ref directly. The Kyverno version needed nested `context`
-variables injected into a JMESPath filter as backtick JSON literals, and silently did
-nothing when that was wrong; that class of bug is gone.
+Approval is a **per-binding** boolean in v1alpha3 (v1alpha2 had a per-tool list), so an
+agent that needs both read and mutating tools binds the same server twice: read tools
+ungated, every mutating tool in the gated binding (`k8s-agent`, `istio-agent`). CEL iterates
+per binding directly. The Kyverno version needed nested `context` variables injected into a
+JMESPath filter as backtick JSON literals, and silently did nothing when that was wrong; that
+class of bug is gone.
 
 ### Rules 6–7 — policy `agent-capability-delegation` (the sharp edge)
 The only rules that reach outside the object being validated. The policy takes the
-**Agent kind as its parameter**, and its binding selects every Agent:
+**AgentTemplate kind as its parameter**, and its binding selects every template:
 
 ```yaml
 spec:
-  paramKind: {apiVersion: kagent.dev/v1alpha2, kind: Agent}
+  paramKind: {apiVersion: api.kagent.dev/v1alpha3, kind: AgentTemplate}
   matchConstraints:
-    objectSelector:        # only read/write agents are checked; admin may delegate anywhere
+    objectSelector:        # only read/write templates are checked; admin may bind any sub-agent
       matchExpressions: [{key: capability.homelab/class, operator: In, values: [read, write]}]
   variables:
-    - name: mine           # this agent's class
+    - name: mine           # this template's class
       expression: object.metadata.?labels[?'capability.homelab/class'].orValue('')
-    - name: delegates      # this agent's type: Agent tool refs
-      expression: object.spec.?declarative.?tools.orValue([]).filter(t, t.type == 'Agent').map(t, t.agent.name)
+    - name: delegates      # the templates this one binds as sub-agents
+      expression: object.spec.?tools.orValue([]).filter(t, has(t.subAgent)).map(t, t.subAgent.?templateRef.?name.orValue(''))
     - name: theirs         # the param's class; missing or unknown counts as admin
     ...
   validations:             # rule 6; rule 7 is the same shape for write -> admin
@@ -146,11 +161,14 @@ spec:
   paramRef: {selector: {}, parameterNotFoundAction: Allow}
 ```
 
-The API server evaluates the policy once per Agent in the request's namespace (each a
-potential delegate) and ANDs the results. If a `read` agent delegates to a `write`/`admin`
-agent, or a `write` agent to an `admin` one, the write is denied. An absent class label
-counts as `admin` (most restrictive), so an unlabelled delegate cannot be treated as
-harmless.
+The API server evaluates the policy once per AgentTemplate in the request's namespace (each
+a potential sub-agent) and ANDs the results. If a `read` template binds a `write`/`admin`
+sub-agent, or a `write` template an `admin` one, the write is denied. An absent class label
+counts as `admin` (most restrictive), so an unlabelled sub-agent cannot be treated as
+harmless. In 1.0 this matters more than it did: a sub-agent is compiled *into* the parent's
+runtime and takes the conversation over, so a read template with an admin sub-agent simply
+*is* an admin agent. (That hand-off is also why `homelab-knowledge` now binds read tools
+itself instead of delegating to `k8s-reader`.)
 
 Three things about these rules are the real engineering story:
 
@@ -162,17 +180,32 @@ Three things about these rules are the real engineering story:
    reports controller. This policy deliberately has no `reports.kyverno.io/enabled`
    label: Kyverno's engine mis-evaluates parameterised policies.
 2. **It denies until the param informer syncs.** After the policy is created, and after
-   every API-server restart, read/write Agent writes are denied for a few seconds
+   every API-server restart, read/write AgentTemplate writes are denied for a few seconds
    (`paramKind ... not yet synced to use for admission`). Self-healing; an Argo sync in
    that window fails once and retries. `scripts/hop-verify.sh` (`check_admission_policies`)
-   re-proves it after every k3s hop.
+   re-proves it after every k3s hop with a server-side dry-run update of a live read/write
+   template.
 3. **They are ONE-HOP; CI does the closure.** Admission sees one object at a time, so it
-   can only check the immediate delegate, and a delegate created or *promoted* after its
-   delegator was admitted is invisible to it (as is a namespace with no Agents yet:
-   `parameterNotFoundAction: Allow`). The full transitive closure (A→B→C, or a later
-   promotion) is computed by `scripts/validate-agent-capability.py` in CI, where the
-   whole agent graph is in Git. **Two gates, deliberately** — CI is authoritative for
+   can only check the immediate sub-agent, and a sub-agent template created or *promoted*
+   after its parent was admitted is invisible to it (as is a namespace with no templates yet:
+   `parameterNotFoundAction: Allow`). kagent itself rejects a sub-agent that has sub-agents,
+   so chains are one hop deep today, but the full transitive closure (or a later promotion)
+   is still computed by `scripts/validate-agent-capability.py` in CI, where the whole
+   template graph is in Git. **Two gates, deliberately** — CI is authoritative for
    delegation; the API server catches out-of-band applies.
+
+### Rules 8–9 — policies `agent-capability-refs` and `agent-capability-runtime` (new in 1.0)
+Rules 1–7 check AgentTemplates, so two more close the ways around them:
+
+8. **`agent-capability-refs`** matches `Agent`: `!has(object.spec.template)` and
+   `!has(object.spec.harness)`. An Agent must name an AgentTemplate (`templateRef`) and a
+   Harness (`harnessRef`); an inline template would carry tools no template-level rule
+   ever saw.
+9. **`agent-capability-runtime`** matches `Harness`: it must use the `kagent` runtime
+   (`has(object.spec.kagent)`), on an image from the taxonomy's `runtime-images`
+   (`golang-adk` or `kagent-adk`). Tool selection and the approval pause are enforced
+   *inside* kagent's ADK runtimes; a `byo`, `claude` or `codex` runtime, or a foreign
+   image, need not honour rules 1–7 at all.
 
 ### The unifying idea
 The taxonomy ConfigMap is the **single source of truth** consumed by three things
@@ -185,9 +218,10 @@ commit here, so it lags until re-vendored - its daily `upstream-drift` job opens
 issue when this repo moves ahead.
 
 ### How it is tested
-`tests/admission-policies/` boots a real k3s API server of the cluster's version, creates
-the cluster's real Agents (the delegation policy's parameters), and server-side dry-runs
-good and bad fixtures against every policy. The offline `kyverno` CLI suite was deleted
+`tests/admission-policies/` boots a real k3s API server of the cluster's version, installs
+the kagent CRDs, creates the cluster's real AgentTemplates, Harnesses and Agents (the
+templates are the delegation policy's parameters), and server-side dry-runs good and bad
+fixtures against every policy. The offline `kyverno` CLI suite was deleted
 (SPEC T81): it mis-evaluates parameterised policies.
 
 ---
@@ -196,7 +230,16 @@ good and bad fixtures against every policy. The offline `kyverno` CLI suite was 
 
 ## `scripts/mine-eval-corpus.py` — history → candidate Q&A
 
-Connects **read-only** (the `kagent_audit_ro` SELECT-only role) and runs:
+Connects **read-only** (the `kagent_audit_ro` SELECT-only role). Two sources, like
+`agent-audit.py`:
+
+- **`--source v1` (default), kagent 1.0:** reads `kagent.session_task_event` in
+  `kagent_v1`, events stored as A2A protobuf and decoded by `agent-audit.py`. Each user
+  turn is one A2A task: the question is the task's first user message with text, the answer
+  is the text the agent streamed into the task's artifacts (append/replace applied, so a
+  streamed answer counts once). Tool calls and approval messages are not text and are left
+  out (`iter_pairs_v1`).
+- **`--source v010`, the 0.10 archive** (database `kagent`, read-only since 2026-10-11):
 
 ```sql
 SELECT e.created_at, s.agent_id, s.id, e.data
@@ -205,7 +248,7 @@ WHERE s.agent_id ILIKE %(agent)s
 ORDER BY s.id, e.created_at
 ```
 
-kagent stores events in Google **ADK format**: each event has an `author`
+kagent 0.10 stored events in Google **ADK format**: each event has an `author`
 (`user` / the agent name / `system`) and `content.parts[].text`. Pairing questions
 to answers is a **state machine** (`iter_pairs`):
 

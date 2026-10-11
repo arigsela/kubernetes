@@ -3,7 +3,7 @@
 **Status:** living. Reviewed 2026-09-30 against `base-apps/external-secrets.yaml` and every `external-secrets.io` object under `base-apps/`.
 
 ## What it is
-The External Secrets Operator (ESO) turns Vault KV entries into Kubernetes `Secret`s. Almost every app's credentials reach it this way: 30 `SecretStore`s and 33 `ExternalSecret`s across 17 namespaces (repo count, 2026-09-30). There is no `ClusterSecretStore`. ESO is a **Helm-only** Argo CD Application, `base-apps/external-secrets.yaml`, with no `base-apps/external-secrets/` directory. The SecretStores and ExternalSecrets live in each consumer's own directory.
+The External Secrets Operator (ESO) turns Vault KV entries into Kubernetes `Secret`s. Almost every app's credentials reach it this way: 30 `SecretStore`s and 43 `ExternalSecret`s across 19 namespaces (repo count, 2026-10-11). There is no `ClusterSecretStore`. ESO is a **Helm-only** Argo CD Application, `base-apps/external-secrets.yaml`, with no `base-apps/external-secrets/` directory. The SecretStores and ExternalSecrets live in each consumer's own directory.
 
 ## Architecture & data flow
 ```
@@ -18,14 +18,15 @@ ExternalSecret (remoteRef.key/property, refreshInterval) --> Secret (creationPol
 - **API version:** every manifest in `base-apps/` is `external-secrets.io/v1`.
   - The `v1beta1` → `v1` migration (55 files) and the storage migration were done during the six-stage ESO walk, `0.11.0` → `0.16.2` → `0.17.0` → `0.20.4` → `2.8.0` (SPEC §T.6, §T.31–§T.33, 2026-08-03).
   - `v1beta1` is no longer creatable. The `0.20.4` chart reintroduced a `v1beta1` CRD entry with `served: false`, which is benign, and `status.storedVersions` stayed `["v1"]`.
-- **Refresh:** 32 of the 33 ExternalSecrets use `refreshInterval: 1h`. `oncall-agent-secrets` uses `15s`.
+- **Refresh:** 42 of the 43 ExternalSecrets use `refreshInterval: 1h`. `oncall-agent-secrets` uses `15s`.
 
 ### Store patterns in use
-1. **Per-namespace `vault-backend`** (18 ExternalSecrets use one). The store is named `vault-backend` and authenticates as the namespace's `default` ServiceAccount against a Vault role named after the namespace. Example: `base-apps/cert-manager/secret-store.yaml` uses role `cert-manager`. One exception: `base-apps/ecr-auth/secret-store.yaml` sits in `kube-system` with role and ServiceAccount `ecr-credentials-sync`. Paths are keys relative to the mount, such as `cert-manager/route53`, never `k8s-secrets/data/...`.
+1. **Per-namespace `vault-backend`** (19 ExternalSecrets use one). The store is named `vault-backend` and authenticates as the namespace's `default` ServiceAccount against a Vault role named after the namespace. Example: `base-apps/cert-manager/secret-store.yaml` uses role `cert-manager`. One exception: `base-apps/ecr-auth/secret-store.yaml` sits in `kube-system` with role and ServiceAccount `ecr-credentials-sync`. Paths are keys relative to the mount, such as `cert-manager/route53`, never `k8s-secrets/data/...`.
 2. **Per-consumer, path-scoped stores** for agent and database credentials: `vault-<consumer>` with a dedicated `eso-<consumer>` ServiceAccount and a Vault role that reads only that consumer's path.
    - **In `kagent`**, this pattern is mandatory. The broad store is retired. `scripts/validate-agent-identity.py` enforces it in CI, and admission denies it in-cluster via `base-apps/admission-policies/agent-identity.yaml`: an ExternalSecret in `kagent` may not use `vault-backend` or read the monolithic `kagent` key.
-   - **Also used** in `postgresql` (`vault-kagent-db`, `vault-donetick-db`, `vault-agent-audit-web-db`, `vault-kagent-audit-ro`, `vault-agent-audit-risk`), `donetick` and `agent-audit`.
-   - **Templates:** `templates/agent-identity/` (README, `serviceaccount.yaml`, `secretstore.yaml`).
+   - **Also used** in `postgresql` (`vault-kagent-db`, `vault-donetick-db`, `vault-agent-audit-web-db`, `vault-kagent-audit-ro`, `vault-agent-audit-risk`, `vault-substrate`), `donetick` and `agent-audit`.
+   - **Agent Substrate** (kagent 1.0's runtime, since 2026-10-11): `vault-substrate` in `ate-system`, `podcertificate-controller-system` and `postgresql`, ServiceAccount `eso-substrate`, Vault role `substrate`, which reads only `substrate-cas` (the CA and JWT pools) and `substrate-db`. Written by `scripts/provision-kagent-1-0-vault.sh`. Its CA pool Secrets are rebuilt by ESO in exactly the shape `kagent install` creates (`base-apps/substrate/external-secret-ca-pools.yaml`).
+   - **Templates:** `templates/agent-identity/` (README, `serviceaccount.yaml`, `secretstore.yaml`, all `external-secrets.io/v1`).
 3. **PushSecret:** none in git today. The only emitter is the dormant Crossplane `XApplication` composition (`base-apps/crossplane-compositions/composition-application.yaml`). It pushes CNPG and AWS credentials into Vault as `external-secrets.io/v1alpha1` PushSecrets with `deletionPolicy: None`. §T.31 left those at `v1alpha1` because PushSecret is a different CRD.
 
 Vault-side roles and policies are **not in git**. They are written inside Vault by hand or by the per-app scripts (`scripts/provision-homepage-vault.sh`, `scripts/provision-donetick-vault.sh`, `scripts/provision-agent-audit-risk-vault.sh`). `scripts/provision-homelab-agent-vault.sh` is kept as the reference pattern for a per-consumer split, but its agent was retired on 2026-10-11 and its roles and policies no longer exist.
@@ -39,11 +40,7 @@ Vault-side roles and policies are **not in git**. They are written inside Vault 
 ## Gotchas & tribal knowledge
 - **`ServerSideApply=true` is required on the ESO Application.** The SecretStore and ClusterSecretStore CRDs are about 1.1 MB each. Client-side apply's `last-applied-configuration` annotation reached 255 KB against the 262144-byte limit, and syncs were rejected (`metadata.annotations: Too long`). SSA doesn't write that annotation. Don't remove it. (It's the opposite of `istio-ingress`, where SSA was removed. Neither is a general rule.)
 - **What the Application comment says about Kubernetes 1.36:** "2.7 is the newest version with a documented k8s matrix, and it caps at 1.35 - this cluster's version. NO ESO release supports 1.36 yet, so ESO remains a 1.36 blocker (R18) even fully current." **That comment is stale.** SPEC §R.39 (2026-09-24) records ESO `2.8.0` as supporting 1.35–1.36, `docs/plans/k3s-1.36-upgrade-plan.md` lists it as "yes (1.35-1.36)", and the cluster has run 1.36 since 2026-09-24 (§T.21). The same comment's "All 30 SecretStores here use the vault provider" still matches the repo count.
-- **Some templates still emit `v1beta1`, which the API no longer accepts:**
-  - `secret-store.yaml` and `external-secret.yaml` under `templates/new-app/skeleton-secrets/base-apps/${{ values.name }}/` (the Backstage New App template);
-  - `templates/agent-identity/secretstore.yaml`.
-
-  An app scaffolded from them fails to sync. Change `v1beta1` → `v1` when copying (the fields are otherwise identical), and fix the templates.
+- **The Backstage New App template still emits `v1beta1`, which the API no longer accepts:** `secret-store.yaml` and `external-secret.yaml` under `templates/new-app/skeleton-secrets/base-apps/${{ values.name }}/`. An app scaffolded from it fails to sync. Change `v1beta1` → `v1` when copying (the fields are otherwise identical), and fix the template. (`templates/agent-identity/secretstore.yaml` was fixed on 2026-10-11.)
 - **The crossplane-system SecretStore is never applied.** `base-apps/crossplane-system/secret-store.yaml` sits at the root of an umbrella Helm chart, and Helm renders only `templates/`. Nothing in git consumes it either. See `docs/platform/crossplane.md`.
 - **The ESO webhook defaults fields that git doesn't spell out** (`conversionStrategy`, `decodingStrategy`, `metadataPolicy`, `deletionPolicy: Retain`, `mergePolicy: Replace`). `base-apps/kagent-secrets.yaml` carries the `ignoreDifferences` for this, with the rationale. Copy that pattern only for these webhook-defaulted paths.
 - **`creationPolicy: Owner`** (used throughout) means the target Secret is owned by, and garbage-collected with, its ExternalSecret.

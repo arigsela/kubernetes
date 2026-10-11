@@ -18,10 +18,12 @@ AWS KMS key that seals Vault. `SPEC.md` holds the invariants those scripts enfor
 | Vault: every secret, policy and auth method | `file` storage at `/vault/data`, 1Gi local-path volume on `k3s-worker-01` (`vault-0` is pinned there by `nodeSelector`) | `scripts/vault-backup.sh`, by hand | only if you copy it off (ciphertext) |
 | The key Vault's storage is encrypted with | AWS KMS `alias/vault-auto-unseal`, us-east-2 (`terraform/roots/asela-cluster/vault-kms.tf`) | `prevent_destroy`, 30-day deletion window | lives in AWS |
 | CNPG `postgresql-cluster`: `donetick`, plus `n8n` and the orphaned `chores_tracker` | 2 instances, one per worker, 20Gi local-path each | barman: daily base backup at 02:00 UTC plus WAL archiving to `s3://mysql-backups-asela-cluster/postgresql/`, 30d retention. `scripts/pg-backup.sh` by hand | yes (S3) |
-| Plain `postgresql` Deployment (pgvector): root DB, `kagent`, Backstage, and n8n per its docs (n8n's DB host comes from Vault, so git can't confirm which instance it uses) | `postgresql-pvc`, 10Gi local-path | **nothing** | no |
+| Plain `postgresql` Deployment (pgvector): root DB, `kagent_v1` (kagent 1.0: sessions, memory, the audit source), `substrate` (Agent Substrate), the read-only `kagent` 0.10 archive, Backstage, and n8n per its docs (n8n's DB host comes from Vault, so git can't confirm which instance it uses) | `postgresql-pvc`, 10Gi local-path | **nothing** scheduled; one-off dumps from 2026-10-11 (Gaps, item 2) | only those dumps |
+| Agent Substrate session snapshots (suspended kagent conversations) | bundled rustfs, bucket `ate-snapshots`, PVC `rustfs-data` (`ate-system`), 1Gi local-path on worker-02 | **nothing**, by design: sessions are disposable, long-term memory is in `kagent_v1` | no |
+| Substrate CA pools and JWT pool | Vault `k8s-secrets/substrate-cas`, synced by ESO into `ate-system` and `podcertificate-controller-system` | the Vault backup | as Vault |
 | Other local-path volumes (table below) | the node that first mounted each one | **nothing** | no |
 | Loki log chunks and index | S3 `asela-chores-loki-logs-20251017` (us-east-1). Loki keeps 30 days, and the pod's `/loki` is an `emptyDir` | S3 is the store | yes |
-| Agent action record (redacted) | S3 `asela-agent-audit-record`, exported daily (`30 1 * * *`) from kagent's DB by the `agent-audit-export` CronJob | S3 is the store. You can't restore kagent from it | yes |
+| Agent action record (redacted) | S3 `asela-agent-audit-record`, exported daily (`30 1 * * *`) from kagent 1.0's `kagent_v1` by the `agent-audit-export` CronJob | S3 is the store. You can't restore kagent from it | yes |
 | Terraform state | S3 `asela-terraform-states` (us-east-2) | S3 | yes |
 | AWS resources | KMS key and IAM in `terraform/roots/asela-cluster/`; S3 buckets and their IAM in `base-apps/*-aws-infrastructure/` (Crossplane) | git | n/a |
 | VM disks (all three VMs) | the hypervisor `asela-k8s`, 10.0.1.101 | **nothing** | no |
@@ -39,6 +41,7 @@ below the table.
 | `vault-data-vault-0` (vault) | 1Gi | worker-01 | Vault storage | `vault-backup.sh` |
 | CNPG instance volumes (postgresql) | 20Gi each | one per worker | CNPG data | barman, `pg-backup.sh` |
 | `postgresql-pvc` (postgresql) | 10Gi | worker-01 | plain Postgres | none |
+| `rustfs-data` (ate-system) | 1Gi | worker-02 (pinned by `base-apps/substrate/rustfs-pvc-placement.yaml`) | Substrate session snapshots | none, disposable |
 | `storage-prometheus-0` (logging) | 50Gi | worker-01 | metrics | none |
 | `grafana-storage` (logging) | 10Gi | worker-02 | Grafana's DB: user accounts and their GitHub OAuth links, plus anything made in the UI. Dashboards, datasources and alerting are provisioned from git | none |
 | `n8n-pvc` (n8n) | 5Gi | worker-02 | n8n's local state dir. Workflows live in Postgres | none |
@@ -57,13 +60,21 @@ kubectl get pv -o custom-columns='NS:.spec.claimRef.namespace,PVC:.spec.claimRef
    when someone runs the scripts. The last recorded full set is from the 1.37 hop on
    2026-10-11 (`SPEC.md` §T.96): `s3://mysql-backups-asela-cluster/{k3s,pg,vault}/`, including a
    one-off dump of the plain `postgresql` Deployment (`pg/pgvector-postgresql-all-20261011T184229Z.sql.gz`).
-2. **The plain `postgresql` Deployment has no backup of any kind.** That covers the root DB,
-   `kagent` (agent history, and the source for the agent audit), Backstage, and n8n if its
-   docs are right. `pg-backup.sh` only targets the CNPG cluster: its default
-   exec looks up the CNPG primary by label. Pointing it here with `--exec-cmd` is untested,
-   and it dumps as role `postgres`, which this instance may not have.
+2. **The plain `postgresql` Deployment has no scheduled backup.** That covers the root DB,
+   `kagent_v1` (kagent 1.0's sessions and long-term memory, and the source for the agent
+   audit), `substrate` (Substrate's actor records), the read-only `kagent` 0.10 archive,
+   Backstage, and n8n if its docs are right. `pg-backup.sh` only targets the CNPG cluster: its
+   default exec looks up the CNPG primary by label. Pointing it here with `--exec-cmd` is
+   untested, and it dumps as role `postgres`, which this instance may not have. The only copies
+   are one-off dumps under `s3://mysql-backups-asela-cluster/pg/`: the whole instance before the
+   1.37 hop (`pgvector-postgresql-all-20261011T184229Z.sql.gz`) and, from the kagent 1.0
+   cutover, the 0.10 archive and the retired `homelab_agent` database
+   (`pgvector-kagent-archive-20261011T194718Z.sql.gz`,
+   `pgvector-homelab_agent-archive-20261011T194718Z.sql.gz`). The archive is the one that
+   matters: it is kagent 0.10's whole agent history and no longer changes.
 3. **No other local-path volume has a backup**: Grafana, n8n's state dir, Jupyter,
-   oncall-agent's memory, Prometheus, Coroot, Atlantis.
+   oncall-agent's memory, Prometheus, Coroot, Atlantis, and Substrate's rustfs (on purpose:
+   it holds only suspended sessions).
 4. **Everything runs on one physical host.** All three VM disks sit on the hypervisor, and
    nothing backs them up. If that disk dies, every local-path volume goes with it, along with
    the k3s datastore and any artifact left only on a node. The only off-host copies are in S3
@@ -222,7 +233,21 @@ Recreating the PVC gives the app an empty volume somewhere else. That's a delibe
   accounts. With sign-up closed, your GitHub login is refused until you re-link it. See
   "Login: GitHub OAuth only" in `base-apps/logging/docs.md` (§V.69, §B.10).
 - **Plain Postgres:** see `base-apps/postgresql/runbook.md` for re-running the init Jobs that
-  create roles and databases.
+  create roles and databases. For the agent platform that means:
+  - `kagent_v1` and `substrate` come back **empty** (`init-kagent-v1-db`, `init-substrate-db`).
+    kagent starts over: no sessions, no long-term memory, no 1.0 audit history in the database
+    (the redacted record is still in S3). Restart `kagent-controller` and `ate-api-server` once
+    the databases exist; both read their connection strings at startup.
+  - The `kagent` 0.10 archive: `init-kagent-db` creates an empty `kagent` database; load the
+    cutover dump into it before anything else
+    (`aws s3 cp s3://mysql-backups-asela-cluster/pg/pgvector-kagent-archive-20261011T194718Z.sql.gz .`,
+    check it against its `.sha256`, then `gunzip -c` it into `kubectl exec -i -n postgresql deploy/postgresql -- psql -U <root user> -d kagent`).
+    Sync the `postgresql` app so the audit roles get their grants, and only then make it
+    read-only again: `ALTER DATABASE kagent SET default_transaction_read_only = on`. Grants
+    can't be added once it is read-only.
+- **Substrate's rustfs:** an empty volume is fine; suspended conversations are lost and users
+  start new ones. If the PVC lands on the wrong node, see "rustfs volume on the wrong node" in
+  `base-apps/substrate/runbook.md`.
 - **Atlantis:** run `atlantis plan` again on open PRs.
 
 ### Rebuild from nothing (never drilled)
@@ -264,7 +289,11 @@ you've restored them.
    ready (CNPG section above); syncing it earlier bootstraps an empty cluster.
 6. **Everything else** syncs from git and starts empty. Create the remaining child
    Applications, then `kubectl apply -f base-apps/master-app.yaml` (the git version, which
-   restores auto-sync) and `scripts/argo-sync-window.sh resume`.
+   restores auto-sync) and `scripts/argo-sync-window.sh resume`. Agent Substrate needs its
+   CA pools and database credentials from Vault (`substrate-cas`, `substrate-db`, and kagent's
+   `kagent-db` `v1-*` properties). A restored Vault has them. Without a Vault artifact, run
+   `scripts/provision-kagent-1-0-vault.sh` before the `substrate-*` apps sync: it generates
+   fresh CAs and passwords. kagent then starts with empty databases (above).
 
 ## Vault and the KMS key
 
@@ -304,6 +333,10 @@ which shuts the VMs down cleanly first. Take backups before you run it.
 - **Secrets:** Kubernetes Secrets live in the datastore, so apps start without waiting for
   Vault. ESO starts refreshing again once Vault is unsealed.
 - **CNPG:** the operator restarts both instances and keeps or elects a primary.
+- **kagent agents: not entirely.** Substrate's worker pods (`kagent-default-*` in `kagent`)
+  come back with their old names but new IPs, which the actors never learn (substrate#1837),
+  so conversations on them hang. Delete them once the nodes are Ready (below); suspended
+  conversations may still not resume, and users start new ones.
 - **Argo CD:** carries on auto-syncing from git.
 - **DNS and the allow-list:** if the ISP gave out a new WAN address, `wan-ip-monitor` (every
   12 hours) updates Route 53 and opens a PR for the Istio allow-list. Until that PR merges,
@@ -320,6 +353,8 @@ kubectl -n vault exec vault-0 -- vault status              # Sealed false, Seal 
 kubectl -n postgresql get cluster postgresql-cluster       # healthy, 2 instances ready
 kubectl get externalsecret -A | grep -v True               # the gate tolerates 3 known failures
 kubectl -n argo-cd get applications | grep -v 'Synced.*Healthy'
+kubectl delete pods -n kagent -l ate.dev/worker-pool=kagent-default   # stale Substrate workers (substrate#1837)
+kubectl -n kagent get agents                               # 7 Ready; then ask one: scripts/ask-hk "…"
 ```
 
 `scripts/hop-verify.sh gate` runs the same checks and more (Istio dataplane, CNI, ingress,
@@ -365,7 +400,7 @@ From `ansible/inventory/`. All three nodes run k3s `v1.37.1+k3s1` (since 2026-10
 |---|---|---|
 | `asela-k8s` | 10.0.1.101 | hypervisor (libvirt) |
 | `k3s-control-01` | 10.0.1.50 | k3s server and SQLite datastore, API at `https://10.0.1.50:6443`, taint `node-role.kubernetes.io/control-plane:NoSchedule` |
-| `k3s-worker-01` | 10.0.1.5 | agent: Vault, one CNPG instance, plain Postgres |
-| `k3s-worker-02` | 10.0.1.108 | agent: one CNPG instance |
+| `k3s-worker-01` | 10.0.1.5 | agent: Vault, one CNPG instance, plain Postgres (kagent and Substrate databases), Substrate workers |
+| `k3s-worker-02` | 10.0.1.108 | agent: one CNPG instance, Substrate's rustfs (session snapshots), Substrate workers |
 
 SSH: `ssh -i ~/.ssh/ari_sela_key asela@<ip>`.
