@@ -92,29 +92,47 @@ data:
             for: 0m
             annotations:
               summary: >-
-                An agent invoked a write/destructive tool with no approval request.
-                This is what a silently-stripped requireApproval gate looks like.
+                An agent invoked a write/destructive tool without an approval, or
+                the daily audit could not read the record, or it did not run at all.
+                The first is what a silently-stripped requireApproval gate looks
+                like; the other two mean the gate is unwatched.
               runbook: >-
-                Run `scripts/agent-audit.py --ungated` against the kagent database
-                (SELECT-only role): it lists every finding and marks the triaged
-                ones in scripts/agent-audit-acknowledged.yaml `ack`, so the
-                unmarked rows are what fired this alert. The alert covers all
-                history except those acknowledged calls. Or open
-                https://agent-audit.arigsela.com/?days=730 (Findings, the longest
-                window; it still lists acknowledged calls) and click a finding to
-                see its session - which agent, which tool, and with what (redacted)
-                arguments, in order. Arguments are deliberately absent from this
-                alert. After triage and a fix, acknowledge the session in that file,
-                or move its `through` forward if the session is already listed.
+                No summary line in 26h (the alert shows no data): the
+                agent-audit-ungated CronJob did not run or crashed before printing
+                (`kubectl get jobs -n postgresql -l app=agent-audit`, then its pod
+                log). A line with `problems` set: it ran but could not read kagent's
+                record (undecodable events, or no tool call recognised: the event
+                shape changed after a kagent bump; see scripts/agent-audit.py,
+                "kagent 1.0: the record"). Otherwise it is a finding: run
+                `scripts/agent-audit.py --ungated` against the kagent_v1 database
+                (SELECT-only role; `--source v010` for the 0.10 archive): it lists
+                every finding, its gate outcome, and marks the triaged ones in
+                scripts/agent-audit-acknowledged.yaml `ack`, so the unmarked rows
+                are what fired this alert. The alert covers all history except those
+                acknowledged calls. Or open https://agent-audit.arigsela.com/?days=730
+                (Findings, the longest window; it still lists acknowledged calls)
+                and click a finding to see its session - which agent, which tool,
+                and with what (redacted) arguments, in order. Arguments are
+                deliberately absent from this alert. After triage and a fix,
+                acknowledge the session in that file, or move its `through` forward
+                if the session is already listed.
             labels:
               severity: critical
               pillar: security
-            noDataState: OK
+            # Fail closed. The query below returns a value whenever the daily summary
+            # line exists (1 = warning, 0 = ok), so "no data" can only mean the audit
+            # did not run or died before printing - and a check that did not run must
+            # not look healthy. (With the old count-of-warnings query, no data was the
+            # healthy case, which is why this used to be OK.)
+            noDataState: Alerting
+            # Error, not KeepLast: if the rule itself cannot evaluate (Loki down),
+            # Grafana raises a DatasourceError alert through the same n8n route. For a
+            # security rule that is wanted; see the capacity rules for the opposite.
             execErrState: Error
             data:
               - refId: query
                 relativeTimeRange:
-                  from: 86400
+                  from: 93600
                   to: 0
                 datasourceUid: loki
                 model:
@@ -129,13 +147,24 @@ data:
                   # line filter (no space) never matches, so the first version of
                   # this rule could not fire. Verified against live Loki: the line
                   # filter returns 0, `| json | severity="warning"` returns 1.
+                  #
+                  # Every summary line becomes a sample (1 if severity is warning,
+                  # else 0) and the max over 26h is the answer: the CronJob runs daily
+                  # at 07:00, so 26h always holds the latest run plus two hours of
+                  # slack for a slow pip install. Lines that are not JSON (a
+                  # traceback) are dropped by __error__="". app="agent-audit" only:
+                  # the on-demand archive job logs as app=agent-audit-archive.
+                  # Checked against Loki 3.7.8 (the cluster's): ok line 0, warning
+                  # line 1, no line in 26h no data.
                   expr: >-
-                    sum(count_over_time({namespace="postgresql", app="agent-audit"}
-                    |= "agent-audit-ungated" | json
-                    | check="agent-audit-ungated" | severity="warning" [24h]))
+                    max(max_over_time({namespace="postgresql", app="agent-audit"}
+                    |= "agent-audit-ungated" | json check="check", severity="severity"
+                    | check="agent-audit-ungated"
+                    | label_format warning=`{{ if eq .severity "warning" }}1{{ else }}0{{ end }}`
+                    | unwrap warning | __error__="" [26h]))
               - refId: threshold
                 relativeTimeRange:
-                  from: 86400
+                  from: 93600
                   to: 0
                 datasourceUid: __expr__
                 model:
@@ -159,26 +188,33 @@ data:
                 does not undo, or actions outside one coherent task. Every call may
                 have been approved; this is about what the session did, not whether
                 the gate fired. It also fires when Jev could not be reached (jev_errors
-                above 0 in the summary line), because a check that did not run must
-                not look healthy.
+                above 0 in the summary line), and when the daily risk run printed no
+                summary at all in 26h, because a check that did not run must not look
+                healthy.
               runbook: >-
-                The summary line names the agent, session id and the flags that fired
-                (never arguments). Open https://agent-audit.arigsela.com/risk for the
-                high and review sessions with their flags and Jev's reasons, then the
-                session link for the ordered calls (or `scripts/agent-audit.py --agent
-                <agent> --format json` behind the SELECT-only credential and filter on
-                the session id). A `review` verdict (low Jev confidence, a Jev error or
-                the per-run cap) does not fire this rule but is listed on /risk. If no
-                session is high, read jev_errors in the summary line first.
+                No summary line in 26h (the alert shows no data): the agent-audit-risk
+                CronJob did not run or failed before scoring (`kubectl get jobs -n
+                postgresql -l app=agent-audit`, then its pod log; a database read
+                error means the export step failed). The summary line names the agent,
+                session id and the flags that fired (never arguments). Open
+                https://agent-audit.arigsela.com/risk for the high and review sessions
+                with their flags and Jev's reasons, then the session link for the
+                ordered calls (or `scripts/agent-audit.py --agent <agent> --format
+                json` behind the SELECT-only credential and filter on the session id).
+                A `review` verdict (low Jev confidence, a Jev error or the per-run cap)
+                does not fire this rule but is listed on /risk. If no session is high,
+                read jev_errors in the summary line first.
             labels:
               severity: warning
               pillar: security
-            noDataState: OK
+            # Fail closed, as agent-ungated-tool above: the query returns 0/1 whenever
+            # the daily summary line exists, so no data means the run did not happen.
+            noDataState: Alerting
             execErrState: Error
             data:
               - refId: query
                 relativeTimeRange:
-                  from: 86400
+                  from: 93600
                   to: 0
                 datasourceUid: loki
                 model:
@@ -188,14 +224,18 @@ data:
                     uid: loki
                   queryType: instant
                   # Same shape as the ungated rule: parse the JSON, never substring-
-                  # match it (json.dumps writes `"severity": "warning"` with a space).
+                  # match it (json.dumps writes `"severity": "warning"` with a space),
+                  # one 0/1 sample per summary line, max over 26h (the CronJob runs
+                  # daily at 02:30).
                   expr: >-
-                    sum(count_over_time({namespace="postgresql", app="agent-audit"}
-                    |= "agent-audit-risk" | json
-                    | check="agent-audit-risk" | severity="warning" [24h]))
+                    max(max_over_time({namespace="postgresql", app="agent-audit"}
+                    |= "agent-audit-risk" | json check="check", severity="severity"
+                    | check="agent-audit-risk"
+                    | label_format warning=`{{ if eq .severity "warning" }}1{{ else }}0{{ end }}`
+                    | unwrap warning | __error__="" [26h]))
               - refId: threshold
                 relativeTimeRange:
-                  from: 86400
+                  from: 93600
                   to: 0
                 datasourceUid: __expr__
                 model:
