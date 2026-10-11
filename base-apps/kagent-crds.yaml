@@ -1,3 +1,8 @@
+# kagent 1.0.0-alpha11 CRDs: api.kagent.dev/v1alpha3 (Agent, AgentTemplate, Harness, ModelConfig,
+# ModelProviderConfig, RemoteMCPServer, SandboxTemplate) plus the kmcp-crds subchart
+# (mcpservers.kagent.dev, kmcp.enabled defaults to true). Merged at the cutover, after the 0.10
+# CRDs are gone (plan Task 5.3 PR C): 0.10 and 1.x both own mcpservers.kagent.dev (SPEC §R.44).
+# Moves only with the kagent chart and Substrate (renovate.json5 group kagent-substrate).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -12,7 +17,7 @@ spec:
   source:
     chart: kagent-crds
     repoURL: ghcr.io/kagent-dev/kagent/helm
-    targetRevision: 0.10.3
+    targetRevision: 1.0.0-alpha11
   destination:
     server: https://kubernetes.default.svc
     namespace: kagent
