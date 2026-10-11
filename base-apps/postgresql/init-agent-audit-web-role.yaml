@@ -6,7 +6,9 @@
 #
 # A separate role from kagent_audit_ro so each consumer's credential can be
 # revoked on its own (one credential per consumer). Password from Vault via
-# agent-audit-web-db-credentials; never in git. Idempotent Sync hook.
+# agent-audit-web-db-credentials; never in git. Idempotent Sync hook. Like the
+# audit role it reads both kagent 0.10's archive (`kagent`, schema public) and
+# kagent 1.0 (`kagent_v1`, schema kagent).
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -92,6 +94,46 @@ spec:
                 FROM pg_database WHERE datname = current_database()\gexec
               EOSQL
 
+              # kagent 1.0: database kagent_v1, schema kagent, same SELECT-only shape.
+              # kagent's controller runs its migrations after SET ROLE kagent_owner (chart
+              # value database.postgres.role), so kagent_owner owns every table there, not
+              # the database owner: default privileges must name it (verified against
+              # kagent v1.0.0-alpha11's migrations). Like 0.10's public schema, this covers
+              # every table in the schema, the memory table included.
+              #
+              # Skipped, not failed, while the Vault property or the database is missing:
+              # a failed hook would block every postgresql sync. The audit CronJobs then
+              # fail to read and the fail-closed Grafana rules fire instead. A clean-database
+              # kagent alpha bump that recreates schema kagent drops these grants with it;
+              # the next postgresql sync re-runs this hook and restores them.
+              if [ -z "${AUDIT_DB_V1:-}" ]; then
+                echo "audit-database-v1 is not set (Vault property db-name-v1): skipping the kagent 1.0 grants"
+              elif [ "$(PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" \
+                    -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -v audit_db="$AUDIT_DB_V1" <<'EOCHECK'
+                SELECT count(*) FROM pg_database WHERE datname = :'audit_db';
+              EOCHECK
+                    )" != "1" ]; then
+                echo "database '$AUDIT_DB_V1' does not exist yet: skipping the kagent 1.0 grants"
+              else
+                PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" \
+                  -U "$POSTGRES_USER" -d "$AUDIT_DB_V1" \
+                  -v audit_user="$AUDIT_USER" \
+                  -v audit_db="$AUDIT_DB_V1" \
+                  -v kagent_schema="$KAGENT_V1_SCHEMA" \
+                  -v owner_role="$KAGENT_V1_OWNER_ROLE" <<'EOSQL'
+                REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA :"kagent_schema" FROM :"audit_user";
+                REVOKE ALL PRIVILEGES ON SCHEMA :"kagent_schema" FROM :"audit_user";
+
+                GRANT CONNECT ON DATABASE :"audit_db" TO :"audit_user";
+                GRANT USAGE ON SCHEMA :"kagent_schema" TO :"audit_user";
+                GRANT SELECT ON ALL TABLES IN SCHEMA :"kagent_schema" TO :"audit_user";
+
+                ALTER DEFAULT PRIVILEGES FOR ROLE :"owner_role" IN SCHEMA :"kagent_schema"
+                  GRANT SELECT ON TABLES TO :"audit_user";
+              EOSQL
+                echo "SELECT-only access to '$AUDIT_DB_V1' schema '$KAGENT_V1_SCHEMA' granted"
+              fi
+
               echo "agent-audit-web role '$AUDIT_USER' created with SELECT-only access to '$AUDIT_DB'"
           env:
             - name: POSTGRES_USER
@@ -124,6 +166,19 @@ spec:
                 secretKeyRef:
                   name: agent-audit-web-db-credentials
                   key: audit-database
+            # kagent 1.0's database. optional: the hook skips the 1.0 grants (instead of
+            # failing every postgresql sync) until Vault holds db-name-v1.
+            - name: AUDIT_DB_V1
+              valueFrom:
+                secretKeyRef:
+                  name: agent-audit-web-db-credentials
+                  key: audit-database-v1
+                  optional: true
+            # kagent chart values database.postgres.schema / database.postgres.role.
+            - name: KAGENT_V1_SCHEMA
+              value: kagent
+            - name: KAGENT_V1_OWNER_ROLE
+              value: kagent_owner
           resources:
             requests:
               memory: "64Mi"
