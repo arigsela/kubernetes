@@ -31,7 +31,7 @@ REPO = Path(__file__).resolve().parents[2]
 POLICIES = REPO / "base-apps" / "admission-policies"
 FIXTURES = Path(__file__).parent / "fixtures"
 # Pinned to the cluster's version (SPEC T21). Bump together with the cluster.
-K3S_IMAGE = "rancher/k3s:v1.36.4-k3s1"
+K3S_IMAGE = "rancher/k3s:v1.37.1-k3s1"
 NAME = "admission-harness-pytest"
 NAMESPACES = ["kagent", "team-a", "postgresql", "admission-test"]
 NOT_MANIFESTS = {"catalog-info.yaml", "mkdocs.yml"}
@@ -153,7 +153,9 @@ def cluster():
     _docker("rm", "-fv", NAME)
     r = _docker("run", "-d", "--name", NAME, "--privileged", K3S_IMAGE, "server",
                 "--disable", "traefik", "--disable", "metrics-server",
-                "--disable", "local-storage", "--disable", "servicelb")
+                "--disable", "local-storage", "--disable", "servicelb",
+                # 1.37 bundles Gateway API CRDs; prod disables them (SPEC §V.83), so does the harness
+                "--disable", "gateway-api-crd")
     assert r.returncode == 0, r.stderr
     c = Cluster()
     try:

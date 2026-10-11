@@ -34,7 +34,7 @@
       - config.yaml.d/10-authn.yaml
       - config.yaml.d/20-disable-bundled.yaml
     authn_files: "{{ ['authn-config.yaml'] + authn_dropins }}"
-    k3s_image: rancher/k3s:v1.36.4-k3s1   # the cluster's version; bump with it
+    k3s_image: rancher/k3s:v1.37.1-k3s1   # the cluster's version; bump with it (to the target BEFORE a hop)
     authn_validate_name: "install-authn-validate-{{ 1000000 | random }}"
     # colima and Docker Desktop only share $HOME with their VM: stage the files there.
     # community.docker ignores `docker context` (colima's socket is not /var/run/docker.sock):
