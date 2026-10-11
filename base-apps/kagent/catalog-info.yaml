@@ -8,13 +8,14 @@ metadata:
     backstage.io/techdocs-ref: dir:.
     backstage.io/kubernetes-label-selector: 'app.kubernetes.io/instance=kagent'
     backstage.io/kubernetes-namespace: kagent
-  tags: [ai-agent, kagent, mcp, anthropic]
+  tags: [ai-agent, kagent, mcp, anthropic, substrate]
 spec:
   type: service
   lifecycle: production
   owner: group:default/platform
   system: default/platform-ai
   dependsOn:
+    - component:ate-system/substrate
     - component:ollama/ollama
     - resource:vault/vault
     - resource:postgresql/postgresql
