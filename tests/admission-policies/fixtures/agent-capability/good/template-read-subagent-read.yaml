@@ -1,0 +1,25 @@
+# A read template may bind a read subagent (k8s-reader is a real read template).
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: good-read-subagent-read
+  namespace: kagent
+  labels:
+    capability.homelab/class: read
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: agent-docs
+        requireApproval: false
+        tools:
+          - get_file_contents
+    - subAgent:
+        name: reader
+        description: fixture subagent
+        templateRef:
+          name: k8s-reader

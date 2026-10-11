@@ -1,0 +1,11 @@
+# An Agent that references its template and harness by name, the only allowed shape.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Agent
+metadata:
+  name: good-agent-refs
+  namespace: kagent
+spec:
+  templateRef:
+    name: k8s-reader
+  harnessRef:
+    name: kagent-stateless

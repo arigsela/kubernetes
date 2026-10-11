@@ -1,6 +1,6 @@
 ---
 # Agent capability guardrails — the admission half of the L03 Security pillar, natively in
-# the API server.
+# the API server, for kagent 1.0 (api.kagent.dev/v1alpha3).
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Source of truth: base-apps/admission-policies/agent-capability-taxonomy.yaml
@@ -8,39 +8,60 @@
 # CI fails if this file drifts from the taxonomy. Tests: tests/admission-policies/.
 #
 # agent-identity answers WHO an agent is (its credentials are scoped to a dedicated Vault
-# path). These policies answer what an agent may DO. They DENY, at admission:
+# path). These policies answer what an agent may DO. kagent 1.0 splits an agent into an
+# AgentTemplate (what: model, prompt, tools), a Harness (how: runtime) and an Agent that
+# references both. Capability lives on the AgentTemplate, so the class label does too. They
+# DENY, at admission:
 #
-#   agent-capability             1. an Agent with no capability.homelab/class in
+#   agent-capability             1. an AgentTemplate with no capability.homelab/class in
 #                                   {read, write, admin}
-#                                2. an Agent binding a tool not in the taxonomy (FAIL-CLOSED)
-#                                3. a `read` agent binding any write/destructive tool
-#                                4. a `write` agent binding any destructive tool
-#                                5. a mutating tool bound without a requireApproval entry
-#   agent-capability-delegation  6. a `read` agent delegating to a `write` or `admin` agent
-#                                7. a `write` agent delegating to an `admin` agent
+#                                2. an AgentTemplate binding a tool not in the taxonomy
+#                                   (FAIL-CLOSED)
+#                                3. a `read` template binding any write/destructive tool
+#                                4. a `write` template binding any destructive tool
+#                                5. a write/destructive tool in an MCP binding without
+#                                   requireApproval: true. Approval is per BINDING in 1.0, so
+#                                   an agent that needs both binds the server twice: read
+#                                   tools ungated, mutating tools gated.
+#   agent-capability-delegation  6. a `read` template with a subAgent whose template is
+#                                   `write` or `admin`
+#                                7. a `write` template with a subAgent whose template is `admin`
+#   agent-capability-refs        8. an Agent with an inline spec.template or spec.harness:
+#                                   every Agent must reference an AgentTemplate and a Harness,
+#                                   so nothing reaches the runtime without passing 1-7 and 9
+#   agent-capability-runtime     9. a Harness that is not the `kagent` runtime, or whose image
+#                                   is not one of the taxonomy's runtime-images. 1-7 are
+#                                   enforced INSIDE the runtime (tool selection and the
+#                                   approval pause); byo/claude/codex or a foreign image need
+#                                   not honour them.
 #
 # Rules 6-7 close a privilege-escalation path: an agent's effective capability is its own
-# tools UNION everything it can reach by delegating, so a read agent delegating to an admin
-# agent IS an admin agent. The policy takes the Agent kind as its PARAMETER and binds with
-# paramRef.selector {}: the API server evaluates it once per Agent in the request's namespace
-# (each one a potential delegate) and ANDs the results. A delegate whose class label is
-# missing or not read/write counts as admin.
+# tools UNION everything its subagents hold. (A 1.0 subAgent is compiled INTO the parent's
+# runtime and takes the conversation over, so a read template with an admin subagent IS an
+# admin agent.) The policy takes the AgentTemplate kind as its PARAMETER and binds with
+# paramRef.selector {}: the API server evaluates it once per AgentTemplate in the request's
+# namespace (each one a potential subagent) and ANDs the results. A subagent template whose
+# class label is missing or not read/write counts as admin.
 #
-# Rules 6-7 check ONE HOP, which is inductively sufficient at admission: if no agent may
-# delegate above its own class, no chain can exceed its head's class. What admission cannot
-# see (a delegate created or PROMOTED after its delegator was admitted; no delegate existing
-# yet, where parameterNotFoundAction is Allow) is covered by CI, which computes the full
-# transitive closure over the agent graph in git (scripts/validate-agent-capability.py).
+# Rules 6-7 check ONE HOP, which is inductively sufficient at admission: if no template may
+# bind a subagent above its own class, no chain can exceed its head's class (kagent 1.0 also
+# rejects a subagent that has subagents). What admission cannot see (a subagent template
+# created or PROMOTED after its parent was admitted; no template existing yet, where
+# parameterNotFoundAction is Allow) is covered by CI, which computes the full transitive
+# closure over the template graph in git (scripts/validate-agent-capability.py).
 #
 # ROLLOUT STATE: ENFORCING. [Deny] with failurePolicy Fail: an evaluation error denies too,
-# rather than silently admitting. Replaced the Kyverno ClusterPolicy agent-capability, which
-# failed OPEN (forceFailurePolicyIgnore, one webhook replica) whenever Kyverno was down.
-# Emergency: `kubectl delete validatingadmissionpolicybinding <name>` (runbook).
+# rather than silently admitting. Emergency: `kubectl delete validatingadmissionpolicybinding
+# <name>` (runbook). Ships in the same sync as the api.kagent.dev CRDs' first objects (SPEC
+# §V.84); the parameterised policy denies until the API server's param informer syncs
+# (§V.78), so a sync right after it is created may need one retry.
 #
-# REPORTING: agent-capability carries reports.kyverno.io/enabled=true, so Kyverno's reports
-# controller writes its results to PolicyReports (native policies are opt-in there).
-# agent-capability-delegation deliberately does not: it is parameterised (paramKind Agent), and
-# Kyverno's engine mis-evaluates parameterised policies, so its report rows would be wrong.
+# REPORTING: every policy here except agent-capability-delegation carries
+# reports.kyverno.io/enabled=true, so Kyverno's reports controller writes its results to
+# PolicyReports (native policies are opt-in there; it needs read RBAC on the matched kinds,
+# kyverno-reports-rbac.yaml). agent-capability-delegation deliberately does not: it is
+# parameterised (paramKind AgentTemplate), and Kyverno's engine mis-evaluates parameterised
+# policies, so its report rows would be wrong (§V.76).
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -52,11 +73,11 @@ spec:
   matchConstraints:
     resourceRules:
     - apiGroups:
-      - kagent.dev
+      - api.kagent.dev
       apiVersions:
-      - v1alpha2
+      - v1alpha3
       resources:
-      - agents
+      - agenttemplates
       operations:
       - CREATE
       - UPDATE
@@ -64,7 +85,7 @@ spec:
   - name: cls
     expression: object.metadata.?labels[?'capability.homelab/class'].orValue('')
   - name: mcp
-    expression: object.spec.?declarative.?tools.orValue([]).filter(t, t.type == 'McpServer')
+    expression: object.spec.?tools.orValue([]).filter(t, has(t.mcp)).map(t, t.mcp)
   - name: classified
     expression: '["k8s_get_resources", "k8s_get_pod_logs", "k8s_describe_resource", "k8s_get_events", "k8s_get_resource_yaml", "k8s_get_cluster_configuration", "k8s_get_available_api_resources", "k8s_check_service_connectivity", "k8s_generate_resource", "istio_proxy_status", "istio_proxy_config", "istio_version", "istio_analyze_cluster_configuration", "istio_ztunnel_config", "istio_waypoint_status", "istio_list_waypoints", "istio_remote_clusters", "istio_generate_manifest", "istio_generate_waypoint", "search_dashboards", "get_dashboard_by_uid", "get_dashboard_panel_queries", "query_prometheus", "query_loki_logs", "query_loki_stats", "list_prometheus_metric_names", "list_prometheus_metric_metadata", "list_prometheus_label_names", "list_prometheus_label_values", "list_loki_label_names", "list_loki_label_values", "list_datasources", "get_datasource", "list_alert_rules", "get_alert_rule_by_uid", "list_contact_points", "list_incidents", "get_incident", "list_teams", "list_oncall_users", "list_oncall_teams", "list_oncall_schedules", "get_oncall_shift", "get_current_oncall_users", "list_sift_investigations", "get_sift_investigation", "get_sift_analysis", "get_assertions", "find_slow_requests", "find_error_pattern_logs", "get_file_contents", "search_code", "get-catalog-entity", "k8s_patch_resource", "k8s_apply_manifest", "k8s_create_resource", "k8s_create_resource_from_url", "k8s_annotate_resource", "k8s_remove_annotation", "k8s_label_resource", "k8s_remove_label", "istio_apply_waypoint", "istio_install_istio", "update_dashboard", "create_incident", "add_activity_to_incident", "k8s_delete_resource", "k8s_execute_command", "istio_delete_waypoint"]'
   - name: mutating
@@ -73,19 +94,19 @@ spec:
     expression: '["k8s_delete_resource", "k8s_execute_command", "istio_delete_waypoint"]'
   validations:
   - expression: variables.cls in ['read', 'write', 'admin']
-    messageExpression: '"Agent ''" + object.metadata.name + "'' must declare a capability class: the label capability.homelab/class must be one of read, write, admin. There is no default."'
+    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' must declare a capability class: the label capability.homelab/class must be one of read, write, admin. There is no default."'
     reason: Forbidden
-  - expression: variables.mcp.all(t, t.mcpServer.?toolNames.orValue([]).all(n, n in variables.classified))
-    messageExpression: '"Agent ''" + object.metadata.name + "'' binds tools that are not in the capability taxonomy. Classify them in base-apps/admission-policies/agent-capability-taxonomy.yaml first: unclassified tools are denied by design (fail-closed)."'
+  - expression: variables.mcp.all(b, b.?tools.orValue([]).all(n, n in variables.classified))
+    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' binds tools that are not in the capability taxonomy. Classify them in base-apps/admission-policies/agent-capability-taxonomy.yaml first: unclassified tools are denied by design (fail-closed)."'
     reason: Forbidden
-  - expression: variables.cls != 'read' || variables.mcp.all(t, t.mcpServer.?toolNames.orValue([]).all(n, !(n in variables.mutating)))
-    messageExpression: '"Agent ''" + object.metadata.name + "'' is class read but binds mutating tools. A read agent may bind only read-classified tools."'
+  - expression: variables.cls != 'read' || variables.mcp.all(b, b.?tools.orValue([]).all(n, !(n in variables.mutating)))
+    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' is class read but binds mutating tools. A read agent may bind only read-classified tools."'
     reason: Forbidden
-  - expression: variables.cls != 'write' || variables.mcp.all(t, t.mcpServer.?toolNames.orValue([]).all(n, !(n in variables.destructive)))
-    messageExpression: '"Agent ''" + object.metadata.name + "'' is class write but binds destructive tools. Only an admin agent may bind destructive tools."'
+  - expression: variables.cls != 'write' || variables.mcp.all(b, b.?tools.orValue([]).all(n, !(n in variables.destructive)))
+    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' is class write but binds destructive tools. Only an admin agent may bind destructive tools."'
     reason: Forbidden
-  - expression: variables.mcp.all(t, t.mcpServer.?toolNames.orValue([]).all(n, !(n in variables.mutating) || n in t.mcpServer.?requireApproval.orValue([])))
-    messageExpression: '"Agent ''" + object.metadata.name + "'' binds mutating tools that are not in that tool ref''s requireApproval list. Every write/destructive tool must be gated behind human approval."'
+  - expression: variables.mcp.all(b, b.?requireApproval.orValue(false) || b.?tools.orValue([]).all(n, !(n in variables.mutating)))
+    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' binds write/destructive tools in an MCP binding without requireApproval: true. Approval is per binding: bind the server twice, read tools ungated and every mutating tool in the gated binding."'
     reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
@@ -104,16 +125,16 @@ metadata:
 spec:
   failurePolicy: Fail
   paramKind:
-    apiVersion: kagent.dev/v1alpha2
-    kind: Agent
+    apiVersion: api.kagent.dev/v1alpha3
+    kind: AgentTemplate
   matchConstraints:
     resourceRules:
     - apiGroups:
-      - kagent.dev
+      - api.kagent.dev
       apiVersions:
-      - v1alpha2
+      - v1alpha3
       resources:
-      - agents
+      - agenttemplates
       operations:
       - CREATE
       - UPDATE
@@ -128,17 +149,17 @@ spec:
   - name: mine
     expression: object.metadata.?labels[?'capability.homelab/class'].orValue('')
   - name: delegates
-    expression: object.spec.?declarative.?tools.orValue([]).filter(t, t.type == 'Agent').map(t, t.agent.name)
+    expression: object.spec.?tools.orValue([]).filter(t, has(t.subAgent)).map(t, t.subAgent.?templateRef.?name.orValue(''))
   - name: theirs
     expression: 'params.metadata.?labels[?''capability.homelab/class''].orValue(''admin'') in [''read'', ''write''] ? params.metadata.labels[''capability.homelab/class''] : ''admin'''
   - name: delegatesToParam
     expression: params.metadata.name in variables.delegates
   validations:
   - expression: '!(variables.mine == ''read'' && variables.delegatesToParam) || variables.theirs == ''read'''
-    messageExpression: '"Agent ''" + object.metadata.name + "'' is class read but delegates to ''" + params.metadata.name + "'' (class " + variables.theirs + "). Delegation is capability-transitive, so this is a privilege escalation. Delegate to a read-class agent instead (see k8s-reader)."'
+    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' is class read but binds subagent template ''" + params.metadata.name + "'' (class " + variables.theirs + "). A subagent runs inside the parent and takes the conversation over, so this is a privilege escalation. Bind read tools directly instead (see homelab-knowledge)."'
     reason: Forbidden
   - expression: '!(variables.mine == ''write'' && variables.delegatesToParam) || variables.theirs != ''admin'''
-    messageExpression: '"Agent ''" + object.metadata.name + "'' is class write but delegates to admin agent ''" + params.metadata.name + "''. Delegation is capability-transitive, so this is a privilege escalation."'
+    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' is class write but binds admin subagent template ''" + params.metadata.name + "''. A subagent runs inside the parent, so this is a privilege escalation."'
     reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
@@ -152,3 +173,80 @@ spec:
   paramRef:
     selector: {}
     parameterNotFoundAction: Allow
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agent-capability-refs
+  labels:
+    reports.kyverno.io/enabled: 'true'
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - api.kagent.dev
+      apiVersions:
+      - v1alpha3
+      resources:
+      - agents
+      operations:
+      - CREATE
+      - UPDATE
+  validations:
+  - expression: '!has(object.spec.template)'
+    messageExpression: '"Agent ''" + object.metadata.name + "'' has an inline spec.template. Reference an AgentTemplate with spec.templateRef: capability (class, tools, approval gates, subagents) is checked on AgentTemplates, so an inline template would bypass it."'
+    reason: Forbidden
+  - expression: '!has(object.spec.harness)'
+    messageExpression: '"Agent ''" + object.metadata.name + "'' has an inline spec.harness. Reference a Harness with spec.harnessRef: the runtime check (agent-capability-runtime) is on Harnesses, so an inline harness would bypass it."'
+    reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agent-capability-refs
+spec:
+  policyName: agent-capability-refs
+  validationActions:
+  - Deny
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agent-capability-runtime
+  labels:
+    reports.kyverno.io/enabled: 'true'
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - api.kagent.dev
+      apiVersions:
+      - v1alpha3
+      resources:
+      - harnesses
+      operations:
+      - CREATE
+      - UPDATE
+  variables:
+  - name: images
+    expression: '["ghcr.io/kagent-dev/kagent/golang-adk", "ghcr.io/kagent-dev/kagent/kagent-adk"]'
+  - name: image
+    expression: object.spec.?workload.?image.orValue('')
+  validations:
+  - expression: has(object.spec.kagent)
+    messageExpression: '"Harness ''" + object.metadata.name + "'' must use the kagent runtime (spec.kagent). Per-binding tool selection and requireApproval are enforced inside kagent''s ADK runtimes; a byo, claude or codex runtime need not honour them."'
+    reason: Forbidden
+  - expression: variables.images.exists(r, variables.image.startsWith(r + '@') || variables.image.startsWith(r + ':'))
+    messageExpression: '"Harness ''" + object.metadata.name + "'' runs image ''" + variables.image + "'', which is not a kagent ADK runtime. Allowed repositories are the taxonomy''s runtime-images (base-apps/admission-policies/agent-capability-taxonomy.yaml)."'
+    reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agent-capability-runtime
+spec:
+  policyName: agent-capability-runtime
+  validationActions:
+  - Deny

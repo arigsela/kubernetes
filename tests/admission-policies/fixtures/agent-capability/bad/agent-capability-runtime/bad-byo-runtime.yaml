@@ -1,0 +1,17 @@
+# rule 9: a byo runtime need not honour tool selection or approval, even on a kagent ADK image.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata:
+  name: bad-byo-runtime
+  namespace: kagent
+spec:
+  byo: {}
+  workload:
+    image: ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha11@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    command:
+      - "/app"
+  substrate:
+    workerPoolRef:
+      name: kagent-default
+    snapshotPolicy:
+      location: s3://ate-snapshots/kagent/

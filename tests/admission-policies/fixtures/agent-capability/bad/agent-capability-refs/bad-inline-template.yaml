@@ -1,0 +1,21 @@
+# rule 8: an inline template carries tools that no AgentTemplate policy ever sees
+# (here: an ungated delete with no class at all).
+apiVersion: api.kagent.dev/v1alpha3
+kind: Agent
+metadata:
+  name: bad-inline-template
+  namespace: kagent
+spec:
+  template:
+    modelConfig:
+      name: anthropic-claude-haiku-5-5
+    systemPrompt: fixture
+    tools:
+      - mcp:
+          server:
+            kind: RemoteMCPServer
+            name: kagent-tool-server
+          tools:
+            - k8s_delete_resource
+  harnessRef:
+    name: kagent-stateless

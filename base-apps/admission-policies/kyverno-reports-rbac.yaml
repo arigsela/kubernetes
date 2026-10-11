@@ -1,25 +1,28 @@
-# Lets Kyverno's REPORTS controller — and only that one — read kagent Agents.
+# Lets Kyverno's REPORTS controller — and only that one — read the kagent objects the native
+# agent admission policies match.
 #
 # Lives in admission-policies because it serves those policies' PolicyReports (moved here
 # when the kyverno-policies app was retired, SPEC T90).
 #
 # Why: Kyverno's reports controller writes the PolicyReports for the native agent admission
-# policies (base-apps/admission-policies: agent-capability, agent-identity-mcp-toolnames). To
-# evaluate them in the background it must LIST and WATCH the Agents. Without this grant it
-# asks for it by name and reports nothing for Agents:
+# policies (base-apps/admission-policies: agent-capability, agent-capability-refs,
+# agent-capability-runtime, agent-identity-mcp-toolnames). To evaluate them in the background
+# it must LIST and WATCH the objects they match. Without this grant it asks for it by name and
+# reports nothing for them:
 #
 #     Warning: system:serviceaccount:kyverno:kyverno-reports-controller
 #     requires permissions get,list,watch for resource kagent.dev/v1alpha2/Agent
 #
-# The admission controller used to be granted this too: the Kyverno ClusterPolicy
-# agent-capability made an `apiCall` to read a delegate Agent's class, and when that call was
-# denied Kyverno SKIPPED the rule, so delegation escalations were silently ADMITTED. That
-# policy is gone (plan Phase 3E); the native agent-capability-delegation reads delegates as
-# policy PARAMETERS inside the API server and needs no RBAC. The admission grant was removed
-# with it. Admission never needed RBAC to validate an object: the API server sends it.
+# kagent 1.0 moved the agent API to api.kagent.dev/v1alpha3 and split an agent into an
+# AgentTemplate (matched by agent-capability and agent-identity-mcp-toolnames), an Agent
+# (agent-capability-refs) and a Harness (agent-capability-runtime). The 0.10 kagent.dev
+# Agent CRD is gone, so its grant is too. The ClusterRole keeps its name: it is the adopted
+# object, and renaming it would make Argo delete and recreate it.
 #
-# The background controller is not granted: it reconciles generate/mutate-existing rules, and
-# nothing generates or mutates Agents. Read-only verbs: nothing here writes an Agent.
+# The admission controller is not granted: the parameterised agent-capability-delegation reads
+# its AgentTemplate parameters inside the API server and needs no RBAC, and admission never
+# needs RBAC to validate an object (the API server sends it). The background controller is not
+# granted: nothing generates or mutates these objects. Read-only verbs: nothing here writes one.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -29,6 +32,6 @@ metadata:
   labels:
     rbac.kyverno.io/aggregate-to-reports-controller: "true"
 rules:
-  - apiGroups: ["kagent.dev"]
-    resources: ["agents"]
+  - apiGroups: ["api.kagent.dev"]
+    resources: ["agenttemplates", "agents", "harnesses"]
     verbs: ["get", "list", "watch"]

@@ -1,0 +1,28 @@
+# rule 5: a write tool in the NON-approval binding, next to a correctly gated one (0.10's k8s-agent bug: label/annotate were bound but ungated).
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: bad-write-tool-ungated-binding
+  namespace: kagent
+  labels:
+    capability.homelab/class: admin
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+        requireApproval: false
+        tools:
+          - k8s_get_resources
+          - k8s_label_resource
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+        requireApproval: true
+        tools:
+          - k8s_delete_resource

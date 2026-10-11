@@ -1,0 +1,18 @@
+# rule 7: write template binds the admin istio-agent template as a subagent.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: bad-write-delegates-to-admin
+  namespace: kagent
+  labels:
+    capability.homelab/class: write
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - subAgent:
+        name: mesh
+        description: fixture subagent
+        templateRef:
+          name: istio-agent

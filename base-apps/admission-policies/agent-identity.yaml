@@ -97,7 +97,12 @@ spec:
   policyName: agent-identity-no-monolithic-key
   validationActions: [Deny]   # enforcing
 ---
-# ---- Invariant 3: an McpServer tool ref must list its tools ----------------------------------
+# ---- Invariant 3: an MCP binding must list its tools -----------------------------------------
+# kagent 1.0 (api.kagent.dev/v1alpha3): tools live on the AgentTemplate, one entry per binding.
+# An omitted or empty `tools` list exposes EVERY tool the server has (CRD docs), including any a
+# future tool-server upgrade adds. An Agent cannot carry tools of its own: an inline
+# spec.template is denied by agent-capability-refs (agent-capability.yaml), so checking
+# AgentTemplates covers every agent.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -108,18 +113,16 @@ spec:
   failurePolicy: Fail   # enforcing: an evaluation error denies
   matchConstraints:
     resourceRules:
-      - apiGroups: ["kagent.dev"]
-        apiVersions: ["v1alpha2"]
-        resources: ["agents"]
+      - apiGroups: ["api.kagent.dev"]
+        apiVersions: ["v1alpha3"]
+        resources: ["agenttemplates"]
         operations: ["CREATE", "UPDATE"]
   validations:
     - expression: >-
-        !has(object.spec.declarative) || !has(object.spec.declarative.tools)
-        || object.spec.declarative.tools.all(t,
-             !has(t.type) || t.type != 'McpServer'
-             || (has(t.mcpServer) && has(t.mcpServer.toolNames) && size(t.mcpServer.toolNames) > 0))
+        object.spec.?tools.orValue([]).all(t,
+             !has(t.mcp) || size(t.mcp.?tools.orValue([])) > 0)
       messageExpression: >-
-        "Agent '" + object.metadata.name + "' has an McpServer tool ref with no toolNames. An
+        "AgentTemplate '" + object.metadata.name + "' has an MCP binding with no tools. An
         empty list is an implicit bind-all: the agent silently gains every tool the server
         exposes, including any added by a future upgrade. List the tools explicitly. See
         templates/agent-identity/README.md (invariant 3)."
