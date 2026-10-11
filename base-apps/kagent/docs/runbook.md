@@ -6,7 +6,7 @@ app: kagent
 catalog_entity: kagent
 kind: runbook
 namespace: kagent
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-11
 status: stable
 tags: [ai-agent, kagent, mcp, anthropic]
 sources:
@@ -17,17 +17,13 @@ sources:
   - base-apps/kagent/model-configs/anthropic-claude-haiku-5-5.yaml
   - base-apps/kagent/agents/homelab-knowledge.yaml
   - base-apps/kagent/agents/k8s-reader.yaml
-  - base-apps/kagent/agents/homelab-agent.yaml
+  - base-apps/kagent/agent-docs-mcp.yaml
   - base-apps/kagent/agent-docs-mcp-remote.yaml
   - base-apps/kagent/external-secrets.yaml
   - base-apps/kagent/kagent-anthropic-external-secret.yaml
-  - base-apps/kagent/homelab-agent-external-secret.yaml
-  - base-apps/kagent/homelab-agent-db-external-secret.yaml
   - base-apps/kagent/httproute.yaml
   - base-apps/kagent/httproute-mcp.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
-  - base-apps/postgresql/init-homelab-agent-db.yaml
-  - scripts/provision-homelab-agent-vault.sh
 ---
 
 # kagent — Runbook
@@ -52,12 +48,8 @@ sources:
 - **Fix:** if the `RemoteMCPServer` itself can't reach its target (`url:` in `agent-docs-mcp-remote.yaml`), check the target Service/pod is healthy first. If tools are missing because an agent's `toolNames` list is stale (a new tool was added upstream, or a typo), open a PR updating the agent's `spec.declarative.tools[].mcpServer.toolNames`.
 
 ### Symptom: agents fail on memory/embedding calls (RAG lookups error or time out)
-- **Check:** agents with a `memory` block use `memory.modelConfig: embedding-model-config` (`embedding-model-config.yaml`), which points at `http://ollama.ollama.svc.cluster.local:11434` (model `nomic-embed-text`); `homelab-agent` calls the same Ollama directly (`OLLAMA_BASE_URL`). Confirm Ollama is up: `kubectl -n ollama get pods` and `kubectl -n ollama logs deploy/ollama --tail=50`; confirm the `ModelConfig` resolved correctly in kagent: `kubectl -n kagent describe modelconfig embedding-model-config`.
+- **Check:** agents with a `memory` block use `memory.modelConfig: embedding-model-config` (`embedding-model-config.yaml`), which points at `http://ollama.ollama.svc.cluster.local:11434` (model `nomic-embed-text`). Confirm Ollama is up: `kubectl -n ollama get pods` and `kubectl -n ollama logs deploy/ollama --tail=50`; confirm the `ModelConfig` resolved correctly in kagent: `kubectl -n kagent describe modelconfig embedding-model-config`.
 - **Fix:** this is a dependency on the `ollama` component, not a kagent config problem — see `base-apps/ollama/runbook.md` for Ollama-specific recovery. If Ollama is healthy but kagent still can't reach it, restart the controller so it re-resolves the endpoint: `kubectl -n kagent rollout restart deploy/kagent-controller`.
-
-### Symptom: `homelab-agent` pod won't start (`CreateContainerConfigError`) or has no memory
-- **Check:** the three ExternalSecrets it depends on are `SecretSynced`: `kubectl -n kagent get externalsecret homelab-agent-secrets homelab-agent-db` and `kubectl -n postgresql get externalsecret homelab-agent-db-credentials`. A missing Secret or key blocks the pod; a Vault 403 means the Vault side isn't provisioned (see the how-to below). For memory, check the DB exists: `kubectl -n postgresql logs job/init-homelab-agent-db` (the hook Job self-deletes on success, so no Job usually means it ran) and the pod's logs for Postgres connection errors.
-- **Fix:** provision or repair the Vault side, then force-sync the ExternalSecret. If the DB password was rotated, the init Job has to run again (it `ALTER ROLE`s idempotently) — a PR that changes only hook Jobs doesn't trigger a sync (`base-apps/postgresql/runbook.md`), so trigger one sync of the `postgresql` app, then restart the agent pod so it picks up the re-rendered `MEMORY_DB_URL`.
 
 ### Symptom: the kagent UI or `kagent-mcp.arigsela.com/mcp` returns 403 or times out from outside
 - **Check:** a 403 `RBAC: access denied` comes from the Gateway allow-list (`base-apps/istio-ingress/authorizationpolicy.yaml`), not kagent; a timeout usually means the Route 53 A record points at a stale WAN address. `kubectl -n kagent get httproute kagent kagent-mcp -o yaml` shows whether the routes are `Accepted` on the `https-kagent`/`https-kagent-mcp` listeners, and `kubectl -n kagent get certificate` whether `kagent-tls`/`kagent-mcp-tls` are `Ready`.
@@ -66,7 +58,7 @@ sources:
 ## How-to
 
 ### Deploy / update
-Edit the Helm `valuesObject` in `base-apps/kagent.yaml` (controller/UI/bundled-agent config) or the CRDs under `base-apps/kagent/` (custom agents, MCP servers, model configs, secrets, routes) and open a PR; Argo CD (`kagent` and `kagent-secrets` Applications, both `prune`/`selfHeal`) syncs on merge into `main`. A new `homelab-agent` release is a new image built in `arigsela/claude-agents` (`homelab-agent/deploy-to-ecr.sh <tag>`) plus a PR bumping `spec.byo.deployment.image`; its dependencies are unpinned, so every rebuild can pull major bumps — run its tests against the resolved set.
+Edit the Helm `valuesObject` in `base-apps/kagent.yaml` (controller/UI/bundled-agent config) or the CRDs under `base-apps/kagent/` (custom agents, MCP servers, model configs, secrets, routes) and open a PR; Argo CD (`kagent` and `kagent-secrets` Applications, both `prune`/`selfHeal`) syncs on merge into `main`.
 
 ### Rotate a Vault-backed secret
 Every ExternalSecret here is credential-scoped: each resolves through its **own** `SecretStore` / ESO ServiceAccount / Vault role, reading a **per-consumer Vault key**. Rotate a value at that consumer's own path — the monolithic `kagent` key is no longer read by anything in this namespace.
@@ -77,38 +69,11 @@ Every ExternalSecret here is credential-scoped: each resolves through its **own*
 | `backstage-mcp-token` | `vault-backstage-mcp` | `k8s-secrets/kagent-backstage-mcp` (property `token`) |
 | `kagent-db-credentials` | `vault-kagent-db` | `k8s-secrets/kagent-db` (`db-url`, `db-user`, `db-password`, `db-name`) |
 | `kagent-anthropic` (`kagent-anthropic-secrets`) | `vault-kagent-anthropic` | `k8s-secrets/kagent-anthropic` (property `anthropic-api-key`) |
-| `homelab-agent-secrets` | `vault-homelab-agent` | `k8s-secrets/homelab-agent` (`anthropic-api-key`, `backstage-token`) |
-| `homelab-agent-db` | `vault-homelab-agent-db` | `k8s-secrets/homelab-agent-db` (property `password`; also re-run the init Job, see above) |
 | `kagent-mcp-basic-auth` — orphaned, no consumer since T52 | `vault-kagent-mcp-basic-auth` | `k8s-secrets/kagent-mcp-basic-auth` (property `auth`) — nothing to rotate |
 
-Update the value in Vault directly (never in Git) — External Secrets Operator picks it up within the `refreshInterval` (1h), or force it immediately: `kubectl -n kagent annotate externalsecret <name> force-sync=$(date +%s) --overwrite`. Env-var consumers (`homelab-agent`) need a pod restart after the Secret changes.
+Update the value in Vault directly (never in Git) — External Secrets Operator picks it up within the `refreshInterval` (1h), or force it immediately: `kubectl -n kagent annotate externalsecret <name> force-sync=$(date +%s) --overwrite`. Env-var consumers (the `agent-docs-mcp` container, which gets its token through `secretRefs`) need a pod restart after the Secret changes.
 
 If an `ExternalSecret` goes `SecretSyncedError` with a Vault **403 permission denied**, the Vault side of its scope is missing or wrong — check that the policy `<role>` grants `read` on that exact path, and that the kubernetes-auth role binds the right ESO ServiceAccount in the `kagent` namespace. (A 403 rather than a 404 is what you get when the *policy* doesn't cover the path, even if the key doesn't exist.)
-
-### Provision homelab-agent's Vault side (one-time; also for rotation)
-Vault policies and roles here are hand-provisioned, not Terraform. `scripts/provision-homelab-agent-vault.sh` creates everything `homelab-agent` needs, idempotently: the two KV paths (`k8s-secrets/homelab-agent-db` with a generated `password`, preserved on re-run; `k8s-secrets/homelab-agent` with `anthropic-api-key` + `backstage-token`), two read-one-path policies, and two kubernetes-auth roles (`homelab-agent` → `eso-homelab-agent` in `kagent`; `homelab-agent-db` → `eso-homelab-agent-db` in `kagent,postgresql`). Token values come from env vars so they stay out of shell history; both are required on the first run, and on a re-run only the ones supplied are changed. The `anthropic-api-key` is a dedicated key for this agent, not the shared kagent one; `backstage-token` is the same Backstage MCP bearer value `backstage-catalog-mcp` uses.
-
-```sh
-kubectl -n vault cp scripts/provision-homelab-agent-vault.sh vault-0:/tmp/prov.sh
-kubectl -n vault exec -it vault-0 -- sh
-export VAULT_TOKEN=<root-or-admin-token>
-export ANTHROPIC_API_KEY=<key>          # first run only (or to rotate)
-export BACKSTAGE_MCP_TOKEN=<token>       # first run only (or to rotate)
-sh /tmp/prov.sh
-unset ANTHROPIC_API_KEY BACKSTAGE_MCP_TOKEN VAULT_TOKEN; rm /tmp/prov.sh; exit
-```
-
-The script's body is the by-hand reference (`vault kv put`, `vault policy write`, `vault write auth/kubernetes/role/...`). Then verify:
-
-```sh
-kubectl -n postgresql get externalsecret homelab-agent-db-credentials   # SecretSynced
-kubectl -n kagent get externalsecret homelab-agent-secrets homelab-agent-db
-kubectl -n kagent port-forward svc/homelab-agent 18080:8080 &
-curl -s localhost:18080/health                                     # {"status":"healthy",...}
-curl -s localhost:18080/.well-known/agent.json | jq '.skills[].id'  # the three skill ids
-```
-
-Memory check: ask a question, then a related one in a new turn; recall should surface the earlier exchange, and still do so after a pod restart.
 
 ### A tool call fails with `secrets is forbidden` or `403` from the API server
 Expected for Secrets: the tool server's ClusterRole (`base-apps/cluster-rbac/kagent-tools.yaml`) grants everything except `secrets`, for every agent. The agent should report the refusal; nothing to fix. For any other resource, the API group is probably new to the cluster: the role names non-core groups explicitly and denies the rest until a PR adds the group. Check with `kubectl auth can-i <verb> <resource> --as=system:serviceaccount:kagent:kagent-tools`, add the group to the role, and note it in the manifest header's dated list.

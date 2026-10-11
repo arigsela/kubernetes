@@ -15,7 +15,6 @@ sources:
   - models/nomic-embed-text/Dockerfile
   - scripts/build-model-image.sh
   - base-apps/kagent/embedding-model-config.yaml
-  - base-apps/kagent/agents/homelab-agent.yaml
 ---
 
 # ollama
@@ -28,7 +27,7 @@ Single-replica `Deployment` (`deployments.yaml`, `RollingUpdate` with `maxSurge:
 
 The model is an **image volume** (Kubernetes 1.36): a data-only OCI image in ECR, `models/nomic-embed-text`, pinned **by digest** in `deployments.yaml` and mounted read-only at `/models` (`OLLAMA_MODELS=/models`, `OLLAMA_NOPRUNE=1`). `scripts/build-model-image.sh nomic-embed-text` builds it (`models/nomic-embed-text/Dockerfile`) from Ollama tag `v1.5` and **asserts the model digest** (`sha256:970aa74c…`): kagent's stored memory vectors were made with this exact model, and a different one would silently make them unsearchable. The image's manifest is also named `latest`, which is what kagent asks for. `/root/.ollama` is an `emptyDir` for ollama's identity keypair only. Until Phase 4 an init container ran `ollama pull nomic-embed-text` (the registry's moving `latest`) onto a node-pinned PVC at every start.
 
-**Vector compatibility across Ollama upgrades.** From Ollama 0.30, `nomic-embed-text` lowercases its input. Measured on 2026-10-06 with the pinned model artifact: 0.35.1's vector for any text equals 0.20.5's vector for that text lowercased, so stored vectors of mixed-case text drift (cos 0.94–0.985) and lowercase ones don't change. At the time, `kagent.memory` was empty and `homelab_agent.store_vectors` held 7 rows, which all still retrieved correctly, so nothing was re-embedded. Before any future Ollama or model change, re-measure: embed the stored texts on both versions side by side, compare against the stored vectors, and re-embed if retrieval changes.
+**Vector compatibility across Ollama upgrades.** From Ollama 0.30, `nomic-embed-text` lowercases its input. Measured on 2026-10-06 with the pinned model artifact: 0.35.1's vector for any text equals 0.20.5's vector for that text lowercased, so stored vectors of mixed-case text drift (cos 0.94–0.985) and lowercase ones don't change. At the time, `kagent.memory` was empty and the only other vector store (since retired with its agent) held 7 rows, which all still retrieved correctly, so nothing was re-embedded. Before any future Ollama or model change, re-measure: embed the stored texts on both versions side by side, compare against the stored vectors, and re-embed if retrieval changes.
 
 The main container exposes port `11434` (`services.yaml`, Service `ollama`, `ClusterIP`) with HTTP `readinessProbe`/`livenessProbe` on `/`, gated by an exec `startupProbe` that POSTs a real `/api/embed` (over bash's `/dev/tcp`, since the image has no curl/wget) and requires a vector back. `GET /` answers before the model has loaded, so only the startup probe proves the model runs on these CPUs (E5-2670: AVX, no AVX2). During a RollingUpdate the old pod keeps serving until the new one has produced a vector. It also pre-loads the model at startup. Other in-cluster apps reach it at `http://ollama.ollama.svc.cluster.local:11434` — for example kagent's `embedding-model-config.yaml` configures `nomic-embed-text` against exactly that address.
 
@@ -41,7 +40,6 @@ The main container exposes port `11434` (`services.yaml`, Service `ollama`, `Clu
 Main container: requests `cpu: 250m` / `memory: 1Gi`, limits `cpu: 3` / `memory: 2Gi` (`OLLAMA_KEEP_ALIVE=-1` keeps the ~274MB model resident, so the cold reload never lands on a kagent call). No GPU is requested. The model file lives in the node's image store, not in the pod's memory or ephemeral storage.
 
 ## Who consumes it
-- kagent's `ModelConfig` `embedding-model-config` (`base-apps/kagent/embedding-model-config.yaml`, provider `Ollama`, model `nomic-embed-text`), used as `memory.modelConfig` by kagent's Declarative agents with a `memory` block.
-- `homelab-agent` calls it directly (`OLLAMA_BASE_URL` / `EMBEDDING_MODEL: nomic-embed-text` in `base-apps/kagent/agents/homelab-agent.yaml`).
+- kagent's `ModelConfig` `embedding-model-config` (`base-apps/kagent/embedding-model-config.yaml`, provider `Ollama`, model `nomic-embed-text`), used as `memory.modelConfig` by kagent's Declarative agents with a `memory` block. It is the only consumer.
 
-Both store vectors made with this exact model, which is why its digest is asserted at build time.
+kagent's memory stores vectors made with this exact model, which is why its digest is asserted at build time.

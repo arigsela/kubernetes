@@ -80,8 +80,8 @@ both wired in via `envFrom`:
   actions `aws:ecr:create`/`aws:ecr:build-push`, region `us-east-2` per
   `AWS_DEFAULT_REGION`), a Vault token (the `vault:setup` scaffolder action),
   and an `MCP_TOKEN` (static bearer token the MCP Actions backend accepts on
-  `/api/mcp-actions/v1/catalog`; kagent's `backstage-catalog` MCP server and
-  `homelab-agent` each hold a copy).
+  `/api/mcp-actions/v1/catalog`; kagent's `backstage-catalog` MCP server
+  holds a copy in Vault key `kagent-backstage-mcp`).
 
 ## Exposure
 `backstage.arigsela.com` is the Gateway API `HTTPRoute` `backstage`

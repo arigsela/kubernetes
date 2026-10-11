@@ -47,7 +47,7 @@ The repository as a whole is **not** a strictly conformant OKF bundle, and does 
 | Not every app carries the full agent-docs contract | Backfill stubs in `base-apps/index.md` under CI gating | `base-apps/index.md`, `scripts/agent-docs-scope.txt` |
 | L02 golden paths are fragmented, not registered | A declarative path registry humans + agents can invoke; today there is the Backstage New App template (`templates/new-app/`) and the dormant Crossplane XApplication, and both still emit an nginx Ingress (SPEC T76) | `docs/superpowers/specs/2026-07-14-adp-remaining-pillars-roadmap.md` (P2–P4) |
 | Evaluation is a tool, not yet a gate | Run the scorer on every agent/prompt change (E3) | same roadmap (E3) |
-| kagent `Execution` pillar unassessed | Audit the agent runtimes (kagent's Python/Go runtimes, the BYO `homelab-agent` pod) and their egress; openshell, the old sandbox, was removed on 2026-08-12 | same roadmap |
+| kagent `Execution` pillar unassessed | Audit the agent runtimes (kagent's Python/Go runtimes) and their egress; openshell, the old sandbox, was removed on 2026-08-12 | same roadmap |
 
 ## 6. Source registry
 | Domain | Authoritative location |

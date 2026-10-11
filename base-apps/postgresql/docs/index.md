@@ -1,12 +1,12 @@
 ---
 type: "Kubernetes App Guide"
 title: "PostgreSQL"
-description: "Shared PostgreSQL + pgvector instance (root, kagent, homelab_agent DBs; no backup) + 2-instance CNPG cluster for donetick (daily S3 backups)"
+description: "Shared PostgreSQL + pgvector instance (root, kagent DBs; no backup) + 2-instance CNPG cluster for donetick (daily S3 backups)"
 app: postgresql
 catalog_entity: postgresql
 kind: docs
 namespace: postgresql
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-11
 status: stable
 tags: [database, stateful, pgvector, cnpg]
 sources:
@@ -18,8 +18,6 @@ sources:
   - base-apps/postgresql/external-secrets.yaml
   - base-apps/postgresql/external-secrets-kagent.yaml
   - base-apps/postgresql/init-kagent-db.yaml
-  - base-apps/postgresql/init-homelab-agent-db.yaml
-  - base-apps/postgresql/homelab-agent-db-external-secret.yaml
   - base-apps/postgresql/cnpg-cluster.yaml
   - base-apps/postgresql/cnpg-scheduled-backup.yaml
   - base-apps/postgresql/external-secrets-cnpg-backup.yaml
@@ -41,7 +39,7 @@ sources:
 ## What it is
 Two separate PostgreSQL instances share this namespace:
 
-1. A shared, plain PostgreSQL instance — a single-replica `Deployment` (`deployments.yaml`) on image `pgvector/pgvector:0.8.2-pg18` (Postgres 18 with the `pgvector` extension available), giving other apps a single Postgres server that also supports vector columns. Address: `postgresql.postgresql.svc.cluster.local:5432`. Consumers include kagent, the homelab-agent memory store, agent-audit-web (read-only), Backstage (`base-apps/backstage/configmaps.yaml`) and, per the header of `cnpg-cluster.yaml`, n8n (n8n's DB host comes from Vault, so git can't confirm it).
+1. A shared, plain PostgreSQL instance — a single-replica `Deployment` (`deployments.yaml`) on image `pgvector/pgvector:0.8.2-pg18` (Postgres 18 with the `pgvector` extension available), giving other apps a single Postgres server that also supports vector columns. Address: `postgresql.postgresql.svc.cluster.local:5432`. Consumers include kagent, agent-audit-web (read-only), Backstage (`base-apps/backstage/configmaps.yaml`) and, per the header of `cnpg-cluster.yaml`, n8n (n8n's DB host comes from Vault, so git can't confirm it).
 2. A CloudNativePG-managed cluster `postgresql-cluster` (`cnpg-cluster.yaml`, Postgres 16.4, **2 instances** since 2026-09-30), which backs **donetick** at `postgresql-cluster-rw.postgresql.svc.cluster.local:5432` (`base-apps/donetick/configmap.yaml`). It was created 2025-12-03 by a since-deleted Argo CD Application (`postgresql-cnpg`) and adopted into this app on 2026-07-15. Unlike the plain Deployment, it has daily S3 backups (below). Its bootstrap database/owner is `n8n` (historical). The `chores_tracker` database and `chores_user` role inside it are **orphaned**: chores-tracker was removed on 2026-08-01, they were created by hand, and they aren't declared in Git. They still take up space and are still in every backup.
 
 ## How it's deployed
@@ -58,7 +56,6 @@ Two separate PostgreSQL instances share this namespace:
 ## Databases it provisions
 - **Primary/root database** (plain instance) — `deployments.yaml` sets `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_PASSWORD` from the `postgresql-credentials` Secret's `database-name`/`n8n-user`/`n8n-password` keys. Despite the `n8n-*` key naming (a holdover from this credential's original consumer), this user is the server's effective root/admin login, used by the init Jobs below to create further roles and databases.
 - **`kagent` database** (plain instance) — provisioned by the `init-kagent-db` `Job` (`init-kagent-db.yaml`), which polls `pg_isready` against `postgresql.postgresql.svc.cluster.local:5432`, then idempotently `CREATE ROLE`/`CREATE DATABASE` for the `kagent` user/db (credentials from the `kagent-db-credentials` Secret) and runs `CREATE EXTENSION IF NOT EXISTS vector` inside it so `kagent` can store vector embeddings.
-- **`homelab_agent` database** (plain instance) — provisioned the same way by `init-homelab-agent-db.yaml`: role and database `homelab_agent`, password from `homelab-agent-db-credentials`, `pgvector` enabled. It's the homelab-agent's memory store (`MEMORY_DB_URL` in `base-apps/kagent/homelab-agent-db-external-secret.yaml`).
 - All `init-*` Jobs are Argo CD **Sync hooks** (`HookSucceeded` delete policy, `ttlSecondsAfterFinished: 300`), idempotent and safe to re-run.
 - **Read-only audit roles on `kagent`** — `kagent_audit_ro` (the agent-audit CronJobs below) and `kagent_audit_web_ro` (the `agent-audit-web` UI), each created by its own Sync-hook Job (`init-kagent-audit-role.yaml`, `init-agent-audit-web-role.yaml`) with identical SQL (`tests/agent-audit/test_audit_role_jobs.py` keeps it identical): revoke everything, then grant `CONNECT`/`USAGE`/`SELECT` only, plus `ALTER DEFAULT PRIVILEGES FOR ROLE <database owner>` so tables kagent creates later are readable too. Separate roles so either consumer's credential can be revoked alone.
 - **`donetick` database** (CNPG cluster) — declared through CloudNativePG's `Database` CRD (`donetick-database.yaml`, `databaseReclaimPolicy: retain` so an Argo prune can't drop it). Its `donetick` role is declared in `cnpg-cluster.yaml` (`spec.managed.roles`) with a `kubernetes.io/basic-auth` password Secret from `external-secrets-donetick.yaml`. **That role declaration is not enforced.** The operator never reconciled it, so the role was created by hand on 2026-08-03, and a Vault password rotation does **not** reach Postgres until that's fixed. See `docs/troubleshooting/cnpg-managed-roles-inert.md`. (The older `n8n` managed role points at an Opaque Secret and is an example of what not to copy.)
@@ -78,7 +75,6 @@ Each consumer's credential comes through its **own** ESO `SecretStore` (Vault Ku
 | `external-secrets-cnpg-backup.yaml` | `postgresql-backup-credentials` | `vault-backend` (`postgresql`) | `postgresql-backup` |
 | `external-secrets-kagent.yaml` | `kagent-db-credentials` | `vault-kagent-db` (`kagent-db`) | `kagent-db` |
 | `external-secrets-donetick.yaml` | `donetick-db-credentials` | `vault-donetick-db` (`donetick-db`) | `donetick-db` |
-| `homelab-agent-db-external-secret.yaml` | `homelab-agent-db-credentials` | `vault-homelab-agent-db` (`homelab-agent-db`) | `homelab-agent-db` |
 | `external-secrets-kagent-audit.yaml` | `kagent-audit-credentials` | `vault-kagent-audit-ro` (`kagent-audit-ro`) | `kagent-audit-ro` |
 | `external-secrets-agent-audit-web-db.yaml` | `agent-audit-web-db-credentials` | `vault-agent-audit-web-db` (`agent-audit-web-db`) | `agent-audit-web-db` |
 | `external-secrets-agent-audit-risk.yaml` | `agent-audit-risk-credentials` | `vault-agent-audit-risk` (`agent-audit-risk`) | `agent-audit-risk` |
@@ -87,7 +83,7 @@ Each consumer's credential comes through its **own** ESO `SecretStore` (Vault Ku
 
 ## Backups and data-loss scope
 - **CNPG cluster: covered.** `cnpg-scheduled-backup.yaml` (`postgresql-daily-backup`, 02:00 UTC, `immediate: true`) takes a barman physical backup of the **whole** cluster, meaning every database in it (`donetick`, `n8n`, the orphaned `chores_tracker`) plus WAL archiving, to `s3://mysql-backups-asela-cluster/postgresql/` (`backup.retentionPolicy: 30d`, credentials `postgresql-backup-credentials`). `scripts/pg-backup.sh` adds an operator-independent `pg_dump`/`pg_dumpall` of the CNPG primary (insurance for when the operator itself is broken, since a barman restore needs a working operator).
-- **Plain instance: not backed up.** Nothing in this directory (and nothing in `pg-backup.sh`, which only targets the CNPG cluster) backs up `postgresql-pvc`. Losing that PVC or its node loses the root DB, `kagent` (agent history and audit source), `homelab_agent`, and whatever else lives on it (Backstage, n8n).
+- **Plain instance: not backed up.** Nothing in this directory (and nothing in `pg-backup.sh`, which only targets the CNPG cluster) backs up `postgresql-pvc`. Losing that PVC or its node loses the root DB, `kagent` (agent history and audit source), and whatever else lives on it (Backstage, n8n).
 - Cluster-wide backup and restore order: `recovery/CLUSTER-RECOVERY.md`.
 
 ## Operator

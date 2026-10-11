@@ -1,6 +1,60 @@
 #!/bin/sh
 # homelab-agent — Vault provisioning (one-time, idempotent, safe to re-run)
 #
+# ==============================================================================
+# RETIRED 2026-10-11. DO NOT RUN. Kept as a pattern only.
+#
+# homelab-agent (the LangGraph BYO kagent agent) was retired at the kagent 1.0
+# migration: kagent-langgraph does not implement 1.0's BYO contract (gRPC A2A,
+# TaskStore), and homelab-knowledge stays the single knowledge agent (decided
+# 2026-09-26). Its manifests are gone from base-apps/kagent/ and
+# base-apps/postgresql/ (Task 5.2 of
+# docs/plans/kagent-1-0-on-k8s-1-37-implementation-plan.md). Other provisioning
+# scripts (e.g. provision-donetick-vault.sh) cite this one as the reference for
+# the per-consumer split: generate-once DB password, one read-one-path policy and
+# one kubernetes-auth role per consumer, a DB role bound in two namespaces.
+#
+# One-time manual cleanup, run by the owner AFTER the retirement PR is merged
+# and Argo CD has pruned the ExternalSecrets/SecretStores (otherwise ESO keeps
+# retrying against the deleted paths/roles and logs 403s until the prune):
+#
+#   # 1. Vault (inside vault-0, as in "How to run" below, with an admin token)
+#   vault kv metadata delete -mount=k8s-secrets homelab-agent      # all versions
+#   vault kv metadata delete -mount=k8s-secrets homelab-agent-db   # all versions
+#   vault delete auth/kubernetes/role/homelab-agent
+#   vault delete auth/kubernetes/role/homelab-agent-db
+#   vault policy delete homelab-agent
+#   vault policy delete homelab-agent-db
+#
+#   # 2. Postgres: the pgvector `postgresql` Deployment (namespace postgresql),
+#   #    NOT the CNPG cluster. First take an off-cluster dump with a checksum
+#   #    (Task 5.1 of the plan; skip if that dump already exists and
+#   #    `pg_restore --list` reads it). Run from a laptop, so the file lands
+#   #    off-cluster:
+#   kubectl -n postgresql exec deploy/postgresql -- sh -c \
+#     'pg_dump -U "$POSTGRES_USER" -d homelab_agent -Fc' > homelab_agent.dump
+#   pg_restore --list homelab_agent.dump >/dev/null && shasum -a 256 homelab_agent.dump
+#   #    then drop it as the instance's superuser (POSTGRES_USER, the
+#   #    `n8n-user` key of postgresql-credentials). Plain DROP DATABASE
+#   #    refuses while anything is still connected, which is the check that
+#   #    nothing uses it any more:
+#   kubectl -n postgresql exec -it deploy/postgresql -- sh -c \
+#     'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+#   DROP DATABASE homelab_agent;
+#   DROP ROLE homelab_agent;
+#   #    (If DROP ROLE reports dependent objects, run
+#   #    `REASSIGN OWNED BY homelab_agent TO CURRENT_USER; DROP OWNED BY homelab_agent;`
+#   #    in each database it names, then DROP ROLE again.)
+#
+#   # 3. The agent's dedicated Anthropic API key (it lived only in
+#   #    k8s-secrets/homelab-agent): revoke it in the Anthropic console.
+#   #    The backstage-token in the same path was a copy of Backstage's MCP
+#   #    token, which kagent's backstage-catalog MCP server still uses.
+#
+# The ECR repository (homelab-agent) is Terraform-managed and is deleted
+# through Atlantis (terraform/roots/asela-cluster/ecr.tf), not by hand.
+# ==============================================================================
+#
 # Creates the scoped Vault secrets, policies, and kubernetes-auth roles that
 # back the ESO manifests in base-apps/kagent/ and base-apps/postgresql/:
 #   - k8s-secrets/homelab-agent-db   (prop: password)   -> DSN + init Job
@@ -33,10 +87,16 @@
 #   rm /tmp/prov.sh
 #   exit
 #
-# Design + runbook: base-apps/kagent/docs.md ("homelab-agent (BYO)") and
-# base-apps/kagent/runbook.md ("Provision homelab-agent's Vault side").
+# Design + runbook: the "homelab-agent (BYO)" section of base-apps/kagent/docs.md
+# and "Provision homelab-agent's Vault side" in base-apps/kagent/runbook.md, both
+# removed at retirement (read them in git history before 2026-10-11).
 
 set -eu
+
+# Retired (see the header): never recreate the homelab-agent paths, policies
+# and roles. Drop this block only in a copy made from this pattern.
+echo "ERROR: homelab-agent was retired on 2026-10-11; this script is a pattern only." >&2
+exit 1
 
 MOUNT="k8s-secrets"
 APP_PATH="homelab-agent"

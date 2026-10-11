@@ -14,7 +14,6 @@ sources:
   - base-apps/postgresql/external-secrets.yaml
   - base-apps/postgresql/external-secrets-kagent.yaml
   - base-apps/postgresql/init-kagent-db.yaml
-  - base-apps/postgresql/init-homelab-agent-db.yaml
   - base-apps/postgresql/pvc.yaml
   - base-apps/postgresql/cnpg-cluster.yaml
   - base-apps/postgresql/cnpg-scheduled-backup.yaml
@@ -41,12 +40,12 @@ sources:
 - **Fix:** the `init-*` Jobs are Argo CD **Sync hooks** (deleted on success), not desired-state resources, so `selfHeal` does not recreate them: once both Secrets are present and valid, trigger a sync of the `postgresql` app (Argo CD UI "Sync") and every init hook re-runs - they are all idempotent. If the recurring cause is a race between Secret sync and Job start, open a PR adding an explicit wait/retry or an `initContainer` check against the Secrets.
 
 ### Symptom: a merged change to an `init-*` Job's SQL has no effect
-The init Jobs (`init-kagent-db`, `init-homelab-agent-db`, `init-kagent-audit-role`, `init-agent-audit-web-role`) are Sync hooks, and hooks are not part of Argo CD's desired-state diff: a PR that changes **only** hook Jobs leaves the app `Synced` at the new revision without running a sync, so the new SQL never executes (seen 2026-09-27 with the audit roles' default-privileges fix).
+The init Jobs (`init-kagent-db`, `init-kagent-audit-role`, `init-agent-audit-web-role`) are Sync hooks, and hooks are not part of Argo CD's desired-state diff: a PR that changes **only** hook Jobs leaves the app `Synced` at the new revision without running a sync, so the new SQL never executes (seen 2026-09-27 with the audit roles' default-privileges fix).
 - **Check:** `kubectl -n argo-cd get application postgresql -o jsonpath='{.status.operationState.startedAt}'` is older than the merge.
 - **Fix:** trigger one sync of the `postgresql` app (Argo CD UI "Sync"); every init hook re-runs, idempotently. Then verify the effect (e.g. `SELECT pg_get_userbyid(defaclrole), defaclacl FROM pg_default_acl;` in database `kagent`).
 
 ### Symptom: plain `postgresql` pod stuck `Pending` after a node failure/drain
-Storage is a single `local-path` `PersistentVolumeClaim` (`pvc.yaml`, `10Gi`, `ReadWriteOnce`), which `local-path-provisioner` binds to whichever node first created it. The `Deployment` also has `nodeSelector: node.kubernetes.io/workload: application` (`deployments.yaml`). There is no StatefulSet, replica, or backup, so this is a single point of failure for every database on the instance (root DB, `kagent`, `homelab_agent`, and the other consumers listed in docs.md). This entry is about the plain Deployment, not the CNPG cluster.
+Storage is a single `local-path` `PersistentVolumeClaim` (`pvc.yaml`, `10Gi`, `ReadWriteOnce`), which `local-path-provisioner` binds to whichever node first created it. The `Deployment` also has `nodeSelector: node.kubernetes.io/workload: application` (`deployments.yaml`). There is no StatefulSet, replica, or backup, so this is a single point of failure for every database on the instance (root DB, `kagent`, and the other consumers listed in docs.md). This entry is about the plain Deployment, not the CNPG cluster.
 - **Check:** `kubectl -n postgresql get pod -l app=postgresql -o wide` (look for `Pending`/`ContainerCreating` and the assigned node) and `kubectl -n postgresql get pvc postgresql-pvc -o wide` to see which node the underlying `local-path` volume lives on.
 - **Fix:** if the original node is truly gone, the local-path volume's data is gone with it — there is no cross-node replica to fail over to. Recovery means recreating `postgresql-pvc` from whatever external backup exists (none is defined in this directory) and restoring dumps manually; longer term, open a PR to add a periodic `pg_dump` CronJob or move to a replicated/operator-managed Postgres if this instance's availability requirements have grown.
 
