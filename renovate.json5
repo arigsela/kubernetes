@@ -153,6 +153,18 @@
       ],
     },
     {
+      // The Harnesses pin the golang-adk runtime image by digest, and the kubernetes manager
+      // sees it. It must match the kagent chart release (kagent#3102: built-in runtimes need
+      // the image built with that release), so it joins the lockstep group and waits for
+      // approval like the charts; never a Harness-only bump.
+      description: 'The kagent Harness runtime image moves with the kagent chart, on approval.',
+      matchFileNames: ['base-apps/kagent/harnesses/**'],
+      matchPackageNames: ['ghcr.io/kagent-dev/kagent/golang-adk'],
+      groupName: 'kagent-substrate',
+      dependencyDashboardApproval: true,
+      automerge: false,
+    },
+    {
       description: 'An alpha/beta kagent or Substrate bump is a clean-database migration, not an upgrade (every kagent 1.0 alpha so far required one).',
       matchManagers: ['argocd'],
       matchFileNames: [
