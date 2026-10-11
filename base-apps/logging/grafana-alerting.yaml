@@ -262,6 +262,14 @@ data:
                   # 2658-events/h baseline drops to 0, and the sensitive-file clause
                   # is provably unaffected by the namespace filter.
                   #
+                  # Agent Substrate (kagent 1.0's runtime, base-apps/substrate.yaml) adds two
+                  # more controller namespaces, by design API clients: ate-system
+                  # (ate-api-server, ate-controller and every atelet watch pods, WorkerPools
+                  # and ClusterTrustBundles; the credential provider reads Secrets) and
+                  # podcertificate-controller-system (signs PodCertificateRequests). Substrate's
+                  # sandboxed worker pods run in `kagent`, already listed. Not yet measured
+                  # against live Loki: Substrate is not installed when this lands.
+                  #
                   # argo-workflows is deliberately NOT in that namespace list. The
                   # Argo server has no login, so anyone who reaches it can run a
                   # workflow there with cluster-wide pod read: an unexpected API
@@ -280,7 +288,7 @@ data:
                     sum(count_over_time({namespace="falco"} |= "priority" | json
                     | (rule="Read sensitive file untrusted"
                     or rule="Contact K8S API Server From Container"
-                    and output_fields_k8s_ns_name!~"argo-cd|backstage|kagent"
+                    and output_fields_k8s_ns_name!~"argo-cd|backstage|kagent|ate-system|podcertificate-controller-system"
                     and (output_fields_k8s_ns_name!="argo-workflows"
                     or output_fields_container_name!~"wait|init"
                     or output_fields_proc_exepath!="/usr/bin/argoexec")
@@ -438,3 +446,67 @@ data:
                         type: gt
                         params:
                           - 90
+
+      # ----------------------------------------------------------------------
+      # Agent Substrate (kagent 1.0's runtime, base-apps/substrate/). Its CAs are valid 365
+      # days and nothing renews them; when one lapses every Substrate call fails. The
+      # substrate-ca-expiry CronJob (base-apps/substrate/ca-expiry-cronjob.yaml) reads the five
+      # CA certificates every 6 h and logs a summary line with min_days_left.
+      - orgId: 1
+        name: substrate
+        folder: Substrate
+        interval: 1h
+        rules:
+          - uid: substrate-ca-expiry
+            title: Substrate CA expires in under 30 days
+            condition: threshold
+            # 7h: the first check after install lands within 6 h. A warning 30 days ahead
+            # loses nothing by waiting.
+            for: 7h
+            annotations:
+              summary: >-
+                A Substrate CA expires in {{ with $values.query }}{{ .Value | printf "%.0f" }}{{ else }}n/a{{ end }}
+                days, or the check stopped reporting. When a CA lapses, pod certificates stop
+                issuing and kagent's agents stop working.
+              runbook: >-
+                base-apps/substrate/runbook.md "Rotate the Substrate CAs":
+                scripts/provision-kagent-1-0-vault.sh --rotate-cas, then restart the Substrate
+                and kagent workloads in order. No data means the check stopped:
+                kubectl -n ate-system get cronjob,jobs -l app.kubernetes.io/name=substrate-ca-expiry
+            labels:
+              severity: warning
+              pillar: reliability
+            # Fail closed: no summary line for 13 h is a broken check, not healthy CAs.
+            noDataState: Alerting
+            execErrState: Error
+            data:
+              - refId: query
+                relativeTimeRange:
+                  from: 46800
+                  to: 0
+                datasourceUid: loki
+                model:
+                  refId: query
+                  datasource:
+                    type: loki
+                    uid: loki
+                  queryType: instant
+                  # Parse the JSON and unwrap the number; min() across the per-run pod streams.
+                  expr: >-
+                    min(min_over_time({namespace="ate-system", app="substrate-ca-expiry"}
+                    |= "substrate-ca-expiry" | json | summary="true"
+                    | unwrap min_days_left [13h]))
+              - refId: threshold
+                relativeTimeRange:
+                  from: 46800
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: query
+                  conditions:
+                    - evaluator:
+                        type: lt
+                        params:
+                          - 30

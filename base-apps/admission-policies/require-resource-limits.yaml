@@ -20,7 +20,10 @@ spec:
       matchExpressions:
         - key: kubernetes.io/metadata.name
           operator: NotIn
-          values: [kube-system, argo-cd, kyverno]
+          # ate-system / podcertificate-controller-system: Agent Substrate (base-apps/substrate.yaml).
+          # Its chart pods run as root (atelet: DAC_OVERRIDE + hostPorts) and carry `app`, not
+          # app.kubernetes.io/name; neither is ours to change, so reporting them is noise.
+          values: [kube-system, argo-cd, kyverno, ate-system, podcertificate-controller-system]
     resourceRules:
       - apiGroups: [""]
         apiVersions: ["v1"]
