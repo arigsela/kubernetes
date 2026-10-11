@@ -9,6 +9,11 @@
 # every API call after that retries. Pods pinned to it by nodeSelector sit Pending until uncordon.
 # A run that stops mid-way leaves that node cordoned; the next run's pre-flight refuses until you
 # `kubectl uncordon` it by hand.
+# Agent Substrate (kagent 1.0's runtime): every node's pre-flight also requires identical CPU flags
+# across the k3s VMs (tasks/cpu-flags-preflight.yml, substrate#1657), and a node that rebooted has
+# its leftover Substrate worker pods deleted (substrate#1837). A drain evicts that node's workers:
+# an agent turn in flight on one of them may crash (substrate#1526) and has to be re-asked; the
+# 300 s drain_timeout (inventory/group_vars/all.yml) is not raised for it, waiting would not save it.
 - name: Patch the workers
   hosts: k3s_workers
   serial: 1
