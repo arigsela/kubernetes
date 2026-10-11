@@ -6,7 +6,7 @@ app: kagent
 catalog_entity: kagent
 kind: docs
 namespace: kagent
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-11
 status: stable
 tags: [ai-agent, kagent, mcp, anthropic]
 sources:
@@ -25,12 +25,6 @@ sources:
   - base-apps/kagent/mcp-basic-auth-external-secret.yaml
   - base-apps/kagent/agents/homelab-knowledge.yaml
   - base-apps/kagent/agents/k8s-reader.yaml
-  - base-apps/kagent/agents/homelab-agent.yaml
-  - base-apps/kagent/homelab-agent-external-secret.yaml
-  - base-apps/kagent/homelab-agent-secret-store.yaml
-  - base-apps/kagent/homelab-agent-db-external-secret.yaml
-  - base-apps/kagent/homelab-agent-db-secret-store.yaml
-  - base-apps/kagent/homelab-agent-serviceaccount.yaml
   - base-apps/kagent/agent-docs-mcp.yaml
   - base-apps/kagent/agent-docs-mcp-remote.yaml
   - base-apps/kagent/backstage-catalog-mcp.yaml
@@ -41,7 +35,6 @@ sources:
   - base-apps/kagent/reference-grant.yaml
   - base-apps/kagent/reference-grant-mcp.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
-  - base-apps/postgresql/init-homelab-agent-db.yaml
 ---
 
 # kagent
@@ -65,7 +58,8 @@ Each agent carries a `capability.homelab/class` label (`read`/`admin`) checked a
 | `k8s-agent`, `istio-agent` | Declarative | `anthropic-claude-sonnet-5-5` | yes | admin | Operator agents; mutating tools gated by `requireApproval` |
 | `build-orchestrator` (`build-orchestrator.yaml`) | Declarative | `anthropic-claude-sonnet-5-5` | yes | admin | Delegates to `k8s-agent` and `istio-agent` |
 | `skill-suggester`, `dungeon-crawler-carl-agent` | Declarative | `anthropic-claude-haiku-5-5` | yes | read | |
-| `homelab-agent` | BYO | `claude-sonnet-5` (env `MODEL_NAME`) | own Postgres DB | read | LangGraph container; see below |
+
+`homelab-knowledge` is the single knowledge agent. `homelab-agent`, a LangGraph BYO agent that duplicated it, was retired on 2026-10-11: `kagent-langgraph` doesn't implement kagent 1.0's BYO contract (gRPC A2A, TaskStore). Its manifests, `homelab_agent` database, Vault keys/roles and ECR repository were removed with it (Task 5.2 of `docs/plans/kagent-1-0-on-k8s-1-37-implementation-plan.md`); `scripts/provision-homelab-agent-vault.sh` is kept only as the reference pattern for per-consumer Vault provisioning.
 
 ## Model configs
 - **`anthropic-claude-sonnet-5-5`** and **`anthropic-claude-haiku-5-5`** (`model-configs/`) — Claude Sonnet 5.5 for the agents that reason over several tools (`homelab-knowledge`, `k8s-agent`, `istio-agent`, `build-orchestrator`) and Haiku 5.5 for the rest. Both use the Vault-backed `kagent-anthropic` key, set `anthropic.maxTokens: 16000` (the Go runtime's 8192 default caps thinking plus answer and truncates silently, kagent-dev/kagent#2895) and no sampling parameters (the 5.5 models reject them). Agents on them ! run `runtime: go` (above).
@@ -82,16 +76,6 @@ Agents only get the `toolNames` they explicitly list (e.g. `agents/homelab-knowl
 ## Tool server RBAC (the floor under the capability classes)
 `kagent-tools` is one Deployment and one ServiceAccount serving every agent's MCP tools, read-only agents included. The chart binds that ServiceAccount to `*` on everything by default, which is how the read-class `k8s-reader` listed every Secret in the cluster on 2026-07-15 (`k8s_get_resources`, `resource_type: secret`, all namespaces). Since 2026-10, `base-apps/kagent.yaml` sets `kagent-tools.rbac.create: false` (the chart still creates the ServiceAccount) and `base-apps/cluster-rbac/kagent-tools.yaml` binds a **cluster-admin minus Secrets** ClusterRole instead: every core resource except `secrets` (plus `pods/log|exec|attach|portforward`), and every non-core API group named explicitly. A new API group is denied until a PR adds it, the same fail-closed stance the taxonomy takes with new tools. No agent, admin class included, can read or write a Secret through the tools; Secrets are Vault + ESO managed and the only write path is git. `pods/exec` stays because `k8s_execute_command` is destructive-class and approval-gated; bounding what a shell may touch is the tool-guard's job. Contract pinned by `tests/agent-capability/test_kagent_tools_rbac.py`.
 
-## homelab-agent (BYO)
-`agents/homelab-agent.yaml` is a **BYO** `Agent`: kagent runs a container we build (LangGraph, source in `arigsela/claude-agents` → `homelab-agent/`, built and pushed with its `deploy-to-ecr.sh <tag>`, image `852893458518.dkr.ecr.us-east-2.amazonaws.com/homelab-agent:<tag>`) instead of rendering one from a Declarative spec. It answers the same three skill areas as `homelab-knowledge` (repo knowledge, cluster troubleshooting, deployment guidance) using the same backends, wired as env literals: `agent-docs-mcp` for repo reads, Backstage's catalog MCP, and `k8s-reader` over A2A for live state.
-- **Contract (kagent 0.9.11-era BYO, still used on 0.10.2):** no `ports` field — kagent assumes A2A on `:8080` and creates the Service; no `a2aConfig` (Declarative-only) — skills are advertised by the agent card the container serves at `/.well-known/agent.json`. No `ModelConfig` either: the model is the `MODEL_NAME` env and the key is a pod env. It runs `claude-sonnet-5`, which works here (images v0.4.0+; earlier images sent `temperature=0`, which Sonnet 5 rejects) even though Declarative agents can't use it.
-- **Pod identity:** ServiceAccount `homelab-agent` (`homelab-agent-serviceaccount.yaml`), non-credential-bearing — secrets arrive as env from the ESO-created Secrets below. The ECR pull secret is injected at admission (`base-apps/admission-policies/inject-ecr-pull-secret.yaml`), not declared.
-- **Conversation memory:** a dedicated `homelab_agent` database + owner role in the shared pgvector Postgres, created by the idempotent Sync-hook Job `base-apps/postgresql/init-homelab-agent-db.yaml` (DB-level isolation from kagent's own data). The agent reaches it through `MEMORY_DB_URL`, templated by `homelab-agent-db-external-secret.yaml`; embeddings come from Ollama `nomic-embed-text` (`MEMORY_NAMESPACE=homelab-agent`). An empty `MEMORY_DB_URL` turns memory off.
-- **Credentials:** its own Anthropic key and its own copy of the Backstage MCP token (no reuse of `kagent-anthropic`/`backstage-mcp-token`), each from a scoped Vault path — see the table below. The Vault side was provisioned once by hand; the steps are in the runbook.
-- **Agent-identity gates:** the CI validator (`scripts/validate-agent-identity.py`) and the `agent-identity` admission policy read `spec.declarative.*` for their model/toolNames checks, so they pass a BYO agent without inspecting it. Its `ExternalSecret`s are still gated like everyone else's.
-- **Coexistence:** `homelab-agent` runs alongside `homelab-knowledge`. The original design planned to retire `homelab-knowledge` once A2A parity held; that was reversed on 2026-09-26 (Decisions table in `docs/plans/kagent-1-0-feasibility-spikes-implementation-plan.md`): **`homelab-knowledge` stays the single knowledge agent, and `homelab-agent` is retired at the kagent 1.0 migration**, whose BYO contract (gRPC A2A, no checkpoint API) `kagent-langgraph` doesn't support yet. Don't build new dependencies on `homelab-agent`.
-- **Deliberately not done:** schema-scoped (rather than database-owner) DB role, per-agent Anthropic budget caps, a NetworkPolicy (none exists in the namespace; egress is open).
-
 ## Secrets & database
 Every `ExternalSecret` in `base-apps/kagent/` is **credential-scoped** per the agent-identity contract (`templates/agent-identity/README.md`): each has its own ESO ServiceAccount, its own `SecretStore`, its own Vault kubernetes-auth role, and its own per-consumer Vault key. No `ExternalSecret` in this namespace reads the monolithic `kagent` key any more, so a token minted for one consumer cannot read another's secrets.
 
@@ -101,11 +85,9 @@ Every `ExternalSecret` in `base-apps/kagent/` is **credential-scoped** per the a
 | `backstage-mcp-token` | `vault-backstage-mcp` | `eso-backstage-mcp` | `backstage-mcp` | `kagent-backstage-mcp` |
 | `kagent-db-credentials` | `vault-kagent-db` | `eso-kagent-db` | `kagent-db` | `kagent-db` |
 | `kagent-anthropic` (`kagent-anthropic-secrets`) | `vault-kagent-anthropic` | `eso-kagent-anthropic` | `kagent-anthropic` | `kagent-anthropic` |
-| `homelab-agent-secrets` | `vault-homelab-agent` | `eso-homelab-agent` | `homelab-agent` | `homelab-agent` |
-| `homelab-agent-db` | `vault-homelab-agent-db` | `eso-homelab-agent-db` | `homelab-agent-db` | `homelab-agent-db` |
 | `kagent-mcp-basic-auth` — **orphaned** | `vault-kagent-mcp-basic-auth` | `eso-kagent-mcp-basic-auth` | `kagent-mcp-basic-auth` | `kagent-mcp-basic-auth` |
 
-Each Vault policy grants `read` on exactly one path (`k8s-secrets/data/<key>`). The `homelab-agent-db` role is bound to `eso-homelab-agent-db` in **both** `kagent` (the agent's DSN) and `postgresql` (the init Job's password, `base-apps/postgresql/homelab-agent-db-external-secret.yaml`).
+Each Vault policy grants `read` on exactly one path (`k8s-secrets/data/<key>`).
 
 `kagent-mcp-basic-auth` has had **no consumer since T52** (2026-07-31): it was the htpasswd for the old nginx `/mcp` ingress, and basic auth was dropped in the move to Gateway API (see *Exposure*). Its ExternalSecret, SecretStore and ESO ServiceAccount still sync but gate nothing; they are candidates for removal.
 

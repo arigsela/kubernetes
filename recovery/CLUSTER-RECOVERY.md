@@ -18,7 +18,7 @@ AWS KMS key that seals Vault. `SPEC.md` holds the invariants those scripts enfor
 | Vault: every secret, policy and auth method | `file` storage at `/vault/data`, 1Gi local-path volume on `k3s-worker-01` (`vault-0` is pinned there by `nodeSelector`) | `scripts/vault-backup.sh`, by hand | only if you copy it off (ciphertext) |
 | The key Vault's storage is encrypted with | AWS KMS `alias/vault-auto-unseal`, us-east-2 (`terraform/roots/asela-cluster/vault-kms.tf`) | `prevent_destroy`, 30-day deletion window | lives in AWS |
 | CNPG `postgresql-cluster`: `donetick`, plus `n8n` and the orphaned `chores_tracker` | 2 instances, one per worker, 20Gi local-path each | barman: daily base backup at 02:00 UTC plus WAL archiving to `s3://mysql-backups-asela-cluster/postgresql/`, 30d retention. `scripts/pg-backup.sh` by hand | yes (S3) |
-| Plain `postgresql` Deployment (pgvector): root DB, `kagent`, `homelab_agent`, Backstage, and n8n per its docs (n8n's DB host comes from Vault, so git can't confirm which instance it uses) | `postgresql-pvc`, 10Gi local-path | **nothing** | no |
+| Plain `postgresql` Deployment (pgvector): root DB, `kagent`, Backstage, and n8n per its docs (n8n's DB host comes from Vault, so git can't confirm which instance it uses) | `postgresql-pvc`, 10Gi local-path | **nothing** | no |
 | Other local-path volumes (table below) | the node that first mounted each one | **nothing** | no |
 | Loki log chunks and index | S3 `asela-chores-loki-logs-20251017` (us-east-1). Loki keeps 30 days, and the pod's `/loki` is an `emptyDir` | S3 is the store | yes |
 | Agent action record (redacted) | S3 `asela-agent-audit-record`, exported daily (`30 1 * * *`) from kagent's DB by the `agent-audit-export` CronJob | S3 is the store. You can't restore kagent from it | yes |
@@ -58,8 +58,8 @@ kubectl get pv -o custom-columns='NS:.spec.claimRef.namespace,PVC:.spec.claimRef
    2026-10-11 (`SPEC.md` §T.96): `s3://mysql-backups-asela-cluster/{k3s,pg,vault}/`, including a
    one-off dump of the plain `postgresql` Deployment (`pg/pgvector-postgresql-all-20261011T184229Z.sql.gz`).
 2. **The plain `postgresql` Deployment has no backup of any kind.** That covers the root DB,
-   `kagent` (agent history, and the source for the agent audit), `homelab_agent`, Backstage,
-   and n8n if its docs are right. `pg-backup.sh` only targets the CNPG cluster: its default
+   `kagent` (agent history, and the source for the agent audit), Backstage, and n8n if its
+   docs are right. `pg-backup.sh` only targets the CNPG cluster: its default
    exec looks up the CNPG primary by label. Pointing it here with `--exec-cmd` is untested,
    and it dumps as role `postgres`, which this instance may not have.
 3. **No other local-path volume has a backup**: Grafana, n8n's state dir, Jupyter,

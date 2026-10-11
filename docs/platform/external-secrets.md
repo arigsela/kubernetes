@@ -24,11 +24,11 @@ ExternalSecret (remoteRef.key/property, refreshInterval) --> Secret (creationPol
 1. **Per-namespace `vault-backend`** (18 ExternalSecrets use one). The store is named `vault-backend` and authenticates as the namespace's `default` ServiceAccount against a Vault role named after the namespace. Example: `base-apps/cert-manager/secret-store.yaml` uses role `cert-manager`. One exception: `base-apps/ecr-auth/secret-store.yaml` sits in `kube-system` with role and ServiceAccount `ecr-credentials-sync`. Paths are keys relative to the mount, such as `cert-manager/route53`, never `k8s-secrets/data/...`.
 2. **Per-consumer, path-scoped stores** for agent and database credentials: `vault-<consumer>` with a dedicated `eso-<consumer>` ServiceAccount and a Vault role that reads only that consumer's path.
    - **In `kagent`**, this pattern is mandatory. The broad store is retired. `scripts/validate-agent-identity.py` enforces it in CI, and admission denies it in-cluster via `base-apps/admission-policies/agent-identity.yaml`: an ExternalSecret in `kagent` may not use `vault-backend` or read the monolithic `kagent` key.
-   - **Also used** in `postgresql` (`vault-kagent-db`, `vault-donetick-db`, `vault-homelab-agent-db`, `vault-agent-audit-web-db`, `vault-kagent-audit-ro`), `donetick` and `agent-audit`.
+   - **Also used** in `postgresql` (`vault-kagent-db`, `vault-donetick-db`, `vault-agent-audit-web-db`, `vault-kagent-audit-ro`, `vault-agent-audit-risk`), `donetick` and `agent-audit`.
    - **Templates:** `templates/agent-identity/` (README, `serviceaccount.yaml`, `secretstore.yaml`).
 3. **PushSecret:** none in git today. The only emitter is the dormant Crossplane `XApplication` composition (`base-apps/crossplane-compositions/composition-application.yaml`). It pushes CNPG and AWS credentials into Vault as `external-secrets.io/v1alpha1` PushSecrets with `deletionPolicy: None`. §T.31 left those at `v1alpha1` because PushSecret is a different CRD.
 
-Vault-side roles and policies are **not in git**. They are written inside Vault by hand or by the per-app scripts (`scripts/provision-homepage-vault.sh`, `scripts/provision-donetick-vault.sh`, `scripts/provision-homelab-agent-vault.sh`).
+Vault-side roles and policies are **not in git**. They are written inside Vault by hand or by the per-app scripts (`scripts/provision-homepage-vault.sh`, `scripts/provision-donetick-vault.sh`, `scripts/provision-agent-audit-risk-vault.sh`). `scripts/provision-homelab-agent-vault.sh` is kept as the reference pattern for a per-consumer split, but its agent was retired on 2026-10-11 and its roles and policies no longer exist.
 
 ## Where config lives
 - **Chart version, values and sync options:** `base-apps/external-secrets.yaml`.

@@ -116,5 +116,5 @@ Every PR to `main` is triaged by `.github/workflows/pr-triage.yaml`. It gets exa
 4. **Secrets Management**: Use Vault with Kubernetes auth - never commit secrets or tokens
 5. **State Management**: Terraform state is remote in S3 - never commit `.terraform/` directories
 6. **Secret Store Pattern**: Each application namespace should have its own SecretStore configuration
-7. **Vault Roles**: Most app SecretStores use a Vault role named after the namespace (`n8n`, `logging`, …). Agent and database credentials use per-consumer roles with a dedicated service account (for example `kagent-db`, `donetick-db`, `homelab-agent-db`). Either way, the SecretStore's role and service account must match the Vault role's bindings
+7. **Vault Roles**: Most app SecretStores use a Vault role named after the namespace (`n8n`, `logging`, …). Agent and database credentials use per-consumer roles with a dedicated service account (for example `kagent-db`, `donetick-db`, `agent-audit-web-db`). Either way, the SecretStore's role and service account must match the Vault role's bindings
 8. **Generated files**: `base-apps/index.md`, each app's `docs/` and `mkdocs.yml`, and a few manifests are generated; edit the source and re-run the generator (see `AGENTS.md`)
