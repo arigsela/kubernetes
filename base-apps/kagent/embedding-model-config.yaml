@@ -1,4 +1,9 @@
-apiVersion: kagent.dev/v1alpha2
+# Embedding model for agent long-term memory: referenced by the Harnesses that enable it
+# (spec.kagent.memory.modelConfigRef in harnesses/*.yaml), not by any AgentTemplate.
+# nomic-embed-text produces 768-dimension vectors; kagent 1.0 stores them with pgvector in the
+# kagent_v1 database (schema `kagent`, extension in `extensions`). Served by the in-cluster
+# Ollama (base-apps/ollama), so no API key.
+apiVersion: api.kagent.dev/v1alpha3
 kind: ModelConfig
 metadata:
   name: embedding-model-config

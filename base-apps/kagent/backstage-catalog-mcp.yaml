@@ -1,4 +1,4 @@
-apiVersion: kagent.dev/v1alpha2
+apiVersion: api.kagent.dev/v1alpha3
 kind: RemoteMCPServer
 metadata:
   name: backstage-catalog
@@ -9,14 +9,22 @@ metadata:
 spec:
   # Read-only Backstage catalog MCP: returns an entity plus its RESOLVED
   # relations (ownedBy, partOf, and computed reverse relations like
-  # dependencyOf) that no single catalog-info.yaml contains. Auth header is
-  # injected from the backstage-mcp-token Secret (ExternalSecret from Vault).
+  # dependencyOf) that no single catalog-info.yaml contains.
   description: Read-only Backstage catalog MCP (catalog:entity) for resolved entity relations
   protocol: STREAMABLE_HTTP
   url: http://backstage.backstage.svc.cluster.local/api/mcp-actions/v1/catalog
   timeout: 30s
   sseReadTimeout: 5m0s
   terminateOnClose: true
+  # The Authorization header comes from the backstage-mcp-token Secret (ExternalSecret from
+  # Vault). The field is unchanged in v1alpha3, but the mechanism is not: kagent 1.0 no longer
+  # hands the token to the agent. The controller compiles a Secret-backed header into a
+  # destination-scoped egress credential (ate-secret://k8s.io/default/kagent/backstage-mcp-token/
+  # authorization, bound to this URL's hostname) and Substrate's egress gateway injects it, so
+  # the agent's sandbox never sees the token (go/core/internal/translator/credentials.go,
+  # CompileCredentials). That needs the Substrate chart's credentialProvider.namespacePolicies
+  # to let the egress gateway read Secrets in the kagent namespace (SPEC §R.44); the same
+  # policy serves the model API keys.
   headersFrom:
     - name: Authorization
       valueFrom:

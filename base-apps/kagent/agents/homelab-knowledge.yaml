@@ -1,4 +1,15 @@
-apiVersion: kagent.dev/v1alpha2
+# homelab-knowledge — the "ask hk" agent.
+#
+# kagent 1.0 (api.kagent.dev/v1alpha3) splits an agent in three. This Agent only binds:
+#   WHAT  AgentTemplate homelab-knowledge (../agent-templates/homelab-knowledge.yaml): model, prompt, tools, and the
+#         capability.homelab/class label the admission policies check
+#   HOW   Harness kagent-memory (../harnesses/kagent-memory.yaml): runtime image, memory, Substrate
+# An Agent must reference both by name. An inline spec.template / spec.harness is denied at
+# admission (agent-capability-refs) and in CI: it would bypass the checks on AgentTemplates and
+# Harnesses.
+#
+# The Backstage annotations live here, on the object users chat with.
+apiVersion: api.kagent.dev/v1alpha3
 kind: Agent
 metadata:
   name: homelab-knowledge
@@ -9,172 +20,13 @@ metadata:
     app.kubernetes.io/name: homelab-knowledge
     app: kagent
     arigsela.com/idp-managed: "true"
-    # Read-only, and now genuinely so end-to-end: its own three tools are reads
-    # backed by a --read-only MCP binary, and it delegates to k8s-reader rather
-    # than k8s-agent. It previously delegated to k8s-agent, which made its
-    # EFFECTIVE capability admin — it could reach delete/apply/exec by asking.
-    capability.homelab/class: read
   annotations:
     terasky.backstage.io/add-to-catalog: "true"
     terasky.backstage.io/component-type: kagent-agent
     backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/homelab-knowledge.yaml
     backstage.io/owner: group:default/platform-engineering
 spec:
-  description: Answers questions about the homelab GitOps repo, base-apps deployments, and live cluster state by delegating to k8s and helm specialists
-  type: Declarative
-  declarative:
-    # Sonnet 5.5 on the Go runtime (not the default haiku): this agent ingests
-    # k8s-reader's live-state replies on top of its doc reads, so it needs the
-    # context headroom and reliable tool-calling for the atlas→index→app traversal.
-    # Go, not python: the python runtime cannot replay a 5.x model's thinking
-    # blocks (see model-configs/anthropic-claude-sonnet-5-5.yaml, SPEC §T.94).
-    modelConfig: anthropic-claude-sonnet-5-5
-    memory:
-      modelConfig: embedding-model-config
-    runtime: go
-    stream: true
-    promptTemplate:
-      dataSources:
-      - alias: builtin
-        kind: ConfigMap
-        name: kagent-builtin-prompts
-    # No context.compaction: this agent delegates to k8s-agent/helm-agent, whose
-    # live-state replies can grow the conversation large. kagent's EXPERIMENTAL
-    # sliding-window compaction summarizer then sends a malformed request to the
-    # Anthropic API (400 "system: Input should be a valid array") and the turn
-    # fails. Every working delegation agent (k8s-agent, helm-agent, cilium-*,
-    # istio, ...) runs WITHOUT compaction on the same model — match them.
-    systemMessage: |
-      You are HomelabAssist, an expert assistant for this homelab Kubernetes
-      cluster and its GitOps repo at github.com/arigsela/kubernetes. You answer
-      "what/why/how" and triage questions by RETRIEVING the repo's agent-docs
-      (never from memorized facts, which go stale), and by delegating to
-      specialist agents for live cluster state.
-
-      ## How to answer (retrieval-first)
-      Read files with the `get_file_contents` tool (the read-only GitHub MCP),
-      always passing owner=`arigsela`, repo=`kubernetes`, ref=`main`, and the
-      file's `path`. Use `search_code` (same MCP) when you need to locate a file:
-      1. Read `index.md` — the OKF bundle root — to orient (system context,
-         topology, source registry, the "For agents" traversal rule).
-      2. Read `base-apps/index.md` to find the app's row.
-      3. Read that app's `base-apps/<app>/docs.md` (architecture/config),
-         `runbook.md` (symptom → check → fix), and `catalog-info.yaml`
-         (owner, system, dependsOn) as needed.
-      4. Treat the files listed under a doc's `sources:` as authoritative —
-         read them rather than guessing. An entry is either a path or a
-         mapping whose `resource:` is the path (or an https URL); a `[^id]`
-         footnote in the body cites the entry with that `id`. NEVER invent
-         file paths or resource names; if a doc doesn't cover it, say so and
-         read the source.
-
-      For OWNERSHIP, DEPENDENCY, or SYSTEM-membership questions ("who owns X?",
-      "what depends on X?", "what system is X part of?"), use the
-      `get-catalog-entity` tool instead of raw files: it returns an
-      entity plus its RESOLVED relations — including reverse relations like
-      `dependencyOf` that no single catalog-info.yaml contains. Look an entity up
-      by name (kind/namespace optional to disambiguate). Fall back to the GitHub
-      MCP's `catalog-info.yaml` only if the catalog tool is unavailable.
-
-      ## Live state vs docs
-      - For LIVE cluster state (pod status, events, logs, sync status, RBAC)
-        delegate to k8s-agent. Prefer this over guessing. Helm release state is
-        not available — helm-agent is not deployed in this cluster.
-      - DRIFT: if the docs and the live state disagree (e.g. runbook says X,
-        cluster shows Y), call it out explicitly as a drift finding — this is
-        valuable signal, since the docs are meant to track reality.
-
-      ## Response format
-
-      1. Brief answer first (1-3 sentences).
-      2. Then a "What I checked" section listing which delegate(s) you used.
-      3. Then specifics: file paths in arigsela/kubernetes, exact resource names,
-         kubectl commands the user could run to verify.
-
-      ## Constraints
-
-      {{include "builtin/safety-guardrails"}}
-      {{include "builtin/kubernetes-context"}}
-
-      - Never invent file paths or resource names. If you don't know, delegate to
-        k8s-agent for a real lookup.
-      - Never recommend `kubectl apply` or any mutation directly — this cluster is
-        GitOps-driven. Recommend a PR to arigsela/kubernetes instead.
-      - If asked about secrets, never quote values — only the Vault path/property.
-
-    a2aConfig:
-      skills:
-      - id: repo-knowledge
-        name: Repo & Architecture Knowledge
-        description: Explain what's deployed, where it lives in the GitOps repo, and how components are wired together.
-        examples:
-        - What is cert-manager and how does it issue certs here?
-        - Who owns chores-tracker-backend and what does it depend on?
-        - Where does vault store its config and how is it unsealed?
-        tags:
-        - gitops
-        - documentation
-        - architecture
-      - id: cluster-troubleshooting
-        name: Cluster State Troubleshooting
-        description: Diagnose issues by checking live pod/deployment/event state and correlating with the GitOps manifests.
-        examples:
-        - cert-manager Certificates are stuck pending — walk me through the runbook.
-        - chores-tracker-backend is CrashLooping — what does its runbook say to check?
-        - Is the argo-cd control plane healthy?
-        tags:
-        - troubleshooting
-        - kubernetes
-        - argocd
-      - id: deployment-guidance
-        name: Deployment & Onboarding Guidance
-        description: Recommend how to onboard a new app following the established base-apps patterns (Crossplane composition, SecretStore, ingress, ECR auth).
-        examples:
-        - I want to deploy a new service called billing-api. What's the right pattern?
-        - How do I add Vault secrets for a new namespace?
-        tags:
-        - onboarding
-        - crossplane
-        - idp
-    tools:
-    - type: McpServer
-      mcpServer:
-        apiGroup: kagent.dev
-        kind: RemoteMCPServer
-        name: agent-docs
-        # kagent binds only the tools listed here (like every other agent);
-        # without toolNames the ref resolves to nothing → "Unknown Tool".
-        # These are the read tools the systemMessage drives.
-        toolNames:
-        - get_file_contents
-        - search_code
-    - type: McpServer
-      mcpServer:
-        apiGroup: kagent.dev
-        kind: RemoteMCPServer
-        name: backstage-catalog
-        # Read-only: get one entity + its resolved relations. Use for
-        # ownership/dependency/system questions where reverse relations
-        # (dependencyOf) matter. NOTE: catalog.query-catalog-entities is
-        # intentionally excluded — its input schema uses anyOf/$ref that
-        # kagent's ADK schema converter cannot parse (KeyError: 'anyOf').
-        toolNames:
-        - get-catalog-entity
-    # Delegation is capability-transitive: this agent's effective capability is
-    # its own tools UNION everything it can reach by delegating. It used to
-    # delegate to k8s-agent (admin), which silently made this read-only agent
-    # able to reach k8s_delete_resource / k8s_apply_manifest / k8s_execute_command
-    # by simply asking. It now delegates to k8s-reader, which binds only read
-    # tools — the live-cluster investigation ability is kept, the escalation
-    # path is gone.
-    - type: Agent
-      agent:
-        name: k8s-reader
-    deployment:
-      resources:
-        requests:
-          cpu: 100m
-          memory: 256Mi
-        limits:
-          cpu: 1000m
-          memory: 1Gi
+  templateRef:
+    name: homelab-knowledge
+  harnessRef:
+    name: kagent-memory

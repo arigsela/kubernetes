@@ -1,0 +1,42 @@
+# Harness = HOW an agent runs (kagent 1.0, api.kagent.dev/v1alpha3). WHAT it does (model,
+# prompt, tools, class) is its AgentTemplate in ../agent-templates/.
+#
+# kagent-memory: the Go ADK runtime with long-term memory, no compaction. Used by the tool-loop
+# agents (homelab-knowledge, k8s-agent, istio-agent, build-orchestrator); all four had memory
+# on kagent 0.10. A shared subagent (build-orchestrator's k8s-agent / istio-agent bindings)
+# runs inside the parent's runtime and gets no runtime policy of its own, so this Harness is
+# what applies to them there.
+#
+# The three Harnesses in this directory differ ONLY in spec.kagent. Keep image, worker pool and
+# snapshot location identical across them; tests/agent-capability checks the image pin.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata:
+  name: kagent-memory
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  kagent:
+    # Ollama nomic-embed-text (768 dims), stored with pgvector in kagent_v1. ttlDays unset:
+    # the controller's default, 15 days (DefaultTTLDays, go/core/internal/service/memory/service.go).
+    memory:
+      modelConfigRef:
+        name: embedding-model-config
+  workload:
+    # The Go ADK runtime image the kagent 1.0.0-alpha11 chart defaults to
+    # (controller.agentImage, tag = chart version), pinned by its multi-arch index digest. The
+    # CRD and Substrate both require a digest: changing the image content under a fixed
+    # reference would invalidate session snapshots. Bump in lockstep with the kagent chart.
+    image: ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha11@sha256:29409dfe1a030b50da3ff3f72599752cb5824a50f6aa136c16bf2b1678aa89b8
+  substrate:
+    # The WorkerPool the kagent chart creates (substrateWorkerPool.create, default name
+    # kagent-default) in this namespace. A Harness pointing at a missing pool does not compile.
+    workerPoolRef:
+      name: kagent-default
+    snapshotPolicy:
+      # MUST match the Substrate install: the bucket its bundled RustFS creates
+      # (substrate chart 0.5.0-alpha2 values `rustfs.bucket`, default `ate-snapshots`), read
+      # through atelet's s3 backend (`atelet.storageBackend: s3`). Substrate keeps only the
+      # bucket (host) and path of this URI. Sessions are disposable; memory lives in Postgres.
+      location: s3://ate-snapshots/kagent/

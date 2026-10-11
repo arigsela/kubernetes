@@ -1,28 +1,34 @@
-# Claude Sonnet 5.5 for the Declarative agents that reason over several tools
+# Claude Sonnet 5.5 for the agents that reason over several tools
 # (homelab-knowledge, k8s-agent, istio-agent, build-orchestrator).
 #
-# Agents on this config ! run `runtime: go`. Every 5.x model thinks by default,
-# and kagent 0.10's python runtime (google-adk 1.x, pinned <2) cannot send a
-# thinking block back on the next tool-loop turn: NotImplementedError on every
-# multi-step question (tried 2026-09-25, #603). The Go ADK maps only text and
-# tool_use blocks, so it drops thinking instead of crashing. The fix upstream is
-# google-adk 2.6+, which only kagent 1.x takes (SPEC §R.45, §T.94).
+# kagent 1.0 (api.kagent.dev/v1alpha3). Every agent runs the Go ADK (the `kagent` runtime of
+# the Harnesses in ../harnesses/), which maps only text and tool_use blocks: a 5.x model's
+# thinking is dropped rather than replayed (kagent#3026, open; SPEC §R.45).
 #
-# maxTokens: the Go runtime sends it (python ignores it). Its default is 8192,
-# which caps thinking plus answer together and truncates silently while the
-# task still reports completed (kagent#2895). 16000 leaves headroom.
+# maxTokens: the Go adapter's default is 8192 (defaultAnthropicMaxTokens in
+# go/adk/pkg/models/anthropic_adk.go). It caps thinking plus answer together and a truncated
+# answer is still reported as completed (kagent#2895, open). 16000 leaves headroom.
 #
-# No temperature/topP/topK: the 5.5 models reject non-default sampling (400).
+# promptCaching: the Go adapter marks cache breakpoints on the tools, the system prompt and the
+# last message, so each turn of a tool loop reads the previous prefix from the cache. "5m" is
+# the default TTL and the cheaper cache-write rate; "1h" only pays off for idle gaps > 5 min.
+#
+# No temperature/topP/topK: the 5.5 models reject non-default sampling parameters (400).
 # The key is the Vault-backed kagent-anthropic Secret (kagent-anthropic-external-secret.yaml).
-apiVersion: kagent.dev/v1alpha2
+apiVersion: api.kagent.dev/v1alpha3
 kind: ModelConfig
 metadata:
   name: anthropic-claude-sonnet-5-5
   namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
 spec:
   provider: Anthropic
   model: claude-sonnet-5-5
   apiKeySecret: kagent-anthropic
   apiKeySecretKey: ANTHROPIC_API_KEY
+  stream: true
   anthropic:
     maxTokens: 16000
+    promptCaching: true
+    cacheTTL: "5m"

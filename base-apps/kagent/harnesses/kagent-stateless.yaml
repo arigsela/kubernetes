@@ -1,0 +1,23 @@
+# Harness = HOW an agent runs (kagent 1.0, api.kagent.dev/v1alpha3). See kagent-memory.yaml.
+#
+# kagent-stateless: the Go ADK runtime with no long-term memory and no compaction. Used by
+# k8s-reader, which had no memory on kagent 0.10 either: it answers one investigation at a
+# time from live cluster state, and remembered cluster state would only be stale.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata:
+  name: kagent-stateless
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  kagent: {}
+  workload:
+    # Same pin as kagent-memory.yaml.
+    image: ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha11@sha256:29409dfe1a030b50da3ff3f72599752cb5824a50f6aa136c16bf2b1678aa89b8
+  substrate:
+    workerPoolRef:
+      name: kagent-default
+    snapshotPolicy:
+      # MUST match the Substrate install's RustFS bucket: see kagent-memory.yaml.
+      location: s3://ate-snapshots/kagent/

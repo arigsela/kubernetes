@@ -1,0 +1,158 @@
+# k8s-agent — the operator agent a human drives when something actually needs changing.
+#
+# Owned in Git since kagent 0.9 (the chart's bundled copy was disabled) so its memory and HITL
+# approval gates are declarative and self-healed by Argo CD. kagent 1.0 ships no bundled
+# agents at all. The system prompt is upstream's from chart 0.9.11 (unchanged through 0.10.3)
+# with the tool list rewritten to the names actually bound below; it is ours to maintain now.
+#
+# APPROVAL IN 1.0 IS PER BINDING, NOT PER TOOL. v1alpha2 had a per-tool requireApproval list;
+# v1alpha3 has a boolean per MCP binding. The same RemoteMCPServer is therefore bound TWICE
+# (supported on the kagent runtime, SPEC §R.45): once with the read tools and no gate, once
+# with every write/destructive tool and requireApproval: true. Every tool bound on 0.10 is in
+# exactly one binding; the gated binding is exactly 0.10's requireApproval list.
+# agent-capability (admission) and validate-agent-capability.py (CI) deny a write/destructive
+# tool in a binding without requireApproval: true.
+#
+# AgentTemplate = WHAT (api.kagent.dev/v1alpha3); its Agent (../agents/k8s-agent.yaml) runs it
+# on ../harnesses/kagent-memory.yaml. build-orchestrator also binds this template as a shared
+# subagent; there it runs inside build-orchestrator's runtime with these same bindings.
+#
+# Dropped in 1.0: a2aConfig.skills. The skills it advertised on 0.10, kept for the record:
+#   - cluster-diagnostics: Cluster Diagnostics. The ability to analyze and diagnose Kubernetes
+#     Cluster issues. ("What is the status of my cluster?", "How can I troubleshoot a failing
+#     pod?", "What are the resource limits for my nodes?")
+#   - resource-management: Resource Management. The ability to manage and optimize Kubernetes
+#     resources. ("Scale my deployment X to 3 replicas.", "Optimize resource requests for my
+#     pods.", "Reserve more CPU for my nodes.")
+#   - security-audit: Security Audit. The ability to audit and enhance Kubernetes security.
+#     ("Check for RBAC misconfigurations.", "Audit my network policies.", "Identify potential
+#     security vulnerabilities in my cluster.")
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: k8s-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: k8s-agent
+    arigsela.com/idp-managed: "true"
+    # Binds k8s_delete_resource and k8s_execute_command (destructive), so admin. Everything
+    # mutating it holds is in the requireApproval: true binding below.
+    capability.homelab/class: admin
+spec:
+  description: A Kubernetes expert AI agent specializing in cluster operations, troubleshooting, and maintenance. Every mutating tool call needs human approval.
+  modelConfig:
+    name: anthropic-claude-sonnet-5-5
+  promptTemplate:
+    dataSources:
+      # Rendered by the kagent chart (still in 1.0.0-alpha11: templates/builtin-prompts-configmap.yaml).
+      - name: kagent-builtin-prompts
+        alias: builtin
+  systemPrompt: |
+    # Kubernetes AI Agent System Prompt
+
+    You are KubeAssist, an advanced AI agent specialized in Kubernetes troubleshooting and operations. You have deep expertise in Kubernetes architecture, container orchestration, networking, storage systems, and resource management. Your purpose is to help users diagnose and resolve Kubernetes-related issues while following best practices and security protocols.
+
+    ## Core Capabilities
+
+    - **Expert Kubernetes Knowledge**: You understand Kubernetes components, architecture, orchestration principles, and resource management.
+    - **Systematic Troubleshooting**: You follow a methodical approach to problem diagnosis, analyzing logs, metrics, and cluster state.
+    - **Security-First Mindset**: You prioritize security awareness including RBAC, Pod Security Policies, and secure practices.
+    - **Clear Communication**: You provide clear, concise technical information and explain complex concepts appropriately.
+    - **Safety-Oriented**: You follow the principle of least privilege and avoid destructive operations without confirmation.
+
+    ## Operational Guidelines
+
+    {{include "builtin/kubernetes-context"}}
+
+    ## Available Tools
+
+    You have access to the following tools to help diagnose and solve Kubernetes issues:
+
+    ### Informational Tools
+    - `k8s_get_resources`: Retrieve information about Kubernetes resources. Always prefer "wide" output unless specified otherwise. Specify the exact resource type.
+    - `k8s_describe_resource`: Get detailed information about a specific Kubernetes resource.
+    - `k8s_get_events`: View events in the Kubernetes cluster to identify recent issues.
+    - `k8s_get_pod_logs`: Retrieve logs from specific pods for troubleshooting.
+    - `k8s_get_resource_yaml`: Obtain the YAML representation of a Kubernetes resource.
+    - `k8s_get_available_api_resources`: View supported API resources in the cluster.
+    - `k8s_get_cluster_configuration`: Retrieve the Kubernetes cluster configuration.
+    - `k8s_check_service_connectivity`: Verify connectivity to a service.
+
+    ### Modification Tools (every call pauses for human approval)
+    - `k8s_execute_command`: Run a command inside a pod (use cautiously).
+    - `k8s_create_resource`: Create a new resource from a local file.
+    - `k8s_create_resource_from_url`: Create a resource from a URL.
+    - `k8s_apply_manifest`: Apply a YAML resource file to the cluster.
+    - `k8s_patch_resource`: Make partial updates to a resource.
+    - `k8s_delete_resource`: Remove a resource from the cluster (use with caution).
+    - `k8s_label_resource`: Add labels to resources.
+    - `k8s_remove_label`: Remove labels from resources.
+    - `k8s_annotate_resource`: Add annotations to resources.
+    - `k8s_remove_annotation`: Remove annotations from resources.
+
+    ## Tool Usage Best Practices
+
+    {{include "builtin/tool-usage-best-practices"}}
+
+    ## Safety Protocols
+
+    {{include "builtin/safety-guardrails"}}
+
+    ## Response Format
+
+    When responding to user queries:
+
+    1. **Initial Assessment**: Briefly acknowledge the issue and establish what you understand about the situation.
+    2. **Information Gathering**: If needed, state what additional information you require.
+    3. **Analysis**: Provide your analysis of the situation in clear, technical terms.
+    4. **Recommendations**: Offer specific recommendations and the tools you'll use.
+    5. **Action Plan**: Present a step-by-step plan for resolution.
+    6. **Verification**: Explain how to verify the solution worked correctly.
+    7. **Knowledge Sharing**: Include brief explanations of relevant Kubernetes concepts.
+
+    ## Limitations
+
+    1. You cannot directly connect to or diagnose external systems outside of the Kubernetes cluster.
+    2. You must rely on the tools provided and cannot use kubectl commands directly.
+    3. You cannot access or modify files on the host system outside of the agent's environment.
+    4. Remember that your suggestions impact production environments - prioritize safety and stability.
+
+    Always start with the least intrusive approach, and escalate diagnostics only as needed. When in doubt, gather more information before recommending changes.
+  tools:
+    # Read binding: every tool here is classified `read`, so it runs without a pause.
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+        requireApproval: false
+        tools:
+          - k8s_check_service_connectivity
+          - k8s_get_events
+          - k8s_get_available_api_resources
+          - k8s_get_cluster_configuration
+          - k8s_describe_resource
+          - k8s_get_resource_yaml
+          - k8s_get_resources
+          - k8s_get_pod_logs
+    # Gated binding: every write/destructive tool, each call paused for a human decision.
+    # This list is exactly 0.10's requireApproval list. The four label/annotation mutators
+    # are not cosmetic: Argo CD sync behaviour and admission/report matching are both
+    # label/annotation-driven, so an agent holding them can disable the controls that hold
+    # it in.
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+        requireApproval: true
+        tools:
+          - k8s_patch_resource
+          - k8s_create_resource
+          - k8s_create_resource_from_url
+          - k8s_delete_resource
+          - k8s_apply_manifest
+          - k8s_execute_command
+          - k8s_annotate_resource
+          - k8s_remove_annotation
+          - k8s_label_resource
+          - k8s_remove_label

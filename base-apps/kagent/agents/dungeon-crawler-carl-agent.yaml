@@ -1,4 +1,15 @@
-apiVersion: kagent.dev/v1alpha2
+# dungeon-crawler-carl-agent — chat agent.
+#
+# kagent 1.0 (api.kagent.dev/v1alpha3) splits an agent in three. This Agent only binds:
+#   WHAT  AgentTemplate dungeon-crawler-carl-agent (../agent-templates/dungeon-crawler-carl-agent.yaml): model, prompt, tools, and the
+#         capability.homelab/class label the admission policies check
+#   HOW   Harness kagent-chat (../harnesses/kagent-chat.yaml): runtime image, memory, Substrate
+# An Agent must reference both by name. An inline spec.template / spec.harness is denied at
+# admission (agent-capability-refs) and in CI: it would bypass the checks on AgentTemplates and
+# Harnesses.
+#
+# The Backstage annotations live here, on the object users chat with.
+apiVersion: api.kagent.dev/v1alpha3
 kind: Agent
 metadata:
   name: dungeon-crawler-carl-agent
@@ -9,53 +20,15 @@ metadata:
     app.kubernetes.io/name: dungeon-crawler-carl-agent
     app: kagent
     arigsela.com/idp-managed: "true"
-    # Pure LLM, tools: []. Nothing to gate.
-    capability.homelab/class: read
   annotations:
     terasky.backstage.io/add-to-catalog: "true"
     terasky.backstage.io/component-type: kagent-agent
+    # 0.10 UI chat path, carried over verbatim; check it against the 1.0 UI at cutover.
     terasky.backstage.io/links: '[{"url":"https://kagent.arigsela.com/agents/kagent/dungeon-crawler-carl-agent/chat","title":"Chat with this agent","icon":"chat"}]'
     backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/dungeon-crawler-carl-agent.yaml
     backstage.io/owner: group:default/platform-engineering
 spec:
-  description: |-
-    expert in the book dungeon crawler carl
-  type: Declarative
-  declarative:
-    modelConfig: anthropic-claude-haiku-5-5
-    memory:
-      modelConfig: embedding-model-config
-    # Go, not python: the python runtime cannot replay a 5.x model's thinking blocks
-    # (model-configs/anthropic-claude-haiku-5-5.yaml, SPEC §T.94).
-    runtime: go
-    stream: true
-    # No context.compaction: the Go runtime ignores it (kagent-dev/kagent#2728).
-    # kagent 1.0 moves compaction to the Harness, where Go supports it (SPEC §T.97).
-    systemMessage: |
-      you are an expert in dungeon crawler carl book, its characters and its story/plot.
-
-      You are not allowed to give any spoilers related to any other of the series books.
-
-    a2aConfig:
-      skills:
-      - id: dungeon-crawler-carl-lore
-        name: Dungeon Crawler Carl Lore Expert
-        description: Provides in-depth knowledge about characters, plot points, and world-building from the Dungeon Crawler Carl series.
-        tags: []
-      - id: carl-character-analysis
-        name: Carl Character Analysis
-        description: Analyzes character development, motivations, and relationships within the Dungeon Crawler Carl narrative.
-        tags: []
-      - id: dungeon-crawler-mechanics-guide
-        name: Dungeon Crawler Mechanics Guide
-        description: Explains the game mechanics, progression systems, and dungeon exploration elements featured in Dungeon Crawler Carl.
-        tags: []
-    tools: []
-    deployment:
-      resources:
-        requests:
-          cpu: 100m
-          memory: 256Mi
-        limits:
-          cpu: 1000m
-          memory: 1Gi
+  templateRef:
+    name: dungeon-crawler-carl-agent
+  harnessRef:
+    name: kagent-chat

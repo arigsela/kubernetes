@@ -1,0 +1,37 @@
+# Harness = HOW an agent runs (kagent 1.0, api.kagent.dev/v1alpha3). See kagent-memory.yaml.
+#
+# kagent-chat: kagent-memory plus history compaction. Used by the two tool-less chat agents
+# (skill-suggester, dungeon-crawler-carl-agent), whose conversations grow without bound. Both
+# ran compactionInterval 5 / overlapSize 2 on kagent 0.10's python runtime; the 0.10 Go runtime
+# ignored it (kagent#2728), the 1.0 Go ADK implements it (go/adk/pkg/agent/compaction.go).
+#
+# Not used for the tool-loop agents: on 0.10 the compaction summarizer sent a malformed
+# request (400 "system: Input should be a valid array") once delegated replies grew large.
+# Re-test before adding compaction to them.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata:
+  name: kagent-chat
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  kagent:
+    memory:
+      modelConfigRef:
+        name: embedding-model-config
+    compaction:
+      # Summarize every 5 new user turns, pulling the last 2 summarized turns back into the
+      # next window so consecutive summaries overlap. No summarizer: the agent's own model
+      # writes the summaries with the runtime's default prompt.
+      compactionInterval: 5
+      overlapSize: 2
+  workload:
+    # Same pin as kagent-memory.yaml.
+    image: ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha11@sha256:29409dfe1a030b50da3ff3f72599752cb5824a50f6aa136c16bf2b1678aa89b8
+  substrate:
+    workerPoolRef:
+      name: kagent-default
+    snapshotPolicy:
+      # MUST match the Substrate install's RustFS bucket: see kagent-memory.yaml.
+      location: s3://ate-snapshots/kagent/

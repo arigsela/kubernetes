@@ -1,4 +1,15 @@
-apiVersion: kagent.dev/v1alpha2
+# skill-suggester — Backstage wizard helper.
+#
+# kagent 1.0 (api.kagent.dev/v1alpha3) splits an agent in three. This Agent only binds:
+#   WHAT  AgentTemplate skill-suggester (../agent-templates/skill-suggester.yaml): model, prompt, tools, and the
+#         capability.homelab/class label the admission policies check
+#   HOW   Harness kagent-chat (../harnesses/kagent-chat.yaml): runtime image, memory, Substrate
+# An Agent must reference both by name. An inline spec.template / spec.harness is denied at
+# admission (agent-capability-refs) and in CI: it would bypass the checks on AgentTemplates and
+# Harnesses.
+#
+# The Backstage annotations live here, on the object users chat with.
+apiVersion: api.kagent.dev/v1alpha3
 kind: Agent
 metadata:
   name: skill-suggester
@@ -9,36 +20,13 @@ metadata:
     app.kubernetes.io/name: skill-suggester
     app: kagent
     arigsela.com/idp-managed: "true"
-    # Pure LLM, tools: []. Nothing to gate.
-    capability.homelab/class: read
   annotations:
     terasky.backstage.io/add-to-catalog: "true"
     terasky.backstage.io/component-type: kagent-agent
     backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/skill-suggester.yaml
     backstage.io/owner: group:default/platform-engineering
 spec:
-  description: |-
-    Suggests A2A skills for new kagent agents based on a one-line description
-  type: Declarative
-  declarative:
-    modelConfig: anthropic-claude-haiku-5-5
-    memory:
-      modelConfig: embedding-model-config
-    # Go, not python: the python runtime cannot replay a 5.x model's thinking blocks
-    # (model-configs/anthropic-claude-haiku-5-5.yaml, SPEC §T.94).
-    runtime: go
-    stream: true
-    # No context.compaction: the Go runtime ignores it (kagent-dev/kagent#2728).
-    # kagent 1.0 moves compaction to the Harness, where Go supports it (SPEC §T.97).
-    systemMessage: |
-      You receive an agent description. Respond with ONLY a JSON array of exactly 3 skills, each shaped {id (kebab-case), name
-        (Title Case), description (one sentence)}. No prose, no markdown.
-    tools: []
-    deployment:
-      resources:
-        requests:
-          cpu: 100m
-          memory: 256Mi
-        limits:
-          cpu: 1000m
-          memory: 1Gi
+  templateRef:
+    name: skill-suggester
+  harnessRef:
+    name: kagent-chat

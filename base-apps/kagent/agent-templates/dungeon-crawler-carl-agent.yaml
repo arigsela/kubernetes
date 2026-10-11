@@ -1,0 +1,33 @@
+# dungeon-crawler-carl-agent — a chat agent that knows the Dungeon Crawler Carl books.
+#
+# AgentTemplate = WHAT (api.kagent.dev/v1alpha3); its Agent
+# (../agents/dungeon-crawler-carl-agent.yaml) runs it on ../harnesses/kagent-chat.yaml
+# (memory + compaction, as on 0.10).
+#
+# Dropped in 1.0: a2aConfig.skills. The skills it advertised on 0.10, kept for the record:
+#   - dungeon-crawler-carl-lore: Dungeon Crawler Carl Lore Expert. Provides in-depth knowledge
+#     about characters, plot points, and world-building from the Dungeon Crawler Carl series.
+#   - carl-character-analysis: Carl Character Analysis. Analyzes character development,
+#     motivations, and relationships within the Dungeon Crawler Carl narrative.
+#   - dungeon-crawler-mechanics-guide: Dungeon Crawler Mechanics Guide. Explains the game
+#     mechanics, progression systems, and dungeon exploration elements featured in Dungeon
+#     Crawler Carl.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: dungeon-crawler-carl-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: dungeon-crawler-carl-agent
+    arigsela.com/idp-managed: "true"
+    # Pure LLM, no tools. Nothing to gate.
+    capability.homelab/class: read
+spec:
+  description: expert in the book dungeon crawler carl
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: |
+    you are an expert in dungeon crawler carl book, its characters and its story/plot.
+
+    You are not allowed to give any spoilers related to any other of the series books.

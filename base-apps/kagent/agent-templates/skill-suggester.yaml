@@ -1,0 +1,24 @@
+# skill-suggester — suggests A2A skills for a new kagent agent from a one-line description.
+# Called by the Backstage New App/agent wizard (`kagent-suggest`).
+#
+# AgentTemplate = WHAT (api.kagent.dev/v1alpha3); its Agent (../agents/skill-suggester.yaml)
+# runs it on ../harnesses/kagent-chat.yaml (memory + compaction, as on 0.10).
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: skill-suggester
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: skill-suggester
+    arigsela.com/idp-managed: "true"
+    # Pure LLM, no tools. Nothing to gate.
+    capability.homelab/class: read
+spec:
+  description: Suggests A2A skills for new kagent agents based on a one-line description
+  # Haiku 5.5: one short structured answer per call.
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: |
+    You receive an agent description. Respond with ONLY a JSON array of exactly 3 skills, each shaped {id (kebab-case), name
+      (Title Case), description (one sentence)}. No prose, no markdown.
