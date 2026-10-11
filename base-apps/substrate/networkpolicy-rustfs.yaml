@@ -1,0 +1,41 @@
+# THE ACCESS CONTROL for the session-snapshot store. Read this before relaxing it.
+#
+# rustfs (the S3 store bundled in the substrate chart) runs with the chart's DEFAULT credentials,
+# rustfsadmin/rustfsadmin. They cannot come from Vault: the chart renders rustfs.accessKey /
+# secretKey as literal env values on the rustfs, atelet and ate-api-server pods, with no
+# secretKeyRef option, and ate-api-server has no extraEnv to add one (kagent-dev/substrate#64,
+# the same gap that blocks AWS S3). Overriding them in base-apps/substrate.yaml would only put
+# them in a public repo. So the credentials are not a secret, and THIS policy is what keeps
+# other pods out: only the three things the chart wires to rustfs may connect to its S3 port.
+#
+#   atelet          snapshots actors on suspend, restores them on resume
+#   ate-api-server  manages (copies, deletes) snapshots
+#   rustfs-bucket-init  the chart's Job that creates the ate-snapshots bucket
+#
+# The console port (9001) is reachable from nowhere; `kubectl port-forward` enters the pod's
+# network namespace directly and needs no rule. The Service is ClusterIP (no route, no Gateway).
+# k3s enforces NetworkPolicy (embedded kube-router), as for atlantis and jupyter.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rustfs
+  namespace: ate-system
+spec:
+  podSelector:
+    matchLabels:
+      app: rustfs
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [atelet, ate-api-server]
+        - podSelector:
+            matchLabels:
+              batch.kubernetes.io/job-name: rustfs-bucket-init
+      ports:
+        - protocol: TCP
+          port: 9000

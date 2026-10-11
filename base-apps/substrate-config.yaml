@@ -1,0 +1,39 @@
+# Everything the Substrate charts expect to find already in the cluster, from Git: the two
+# namespaces, the seven CA/JWT pool Secrets and the two Postgres connection Secrets (all via
+# ESO from Vault), the `ate-api-authentication` ConfigMap, the rustfs NetworkPolicy and the
+# CA-expiry check. `kagent install` would create these imperatively
+# (go/core/cli/internal/commands/substrate_init.go); here they are declarative.
+# Design and runbook: base-apps/substrate/docs.md and runbook.md.
+#
+# sync-wave -3: after substrate-crds (-4), before substrate-podcert (-2), whose pods mount
+# three of these Secrets.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: substrate-config
+  namespace: argo-cd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/substrate
+    directory:
+      # catalog-info.yaml is a Backstage entity and mkdocs.yml TechDocs config, not manifests
+      # (templates/agent-docs/README.md, "GitOps safety").
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ate-system
+  # No syncOptions. No CreateNamespace: namespaces.yaml declares both namespaces (wave -1 inside
+  # this app), because objects here also go into podcertificate-controller-system, which
+  # CreateNamespace would not create. Client-side apply, as for the postgresql app: the ESO
+  # webhook's defaulted ExternalSecret fields are not in last-applied, so they never read as drift.
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

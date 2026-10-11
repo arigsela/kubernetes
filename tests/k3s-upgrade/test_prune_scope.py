@@ -84,3 +84,14 @@ def test_atlantis_app_has_prune_disabled():
         "base-apps/atlantis.yaml must keep prune: false — the chart renders atlantis-data "
         "as a standalone PVC on local-path and offers no way to annotate it."
     )
+
+
+def test_substrate_app_has_prune_disabled():
+    """The substrate chart (0.5.0-alpha2) renders the rustfs-data snapshot PVC with no annotations
+    and no values to add any, so, as for atlantis, the protection lives on the Application."""
+    app = yaml.safe_load((BASE_APPS / "substrate.yaml").read_text())
+    automated = app["spec"]["syncPolicy"]["automated"]
+    assert automated.get("prune") is False, (
+        "base-apps/substrate.yaml must keep prune: false — the chart renders rustfs-data as a "
+        "standalone PVC on local-path and offers no way to annotate it."
+    )

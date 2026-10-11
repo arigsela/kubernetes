@@ -1,0 +1,109 @@
+# Agent Substrate: the actor runtime kagent 1.0 runs agents on (ate-api-server, ate-controller,
+# the atelet DaemonSet, atenet-router/-egress, the k8s credential provider, rustfs). Start at
+# base-apps/substrate/docs.md.
+#
+# The release MUST be named `substrate` in `ate-system`: the chart then renders bare names, so
+# kagent reaches it at dns:///api.ate-system.svc:443 and http://atenet-router.ate-system.svc:80
+# (the values `kagent install` hard-codes). Its prerequisites — CA pools, the Postgres connection
+# Secrets, ate-api-authentication — come from substrate-config (wave -3); the CRDs from
+# substrate-crds (-4); pod certificates from substrate-podcert (-2).
+#
+# prune: false — SPEC §V.39. The chart renders the rustfs-data PVC (local-path, reclaim Delete)
+# and offers no way to annotate it, so the Prune=false protection has to live on the Application,
+# as for atlantis. Guard: tests/k3s-upgrade/test_prune_scope.py. Side effect: an object a chart
+# bump stops rendering is left behind (Argo shows it as "requires pruning"); delete it by hand.
+#
+# IMAGES. Third-party images are digest-pinned by the chart itself (rustfs, aws-cli,
+# agentgateway). The four Substrate components (ateapi, atecontroller, atelet,
+# kubernetes-secrets) CANNOT be: the chart builds all four from one shared `image.tag`, so a
+# digest there would be wrong for three of them. They run by the release tag v0.5.0-alpha2;
+# the digests below are what that tag resolved to on 2026-10-11, recorded so drift is checkable
+# (base-apps/substrate/runbook.md "Check the component image digests"):
+#   ateapi             sha256:3a29e84c6ad2939c507ecc239fbe0fe67906116d768f77ae78458a5cc8eab146
+#   atecontroller      sha256:5deadd4732a8acd65944ba86655f34b13003937e7c516788638d07f5b137fd40
+#   atelet             sha256:fe7a4f324d25bb282eb6c0664af61d0f538053b9c42f725173cdb1ef7afaa05f
+#   kubernetes-secrets sha256:3594e9e14b11904253aac5a42967a2711e8bb54868d3042e42517998b94d849b
+#
+# SECURITY PROFILE (nothing privileged): atelet runs as root with DAC_OVERRIDE and hostPorts
+# 8085/9090; worker pods (rendered by ate-controller from kagent's WorkerPool, in `kagent`) run
+# as UID 0 with 13 capabilities and seccomp/AppArmor Unconfined. The repo's Deny admission
+# policies match only agents and externalsecrets; the audit-only hygiene policies exclude
+# ate-system and podcertificate-controller-system (base-apps/admission-policies/).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: substrate
+  namespace: argo-cd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    chart: substrate
+    repoURL: ghcr.io/kagent-dev/substrate/helm
+    targetRevision: 0.5.0-alpha2
+    helm:
+      releaseName: substrate
+      valuesObject:
+        # External Postgres (the shared pgvector instance, database `substrate`) with PASSWORD
+        # auth. Client certificates are for the bundled Postgres `kagent install` deploys, which
+        # trusts Substrate's postgres CA; ours does not. The connection Secrets and their keys
+        # are the chart defaults, created by base-apps/substrate/external-secret-postgres.yaml.
+        postgres:
+          clientCertificates:
+            enabled: false
+          readWriteConnectionStringSecretRef:
+            name: substrate-postgres-readwrite
+            key: readWriteConnectionString
+          ownerConnectionStringSecretRef:
+            name: substrate-postgres-owner
+            key: ownerConnectionString
+          readWriteRole: substrate_readwrite
+          ownerRole: substrate_owner
+          schema: substrate
+
+        # Session snapshot store: the chart's bundled rustfs (S3 API), bucket ate-snapshots at
+        # http://rustfs.ate-system.svc:9000 (path-style). Harness snapshotPolicy.location must
+        # point here (base-apps/substrate/docs.md). AWS S3 is a follow-on: ate-api-server has no
+        # extraEnv for AWS credentials (kagent-dev/substrate#64).
+        #   * accessKey/secretKey stay the chart defaults ON PURPOSE: the chart can only take
+        #     literal values (no Secret reference), and anything set here is public in this
+        #     repo. base-apps/substrate/networkpolicy-rustfs.yaml is the access control.
+        #   * The 1Gi PVC is pinned to k3s-worker-02 by base-apps/substrate/rustfs-pvc-placement.yaml
+        #     (the chart has no nodeSelector or PVC annotations).
+        rustfs:
+          enabled: true
+          storageSize: 1Gi
+          bucket: ate-snapshots
+
+        # The egress credential provider resolves ate-secret:// references (how a model API key
+        # reaches a sandboxed agent) and is default-deny per atespace. kagent's agents run in
+        # atespace `kagent` and read their Secrets from namespace `kagent`; without this every
+        # model call returns 403. (`kagent install` sets the same policy on THIS chart, not on
+        # the kagent chart.)
+        credentialProvider:
+          namespacePolicies:
+            - atespace: kagent
+              allowedNamespaces: [kagent]
+
+        # Traces (atenet-router) to Coroot, like kagent's. Metrics stay with Prometheus, which
+        # scrapes the prometheus.io/scrape-annotated pods; OTLP metrics push would only retry
+        # localhost. Logs: no endpoint, so actor events go to stdout and Alloy ships them to Loki.
+        otel:
+          traces:
+            enabled: true
+            endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
+          metrics:
+            enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ate-system
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

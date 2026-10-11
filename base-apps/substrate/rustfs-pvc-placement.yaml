@@ -1,0 +1,63 @@
+# Pin the rustfs snapshot volume to k3s-worker-02 — the one thing the substrate chart cannot do.
+#
+# The chart's rustfs-data PVC has no annotations or storageClassName and its Deployment has no
+# nodeSelector/affinity (substrate 0.5.0-alpha2 templates/rustfs.yaml). On local-path
+# (WaitForFirstConsumer) the volume would land on whichever worker the scheduler first picks
+# (never k3s-control-01: tainted, and rustfs has no toleration) and stay there.
+# k3s-worker-02 is chosen on purpose: 114.7 GiB free vs 54.3 GiB on k3s-worker-01 (read
+# 2026-10-11), and local-path does NOT enforce the 1Gi request, so the snapshot store can grow
+# into the node's disk.
+#
+# How: on CREATE of that one claim, set `volume.kubernetes.io/selected-node` — the annotation the
+# scheduler itself writes for a WaitForFirstConsumer claim. Pre-set, the provisioner creates the
+# volume on that node straight away, and the PV's node affinity then pins the rustfs pod there.
+# After that this policy is inert: it only ever matches a CREATE of rustfs-data.
+#
+# Expected side effects, both harmless:
+#   * the substrate app (ServerSideApply) removes the annotation on its next self-heal, because
+#     a mutation made during Argo's own create is attributed to Argo's field manager. The claim
+#     is bound by then; the annotation does nothing after binding.
+#   * if this policy loses the race with the substrate app on the very first install, the claim
+#     is created unpinned and lands on either worker. runbook.md "rustfs volume on the wrong
+#     node" re-creates it (the store is disposable).
+#
+# failurePolicy Ignore, as for every MutatingAdmissionPolicy here (tests/admission-policies
+# test_mutations_fail_open): a CEL error must never block a claim.
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: substrate-rustfs-pvc-placement
+spec:
+  failurePolicy: Ignore
+  reinvocationPolicy: Never
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: ate-system
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["persistentvolumeclaims"]
+        operations: ["CREATE"]
+  matchConditions:
+    - name: rustfs-data-not-yet-placed
+      expression: >-
+        object.metadata.name == 'rustfs-data'
+        && !(has(object.metadata.annotations)
+             && 'volume.kubernetes.io/selected-node' in object.metadata.annotations)
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          Object{
+            metadata: Object.metadata{
+              annotations: {"volume.kubernetes.io/selected-node": "k3s-worker-02"}
+            }
+          }
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: substrate-rustfs-pvc-placement
+spec:
+  policyName: substrate-rustfs-pvc-placement
