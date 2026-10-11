@@ -36,7 +36,7 @@ HEADER = '''# "Cluster Overview" dashboard, in Grafana's Kubernetes folder.
 #
 # Where the numbers come from (nothing extra is deployed for most of it):
 #   - k3s version:        kubernetes_build_info (Prometheus scrapes the API server
-#                         and every kubelet; git_version = "v1.36.4+k3s1")
+#                         and every kubelet; git_version = "v1.37.1+k3s1")
 #   - node details:       kube_node_info / kube_node_status_* from the
 #                         kube-state-metrics bundled in Coroot's cluster agent
 #   - containers, PVCs:   cAdvisor + kubelet metrics (prometheus-config.yaml)

@@ -1,6 +1,6 @@
 # Resizing a running pod without restarting it
 
-**Feature:** in-place pod resize (`InPlacePodVerticalScaling`), GA in Kubernetes 1.35; cluster on `v1.36.4+k3s1`
+**Feature:** in-place pod resize (`InPlacePodVerticalScaling`), GA in Kubernetes 1.35; cluster on `v1.37.1+k3s1`
 **Tool:** `scripts/resize-pod.sh`
 **Plan:** `docs/plans/k8s-136-features-implementation-plan.md`, Phase 2
 
