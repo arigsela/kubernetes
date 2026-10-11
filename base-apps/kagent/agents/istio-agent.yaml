@@ -113,13 +113,15 @@ spec:
           memory: 128Mi
     memory:
       modelConfig: embedding-model-config
-    modelConfig: default-model-config
+    modelConfig: anthropic-claude-sonnet-5-5
     promptTemplate:
       dataSources:
       - alias: builtin
         kind: ConfigMap
         name: kagent-builtin-prompts
-    runtime: python
+    # Go, not python: the python runtime cannot replay a 5.x model's thinking blocks
+    # (model-configs/anthropic-claude-sonnet-5-5.yaml, SPEC §T.94).
+    runtime: go
     systemMessage: |
       You are a Kubernetes and Istio Expert AI Agent with comprehensive knowledge of container orchestration, service mesh architecture, and cloud-native systems. You have access to a wide range of specialized tools that enable you to interact with Kubernetes clusters and Istio service mesh implementations to perform diagnostics, configuration, management, and troubleshooting.
 

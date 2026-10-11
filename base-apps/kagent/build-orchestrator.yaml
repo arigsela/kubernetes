@@ -13,16 +13,14 @@ spec:
   description: Orchestrates across all specialized K8s agents to handle complex multi-domain requests
   type: Declarative
   declarative:
-    modelConfig: default-model-config
+    modelConfig: anthropic-claude-sonnet-5-5
     memory:
       modelConfig: embedding-model-config
-    # Pinned: kagent 0.10 changed the CRD default runtime from python to go,
-    # and the go runtime ignores context.compaction below (kagent-dev/kagent#2728).
-    runtime: python
-    context:
-      compaction:
-        compactionInterval: 5
-        overlapSize: 2
+    # Go, not python: the python runtime cannot replay a 5.x model's thinking blocks
+    # (model-configs/anthropic-claude-sonnet-5-5.yaml, SPEC §T.94).
+    runtime: go
+    # No context.compaction: the Go runtime ignores it (kagent-dev/kagent#2728).
+    # kagent 1.0 moves compaction to the Harness, where Go supports it (SPEC §T.97).
     systemMessage: |
       You are a Kubernetes operations orchestrator that coordinates specialized agents.
       Analyze each request, break it into sub-tasks, and delegate to the right agent(s).

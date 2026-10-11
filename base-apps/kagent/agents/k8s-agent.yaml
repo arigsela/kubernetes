@@ -67,13 +67,15 @@ spec:
           memory: 256Mi
     memory:
       modelConfig: embedding-model-config
-    modelConfig: default-model-config
+    modelConfig: anthropic-claude-sonnet-5-5
     promptTemplate:
       dataSources:
       - alias: builtin
         kind: ConfigMap
         name: kagent-builtin-prompts
-    runtime: python
+    # Go, not python: the python runtime cannot replay a 5.x model's thinking blocks
+    # (model-configs/anthropic-claude-sonnet-5-5.yaml, SPEC §T.94).
+    runtime: go
     stream: true
     systemMessage: |
       # Kubernetes AI Agent System Prompt
