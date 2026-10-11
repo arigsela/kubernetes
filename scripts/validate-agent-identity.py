@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the agent-identity ("agent principal") contract for kagent agents.
+"""Validate the agent-identity ("agent principal") contract for kagent 1.0 agents.
 
 An agent-principal = (credentials it can obtain) + (its model) + (its capability
 surface). Three invariants (see templates/agent-identity/README.md), and EVERY
@@ -8,20 +8,24 @@ agent and credential is held to all three:
   1. Scoped credentials: every ExternalSecret resolves through a dedicated scoped
      SecretStore + per-consumer Vault key — never the broad 'vault-backend' store,
      never the monolithic 'kagent' key.
-  2. In-git model identity: every modelConfig / memory.modelConfig resolves to a
-     ModelConfig manifest in git (chart-rendered configs exempt — see below).
-  3. Capability surface: every Agent McpServer tool ref resolves to an in-git MCP
-     server and lists explicit toolNames (no implicit bind-all).
+  2. In-git model identity: every ModelConfig an AgentTemplate or a Harness names
+     (spec.modelConfig, spec.kagent.memory.modelConfigRef,
+     spec.kagent.compaction.summarizer.modelConfigRef) is a manifest in git
+     (chart-rendered configs exempt — see below).
+  3. Capability surface: every AgentTemplate MCP binding names a RemoteMCPServer in
+     git and lists its tools explicitly (an empty list is a bind-all); every subAgent,
+     Agent templateRef and Agent harnessRef resolves to an object in git; no Agent
+     carries an inline template or harness, which would bypass the checks above.
 
-NO PILOT STAGING. This validator used to hold only a pilot agent + pilot
-credential to a hard failure and downgrade everything else to a warning, so that
-the gate could go green while the backlog stayed visible (design doc §44). That
-backlog is now empty: every credential is scoped and the broad store is retired.
+FAIL CLOSED (SPEC §V.84). kagent 1.0 moved the agent API from kagent.dev/v1alpha2
+(Agent.spec.declarative) to api.kagent.dev/v1alpha3 (AgentTemplate + Harness + Agent).
+A validator that only knew the old shape would have found zero agents and passed. So:
+any kagent manifest in base-apps/ of a kind/version this script does not understand is
+an ERROR, an unparsable file that mentions kagent.dev is an ERROR, and finding no
+AgentTemplate or no Agent is an ERROR. Teach the validator a new kind before shipping it.
 
-Keeping the staging after that point was actively harmful — it was a loaded gun.
-Stripping every toolName from k8s-agent (an implicit bind-all on the agent holding
-k8s_delete_resource and k8s_execute_command) produced a WARNING and exit 0. CI
-stayed green on a real capability regression. Everything is a hard error now.
+NO PILOT STAGING. Every violation is a hard error, whichever agent it is on. (The
+staged version once let an implicit bind-all on k8s-agent through as a warning.)
 
 Exit 1 on any error.
 """
@@ -35,86 +39,99 @@ import yaml
 BROAD_SECRETSTORE = "vault-backend"
 MONOLITHIC_VAULT_KEY = "kagent"
 
+# The kagent manifests this validator understands: (apiVersion, kind). Anything else in a
+# kagent API group is an error, not a skip.
+KNOWN_KAGENT = {
+    ("api.kagent.dev/v1alpha3", "Agent"),
+    ("api.kagent.dev/v1alpha3", "AgentTemplate"),
+    ("api.kagent.dev/v1alpha3", "Harness"),
+    ("api.kagent.dev/v1alpha3", "ModelConfig"),
+    ("api.kagent.dev/v1alpha3", "RemoteMCPServer"),
+    # kmcp 0.4.0 (a kagent-crds subchart): deploys an MCP server; agents bind it through a
+    # RemoteMCPServer, never directly.
+    ("kagent.dev/v1alpha1", "MCPServer"),
+}
+KAGENT_GROUPS = ("kagent.dev", "api.kagent.dev")
+
 # ModelConfigs rendered by the kagent Helm chart rather than declared as their own
-# manifest. Exempt, and legitimately so: the invariant exists to catch identity
-# that is INVISIBLE TO REVIEW — the design doc's complaint (§13) was a ModelConfig
-# "applied by hand, so it is invisible to GitOps and to review". default-model-config
-# is the opposite of that. Its definition lives in git at base-apps/kagent.yaml
-# (the `providers:` block: provider, model, apiKeySecretRef), is version-controlled,
-# and every change to it goes through review. Adopting it as a standalone manifest
-# would put the chart and Argo in a tug-of-war over the same object — the failure
-# mode that silently stripped the agents' HITL requireApproval gates on every sync.
+# manifest. Exempt, and legitimately so: the invariant exists to catch identity that is
+# INVISIBLE TO REVIEW (a ModelConfig "applied by hand"). default-model-config is rendered
+# from the `providers:` values in base-apps/kagent.yaml, so it is version-controlled and
+# reviewed. (No agent references it after the 1.0 cutover; the exemption stays because
+# the reasoning does.)
 CHART_GENERATED_MODELCONFIGS = {"default-model-config"}
-# MCP servers rendered by the kagent Helm chart rather than declared in git.
-# Exempt for the same reason as CHART_GENERATED_MODELCONFIGS: they ARE
-# declarative (versioned via base-apps/kagent.yaml's chart targetRevision), just
-# not as standalone manifests. Adopting them into git would put the chart and
-# the kagent-secrets Argo app in a tug-of-war over the same object — the failure
-# mode that silently stripped the agents' HITL requireApproval gates on every
-# sync. Invariant 3's real teeth are the explicit toolNames check below, which
-# still applies to these refs.
+# MCP servers rendered by the kagent Helm chart rather than declared in git. Exempt for the
+# same reason: versioned via the chart's targetRevision. Adopting them into git would put
+# the chart and the kagent-secrets Argo app in a tug-of-war over one object — the failure
+# mode that once silently stripped the agents' HITL approval gates on every sync.
+# Invariant 3's real teeth are the explicit tools check, which still applies to these.
 CHART_PROVIDED_MCPSERVERS = {"kagent-tool-server"}
 
 
-def _load_docs(path: Path) -> list[dict]:
-    try:
-        return [d for d in yaml.safe_load_all(path.read_text()) if isinstance(d, dict)]
-    except yaml.YAMLError:
-        return []
+def _group(doc: dict) -> str:
+    return str(doc.get("apiVersion", "")).split("/")[0]
+
+
+def _name(doc: dict) -> str | None:
+    return (doc.get("metadata") or {}).get("name")
+
+
+def load_manifests(repo_root: Path) -> tuple[list[tuple[Path, dict]], list[str]]:
+    """Every YAML document under base-apps/, plus errors for kagent files that do not parse.
+
+    Repo-wide on purpose: an agent is found by WHAT it is, not where it lives. A kagent
+    manifest placed outside base-apps/kagent/ is still validated (and still deployed).
+    """
+    docs: list[tuple[Path, dict]] = []
+    errors: list[str] = []
+    base = repo_root / "base-apps"
+    if not base.is_dir():
+        return docs, errors
+    for path in sorted(base.rglob("*.yaml")):
+        text = path.read_text()
+        try:
+            loaded = list(yaml.safe_load_all(text))
+        except yaml.YAMLError as exc:
+            if "kagent.dev" in text:
+                errors.append(f"{path}: does not parse ({exc.__class__.__name__}), and it "
+                              f"mentions kagent.dev. An unreadable agent manifest is not a "
+                              f"valid one.")
+            continue
+        docs.extend((path, d) for d in loaded if isinstance(d, dict))
+    return docs, errors
+
+
+def kagent_objects(docs) -> tuple[dict[str, list[tuple[Path, dict]]], list[str]]:
+    """{kind: [(path, doc)]} for the understood kagent kinds; errors for everything else."""
+    by_kind: dict[str, list[tuple[Path, dict]]] = {}
+    errors: list[str] = []
+    for path, doc in docs:
+        if _group(doc) not in KAGENT_GROUPS:
+            continue
+        key = (doc.get("apiVersion"), doc.get("kind"))
+        if key not in KNOWN_KAGENT:
+            errors.append(
+                f"{_name(doc)} ({path}): {key[0]} {key[1]} is a kagent manifest this validator "
+                f"does not understand. It cannot vouch for it, so it fails closed: teach "
+                f"scripts/validate-agent-identity.py (and the admission policies) the new "
+                f"kind/version first (SPEC §V.84).")
+            continue
+        by_kind.setdefault(doc["kind"], []).append((path, doc))
+    return by_kind, errors
 
 
 def collect_by_kind(repo_root: Path) -> dict[str, list[tuple[Path, dict]]]:
-    out: dict[str, list[tuple[Path, dict]]] = {}
-    kagent_dir = repo_root / "base-apps" / "kagent"
-    if not kagent_dir.is_dir():
-        return out
-    for path in sorted(kagent_dir.rglob("*.yaml")):
-        for doc in _load_docs(path):
-            kind = doc.get("kind")
-            if kind:
-                out.setdefault(kind, []).append((path, doc))
-    return out
+    docs, _ = load_manifests(repo_root)
+    return kagent_objects(docs)[0]
 
 
 def collect_agents(repo_root: Path) -> list[tuple[Path, dict]]:
-    """Every kagent Agent in git, found by KIND — not by directory.
-
-    This used to glob agents/*.yaml and then hardcode build-orchestrator.yaml,
-    which lives one level up. That worked only because someone remembered to add
-    the special case; the next agent placed outside agents/ would have been
-    silently unvalidated. Find them by what they ARE.
-    """
-    kagent_dir = repo_root / "base-apps" / "kagent"
-    agents: list[tuple[Path, dict]] = []
-    if not kagent_dir.is_dir():
-        return agents
-    for path in sorted(kagent_dir.rglob("*.yaml")):
-        for doc in _load_docs(path):
-            if doc.get("kind") == "Agent":
-                agents.append((path, doc))
-    return agents
+    """Every kagent 1.0 Agent in git, found by KIND — not by directory."""
+    return collect_by_kind(repo_root).get("Agent", [])
 
 
-def collect_external_secrets_repo_wide(repo_root: Path) -> list[tuple[Path, dict]]:
-    """Every ExternalSecret in base-apps/, NOT just base-apps/kagent/.
-
-    Why repo-wide: `postgresql/kagent-db-credentials` is a KAGENT credential that
-    LIVES in the postgresql namespace. It kept reading the monolithic `kagent` Vault
-    key, broke silently when that key was destroyed (SecretSyncedError), and was
-    invisible to this validator because it only ever globbed base-apps/kagent/.
-
-    The contract was enforcing least privilege by LOCATION when it should enforce it
-    by WHAT THE CREDENTIAL IS.
-    """
-    base = repo_root / "base-apps"
-    found: list[tuple[Path, dict]] = []
-    if not base.is_dir():
-        return found
-    for path in sorted(base.rglob("*.yaml")):
-        for doc in _load_docs(path):
-            if doc.get("kind") == "ExternalSecret":
-                found.append((path, doc))
-    return found
+def collect_templates(repo_root: Path) -> list[tuple[Path, dict]]:
+    return collect_by_kind(repo_root).get("AgentTemplate", [])
 
 
 def check_credential_scoping(repo_root: Path) -> list[str]:
@@ -123,18 +140,20 @@ def check_credential_scoping(repo_root: Path) -> list[str]:
     Two different scopes, deliberately:
 
     * The monolithic `kagent` Vault key is checked REPO-WIDE. That key is destroyed;
-      nothing legitimate reads it from any namespace.
+      nothing legitimate reads it from any namespace. (postgresql/kagent-db-credentials
+      was a kagent credential living in another namespace, and broke silently.)
     * The broad `vault-backend` SecretStore is only checked inside base-apps/kagent/.
       `vault-backend` is a legitimate PER-NAMESPACE SecretStore name used by ~30
-      healthy ExternalSecrets across the cluster (atlantis, backstage, cert-manager,
-      mysql, n8n, ...). Only the one in the kagent namespace was retired. Flagging it
-      globally would be a false positive on most of the repo.
+      healthy ExternalSecrets across the cluster. Only the kagent one was retired.
     """
     errors: list[str] = []
     kagent_dir = repo_root / "base-apps" / "kagent"
+    docs, _ = load_manifests(repo_root)
 
-    for path, doc in collect_external_secrets_repo_wide(repo_root):
-        name = (doc.get("metadata") or {}).get("name")
+    for path, doc in docs:
+        if doc.get("kind") != "ExternalSecret":
+            continue
+        name = _name(doc)
         spec = doc.get("spec") or {}
         store = (spec.get("secretStoreRef") or {}).get("name")
         keys = {
@@ -142,7 +161,6 @@ def check_credential_scoping(repo_root: Path) -> list[str]:
             for ref in (spec.get("data") or [])
         }
 
-        # repo-wide: the destroyed monolithic key
         if MONOLITHIC_VAULT_KEY in keys:
             errors.append(
                 f"{name} ({path}): reads the monolithic Vault key "
@@ -153,7 +171,6 @@ def check_credential_scoping(repo_root: Path) -> list[str]:
                 f"being kagent's because it is declared in another namespace."
             )
 
-        # kagent namespace only: the retired broad store
         in_kagent = kagent_dir in path.parents or path.parent == kagent_dir
         if in_kagent and store == BROAD_SECRETSTORE:
             errors.append(
@@ -164,77 +181,94 @@ def check_credential_scoping(repo_root: Path) -> list[str]:
     return errors
 
 
-def _agent_model_refs(doc: dict) -> list[str]:
-    decl = (doc.get("spec") or {}).get("declarative") or {}
-    refs = []
-    if decl.get("modelConfig"):
-        refs.append(decl["modelConfig"])
-    mem = decl.get("memory") or {}
-    if mem.get("modelConfig"):
-        refs.append(mem["modelConfig"])
+def _model_refs(kind: str, doc: dict) -> list[tuple[str, str]]:
+    """(field, ModelConfig name) pairs an AgentTemplate or Harness references."""
+    spec = doc.get("spec") or {}
+    refs: list[tuple[str, str]] = []
+    if kind == "AgentTemplate":
+        name = (spec.get("modelConfig") or {}).get("name")
+        if name:
+            refs.append(("spec.modelConfig", name))
+    elif kind == "Harness":
+        kagent = spec.get("kagent") or {}
+        name = ((kagent.get("memory") or {}).get("modelConfigRef") or {}).get("name")
+        if name:
+            refs.append(("spec.kagent.memory.modelConfigRef", name))
+        summarizer = (kagent.get("compaction") or {}).get("summarizer") or {}
+        name = (summarizer.get("modelConfigRef") or {}).get("name")
+        if name:
+            refs.append(("spec.kagent.compaction.summarizer.modelConfigRef", name))
     return refs
 
 
-def check_model_config_in_git(repo_root: Path) -> list[str]:
+def check_model_config_in_git(by_kind) -> list[str]:
+    """Invariant 2."""
     errors: list[str] = []
-    in_git = {
-        (doc.get("metadata") or {}).get("name")
-        for _path, doc in collect_by_kind(repo_root).get("ModelConfig", [])
-    }
-    for _path, doc in collect_agents(repo_root):
-        name = (doc.get("metadata") or {}).get("name")
-        for ref in _agent_model_refs(doc):
-            if ref in in_git or ref in CHART_GENERATED_MODELCONFIGS:
-                continue
-            errors.append(
-                f"{name}: modelConfig {ref!r} is not a ModelConfig manifest in git. "
-                f"An agent's model is part of its identity; it may not be applied "
-                f"out-of-band where review cannot see it."
-            )
+    in_git = {_name(doc) for _p, doc in by_kind.get("ModelConfig", [])}
+    for kind in ("AgentTemplate", "Harness"):
+        for _path, doc in by_kind.get(kind, []):
+            for field, ref in _model_refs(kind, doc):
+                if ref in in_git or ref in CHART_GENERATED_MODELCONFIGS:
+                    continue
+                errors.append(
+                    f"{kind} {_name(doc)}: {field} {ref!r} is not a ModelConfig manifest in "
+                    f"git. An agent's model is part of its identity; it may not be applied "
+                    f"out-of-band where review cannot see it."
+                )
     return errors
 
 
-def check_capability_surface(repo_root: Path) -> list[str]:
+def check_capability_surface(by_kind) -> list[str]:
+    """Invariant 3."""
     errors: list[str] = []
-    by_kind = collect_by_kind(repo_root)
-    mcp_names = {
-        (doc.get("metadata") or {}).get("name")
-        for kind in ("RemoteMCPServer", "MCPServer")
-        for _path, doc in by_kind.get(kind, [])
-    }
-    agent_names = {
-        (doc.get("metadata") or {}).get("name")
-        for _path, doc in collect_agents(repo_root)
-    }
-    for _path, doc in collect_agents(repo_root):
-        name = (doc.get("metadata") or {}).get("name")
-        decl = (doc.get("spec") or {}).get("declarative") or {}
-        for tool in decl.get("tools") or []:
-            kind = tool.get("type")
-            if kind == "Agent":
-                # A delegation to an agent that does not exist in git is an
-                # undeclared capability surface just as much as an unknown MCP
-                # server is. observability-agent carried a dangling ref to
-                # promql-agent — an agent that does not exist and is disabled in
-                # the chart — and nothing caught it.
-                ref = (tool.get("agent") or {}).get("name")
-                if ref and ref not in agent_names:
+    remote_mcp = {_name(doc) for _p, doc in by_kind.get("RemoteMCPServer", [])}
+    templates = {_name(doc) for _p, doc in by_kind.get("AgentTemplate", [])}
+    harnesses = {_name(doc) for _p, doc in by_kind.get("Harness", [])}
+
+    for _path, doc in by_kind.get("AgentTemplate", []):
+        name = _name(doc)
+        for tool in (doc.get("spec") or {}).get("tools") or []:
+            if "subAgent" in tool:
+                ref = ((tool.get("subAgent") or {}).get("templateRef") or {}).get("name")
+                if ref not in templates:
                     errors.append(
-                        f"{name}: delegates to Agent {ref!r}, which does not exist "
-                        f"in git — dangling delegation"
-                    )
+                        f"AgentTemplate {name}: subAgent templateRef {ref!r} is not an "
+                        f"AgentTemplate in git — dangling delegation")
                 continue
-            if kind != "McpServer":
+            if "mcp" not in tool:
+                errors.append(f"AgentTemplate {name}: tool entry with neither mcp nor subAgent: "
+                              f"{tool!r}")
                 continue
-            mcp = tool.get("mcpServer") or {}
-            ref = mcp.get("name")
-            if ref not in mcp_names and ref not in CHART_PROVIDED_MCPSERVERS:
-                errors.append(f"{name}: references unknown MCP server {ref!r}")
-            if not mcp.get("toolNames"):
+            mcp = tool.get("mcp") or {}
+            server = mcp.get("server") or {}
+            ref = server.get("name")
+            if server.get("kind") != "RemoteMCPServer":
                 errors.append(
-                    f"{name}: MCP ref {ref!r} lists no toolNames — an implicit "
-                    f"bind-all. Every tool an agent may call must be named."
-                )
+                    f"AgentTemplate {name}: MCP binding to {server.get('kind')!r} {ref!r}; "
+                    f"kagent 1.0 binds only RemoteMCPServer (deploy with MCPServer, bind the "
+                    f"RemoteMCPServer that points at it)")
+            elif ref not in remote_mcp and ref not in CHART_PROVIDED_MCPSERVERS:
+                errors.append(f"AgentTemplate {name}: references unknown RemoteMCPServer {ref!r}")
+            if not mcp.get("tools"):
+                errors.append(
+                    f"AgentTemplate {name}: MCP binding {ref!r} lists no tools — an implicit "
+                    f"bind-all. Every tool an agent may call must be named.")
+
+    for _path, doc in by_kind.get("Agent", []):
+        name = _name(doc)
+        spec = doc.get("spec") or {}
+        for inline, ref_field, known, what in (
+                ("template", "templateRef", templates, "AgentTemplate"),
+                ("harness", "harnessRef", harnesses, "Harness")):
+            if inline in spec:
+                errors.append(
+                    f"Agent {name}: inline spec.{inline}. Reference a {what} with "
+                    f"spec.{ref_field}: the contract is checked on {what}s, so an inline "
+                    f"{inline} would bypass it.")
+                continue
+            ref = (spec.get(ref_field) or {}).get("name")
+            if ref not in known:
+                errors.append(f"Agent {name}: spec.{ref_field} {ref!r} is not a {what} in git")
     return errors
 
 
@@ -244,16 +278,24 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     repo_root = args.repo_root.resolve()
 
-    errors: list[str] = []
-    for check in (
-        check_credential_scoping,
-        check_model_config_in_git,
-        check_capability_surface,
-    ):
-        errors.extend(check(repo_root))
+    docs, errors = load_manifests(repo_root)
+    by_kind, unknown = kagent_objects(docs)
+    errors += unknown
+    errors += check_credential_scoping(repo_root)
+    errors += check_model_config_in_git(by_kind)
+    errors += check_capability_surface(by_kind)
 
-    agents = collect_agents(repo_root)
-    print(f"agent-identity: {len(agents)} agents held to all three invariants")
+    templates = by_kind.get("AgentTemplate", [])
+    agents = by_kind.get("Agent", [])
+    if not templates:
+        errors.append("no AgentTemplate found under base-apps/: a guardrail that finds nothing "
+                      "to check must not pass (SPEC §V.84)")
+    if not agents:
+        errors.append("no Agent found under base-apps/: a guardrail that finds nothing to "
+                      "check must not pass (SPEC §V.84)")
+
+    print(f"agent-identity: {len(agents)} agents, {len(templates)} templates, "
+          f"{len(by_kind.get('Harness', []))} harnesses held to all three invariants")
 
     if errors:
         for e in errors:

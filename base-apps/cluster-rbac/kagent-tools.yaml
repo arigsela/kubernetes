@@ -151,6 +151,18 @@ rules:
       - wgpolicyk8s.io
     resources: ["*"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
+  # kagent 1.0's own API (Agents, AgentTemplates, Harnesses, ModelConfigs, RemoteMCPServers),
+  # READ-ONLY. On 0.10 the agents lived in kagent.dev, which the list above grants in full
+  # (it now holds only kmcp's MCPServers). The 1.0 group is added deliberately narrower:
+  # reading lets homelab-knowledge and k8s-reader answer "which agents exist / is X Ready"
+  # from live state; writing would let an agent edit AgentTemplates, its own tools and
+  # approval gates included. Admission would still judge such an edit, but no agent needs to
+  # try. The repo's objects reference keys by Secret name only, so reads expose no secret (a
+  # literal headersFrom[].value or ModelConfig defaultHeaders value would be readable: keep
+  # credentials in Secrets).
+  - apiGroups: ["api.kagent.dev"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
   # API discovery for the kubectl inside the tool server.
   - nonResourceURLs: ["/api", "/api/*", "/apis", "/apis/*", "/version", "/healthz", "/readyz", "/openapi", "/openapi/*"]
     verbs: ["get"]
