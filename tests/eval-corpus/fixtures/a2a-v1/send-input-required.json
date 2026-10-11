@@ -1,0 +1,51 @@
+{
+  "jsonrpc": "2.0",
+  "id": "1e2f3a4b-5c6d-4e7f-8a9b-0c1d2e3f4a5b",
+  "result": {
+    "task": {
+      "id": "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+      "contextId": "7b1e4d2a-9c3f-4e8b-a1d6-5f2e3c4b5a69",
+      "status": {
+        "state": "TASK_STATE_INPUT_REQUIRED",
+        "timestamp": "2026-10-11T14:05:10.000Z",
+        "message": {
+          "messageId": "9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a",
+          "contextId": "7b1e4d2a-9c3f-4e8b-a1d6-5f2e3c4b5a69",
+          "taskId": "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d",
+          "role": "ROLE_AGENT",
+          "parts": [
+            {
+              "text": "Approve k8s_delete_resource on configmap/kagent-scratch?"
+            },
+            {
+              "data": {
+                "id": "toolu_07",
+                "name": "k8s_delete_resource",
+                "args": {
+                  "resource_type": "configmap",
+                  "resource_name": "kagent-scratch"
+                }
+              },
+              "metadata": {
+                "kagent.dev/a2a/part-type": "function_call"
+              }
+            }
+          ]
+        }
+      },
+      "artifacts": [
+        {
+          "artifactId": "b1c2d3e4-0002-4000-8000-000000000001",
+          "parts": [
+            {
+              "text": "Deleting it needs your approval."
+            }
+          ],
+          "metadata": {
+            "kagent.dev/a2a/timeline-position": "2026-10-11T14:05:09.000Z"
+          }
+        }
+      ]
+    }
+  }
+}

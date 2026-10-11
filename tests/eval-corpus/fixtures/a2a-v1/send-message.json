@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "id": "3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f",
+  "result": {
+    "message": {
+      "messageId": "4d5e6f7a-8b9c-4d0e-9f1a-2b3c4d5e6f7a",
+      "contextId": "7b1e4d2a-9c3f-4e8b-a1d6-5f2e3c4b5a69",
+      "role": "ROLE_AGENT",
+      "parts": [
+        {
+          "text": "Hello."
+        }
+      ]
+    }
+  }
+}
