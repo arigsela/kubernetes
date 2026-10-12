@@ -147,8 +147,9 @@ runbook gives the LogQL.
 - Dispatcher down: no investigations; Slack unchanged. Argo CD health and the readiness probe
   are the signal. No alert rule for it in this increment (an alert about the thing that
   routes alerts is a later decision).
-- Agent timeout (300 s): the finding posts "still running" with the session link; the answer
-  lands in the session.
+- Agent timeout (300 s): the finding posts "still running" and where to look (the session is
+  listed under `dispatcher` in the UI; its id only comes back with a reply, so there is no
+  link yet); the answer lands in the session.
 - n8n `agent-findings` unreachable: the finding is lost but logged with the session id.
 - Budget exhausted: logged `skip-budget`; the human still has the Slack alert.
 
