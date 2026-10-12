@@ -52,3 +52,66 @@ def test_parser_reads_block_lists_and_ignores_comments():
     policy = pm.load_policy(text)
     assert policy["auto"]["deny_prefixes"] == ["a/", "b"]
     assert policy["owner"]["approvers"] == ["me"]
+# ---------------------------------------------------------------- decide
+
+def policy():
+    return pm.load_policy(POLICY_FILE.read_text())
+
+
+def pr(**over):
+    base = {"number": 760, "state": "open", "draft": False, "mergeable": True, "merged": False,
+            "user": {"login": "arigsela-renovate[bot]"}, "labels": [{"name": "renovate"}, {"name": "review:skip"}],
+            "head": {"sha": "abc123", "repo": {"full_name": "arigsela/kubernetes"}},
+            "base": {"sha": "base456", "repo": {"full_name": "arigsela/kubernetes"}}}
+    base.update(over)
+    return base
+
+
+def files(*names):
+    return [{"filename": n} for n in names]
+
+
+def checks(*conclusions, pending=0):
+    runs = [{"name": f"job-{i}", "status": "completed", "conclusion": c} for i, c in enumerate(conclusions)]
+    runs += [{"name": f"pending-{i}", "status": "in_progress", "conclusion": None} for i in range(pending)]
+    return runs
+
+
+def test_renovate_skip_green_is_auto():
+    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success", "skipped"), policy())
+    assert d.klass == "auto" and d.reasons == [] and d.head_sha == "abc123"
+
+
+def test_deny_prefix_wins_over_skip_label():
+    d = pm.decide(pr(), files("base-apps/vault/statefulsets.yaml"), checks("success"), policy())
+    assert d.klass == "owner" and any("deny" in r for r in d.reasons)
+    d = pm.decide(pr(), files("terraform/roots/asela-cluster/ecr.tf"), checks("success"), policy())
+    assert d.klass == "owner"
+
+
+def test_pending_check_is_owner_not_auto():
+    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success", pending=1), policy())
+    assert d.klass == "owner" and "checks pending" in d.reasons
+
+
+def test_failed_or_absent_checks_are_owner():
+    assert pm.decide(pr(), files("x.md"), checks("success", "failure"), policy()).klass == "owner"
+    assert pm.decide(pr(), files("x.md"), [], policy()).klass == "owner"
+
+
+@pytest.mark.parametrize("over, reason", [
+    ({"user": {"login": "arigsela"}}, "author"),
+    ({"labels": [{"name": "renovate"}, {"name": "review:skim"}]}, "label"),
+    ({"draft": True}, "draft"),
+    ({"state": "closed"}, "not open"),
+    ({"mergeable": False}, "mergeable"),
+    ({"head": {"sha": "abc123", "repo": {"full_name": "someone/fork"}}}, "fork"),
+])
+def test_each_condition_is_a_reason(over, reason):
+    d = pm.decide(pr(**over), files("x.md"), checks("success"), policy())
+    assert d.klass == "owner" and any(reason in r for r in d.reasons), d.reasons
+
+
+def test_too_many_files_is_owner():
+    d = pm.decide(pr(), files("a.md", "b.md", "c.md"), checks("success"), policy())
+    assert d.klass == "owner" and any("files" in r for r in d.reasons)
