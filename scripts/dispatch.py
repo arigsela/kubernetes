@@ -250,3 +250,72 @@ class Dispatcher:
                   "agent": agent, "session": finding["session"], "state": finding["state"],
                   "error": finding["error"]})
         return finding
+# ------------------------------------------------------------------ http
+
+def make_handler(dispatcher: Dispatcher):
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "dispatcher/1"
+
+        def _reply(self, code: int, obj: dict) -> None:
+            body = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):  # noqa: N802
+            if self.path in ("/healthz", "/readyz"):
+                self._reply(200, {"ok": True})
+            else:
+                self._reply(404, {"error": "not found"})
+
+        def do_POST(self):  # noqa: N802
+            if self.path != "/signal/grafana":
+                self._reply(404, {"error": "not found"})
+                return
+            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("payload must be an object")
+            except ValueError as err:
+                self._reply(400, {"error": f"bad json: {err}"})
+                return
+            decisions = dispatcher.handle_grafana(payload)
+            self._reply(200, {"decisions": [d["decision"] for d in decisions]})
+
+        def log_message(self, fmt, *args):  # access log as JSON, like everything else
+            log_line({"event": "http", "path": self.path, "message": fmt % args})
+
+    return Handler
+
+
+def serve(dispatcher: Dispatcher, port: int) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(dispatcher))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+def main(argv=None) -> int:
+    config = Config.from_env()
+    try:
+        table = load_table(Path(config.table_path).read_text())
+    except (OSError, ValueError) as err:
+        log_line({"event": "fatal", "error": f"cannot load {config.table_path}: {err}"})
+        return 1
+    dispatcher = Dispatcher(table, config)
+    port = int(os.environ.get("PORT", "8080"))
+    server = serve(dispatcher, port)
+    log_line({"event": "start", "port": port, "rules": len(table["rules"]),
+              "a2a_base": config.a2a_base, "user": config.user})
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        server.shutdown()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
