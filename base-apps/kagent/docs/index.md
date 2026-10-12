@@ -39,6 +39,8 @@ sources:
   - base-apps/kagent/embedding-model-config.yaml
   - base-apps/kagent/agent-docs-mcp.yaml
   - base-apps/kagent/agent-docs-mcp-remote.yaml
+  - base-apps/kagent/brave-search-mcp.yaml
+  - base-apps/kagent/brave-search-mcp-remote.yaml
   - base-apps/kagent/backstage-catalog-mcp.yaml
   - base-apps/kagent/kagent-postgres-external-secret.yaml
   - base-apps/kagent/kagent-anthropic-external-secret.yaml
@@ -47,6 +49,9 @@ sources:
   - base-apps/kagent/kagent-db-secret-store.yaml
   - base-apps/kagent/agent-docs-mcp-secret-store.yaml
   - base-apps/kagent/eso-agent-docs-mcp-serviceaccount.yaml
+  - base-apps/kagent/brave-search-mcp-external-secret.yaml
+  - base-apps/kagent/brave-search-mcp-secret-store.yaml
+  - base-apps/kagent/eso-brave-search-mcp-serviceaccount.yaml
   - base-apps/kagent/httproute.yaml
   - id: httproute-mcp
     resource: base-apps/kagent/httproute-mcp.yaml
@@ -135,13 +140,13 @@ group moves all five charts in one PR, and only after approval on the Dependency
 
 | Agent | Model | Harness | Class | Tools |
 |---|---|---|---|---|
-| `homelab-knowledge` | `anthropic-claude-sonnet-5-5` | `kagent-memory` | read | `agent-docs` (`get_file_contents`, `search_code`), `backstage-catalog` (`get-catalog-entity`), and 8 read tools of `kagent-tool-server`. No sub-agent. The "ask hk" agent |
+| `homelab-knowledge` | `anthropic-claude-sonnet-5-5` | `kagent-memory` | read | `agent-docs` (`get_file_contents`, `search_code`), `brave-search` (`brave_web_search`, `brave_news_search`), `backstage-catalog` (`get-catalog-entity`), and 8 read tools of `kagent-tool-server`. No sub-agent. The "ask hk" agent |
 | `k8s-reader` | `anthropic-claude-haiku-5-5` | `kagent-stateless` | read | the same 8 read tools of `kagent-tool-server`, nothing else. No memory |
 | `k8s-agent` | `anthropic-claude-sonnet-5-5` | `kagent-memory` | admin | `kagent-tool-server` bound twice: read tools `requireApproval: false`, every write/destructive tool `requireApproval: true` |
 | `istio-agent` | `anthropic-claude-sonnet-5-5` | `kagent-memory` | admin | the same split, with the Istio tools |
 | `build-orchestrator` | `anthropic-claude-sonnet-5-5` | `kagent-memory` | admin | no tools of its own; sub-agents `k8s-agent` and `istio-agent` |
 | `skill-suggester` | `anthropic-claude-haiku-5-5` | `kagent-chat` | read | none (called by the Backstage wizard) |
-| `dungeon-crawler-carl-agent` | `anthropic-claude-haiku-5-5` | `kagent-chat` | read | none |
+| `dungeon-crawler-carl-agent` | `anthropic-claude-haiku-5-5` | `kagent-chat` | read | `brave-search` (`brave_web_search`) for book facts it is unsure of |
 
 The class label lives on the AgentTemplate and is checked against the capability taxonomy
 (`base-apps/admission-policies/agent-capability-taxonomy.yaml`): a `read` template binds only
@@ -217,6 +222,7 @@ In v1alpha3 an AgentTemplate MCP binding accepts only a same-namespace `RemoteMC
 | RemoteMCPServer | Points at | Tools bound |
 |---|---|---|
 | `agent-docs` (`agent-docs-mcp-remote.yaml`) | `http://agent-docs-mcp.kagent:3000/mcp`, the read-only GitHub MCP server that the kmcp `MCPServer` `agent-docs-mcp` deploys (`ghcr.io/github/github-mcp-server`, `--read-only --toolsets repos`, token from Secret `agent-docs-github-mcp-token`) | `get_file_contents`, `search_code` |
+| `brave-search` (`brave-search-mcp-remote.yaml`) | `http://brave-search-mcp.kagent:3000/mcp`, the official Brave Search MCP server that the kmcp `MCPServer` `brave-search-mcp` deploys (`docker.io/mcp/brave-search`, digest-pinned; key from Secret `brave-search-mcp-api-key`; only 2 of its 8 tools enabled). Web results are untrusted text, so it is bound to read-class agents only, never to the operator agents | `brave_web_search`, `brave_news_search` |
 | `backstage-catalog` (`backstage-catalog-mcp.yaml`) | Backstage's MCP actions endpoint, `http://backstage.backstage.svc.cluster.local/api/mcp-actions/v1/catalog`; the `Authorization` header comes from Secret `backstage-mcp-token` and is injected by Substrate's egress gateway | `get-catalog-entity` |
 | `kagent-tool-server` (chart) | `http://kagent-tools.kagent:8084/mcp`, the `kagent-tools` Deployment | read: `k8s_get_resources`, `k8s_get_resource_yaml`, `k8s_get_pod_logs`, `k8s_describe_resource`, `k8s_get_events`, `k8s_get_cluster_configuration`, `k8s_get_available_api_resources`, `k8s_check_service_connectivity`; the admin agents add the write/destructive tools in a gated binding |
 | `kagent-api` (chart) | the controller's own `/mcp` | none |
@@ -248,6 +254,7 @@ destroyed monolithic `kagent` key.
 | Secret (ExternalSecret if different) | SecretStore | ESO ServiceAccount | Vault role | Vault key (properties) |
 |---|---|---|---|---|
 | `agent-docs-github-mcp-token` | `vault-agent-docs-mcp` | `eso-agent-docs-mcp` | `kagent-agent-docs-mcp` | `kagent-agent-docs-mcp` (`github-token`) |
+| `brave-search-mcp-api-key` | `vault-brave-search-mcp` | `eso-brave-search-mcp` | `kagent-brave-search-mcp` | `brave-search-mcp` (`api-key`); `scripts/provision-brave-search-vault.sh` |
 | `backstage-mcp-token` | `vault-backstage-mcp` | `eso-backstage-mcp` | `backstage-mcp` | `kagent-backstage-mcp` (`token`) |
 | `kagent-postgres` | `vault-kagent-db` | `eso-kagent-db` | `kagent-db` | `kagent-db` (`v1-user`, `v1-password`, `v1-db-name`) |
 | `kagent-anthropic` (`kagent-anthropic-secrets`) | `vault-kagent-anthropic` | `eso-kagent-anthropic` | `kagent-anthropic` | `kagent-anthropic` (`anthropic-api-key`) |
