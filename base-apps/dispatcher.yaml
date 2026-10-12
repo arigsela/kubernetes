@@ -1,0 +1,30 @@
+# base-apps/dispatcher.yaml
+---
+# Signal dispatcher: routes Grafana alerts to a read-only agent investigation by the table in
+# base-apps/dispatcher/dispatch-table.yaml (ADP path 1). Design:
+# docs/superpowers/specs/2026-10-12-signal-dispatch-and-promotion-design.md. §T.105, §V.86-§V.88.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: dispatcher
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/dispatcher
+    directory:
+      # The agent-docs contract: catalog-info.yaml and the generated mkdocs.yml are not manifests.
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dispatcher
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,52 @@
+---
+type: "Kubernetes App Runbook"
+title: "Dispatcher"
+description: "Runbook: no investigation after an alert, a wrong route, the budget, replaying a signal"
+app: dispatcher
+catalog_entity: dispatcher
+kind: runbook
+namespace: dispatcher
+last_reviewed: 2026-10-12
+status: stable
+tags: [agents, dispatch, grafana, a2a]
+sources:
+  - base-apps/dispatcher/dispatch-table.yaml
+  - base-apps/dispatcher/deployment.yaml
+  - scripts/dispatch.py
+---
+
+# Dispatcher runbook
+
+## An alert fired in Slack but no investigation followed
+1. Was it routed? `kubectl logs -n dispatcher deploy/dispatcher | grep '"event": "dispatch"'`
+   and read `decision`: `none` or `unmatched` means the table said so (add or change a row);
+   `skip-budget` / `skip-repeat` means the limits held; `resolved` means the notification was
+   the all-clear.
+2. Did the investigation finish? `grep '"event": "finding"'`: `error` names an A2A failure
+   or a post failure; `session` is the kagent session to open in the UI
+   (`https://kagent.arigsela.com/agents/<session>/chat`).
+3. Is Grafana delivering at all? Grafana → Alerting → Contact points → `n8n` → the second
+   integration's last delivery. A 404 there means the Service or the pod is gone.
+
+## The agent paused instead of answering
+The finding says "paused". The dispatcher never answers (§V.88): open the session in the UI
+and decide there. If a read-only agent pauses, something bound a gated tool to it;
+`tests/dispatch/test_table.py` would have failed, so check what changed.
+
+## Replay a signal by hand (also the acceptance test)
+From inside the cluster, post a synthetic payload for a real pod:
+```
+kubectl run -n dispatcher curl --rm -i --restart=Never --image=curlimages/curl:8.11.1 -- \
+  curl -s -X POST http://dispatcher.dispatcher.svc.cluster.local:8080/signal/grafana \
+  -H 'Content-Type: application/json' \
+  -d '{"alerts":[{"status":"firing","fingerprint":"manual-1","labels":{"alertname":"Pod CPU starved","namespace":"n8n","pod":"<a real pod>"},"annotations":{"summary":"manual replay","runbook":"none"}}]}'
+```
+Expect `{"decisions":["investigate"]}`, then a Slack message within five minutes and a
+session under `dispatcher` in the UI. Use a new `fingerprint` each time, or wait
+`repeat_after_hours`.
+
+## Change the table
+Edit `dispatch-table.yaml`, run `python -m pytest tests/dispatch/ -q`, open a PR. The pod
+reads the file at start: Argo CD's sync updates the ConfigMap and kubelet refreshes the
+mount within a minute, but the process keeps its loaded copy; `kubectl rollout restart
+deploy/dispatcher -n dispatcher` after the sync, or wait for the next Deployment change.

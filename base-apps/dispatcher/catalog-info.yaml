@@ -1,0 +1,25 @@
+# base-apps/dispatcher/catalog-info.yaml
+# Structured facts for the dispatcher. Authoritative for owner, dependencies, namespace and
+# lifecycle; the markdown docs do not restate them.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: dispatcher
+  namespace: dispatcher
+  description: Routes Grafana alerts to a read-only agent investigation by a declared table; humans keep every alert
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=dispatcher'
+    backstage.io/kubernetes-namespace: dispatcher
+    github.com/project-slug: arigsela/kubernetes
+  tags: [agents, dispatch, grafana]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-observability
+  dependsOn:
+    - component:kagent/kagent
+    - component:n8n/n8n
+    - component:logging/logging
