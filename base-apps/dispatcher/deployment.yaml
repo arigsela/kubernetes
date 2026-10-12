@@ -1,0 +1,86 @@
+# base-apps/dispatcher/deployment.yaml
+---
+# One replica: the budget and the repeat window are in memory (scripts/dispatch.py, Budget).
+# A second replica would double the budget; a restart forgets it, which errs toward looking.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dispatcher
+  namespace: dispatcher
+  labels:
+    app: dispatcher
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dispatcher
+  template:
+    metadata:
+      labels:
+        app: dispatcher
+    spec:
+      automountServiceAccountToken: false   # it talks to kagent and n8n over HTTP, never to the API server
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dispatcher
+          # Renovate pins the digest on its next run (kubernetes manager, pinDigests for base-apps).
+          image: python:3.12-slim
+          command: ["python", "-u", "/opt/dispatch/dispatch.py"]
+          env:
+            - name: DISPATCH_TABLE
+              value: /etc/dispatch/dispatch.json
+            - name: KAGENT_A2A_BASE
+              value: http://kagent-controller.kagent.svc.cluster.local:8083
+            - name: N8N_WEBHOOK_BASE
+              value: http://n8n.n8n.svc.cluster.local:5678/webhook
+            - name: DISPATCH_USER
+              value: dispatcher
+            - name: INVESTIGATION_TIMEOUT
+              value: "300"
+            - name: PORT
+              value: "8080"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: code
+              mountPath: /opt/dispatch
+              readOnly: true
+            - name: table
+              mountPath: /etc/dispatch
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: dispatcher-code
+        - name: table
+          configMap:
+            name: dispatcher-table
