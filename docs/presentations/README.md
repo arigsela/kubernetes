@@ -56,6 +56,20 @@ visual identity as the other two.
 | `agents-as-a-service-speaker-notes.md` | Per-panel text alternative, what to say, qualifications and sources. Its "evidence corrections" (two conversations not one; 30-day retention; memory on the Harness; shared identity is not authenticated identity) are folded into the brief. |
 | `agents-as-a-service-presentation-brief.md` | The source brief: the full 14-screen version with the per-agent tool table, the five-door table, three recorded screens, data provenance and the "do not claim" list. The seven-panel deck is its permitted short cut (screens 02, 03, 04, 06, 10, 12, 14). |
 
+## The whole picture — 2026-10-12
+
+The fourth of the set, and the map the other three sit on: the reference platform placed on
+the Weave Intelligence ADP reference architecture (tooling, path definitions, agent
+infrastructure, everything as code), with every piece scored built / partial / not yet, the
+eight core paths scored the same way, an honest maturity-ladder placement (level 2 daily,
+level 3 in places, level 4 declined), and the next five pieces in dependency order. Two
+recorded screens: one change through every layer in 23 minutes (the CLI-approvals PR,
+2026-10-12) and the audit's origin query. Same audience, anonymization and visual identity.
+
+| file | what it is |
+|---|---|
+| `whole-picture-presentation-brief.md` | The source brief: the full 14-screen version with the layer-by-layer mapping tables, the eight-path scorecard, the ladder, the "what next" track, data provenance and the "do not claim" list. The seven-panel short cut is screens 03, 05, 07, 09, 10, 11, 13. No rendered deck yet: hand the brief to the infographic agent, then add the PDF and speaker notes beside it like the other three. |
+
 ## Tech-stack talk — 2026-10-11
 
 | file | what it is |
