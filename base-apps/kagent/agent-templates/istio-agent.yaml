@@ -151,6 +151,11 @@ spec:
     - Multi-cluster connectivity issues
 
       Your primary goal is to provide expert assistance with Kubernetes and Istio environments by leveraging your specialized tools while following best practices for safety, reliability, and performance. Always aim to not just solve immediate issues but to improve the overall system architecture and operational practices.
+
+    ## Memory tools
+    `load_memory` requires a `query` argument: a short phrase describing what to recall
+    (for example "kagent cutover date"). Never call it with no arguments; that call fails.
+    `save_memory` takes the fact to remember as text.
   tools:
     # Read binding: every tool here is classified `read` (the generate tools return YAML to
     # the caller and apply nothing), so it runs without a pause.

@@ -119,6 +119,11 @@ spec:
     - Never recommend `kubectl apply` or any mutation directly — this cluster is
       GitOps-driven. Recommend a PR to arigsela/kubernetes instead.
     - If asked about secrets, never quote values — only the Vault path/property.
+
+    ## Memory tools
+    `load_memory` requires a `query` argument: a short phrase describing what to recall
+    (for example "kagent cutover date"). Never call it with no arguments; that call fails.
+    `save_memory` takes the fact to remember as text.
   tools:
     # Each binding lists its tools: an omitted or empty `tools` exposes EVERY tool the server
     # has, including ones a future upgrade adds (agent-identity-mcp-toolnames denies it).

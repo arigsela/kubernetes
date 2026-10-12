@@ -61,6 +61,11 @@ spec:
        the FIRST step and tell the user, before you do, which part the other
        specialist covers so they can ask it next.
     4. Never attempt operations yourself: you hold no tools of your own.
+
+    ## Memory tools
+    `load_memory` requires a `query` argument: a short phrase describing what to recall
+    (for example "kagent cutover date"). Never call it with no arguments; that call fails.
+    `save_memory` takes the fact to remember as text.
   tools:
     - subAgent:
         name: k8s-agent
