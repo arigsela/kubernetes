@@ -216,3 +216,41 @@ def test_config_from_env_defaults_and_overrides():
     assert cfg.user == "dispatcher" and cfg.timeout == 300.0
     cfg = dp.Config.from_env({"INVESTIGATION_TIMEOUT": "12", "DISPATCH_USER": "x"})
     assert cfg.timeout == 12.0 and cfg.user == "x"
+# ---------------------------------------------------------------- http
+
+@pytest.fixture
+def server():
+    fake = Fake(reply=completed_task())
+    d = make(fake)
+    srv = dp.serve(d, port=0)
+    yield fake, f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+def _post(url, body: bytes):
+    req = urllib.request.Request(url, data=body, method="POST", headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as err:
+        return err.code, json.loads(err.read() or b"{}")
+
+
+def test_healthz_and_readyz(server):
+    _, base = server
+    for path in ("/healthz", "/readyz"):
+        with urllib.request.urlopen(base + path, timeout=5) as resp:
+            assert resp.status == 200
+
+
+def test_signal_grafana_returns_decisions(server):
+    fake, base = server
+    status, body = _post(base + "/signal/grafana", json.dumps({"alerts": [alert()]}).encode())
+    assert status == 200
+    assert body == {"decisions": ["investigate"]}
+
+
+def test_signal_grafana_rejects_bad_json_and_unknown_paths(server):
+    _, base = server
+    assert _post(base + "/signal/grafana", b"not json")[0] == 400
+    assert _post(base + "/signal/other", b"{}")[0] == 404
