@@ -6,10 +6,15 @@
 version: 1
 auto:                                   # merged by .github/workflows/promote.yaml, no human
   authors: ["arigsela-renovate[bot]"]   # the API login; `gh` shows app/arigsela-renovate
-  require_labels: ["review:skip"]       # triage found nothing to read: docs-only, or an image-tag bump of <= 4 lines
+  require_labels: ["review:skip"]       # triage found nothing to read. The label alone is not enough: the
+                                        # classifier can also emit skip, so promote.py re-derives triage's
+                                        # deterministic always_skip from the diff (every file docs, or only
+                                        # image:/tag: value lines changed, <= 4 lines in total) and requires it.
   deny_prefixes:                        # never automatic, whatever triage said (path starts-with)
     - terraform/                        # applies before merge, via Atlantis
     - .github/                          # the workflows and the policies themselves
+    - renovate.json5                    # configures the very author this class trusts
+    - base-apps/crossplane              # provider package bumps are not image-tag bumps
     - appsets/
     - ansible/
     - node-config/

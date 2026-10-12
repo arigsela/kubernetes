@@ -9,7 +9,9 @@ name: promote
 
 on:
   workflow_run:
-    workflows: [validate, pr-triage]
+    # These are the workflows' `name:` fields, not their file names (validate.yaml,
+    # pr-triage.yaml); tests/promotion/test_promote.py checks they exist.
+    workflows: ["Validate Manifests", "PR Triage"]
     types: [completed]
 
 permissions: {}
