@@ -206,7 +206,8 @@ an approval or an answer, 1 failed. The UI is `https://kagent.arigsela.com`.
 From Claude Code, the first message goes through `ask-hk` (the MCP endpoint can't create a
 Session); follow-ups can use the `kagent` MCP server's `invoke_session` tool with the same id.
 Start a new conversation after an AgentTemplate change (a Session is pinned to the revision it
-was created from) and after seven idle days (the Session is deleted).
+was created from) and after 30 idle days (`sessionIdleTTL: 720h` in `base-apps/kagent.yaml`;
+the Session is deleted, memory is kept).
 
 ### Approve or reject a gated tool call from the CLI
 `ask-hk` requests kagent's HITL A2A extension on every message, so a `requireApproval` pause

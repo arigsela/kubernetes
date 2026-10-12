@@ -5,7 +5,9 @@ agents once, centrally (prompt, model, tools, approvals, runtime, all as reviewe
 then lets everyone reach the same agent through whichever door suits them: a chat UI, a coding
 assistant, a command line, the developer portal, or automation. It is written for an agent that
 will turn it into infographics, in the same form as `dev-workflow-presentation-brief.md` and
-`adp-concept-presentation-brief.md`. Every screen gives: the message, the exact copy, the visual
+`adp-concept-presentation-brief.md`. The rendering built from it is
+`agents-as-a-service-infographics.pdf` beside it, with `agents-as-a-service-speaker-notes.md`
+(whose "evidence corrections" section is folded into this revision). Every screen gives: the message, the exact copy, the visual
 to draw, and speaker notes. Data provenance is at the end.
 
 **Audience:** engineering leadership; first target is the company's AI pathfinders group. They are
@@ -113,12 +115,13 @@ as a platform resource is reviewed once and reused everywhere.
 - **On the reference.** An agent is a set of files in the platform repository: the prompt, the
   model, the exact tools it may call, which of those need a human, and the runtime it runs on.
   It changes by pull request, like a deployment. One gateway serves it to every client. Improving
-  it improves it everywhere, for everyone, at once.
+  it improves it for every door and every new conversation at once (a running conversation
+  keeps the revision it started on).
 
 **Stat tiles:**
 - **7** agents defined centrally
 - **5** doors into the same agents (UI · coding assistant · command line · portal · automation)
-- **1** gateway, one identity header, one session store, one action record
+- **1** gateway, one session store, one action record; identity is a header the caller sets
 - **0** API keys on any client: the model key is injected at the platform's egress
 
 **Visual idea:** left, three separate boxes each with its own tiny key and scroll icon, not
@@ -144,8 +147,8 @@ chat window.
 
 | Part | What it holds | In the reference |
 |---|---|---|
-| **Template** | The prompt, the model, the tool bindings with their approval flags, the memory setting | one file per agent; 7 to 108 lines of prompt |
-| **Harness** | How it runs: the runtime image, the worker pool, where idle conversations are snapshotted, the embedding model for memory | three harnesses: with memory, stateless, chat |
+| **Template** | The prompt, the model, the tool bindings with their approval flags | one file per agent; 7 to 108 lines of prompt |
+| **Harness** | How it runs: the runtime image, the worker pool, where idle conversations are snapshotted, and whether the agent has long-term memory (with its embedding model and retention) | three harnesses: with memory, stateless, chat |
 | **Agent** | Binds a template to a harness; the thing clients address | one per agent; the portal catalogs it |
 | *Shared: prompt snippets* | Safety rules, Kubernetes context, tool-usage rules, delegation rules | five snippets, included by reference, maintained once |
 | *Shared: tool servers* | MCP servers each exposing a named list of tools | seven servers, 177 tools discovered |
@@ -156,9 +159,9 @@ at admission. Each conversation runs its agent's revision at the time the conver
 
 **Footer right:** "Three files, shared parts, reviewed like code".
 
-**Speaker note:** Walk one agent live: the operator agent's template shows the prompt, two
-bindings to the same tool server (reads ungated, writes gated), the memory flag. Then show the
-harness it runs on. That is the whole definition; there is no hidden configuration in a UI.
+**Speaker note:** Walk one agent live: the operator agent's template shows the prompt and two
+bindings to the same tool server (reads ungated, writes gated). Then show the harness it runs
+on, where memory is switched on. That is the whole definition; there is no hidden configuration in a UI.
 
 ---
 
@@ -255,7 +258,9 @@ glyphs outside the ring, each with an arrow in. Under each door a one-line "who 
 | **Automation** | the evaluation harness, scheduled jobs | the agent protocol from inside the cluster | yes | n/a |
 
 **Standing caption:** A conversation is a session with an id. Start it at one door, continue it
-at another: same memory, same agent revision, same audit trail.
+at another under the same identity: same memory, same agent revision, same audit trail. The
+command line and the coding assistant share one identity on the reference; the portal calls
+with its own.
 
 **Footer right:** "Clients differ; the agent, the gate and the record don't".
 
@@ -338,7 +343,7 @@ invoke_session
   doesn't speak the protocol's tasks extension). It pairs with door 3 for both.
 - *A written rule for the assistant.* The engineer's assistant has a one-paragraph standing
   instruction: open a conversation on the command line, continue it here, decide approvals on
-  the command line or in the UI, start fresh after an agent change or seven idle days.
+  the command line or in the UI, start fresh after an agent change or 30 idle days.
 
 **Visual idea:** an editor window on the left with a tool-call block; an arrow through the
 orange gateway ring to the agent; a small crossed-out key icon on the laptop.
@@ -385,23 +390,25 @@ re-implements prompts, tools or permissions.
 
 ---
 
-## 10 — In use: one conversation, three doors `recorded`
+## 10 — In use: one identity, three doors, two conversations `recorded`
 
-**Message:** a conversation started at one door was continued at a second and decided at a
-third, with no hand-off step; the session id is the only thing that moved.
+**Message:** under one identity, a conversation started at one door was continued at a second,
+and a different conversation started at the first door was decided at a third; the session id
+is the only thing that moved.
 
-**Headline:** *In use: one conversation, three doors*
+**Headline:** *In use: three doors, two conversations*
 
-**Timeline (three nodes on a track, each with its door glyph), 2026-10-12:**
+**Two lanes (each a track with door glyphs), 2026-10-12. Lane A is one knowledge-agent
+conversation; lane B is a separate operator-agent conversation:**
 
-1. **Command line, 15:37 UTC.** The engineer's assistant opens a conversation with the knowledge
+1. **Lane A · Command line, 15:37 UTC.** The engineer's assistant opens a conversation with the knowledge
    agent: *"Which file defines the Brave Search MCP server and what tools does it enable?"* The
    agent answers from live cluster objects, notes it can't read the repository right now (a
    token had expired), and the script prints the session id.
-2. **Coding assistant, 16:12 UTC.** Same session, through the MCP door: *"One-line answer:
+2. **Lane A · Coding assistant, 16:12 UTC.** Same session, through the MCP door: *"One-line answer:
    which namespace is the brave-search-mcp MCPServer in?"* Reply: `kagent`, with the file path,
    now that the repository token was fixed. The agent remembered the earlier context.
-3. **Chat UI, 17:20 UTC.** A different conversation, started on the command line with the
+3. **Lane B · Command line, then chat UI, 17:20 UTC.** A different conversation, started on the command line with the
    cluster operator (*"Delete the ConfigMap approval-gate-probe …"*), paused for approval. The
    owner opened the dashboard, found the session in "Recent agent chat sessions", and pressed
    Approve. The object was deleted; the command-line client, asked later, saw the conversation
@@ -416,13 +423,15 @@ agent:                 `kagent`. The file `base-apps/kagent/brave-search-mcp.yam
                        the same namespace.
 ```
 
-**Infographic idea:** one continuous line with three doorway glyphs on it; the session id
-written once, above the line, spanning all three.
+**Infographic idea:** two parallel lanes. Lane A: two doorway glyphs joined by one line with
+the session id written once above it. Lane B: two doorway glyphs, the second with the amber
+approval card. One identity label spans both lanes.
 
 **Footer right:** "The session id is the hand-off; nothing else moves".
 
 **Speaker note:** Say that the three doors ran as the same identity, which is why the UI showed
-the script's session. In a company that identity is per person or per team, and the same
+the script's session, and that these are two conversations, not one: a knowledge session that
+crossed two doors, and an operator session that crossed two others. In a company that identity is per person or per team, and the same
 property means "my conversations follow me across tools", not "everyone sees everything".
 
 ---
@@ -490,9 +499,11 @@ are about identity, and they are named.
 
 **Five panels (controls, from the consumer's side):**
 - **Identity.** The caller names itself in a header; conversations are partitioned by it; the
-  UI and the command line list only that identity's sessions. *Reference gap: one shared
-  identity today, and the open-source gateway doesn't authenticate the header. The platform's
-  IP allow-list and TLS are the mitigation, not a substitute.*
+  UI and the command line list only that identity's sessions. *Reference gap: the command
+  line, the assistant and the UI share one identity today (the portal uses its own), and the
+  open-source gateway doesn't authenticate the header, so partitioning is not an
+  authentication boundary. The platform's IP allow-list and TLS are the mitigation, not a
+  substitute.*
 - **Capability.** Bound tool lists and classes are enforced at admission; a client sends text,
   never a tool. *Holds for every door.*
 - **Approval.** A gated binding pauses the call; the UI and the command line can decide; the
@@ -575,7 +586,8 @@ has gaps a company must close first.
   - One shared identity on the reference; the open-source gateway doesn't authenticate.
   - The coding-assistant door can't open conversations or decide approvals; it is paired
     with the command line.
-  - The runtime is alpha; conversations idle seven days are deleted.
+  - The runtime is alpha; conversations idle for 30 days are deleted (configured; the chart
+    default is seven). Running turns and turns waiting for approval never expire.
 
 **Five questions for the group:**
 1. **Centre.** Which agents do we already have, scattered across tools, that should become one
@@ -616,7 +628,10 @@ All measured on the reference platform on 2026-10-12 unless noted.
 | "Three doors" timeline times | the same three sessions' timestamps |
 | Prompt fix reaching six agents | the memory-tools prompt PR, 2026-10-11 |
 | Web search added to two agents in one PR | the web-search PR, 2026-10-12 |
-| Revision pinning, seven-day idle deletion, MCP endpoint tool list, tasks extension requirement | the runtime's 1.x documentation (core concepts; agents via MCP; A2A) |
+| Revision pinning, MCP endpoint tool list, tasks extension requirement | the runtime's 1.x documentation (core concepts; agents via MCP; A2A) |
+| 30-day idle retention; approval-waiting turns never expire | the deployment manifest (`sessionIdleTTL: 720h`); seven days is the chart default |
+| Memory configured on the Harness | the harness files |
+| The portal's own identity | the portal docs (`X-User-Id: backstage-portal`) |
 | Timeline dates | first commits of the relevant files and the ledger's dated entries |
 
 ## Do not claim
@@ -625,7 +640,9 @@ All measured on the reference platform on 2026-10-12 unless noted.
   it pairs with the command line or the UI).
 - That the gateway authenticates callers (the open-source build doesn't; the reference relies
   on an IP allow-list and TLS, with one shared identity).
-- That the three doors in screen 10 ran as different people (they ran as the same identity).
+- That the three doors in screen 10 ran as different people (they ran as the same identity),
+  or that they were one conversation (they were two: a knowledge session and an operator
+  session).
 - Production readiness of the runtime (it is alpha) or any uptime figure.
 - That "177 tools" are all bound to agents (60 are; the rest are discovered but unbound).
 - Any company, person, hostname or repository name: the reference is anonymous by design.

@@ -52,7 +52,9 @@ visual identity as the other two.
 
 | file | what it is |
 |---|---|
-| `agents-as-a-service-presentation-brief.md` | 14-screen brief for an infographic agent: per-screen message, copy, visual, speaker note; per-agent tool and gate counts; the five-door table with what each door can and cannot do; data provenance and a "do not claim" list. No rendered deck yet. |
+| `agents-as-a-service-infographics.pdf` | The deck to present: seven 16:9 infographic panels (define once, consume anywhere; what an agent is made of; tools are a catalog; one gateway, five doors; three doors, two conversations; same gate, same record; the agent is the service). Raster pages, no selectable text. |
+| `agents-as-a-service-speaker-notes.md` | Per-panel text alternative, what to say, qualifications and sources. Its "evidence corrections" (two conversations not one; 30-day retention; memory on the Harness; shared identity is not authenticated identity) are folded into the brief. |
+| `agents-as-a-service-presentation-brief.md` | The source brief: the full 14-screen version with the per-agent tool table, the five-door table, three recorded screens, data provenance and the "do not claim" list. The seven-panel deck is its permitted short cut (screens 02, 03, 04, 06, 10, 12, 14). |
 
 ## Tech-stack talk — 2026-10-11
 
