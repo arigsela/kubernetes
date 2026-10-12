@@ -100,3 +100,51 @@ def load_policy(text: str) -> dict:
         raise PolicyError("auto.max_changed_files must be a positive integer")
     policy.setdefault("owner", {})
     return policy
+# ------------------------------------------------------------------ the decision
+
+@dataclass
+class Decision:
+    klass: str                       # "auto" or "owner"
+    reasons: list[str] = field(default_factory=list)
+    head_sha: str = ""
+
+
+def decide(pr: dict, files: list[dict], check_runs: list[dict], policy: dict) -> Decision:
+    """`auto` only when every condition holds; otherwise `owner` with every failed one listed."""
+    auto = policy["auto"]
+    reasons: list[str] = []
+    head_sha = ((pr.get("head") or {}).get("sha")) or ""
+    if pr.get("state") != "open" or pr.get("merged"):
+        reasons.append("not open")
+    if pr.get("draft"):
+        reasons.append("draft")
+    if pr.get("mergeable") is not True:
+        reasons.append("GitHub does not report it mergeable")
+    head_repo = ((pr.get("head") or {}).get("repo") or {}).get("full_name")
+    base_repo = ((pr.get("base") or {}).get("repo") or {}).get("full_name")
+    if not head_repo or head_repo != base_repo:
+        reasons.append("head is a fork")
+    author = (pr.get("user") or {}).get("login")
+    if author not in auto["authors"]:
+        reasons.append(f"author {author!r} is not in auto.authors")
+    labels = {lab.get("name") for lab in (pr.get("labels") or [])}
+    for need in auto["require_labels"]:
+        if need not in labels:
+            reasons.append(f"label {need} missing")
+    names = [f.get("filename") or "" for f in files]
+    if len(names) > auto["max_changed_files"]:
+        reasons.append(f"{len(names)} changed files > max {auto['max_changed_files']}")
+    for name in names:
+        hit = next((p for p in auto["deny_prefixes"] if name.startswith(p)), None)
+        if hit:
+            reasons.append(f"{name} is under deny prefix {hit}")
+    if not check_runs:
+        reasons.append("no check runs on the head commit")
+    pending = [c.get("name") for c in check_runs if c.get("status") != "completed"]
+    if pending:
+        reasons.append("checks pending")
+    bad = [c.get("name") for c in check_runs
+           if c.get("status") == "completed" and c.get("conclusion") not in OK_CONCLUSIONS]
+    if bad:
+        reasons.append(f"checks not green: {', '.join(sorted(str(b) for b in bad))}")
+    return Decision("auto" if not reasons else "owner", reasons, head_sha)
