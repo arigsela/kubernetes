@@ -41,6 +41,19 @@ ledger and memory. Same audience, same anonymization, same visual identity.
 | `dev-workflow-speaker-notes.md` | Per-panel text alternative, what to say, qualifications and sources. Read it before presenting. |
 | `dev-workflow-presentation-brief.md` | The source brief: the full 15-screen version with two recorded screens (a mis-triaged PR's own comment; the 26-PR upgrade day), data provenance and the "do not claim" list. The seven-panel deck is its permitted short cut (screens 02, 03, 06, 07, 09, 11, 14). |
 
+## Agents as a shared service briefing — 2026-10-12
+
+The third of the set: agents defined once as platform resources (prompt, model, tools,
+approvals, runtime, all reviewed files) and consumed through five doors (the chat UI, the
+coding assistant over MCP, the command line and automation over A2A, the developer portal).
+Three recorded screens from 2026-10-12: one conversation across three doors, the approval
+decided from the command line, and the UI's approval card. Same audience, anonymization and
+visual identity as the other two.
+
+| file | what it is |
+|---|---|
+| `agents-as-a-service-presentation-brief.md` | 14-screen brief for an infographic agent: per-screen message, copy, visual, speaker note; per-agent tool and gate counts; the five-door table with what each door can and cannot do; data provenance and a "do not claim" list. No rendered deck yet. |
+
 ## Tech-stack talk — 2026-10-11
 
 | file | what it is |
