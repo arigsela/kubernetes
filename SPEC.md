@@ -3,7 +3,7 @@
 ## §G GOAL
 **REACHED 2026-07-29** — ∀ 3 node @ `v1.35.6+k3s1`, ⊥ data loss. walk 1.33.5 → 1.34.9 → 1.35.6 complete (§T.17, §T.18, §T.19). remaining ∈ this spec = follow-ons + §T.42/§T.45 drift + §T.46/§T.47.
 
-**2026-10-11 20:17Z — kagent 1.0 LIVE.** kagent `1.0.0-alpha11` on Agent Substrate `0.5.0-alpha2`, in place; 7/7 agents Ready on Claude Sonnet/Haiku 5.5; HITL reject/approve, memory, caching, audit & reboot-resume verified (§T.97-§T.99). §T.101 closed 2026-10-12. open: §T.102 (WorkerPool spread), §T.103 (revoke retired Anthropic keys).
+**2026-10-11 20:17Z — kagent 1.0 LIVE.** kagent `1.0.0-alpha11` on Agent Substrate `0.5.0-alpha2`, in place; 7/7 agents Ready on Claude Sonnet/Haiku 5.5; HITL reject/approve, memory, caching, audit & reboot-resume verified (§T.97-§T.99). §T.101 closed 2026-10-12. open: §T.102 (WorkerPool spread), §T.103 (revoke retired Anthropic keys), §T.105 (dispatcher, ADP path 1).
 
 **2026-10-11 19:15Z — 1.37 REACHED.** ∀ 3 node @ `v1.37.1+k3s1` (from `latest`, §T.89 amended), ⊥ data loss, control-plane API window 42 s, gate PASSED (§T.96). next = kagent 1.0 in place (§T.97-§T.100).
 
@@ -186,6 +186,9 @@ V82: ∀ model weights → OCI image volume pinned BY DIGEST, built by `scripts/
 V83: ∀ k3s BUNDLED component (`/var/lib/rancher/k3s/server/manifests/*`) that installs \| owns a resource ALSO owned by an Argo app → ! disabled via a git-managed drop-in (`disable+:`), installed per §V.81, BEFORE the hop that introduces it. post-hop ! `kubectl get helmchart -A` = only expected entries. first case: `gateway-api-crd` (§R.42)
 V84: kagent guardrails (admission policies + `scripts/validate-agent-*.py`) ! FAIL CLOSED: an agent manifest of a kind/version they ⊥ understand \| zero agents found = failure, ⊥ vacuous pass. any kagent API change (e.g. `kagent.dev/v1alpha2` → `api.kagent.dev/v1alpha3`) ships the rewritten guardrails IN THE SAME sync as the new CRDs/agents
 V85: ∀ logical backup artifact → ! end w/ the dumper's completion marker (`-- PostgreSQL database [cluster ]dump complete`) & ! match the in-pod sha256 when staged; else delete + fail. valid gzip ≠ complete dump (§B.25). `kubectl exec` streams ⊥ trusted for large dumps ∴ `pg-backup.sh` stages in pod + chunked copy by default
+V86: ∀ Grafana alert → n8n (Slack) via its own contact-point integration; dispatcher ∉ that path & ⊥ forwards to grafana-alerts. dispatcher down ⇒ ⊥ lost Slack alert.
+V87: dispatch table routes only → AgentTemplate whose ∀ bound tool ∈ taxonomy `read` & ⊥ `requireApproval: true` binding; ∀ Grafana rule title has a row. CI: tests/dispatch/test_table.py.
+V88: dispatcher sends A2A as `X-User-Id: dispatcher`, new session per investigation, ⊥ `tool_approval_response` / `ask_user_response` ever.
 
 ## §T TASKS
 id|status|task|cites
@@ -293,6 +296,7 @@ T101|x|**DONE 2026-10-12:** owner minted a fine-grained PAT (read-only Contents 
 T102|.|kagent WorkerPool `kagent-default` ⊥ pod anti-affinity → after a drain both workers land on 1 node (seen 2026-10-11 post `patch.yml`). ! spread (template has `nodeAffinity` only — check chart `substrateWorkerPool` for topology spread; else accept & document)|-
 T103|.|OWNER ACTION: revoke in the Anthropic console the keys behind the retired `anthropic-claude-sonnet-4-6` ModelConfig (§T.94) and `homelab-agent` (§T.99); their Secrets/Vault copies are gone|-
 T104|x|**DONE 2026-10-11:** image `backstage-portal:v1.5.0@sha256:077dd368…` built on the 2nd try (QEMU segfault intermittent; host build ! Node 24, Node 26 fails native modules) → #746; Backstage ingests ∀ 7 `agents.api.kagent.dev` as `kagent-agent` entities. Backstage portal `v1.5.0` (arigsela/backstage#41 merged) ! build + `base-apps/backstage/deployments.yaml` bump. amd64 image build on the arm64 laptop segfaults under QEMU (`yarn workspaces focus` exit 139) ∴ needs a native amd64 builder or colima `--vz-rosetta`. until then the running portal (v1.4.14) shows stale kagent-agent entities|-
+T105|.|dispatcher (ADP path 1): `base-apps/dispatcher/` + `scripts/dispatch.py` route Grafana alerts → read-only agent investigation by table; findings → n8n `agent-findings` → Slack. spec `docs/superpowers/specs/2026-10-12-signal-dispatch-and-promotion-design.md`|V86,V87,V88
 
 ## §B BUGS
 id|date|cause|fix
