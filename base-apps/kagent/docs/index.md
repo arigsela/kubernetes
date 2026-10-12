@@ -351,10 +351,10 @@ hostname in `MANAGED_HOSTNAMES` in `base-apps/wan-ip-monitor/cronjob.yaml`.
   unavailable while their node drains.
 - **Substrate CAs expire after 365 days** and nothing renews them; the `substrate-ca-expiry` alert
   warns 30 days ahead. Rotation restarts kagent too: `base-apps/substrate/runbook.md`.
-- **`homelab-knowledge` can't read the repo right now** (SPEC T101, found 2026-10-11): the
-  `agent-docs` GitHub token answers 401, so `get_file_contents`/`search_code` fail. The fix is a
-  new fine-grained PAT (read-only Contents + Metadata on `arigsela/kubernetes`) in Vault key
-  `kagent-agent-docs-mcp`, then a forced ExternalSecret sync and an `agent-docs-mcp` restart.
+- **The `agent-docs` GitHub token is a fine-grained PAT** (read-only Contents + Metadata on
+  `arigsela/kubernetes`) in Vault key `kagent-agent-docs-mcp`, property `github-token`; it expires
+  and must be re-minted by the owner (the 2026-10-11 outage, SPEC T101, was an expired token).
+  Rotation: `base-apps/kagent/runbook.md`, "can't read the repo".
 - **`kagent-builtin-prompts`** is still rendered by the 1.0 chart; `homelab-knowledge`,
   `k8s-agent` and `istio-agent` include its `safety-guardrails` and `kubernetes-context` snippets
   (and `k8s-agent` also `tool-usage-best-practices`) through `promptTemplate.dataSources`.
