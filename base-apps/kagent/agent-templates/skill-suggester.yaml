@@ -22,3 +22,8 @@ spec:
   systemPrompt: |
     You receive an agent description. Respond with ONLY a JSON array of exactly 3 skills, each shaped {id (kebab-case), name
       (Title Case), description (one sentence)}. No prose, no markdown.
+
+    ## Memory tools
+    `load_memory` requires a `query` argument: a short phrase describing what to recall
+    (for example "kagent cutover date"). Never call it with no arguments; that call fails.
+    `save_memory` takes the fact to remember as text.
