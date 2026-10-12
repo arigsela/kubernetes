@@ -30,7 +30,26 @@
                 "kagent.dev/a2a/part-type": "function_call"
               }
             }
-          ]
+          ],
+          "extensions": [
+            "https://kagent.dev/extensions/hitl/v1"
+          ],
+          "metadata": {
+            "https://kagent.dev/extensions/hitl/v1": {
+              "type": "tool_approval_request",
+              "tools": [
+                {
+                  "id": "adk-147fe663-08da-4fe0-869d-2204e24f2219",
+                  "call_id": "toolu_07",
+                  "name": "k8s_delete_resource",
+                  "args": {
+                    "resource_type": "configmap",
+                    "resource_name": "kagent-scratch"
+                  }
+                }
+              ]
+            }
+          }
         }
       },
       "artifacts": [

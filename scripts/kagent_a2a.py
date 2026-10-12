@@ -25,6 +25,18 @@ by the caller identity, so a follow-up must use the same X-User-Id. In the
 controller's default `insecure` auth mode that header is the whole identity: a
 missing header means `admin@kagent.dev` (go/core/internal/httpserver/auth/authn.go).
 
+Every send requests kagent's human-in-the-loop extension
+(HITL_EXTENSION, `A2A-Extensions` header + the message's `extensions` list).
+Without it a gated tool call still pauses the task, but the pause carries no
+request id, so nothing can answer it and it waits until cancelled
+(docs: examples/a2a-agents, agents/human-in-the-loop). With it, a paused task's
+status.message.metadata[HITL_EXTENSION] is a `tool_approval_request` (each
+pending call has an `id`, `name`, `args`) or an `ask_user_request`, and the
+reply is a message on the same taskId + contextId whose metadata carries a
+`tool_approval_response` (`approvals`, one per call) or an `ask_user_response`.
+The reply's `extensions` list must name the URI again or kagent ignores the
+payload and resumes without a decision.
+
 The unary send blocks until the task settles (completed, failed, or waiting for
 input), and the gateway returns the stored task. One artifact per ADK event
 (Go ADK `OutputArtifactPerEvent`): text parts are what the agent said, data
@@ -47,6 +59,12 @@ PUBLIC_BASE = "https://kagent-mcp.arigsela.com"
 IN_CLUSTER_BASE = "http://kagent-controller.kagent.svc.cluster.local:8083"
 DEFAULT_USER = "admin@kagent.dev"
 A2A_VERSION = "1.0"
+# kagent's HITL A2A extension (go/core/internal/a2a/hitl): tool approvals and ask_user.
+HITL_EXTENSION = "https://kagent.dev/extensions/hitl/v1"
+HITL_TOOL_APPROVAL_REQUEST = "tool_approval_request"
+HITL_TOOL_APPROVAL_RESPONSE = "tool_approval_response"
+HITL_ASK_USER_REQUEST = "ask_user_request"
+HITL_ASK_USER_RESPONSE = "ask_user_response"
 # Multi-step agents (docs walk + live reads) take minutes; the unary call is
 # silent until the task settles. Nothing on the path times out first: Istio
 # 1.30 sets no route timeout and disables the stream idle timeout.
@@ -85,6 +103,7 @@ class Reply:
     task_id: str | None
     text: str | None          # text parts of the artifacts (or the message)
     status_text: str | None   # text parts of task.status.message
+    hitl: dict | None = None  # status.message.metadata[HITL_EXTENSION] of a waiting task
 
     @property
     def failed(self) -> bool:
@@ -97,6 +116,25 @@ class Reply:
     @property
     def completed(self) -> bool:
         return self.kind == "message" or self.state == STATE_COMPLETED
+
+    @property
+    def pending_calls(self) -> list[dict]:
+        """The tool calls a waiting task wants approved: [{id, name, args}, ...].
+
+        Empty unless the task paused with a tool_approval_request. alpha11 lists
+        them under `tools` (go/core/internal/a2a/hitl); the docs say `calls`."""
+        if not self.hitl or self.hitl.get("type") != HITL_TOOL_APPROVAL_REQUEST:
+            return []
+        calls = self.hitl.get("tools")
+        if not isinstance(calls, list):
+            calls = self.hitl.get("calls")
+        return [{"id": c.get("id"), "name": c.get("name"), "args": c.get("args") or {}}
+                for c in (calls or []) if isinstance(c, dict) and c.get("id")]
+
+    @property
+    def pending_question(self) -> bool:
+        """True when the task paused with an ask_user_request (the agent asked something)."""
+        return bool(self.hitl) and self.hitl.get("type") == HITL_ASK_USER_REQUEST
 
     @property
     def answer(self) -> str | None:
@@ -132,23 +170,55 @@ def resolve_endpoint(endpoint: str, agent: str) -> str:
 
 
 def build_send_request(text: str, *, context_id: str | None = None,
+                       task_id: str | None = None, metadata: dict | None = None,
                        message_id: str | None = None, rpc_id: str | None = None) -> dict:
+    """A SendMessage. `task_id` + `metadata` make it a reply to a paused task."""
     message = {
         "messageId": message_id or str(uuid.uuid4()),
         "role": "ROLE_USER",
         "parts": [{"text": text}],
+        # Request HITL on every message: an approval pause raised during this
+        # turn is only answerable if the message that started the turn asked.
+        "extensions": [HITL_EXTENSION],
     }
     if context_id:
         message["contextId"] = context_id
+    if task_id:
+        message["taskId"] = task_id
+    if metadata:
+        message["metadata"] = metadata
     return {"jsonrpc": "2.0", "id": rpc_id or str(uuid.uuid4()),
             "method": "SendMessage", "params": {"message": message}}
+
+
+def approval_metadata(call_ids: list[str], *, approved: bool, reason: str | None = None) -> dict:
+    """message.metadata for a tool_approval_response deciding every listed call the same way.
+
+    kagent requires a decision for every call in the request; a partial reply
+    is a protocol error. `reason` (rejections only) is shown to the agent so it
+    can adapt instead of just failing."""
+    approvals = []
+    for cid in call_ids:
+        entry = {"id": cid, "approved": approved}
+        if not approved and reason:
+            entry["rejection_reason"] = reason
+        approvals.append(entry)
+    return {HITL_EXTENSION: {"type": HITL_TOOL_APPROVAL_RESPONSE, "approvals": approvals}}
+
+
+def answer_metadata(request_id: str, answer: str) -> dict:
+    """message.metadata for an ask_user_response to the request with this id."""
+    return {HITL_EXTENSION: {"type": HITL_ASK_USER_RESPONSE, "id": request_id,
+                             "answers": [{"answer": [answer]}]}}
 
 
 def request_headers(user: str | None) -> dict:
     headers = {"Content-Type": "application/json", "Accept": "application/json",
                # Not enforced by the alpha11 JSON-RPC handler, but the kagent CLI
                # and the a2a-go client always send it (go/core/internal/utils/a2a_version.go).
-               "A2A-Version": A2A_VERSION}
+               "A2A-Version": A2A_VERSION,
+               # The HITL extension is negotiated per request (a2a-go reads this header).
+               "A2A-Extensions": HITL_EXTENSION}
     if user:
         headers["X-User-Id"] = user
     return headers
@@ -184,16 +254,20 @@ def _send_not_accepted(error: dict) -> float | None:
 
 
 def send_message(endpoint: str, text: str, *, context_id: str | None = None,
+                 task_id: str | None = None, metadata: dict | None = None,
                  user: str | None = DEFAULT_USER, timeout: float = DEFAULT_TIMEOUT,
                  transport=None, sleep=time.sleep, clock=time.monotonic,
                  retry_deadline: float = RETRY_DEADLINE) -> dict:
     """POST one SendMessage and return the JSON-RPC `result` ({"task"|"message": ...}).
 
+    `task_id` + `metadata` (see approval_metadata / answer_metadata) answer a
+    paused task instead of starting a new turn.
     `transport(url, payload_bytes, headers, timeout) -> dict` is injectable for tests.
     A KAGENT_SEND_NOT_ACCEPTED rejection is retried with the byte-identical
     request (same messageId) until `retry_deadline`; anything else raises."""
     post = transport or http_post
-    payload = json.dumps(build_send_request(text, context_id=context_id)).encode()
+    payload = json.dumps(build_send_request(text, context_id=context_id, task_id=task_id,
+                                            metadata=metadata)).encode()
     headers = request_headers(user)
     give_up = clock() + retry_deadline
     while True:
@@ -229,9 +303,12 @@ def parse_result(result: dict) -> Reply:
         status = task.get("status") or {}
         texts = [t for t in (parts_text(a.get("parts")) for a in (task.get("artifacts") or [])
                              if isinstance(a, dict)) if t]
+        status_msg = status.get("message") or {}
+        hitl = (status_msg.get("metadata") or {}).get(HITL_EXTENSION)
         return Reply(kind="task", state=status.get("state"), context_id=task.get("contextId"),
                      task_id=task.get("id"), text="\n".join(texts) if texts else None,
-                     status_text=parts_text((status.get("message") or {}).get("parts")))
+                     status_text=parts_text(status_msg.get("parts")),
+                     hitl=hitl if isinstance(hitl, dict) else None)
     if isinstance(result.get("message"), dict):
         msg = result["message"]
         return Reply(kind="message", state=None, context_id=msg.get("contextId"),

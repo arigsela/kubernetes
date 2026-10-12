@@ -1,0 +1,45 @@
+{
+  "jsonrpc": "2.0",
+  "id": "1e2f3a4b-5c6d-4e7f-8a9b-0c1d2e3f4a5b",
+  "result": {
+    "task": {
+      "id": "6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e",
+      "contextId": "7b1e4d2a-9c3f-4e8b-a1d6-5f2e3c4b5a69",
+      "status": {
+        "state": "TASK_STATE_INPUT_REQUIRED",
+        "timestamp": "2026-10-11T14:05:10.000Z",
+        "message": {
+          "messageId": "9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a",
+          "contextId": "7b1e4d2a-9c3f-4e8b-a1d6-5f2e3c4b5a69",
+          "taskId": "6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e",
+          "role": "ROLE_AGENT",
+          "parts": [
+            {
+              "text": "Which namespace do you mean: kagent or default?"
+            }
+          ],
+          "extensions": [
+            "https://kagent.dev/extensions/hitl/v1"
+          ],
+          "metadata": {
+            "https://kagent.dev/extensions/hitl/v1": {
+              "type": "ask_user_request",
+              "id": "adk-9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b",
+              "questions": [
+                {
+                  "question": "Which namespace do you mean: kagent or default?",
+                  "choices": [
+                    "kagent",
+                    "default"
+                  ],
+                  "multiple": false
+                }
+              ]
+            }
+          }
+        }
+      },
+      "artifacts": []
+    }
+  }
+}

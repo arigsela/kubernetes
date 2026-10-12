@@ -201,7 +201,26 @@ group to the role, and note it in the manifest header's dated list.
 ### Ask an agent
 `scripts/ask-hk "question"` (homelab-knowledge), `--agent kagent/<name>` for another agent,
 `--context <id>` to continue (the id is printed after each answer). Exit 0 answered, 2 waiting for
-input or approval, 1 failed. The UI is `https://kagent.arigsela.com`.
+an approval or an answer, 1 failed. The UI is `https://kagent.arigsela.com`.
+
+From Claude Code, the first message goes through `ask-hk` (the MCP endpoint can't create a
+Session); follow-ups can use the `kagent` MCP server's `invoke_session` tool with the same id.
+Start a new conversation after an AgentTemplate change (a Session is pinned to the revision it
+was created from) and after seven idle days (the Session is deleted).
+
+### Approve or reject a gated tool call from the CLI
+`ask-hk` requests kagent's HITL A2A extension on every message, so a `requireApproval` pause
+comes back with a request id. On exit 2 it prints the pending call(s) and remembers them per
+context (`~/.cache/ask-hk/`). Then:
+```
+scripts/ask-hk --agent kagent/k8s-agent --context <id> --approve
+scripts/ask-hk --agent kagent/k8s-agent --context <id> --reject "why"   # the agent sees why
+scripts/ask-hk --agent kagent/k8s-agent --context <id> "<answer>"      # when it asked a question
+```
+One decision covers every call in the request. A plain message while an approval is pending
+is refused. The same pause can be decided in the UI instead. If `ask-hk` says the pause "sent
+no request id", the message that started the turn was sent by a client that didn't request the
+extension (an old `ask-hk`, a bare curl): decide it in the UI, or cancel and resend.
 
 ### Deploy / update
 Agents are three files: the AgentTemplate (`agent-templates/`), the Agent (`agents/`, references
