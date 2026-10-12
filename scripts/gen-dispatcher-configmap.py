@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -20,6 +23,8 @@ import yaml
 
 SOURCES = {"dispatch.py": "scripts/dispatch.py", "kagent_a2a.py": "scripts/kagent_a2a.py"}
 OUT = "base-apps/dispatcher/code-configmap.yaml"
+TABLE = "base-apps/dispatcher/dispatch-table.yaml"
+DEPLOYMENT = "base-apps/dispatcher/deployment.yaml"
 
 HEADER = """\
 ---
@@ -55,26 +60,55 @@ def render(repo: Path) -> str:
     return HEADER + yaml.dump(doc, sort_keys=False, width=10_000, allow_unicode=True)
 
 
+def configmap_checksum(text: str) -> str:
+    """sha256 of a ConfigMap's data, the same formula tests/dispatch/test_manifests.py checks."""
+    doc = [d for d in yaml.safe_load_all(text) if d and d.get("kind") == "ConfigMap"][0]
+    return hashlib.sha256(json.dumps(doc["data"], sort_keys=True).encode()).hexdigest()
+
+
+def render_deployment(repo: Path, code_configmap: str) -> str:
+    """deployment.yaml with its checksum/table and checksum/code annotations set.
+
+    The pod reads both ConfigMaps once at start; Argo CD updates a ConfigMap in place and
+    nothing restarts the pod. A changed checksum changes the pod template, so the sync rolls
+    the pod (Grafana's checksum/alerting pattern)."""
+    text = (repo / DEPLOYMENT).read_text()
+    values = {"checksum/table": configmap_checksum((repo / TABLE).read_text()),
+              "checksum/code": configmap_checksum(code_configmap)}
+    for key, value in values.items():
+        text, count = re.subn(rf'({re.escape(key)}: )"[0-9a-f]*"', rf'\g<1>"{value}"', text)
+        if count != 1:
+            raise SystemExit(f"{DEPLOYMENT}: expected exactly one {key} annotation, found {count}")
+    return text
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--check", action="store_true", help="exit 1 if the committed manifest is stale")
+    ap.add_argument("--check", action="store_true", help="exit 1 if the committed manifests are stale")
     ap.add_argument("--repo-root", default=".")
     args = ap.parse_args(argv)
     repo = Path(args.repo_root).resolve()
-    want = render(repo)
-    out = repo / OUT
-    if args.check:
-        have = out.read_text() if out.exists() else ""
-        if have != want:
+    wanted = {OUT: render(repo)}
+    wanted[DEPLOYMENT] = render_deployment(repo, wanted[OUT])
+    stale = []
+    for rel, want in wanted.items():
+        path = repo / rel
+        have = path.read_text() if path.exists() else ""
+        if have == want:
+            continue
+        if args.check:
             sys.stdout.writelines(difflib.unified_diff(have.splitlines(True), want.splitlines(True),
-                                                       fromfile=OUT, tofile=OUT + " (regenerated)"))
-            print(f"{OUT} is stale; run scripts/gen-dispatcher-configmap.py", file=sys.stderr)
+                                                       fromfile=rel, tofile=rel + " (regenerated)"))
+            stale.append(rel)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(want)
+            print(f"wrote {rel}")
+    if args.check:
+        if stale:
+            print(f"stale: {', '.join(stale)}; run scripts/gen-dispatcher-configmap.py", file=sys.stderr)
             return 1
-        print(f"{OUT} in sync")
-        return 0
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(want)
-    print(f"wrote {OUT}")
+        print(f"{OUT} and {DEPLOYMENT} checksums in sync")
     return 0
 
 

@@ -48,6 +48,7 @@ data:
 
     import json
     import os
+    import re
     import sys
     import threading
     import time
@@ -62,6 +63,27 @@ data:
 
     ANSWER_LIMIT = 3000       # chars of the agent's answer forwarded to Slack
     SOURCES = {"grafana"}
+
+    # The answer goes to Slack verbatim, and a read-only agent can quote pod logs or a
+    # resource's YAML. Best-effort scrub of the shapes a secret usually takes; the prompts
+    # also tell the agent not to quote such values. Not a guarantee, a seatbelt.
+    SECRET_PATTERNS = [
+        re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+        re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+        re.compile(r"(?i)\b(password|passwd|secret|token|api[_-]?key)\s*[=:]\s*\S+"),
+        re.compile(r"\bgithub_pat_[A-Za-z0-9_]+"),
+        re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"),
+        re.compile(r"\bsk-[A-Za-z0-9_-]{8,}"),
+        re.compile(r"\bhvs\.[A-Za-z0-9_-]{20,}"),
+        re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),
+    ]
+
+
+    def scrub(text: str) -> str:
+        """Replace secret-looking values with [redacted] before the text leaves the cluster."""
+        for pattern in SECRET_PATTERNS:
+            text = pattern.sub("[redacted]", text)
+        return text
 
 
     class TableError(ValueError):
@@ -188,6 +210,14 @@ data:
         print(json.dumps(obj, sort_keys=True), flush=True)
 
 
+    def _is_timeout(err: BaseException) -> bool:
+        """urllib raises a bare TimeoutError (socket.timeout) or a URLError wrapping one."""
+        if isinstance(err, TimeoutError):
+            return True
+        reason = getattr(err, "reason", None)
+        return isinstance(reason, TimeoutError) or "timed out" in str(err).lower()
+
+
     def post_json(url: str, obj: dict, timeout: float = 10.0) -> None:
         req = urllib.request.Request(url, data=json.dumps(obj).encode(), method="POST",
                                      headers={"Content-Type": "application/json"})
@@ -254,14 +284,24 @@ data:
                 if reply.context_id:
                     finding["ui"] = self.config.ui_url.format(session=reply.context_id)
                 if reply.completed:
-                    finding["text"] = (reply.answer or "")[:ANSWER_LIMIT]
+                    finding["text"] = scrub((reply.answer or "")[:ANSWER_LIMIT])
                 elif reply.waiting:
                     finding["text"] = ("The agent paused for input (an approval or a question). "
                                        "The dispatcher never answers; continue it in the kagent UI.")
                 else:
-                    finding["error"] = f"task ended in {reply.state}: {(reply.status_text or '')[:300]}"
-            except (a2a.A2AError, OSError, ValueError) as err:
-                finding["error"] = str(err)[:500]
+                    finding["error"] = f"task ended in {reply.state}: {scrub(reply.status_text or '')[:300]}"
+            except (TimeoutError, urllib.error.URLError, OSError, a2a.A2AError, ValueError) as err:
+                if _is_timeout(err):
+                    # The unary send gave up waiting; the task keeps running server-side and the
+                    # answer lands in its session. The session id only comes back with the reply,
+                    # so there is no link yet: say where to look.
+                    finding["text"] = (f"The agent is still running after {self.config.timeout:.0f}s; "
+                                       f"the answer lands in its session, listed under `{self.config.user}` "
+                                       "in the kagent UI.")
+                else:
+                    finding["error"] = scrub(str(err))[:500]
+            except Exception as err:  # noqa: BLE001 - every investigation must produce a finding
+                finding["error"] = f"unexpected {type(err).__name__}: {scrub(str(err))[:400]}"
             try:
                 self.post(self.config.n8n_base.rstrip("/") + "/agent-findings", finding)
             except (OSError, ValueError) as err:

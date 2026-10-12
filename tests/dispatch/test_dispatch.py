@@ -254,3 +254,45 @@ def test_signal_grafana_rejects_bad_json_and_unknown_paths(server):
     _, base = server
     assert _post(base + "/signal/grafana", b"not json")[0] == 400
     assert _post(base + "/signal/other", b"{}")[0] == 404
+
+
+# ---------------------------------------------------------------- review fixes
+
+def test_timeout_posts_still_running_not_failed():
+    fake = Fake(error=TimeoutError("The read operation timed out"))
+    make(fake).handle_grafana({"alerts": [alert()]})
+    _, finding = fake.posted[0]
+    assert finding["error"] is None
+    assert "still running" in finding["text"]
+    assert "dispatcher" in finding["text"]
+
+
+def test_urlerror_wrapping_timeout_is_still_running_too():
+    fake = Fake(error=urllib.error.URLError(TimeoutError("timed out")))
+    make(fake).handle_grafana({"alerts": [alert()]})
+    _, finding = fake.posted[0]
+    assert finding["error"] is None and "still running" in finding["text"]
+
+
+def test_unexpected_exception_still_posts_and_logs_a_finding():
+    fake = Fake(error=KeyError("artifacts"))
+    make(fake).handle_grafana({"alerts": [alert()]})
+    _, finding = fake.posted[0]
+    assert finding["error"].startswith("unexpected KeyError")
+    assert fake.logged[-1]["event"] == "finding"
+
+
+def test_secret_looking_values_are_scrubbed_before_posting():
+    text = ("Found Authorization: Bearer abc.def-123 and AKIAIOSFODNN7EXAMPLE and password=hunter2 "
+            "and github_pat_11AAAA and sk-ant-api03-xyz; the pod is fine.")
+    fake = Fake(reply=completed_task(text=text))
+    make(fake).handle_grafana({"alerts": [alert()]})
+    _, finding = fake.posted[0]
+    for leaked in ("abc.def-123", "AKIAIOSFODNN7EXAMPLE", "hunter2", "github_pat_11AAAA", "sk-ant-api03-xyz"):
+        assert leaked not in finding["text"], leaked
+    assert finding["text"].count("[redacted]") == 5
+    assert finding["text"].endswith("the pod is fine.")
+
+
+def test_scrub_leaves_ordinary_text_alone():
+    assert dp.scrub("pod n8n-0 restarted 3 times; see events") == "pod n8n-0 restarted 3 times; see events"

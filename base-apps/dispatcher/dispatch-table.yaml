@@ -37,7 +37,8 @@ data:
             "Grafana alert '{alertname}' is firing for pod {labels[namespace]}/{labels[pod]}: {annotations[summary]}",
             "Investigate with your read-only tools: describe the pod, read its recent events and the last 100 log lines,",
             "and say whether the pod's own CPU limit or node contention is the likely cause, quoting what you saw.",
-            "Do not propose running changes on the cluster; a fix is a pull request. Runbook hint: {annotations[runbook]}"
+            "Do not propose running changes on the cluster; a fix is a pull request. Runbook hint: {annotations[runbook]}",
+            "Never quote values that look like tokens, keys or passwords, even from logs or YAML; name the line instead."
           ],
           "why": "A starved pod needs describe + events + logs read before anyone can act; the read-only investigator does exactly that and nothing else."
         },
@@ -50,7 +51,8 @@ data:
             "Grafana alert '{alertname}' is firing for {labels[namespace]}/{labels[pod]} container {labels[container]}: {annotations[summary]}",
             "Investigate with your read-only tools: describe the pod, check for OOMKilled in its last state and events,",
             "read the last 100 log lines, and say whether this looks like a leak or a limit set too low, quoting what you saw.",
-            "Do not propose running changes on the cluster; a fix is a pull request. Runbook hint: {annotations[runbook]}"
+            "Do not propose running changes on the cluster; a fix is a pull request. Runbook hint: {annotations[runbook]}",
+            "Never quote values that look like tokens, keys or passwords, even from logs or YAML; name the line instead."
           ],
           "why": "Memory pressure has two causes with two fixes; the evidence (last state, events, logs) is readable without any write tool."
         },

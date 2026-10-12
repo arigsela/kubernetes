@@ -20,6 +20,13 @@ spec:
     metadata:
       labels:
         app: dispatcher
+      annotations:
+        # The pod reads both ConfigMaps once at start. Argo CD updates a ConfigMap in place and
+        # nothing restarts the pod, so these checksums change the pod template instead (the same
+        # pattern as Grafana's checksum/alerting). scripts/gen-dispatcher-configmap.py writes both;
+        # tests/dispatch/test_manifests.py fails if either is stale.
+        checksum/table: "dbc68856901cfaff3f05631eea66cdb78a58894b81d3b0765b25ecd0e129c8d0"
+        checksum/code: "4a50cdf911d149938fec985fc66ec05ad5f94661332b0e095302d682c953fc55"
     spec:
       automountServiceAccountToken: false   # it talks to kagent and n8n over HTTP, never to the API server
       securityContext:
