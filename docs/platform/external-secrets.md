@@ -13,7 +13,7 @@ SecretStore (per namespace; names the Vault role + ServiceAccount)
   ^
 ExternalSecret (remoteRef.key/property, refreshInterval) --> Secret (creationPolicy: Owner)
 ```
-- **Chart:** `external-secrets` **2.8.0** from `https://charts.external-secrets.io`, release `external-secrets`, namespace `external-secrets`. `prune` and `selfHeal` are on.
+- **Chart:** `external-secrets` **2.11.0** from `https://charts.external-secrets.io`, release `external-secrets`, namespace `external-secrets`. `prune` and `selfHeal` are on.
 - **Scheduling:** the controller, webhook and cert-controller all use `nodeSelector: node.kubernetes.io/workload: infrastructure` plus the control-plane toleration, which puts them on `k3s-control-01`.
 - **API version:** every manifest in `base-apps/` is `external-secrets.io/v1`.
   - The `v1beta1` → `v1` migration (55 files) and the storage migration were done during the six-stage ESO walk, `0.11.0` → `0.16.2` → `0.17.0` → `0.20.4` → `2.8.0` (SPEC §T.6, §T.31–§T.33, 2026-08-03).

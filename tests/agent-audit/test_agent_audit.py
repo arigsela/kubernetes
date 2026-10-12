@@ -183,7 +183,8 @@ def test_approval_in_one_session_does_not_excuse_another():
 
 # -------------------------- kagent 0.10's Go runtime writes camelCase event JSON
 #
-# Since 2026-10-11 every agent runs `runtime: go` on kagent 0.10.3, whose session
+# On 2026-10-11, between Phase 0 and the kagent 1.0 cutover, every agent ran `runtime: go`
+# on kagent 0.10.3 (that data is now in the read-only `kagent` archive), whose session
 # service stores json.Marshal(*adk session.Event). genai's Go types tag their fields
 # in camelCase (functionCall, functionResponse, usageMetadata/totalTokenCount); the
 # Python runtime wrote snake_case. These three lines are what that Go code emits
