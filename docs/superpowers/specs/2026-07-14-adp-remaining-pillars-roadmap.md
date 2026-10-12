@@ -5,6 +5,10 @@
 - **Frames onto:** the Weave Intelligence ADP model — L01 Tooling/IDP, L02 Paths, L03 Agent Infrastructure (7 pillars: Identity, Context, Capability, Execution, Evaluation, Security, Observability).
 - **Predecessors (both shipped):** [Agent Identity](2026-07-11-agent-identity-principal-design.md), [Agent Capability Classes](2026-07-13-agent-capability-classes-design.md).
 
+The concept this roadmap builds toward, as presented to engineering leadership on
+2026-10-12 with this platform as the anonymized reference:
+`docs/presentations/adp-concept-infographics.pdf` (notes and source brief beside it).
+
 This is a **sequencing document**, not an implementation plan. It exists to pick
 the next increment with the dependencies visible. Each track below gets its own
 design doc before any code.

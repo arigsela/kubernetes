@@ -152,6 +152,7 @@ GitOps infrastructure for a homelab k3s cluster: automated deployment, secret ma
 - **Action record** - every agent tool call, redacted, exported daily to S3 and browsable at `agent-audit.arigsela.com`
 - **Evaluation** - a golden-answer corpus and scorer (`tests/eval-corpus/`, `scripts/score-eval.py`)
 - Details: [`docs/adp-engineering-deep-dive.md`](docs/adp-engineering-deep-dive.md)
+- The concept, presented: [`docs/presentations/adp-concept-infographics.pdf`](docs/presentations/adp-concept-infographics.pdf) (seven panels for engineering leadership, with speaker notes beside it)
 
 ### Observability Stack
 
