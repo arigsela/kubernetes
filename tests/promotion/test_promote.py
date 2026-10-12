@@ -62,13 +62,18 @@ def pr(**over):
     base = {"number": 760, "state": "open", "draft": False, "mergeable": True, "merged": False,
             "user": {"login": "arigsela-renovate[bot]"}, "labels": [{"name": "renovate"}, {"name": "review:skip"}],
             "head": {"sha": "abc123", "repo": {"full_name": "arigsela/kubernetes"}},
-            "base": {"sha": "base456", "repo": {"full_name": "arigsela/kubernetes"}}}
+            "base": {"sha": "base456", "ref": "main", "repo": {"full_name": "arigsela/kubernetes"}}}
     base.update(over)
     return base
 
 
-def files(*names):
-    return [{"filename": n} for n in names]
+IMAGE_BUMP = "@@ -10,1 +10,1 @@\n-          image: ghcr.io/x/app:1.2.3\n+          image: ghcr.io/x/app:1.2.4"
+
+
+def files(*names, patch=IMAGE_BUMP):
+    """Changed files; non-docs files carry an image-tag-bump patch unless told otherwise."""
+    return [{"filename": n} if n.endswith(".md") or n.startswith("docs/") else {"filename": n, "patch": patch}
+            for n in names]
 
 
 def checks(*conclusions, pending=0):
@@ -130,14 +135,15 @@ class FakeGitHub:
         return status, (payload if isinstance(payload, bytes) else json.dumps(payload).encode())
 
 
-def answers_for(pr_obj, files_list, runs, policy_text=None):
+def answers_for(pr_obj, files_list, runs, policy_text=None, statuses=None):
     policy_text = POLICY_FILE.read_text() if policy_text is None else policy_text
     n = pr_obj["number"]
     return {
         ("GET", f"/repos/arigsela/kubernetes/pulls/{n}"): (200, pr_obj),
         ("GET", f"/repos/arigsela/kubernetes/pulls/{n}/files?per_page=100"): (200, files_list),
         ("GET", f"/repos/arigsela/kubernetes/commits/{pr_obj['head']['sha']}/check-runs?per_page=100"): (200, {"check_runs": runs}),
-        ("GET", f"/repos/arigsela/kubernetes/contents/.github/promotion-policy.yaml?ref={pr_obj['base']['sha']}"): (200, policy_text.encode()),
+        ("GET", f"/repos/arigsela/kubernetes/contents/.github/promotion-policy.yaml?ref={pr_obj['base']['ref']}"): (200, policy_text.encode()),
+        ("GET", f"/repos/arigsela/kubernetes/commits/{pr_obj['head']['sha']}/status"): (200, {"state": "success", "statuses": statuses or []}),
         ("GET", f"/repos/arigsela/kubernetes/issues/{n}/comments?per_page=100"): (200, []),
         ("PUT", f"/repos/arigsela/kubernetes/pulls/{n}/merge"): (200, {"merged": True, "sha": "m1"}),
         ("POST", f"/repos/arigsela/kubernetes/issues/{n}/comments"): (201, {"id": 1}),
@@ -152,7 +158,7 @@ def test_run_auto_merges_by_rebase_pinned_to_head_and_comments():
     assert merge[2] == {"merge_method": "rebase", "sha": "abc123"}
     comment = next(c for c in fake.calls if c[0] == "POST")
     assert comment[2]["body"].startswith(pm.COMMENT_MARKER)
-    assert "auto" in comment[2]["body"] and "base456" in comment[2]["body"]
+    assert "auto" in comment[2]["body"] and "policy read at `main`" in comment[2]["body"]
 
 
 def test_merge_sends_head_sha():
@@ -168,10 +174,11 @@ def test_run_owner_neither_merges_nor_comments():
     assert all(c[0] == "GET" for c in fake.calls)
 
 
-def test_policy_is_read_at_the_base_sha():
+def test_policy_is_read_at_the_base_ref_not_the_pr_head():
     fake = FakeGitHub(answers_for(pr(), files("x.md"), checks("success")))
     pm.run("arigsela/kubernetes", 760, "tok", transport=fake)
-    assert any("contents/.github/promotion-policy.yaml?ref=base456" in c[1] for c in fake.calls)
+    assert any("contents/.github/promotion-policy.yaml?ref=main" in c[1] for c in fake.calls)
+    assert not any("?ref=abc123" in c[1] for c in fake.calls)
 
 
 def test_bad_base_policy_is_owner_with_reason_and_no_merge():
@@ -189,4 +196,101 @@ def test_dry_run_decides_but_does_not_merge():
 def test_already_merged_pr_is_a_noop():
     fake = FakeGitHub(answers_for(pr(merged=True, state="closed"), files("x.md"), checks("success")))
     assert pm.run("arigsela/kubernetes", 760, "tok", transport=fake) == 0
+    assert all(c[0] == "GET" for c in fake.calls)
+
+
+# ---------------------------------------------------------------- review fixes
+
+import yaml
+
+WORKFLOWS = REPO / ".github" / "workflows"
+
+
+def test_promote_triggers_on_workflow_names_that_exist():
+    """workflow_run.workflows matches the `name:` of a workflow, not its file name."""
+    promote = yaml.safe_load((WORKFLOWS / "promote.yaml").read_text())
+    wanted = promote[True]["workflow_run"]["workflows"]          # `on:` parses as the key True
+    names = {yaml.safe_load(f.read_text()).get("name") for f in WORKFLOWS.glob("*.yaml")}
+    for w in wanted:
+        assert w in names, f"{w!r} is not the name: of any workflow in .github/workflows ({sorted(n for n in names if n)})"
+    assert "Validate Manifests" in wanted and "PR Triage" in wanted
+
+
+def statuses(**contexts):
+    return [{"context": c, "state": s} for c, s in contexts.items()]
+
+
+def test_pending_commit_status_is_owner():
+    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
+                  statuses=statuses(**{"renovate/stability-days": "pending"}))
+    assert d.klass == "owner" and any("renovate/stability-days" in r and "pending" in r for r in d.reasons)
+
+
+def test_failed_commit_status_is_owner_and_success_statuses_pass():
+    ok = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
+                   statuses=statuses(**{"renovate/stability-days": "success", "atlantis/plan": "success"}))
+    assert ok.klass == "auto"
+    bad = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
+                    statuses=statuses(**{"atlantis/plan": "failure"}))
+    assert bad.klass == "owner" and any("atlantis/plan" in r for r in bad.reasons)
+
+
+def test_run_reads_commit_statuses_and_stays_owner_while_pending():
+    fake = FakeGitHub(answers_for(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"),
+                                  statuses=statuses(**{"renovate/stability-days": "pending"})))
+    assert pm.run("arigsela/kubernetes", 760, "tok", transport=fake) == 0
+    assert all(c[0] == "GET" for c in fake.calls)
+    assert any("/commits/abc123/status" in c[1] for c in fake.calls)
+
+
+def test_auto_requires_a_deterministic_skip_shaped_diff_not_just_the_label():
+    """review:skip can come from the classifier too; auto additionally re-derives always_skip:
+    every file is docs, or its patch changes only image:/tag: value lines, <= 4 lines in total."""
+    replicas = "@@ -5,1 +5,1 @@\n-  replicas: 1\n+  replicas: 2"
+    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml", patch=replicas), checks("success"), policy())
+    assert d.klass == "owner" and any("not an image-tag bump" in r for r in d.reasons)
+    five = "@@ -1,5 +1,5 @@\n" + "\n".join(f"-  tag: v{i}\n+  tag: v{i+1}" for i in range(3))   # 6 changed lines
+    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml", patch=five), checks("success"), policy())
+    assert d.klass == "owner" and any("6 changed lines" in r for r in d.reasons)
+    nopatch = [{"filename": "base-apps/donetick/deployment.yaml"}]
+    d = pm.decide(pr(), nopatch, checks("success"), policy())
+    assert d.klass == "owner"
+    docs_only = pm.decide(pr(), files("docs/x.md", "README.md"), checks("success"), policy())
+    assert docs_only.klass == "auto"
+
+
+def test_renovate_config_is_deny_listed():
+    d = pm.decide(pr(), files("renovate.json5", patch="@@ -1 +1 @@\n-a\n+b"), checks("success"), policy())
+    assert d.klass == "owner" and any("deny prefix" in r for r in d.reasons)
+
+
+class SequencedGitHub(FakeGitHub):
+    """Like FakeGitHub, but a list value answers successive calls to the same path in order."""
+
+    def __call__(self, method, url, headers, body):
+        path = url.replace("https://api.github.com", "")
+        key = (method, path)
+        if isinstance(self.answers.get(key), list) and self.answers[key]:
+            status, payload = self.answers[key].pop(0) if len(self.answers[key]) > 1 else self.answers[key][0]
+            self.calls.append((method, path, json.loads(body) if body else None, headers.get("Accept")))
+            return status, (payload if isinstance(payload, bytes) else json.dumps(payload).encode())
+        return super().__call__(method, url, headers, body)
+
+
+def test_mergeable_null_is_refetched_before_deciding():
+    answers = answers_for(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"))
+    answers[("GET", "/repos/arigsela/kubernetes/pulls/760")] = [(200, pr(mergeable=None)), (200, pr(mergeable=None)), (200, pr())]
+    fake = SequencedGitHub(answers)
+    naps = []
+    assert pm.run("arigsela/kubernetes", 760, "tok", transport=fake, sleep=naps.append) == 0
+    assert len([c for c in fake.calls if c[1] == "/repos/arigsela/kubernetes/pulls/760"]) == 3
+    assert naps == [3.0, 3.0]
+    assert any(c[0] == "PUT" for c in fake.calls), "decided auto once mergeable was known"
+
+
+def test_mergeable_still_null_after_retries_is_owner():
+    answers = answers_for(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"))
+    answers[("GET", "/repos/arigsela/kubernetes/pulls/760")] = [(200, pr(mergeable=None))]
+    fake = SequencedGitHub(answers)
+    assert pm.run("arigsela/kubernetes", 760, "tok", transport=fake, sleep=lambda s: None) == 0
     assert all(c[0] == "GET" for c in fake.calls)

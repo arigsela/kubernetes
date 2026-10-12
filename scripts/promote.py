@@ -4,8 +4,8 @@
     scripts/promote.py --repo arigsela/kubernetes --pr 123          # decide and, if auto, merge
     scripts/promote.py --repo arigsela/kubernetes --pr 123 --dry-run
 
-Reads .github/promotion-policy.yaml at the PR's BASE commit (a PR cannot loosen its own
-promotion), decides `auto` or `owner` with reasons, and for `auto` merges by rebase pinned to
+Reads .github/promotion-policy.yaml at the PR's base REF, main (a PR cannot loosen its own
+promotion, and a tightening applies to open PRs at once), decides `auto` or `owner` with reasons, and for `auto` merges by rebase pinned to
 the head SHA it evaluated, then leaves one sticky comment. For `owner` it logs and exits 0:
 the triage comment already tells the human what to read. Exit 0 on a decision, 1 on an error.
 
@@ -18,7 +18,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -109,7 +111,40 @@ class Decision:
     head_sha: str = ""
 
 
-def decide(pr: dict, files: list[dict], check_runs: list[dict], policy: dict) -> Decision:
+SKIP_LINE = re.compile(r"^[+-]\s*(-\s+)?(image|tag):\s")   # a changed image:/tag: value line
+SKIP_MAX_LINES = 4
+
+
+def skip_shaped(files: list[dict]) -> list[str]:
+    """Reasons the diff is NOT triage's deterministic always_skip shape (empty = it is).
+
+    pr-triage labels `skip` deterministically when every file is docs, or only image:/tag:
+    value lines changed with at most 4 changed lines in total; its classifier can also say
+    `skip`. The class that merges without a human re-derives the deterministic rule here
+    so that a model's P(skip) alone never promotes."""
+    reasons: list[str] = []
+    changed = 0
+    for f in files:
+        name = f.get("filename") or ""
+        if name.endswith(".md") or name.startswith("docs/"):
+            continue
+        patch = f.get("patch")
+        if not isinstance(patch, str):
+            reasons.append(f"{name}: no patch to inspect (binary or too large), not an image-tag bump")
+            continue
+        lines = [ln for ln in patch.splitlines()
+                 if (ln.startswith("+") or ln.startswith("-")) and not ln.startswith(("+++", "---"))]
+        changed += len(lines)
+        bad = [ln for ln in lines if not SKIP_LINE.match(ln)]
+        if bad:
+            reasons.append(f"{name}: not an image-tag bump ({len(bad)} changed line(s) are not image:/tag: values)")
+    if changed > SKIP_MAX_LINES:
+        reasons.append(f"{changed} changed lines > {SKIP_MAX_LINES} for an image-tag bump")
+    return reasons
+
+
+def decide(pr: dict, files: list[dict], check_runs: list[dict], policy: dict,
+           statuses: list[dict] | None = None) -> Decision:
     """`auto` only when every condition holds; otherwise `owner` with every failed one listed."""
     auto = policy["auto"]
     reasons: list[str] = []
@@ -138,6 +173,7 @@ def decide(pr: dict, files: list[dict], check_runs: list[dict], policy: dict) ->
         hit = next((p for p in auto["deny_prefixes"] if name.startswith(p)), None)
         if hit:
             reasons.append(f"{name} is under deny prefix {hit}")
+    reasons += skip_shaped(files)
     if not check_runs:
         reasons.append("no check runs on the head commit")
     pending = [c.get("name") for c in check_runs if c.get("status") != "completed"]
@@ -147,6 +183,13 @@ def decide(pr: dict, files: list[dict], check_runs: list[dict], policy: dict) ->
            if c.get("status") == "completed" and c.get("conclusion") not in OK_CONCLUSIONS]
     if bad:
         reasons.append(f"checks not green: {', '.join(sorted(str(b) for b in bad))}")
+    # Commit statuses are not check runs: Renovate's stability gate (renovate/stability-days,
+    # minimumReleaseAge) and Atlantis report there. Every status must be success.
+    for status in statuses or []:
+        state = status.get("state")
+        if state != "success":
+            reasons.append(f"status {status.get('context')} is {state or 'unknown'}"
+                           + (" (pending)" if state == "pending" else ""))
     return Decision("auto" if not reasons else "owner", reasons, head_sha)
 # ------------------------------------------------------------------ github
 
@@ -192,7 +235,7 @@ class GitHub:
 
 
 def policy_at(gh: GitHub, ref: str) -> dict:
-    """The policy as of `ref` (the PR's base SHA): a PR cannot loosen its own promotion."""
+    """The policy as of `ref` (the PR's base ref, main): a PR cannot loosen its own promotion."""
     text = gh.get_text(f"/repos/{gh.repo}/contents/.github/promotion-policy.yaml?ref={ref}")
     return load_policy(text)
 
@@ -215,35 +258,53 @@ def log(obj: dict) -> None:
     print(json.dumps(obj, sort_keys=True), flush=True)
 
 
-def run(repo: str, number: int, token: str, *, dry_run: bool = False, transport=None) -> int:
+MERGEABLE_RETRIES = 5
+MERGEABLE_WAIT = 3.0
+
+
+def run(repo: str, number: int, token: str, *, dry_run: bool = False, transport=None,
+        sleep=time.sleep) -> int:
     gh = GitHub(repo, token, transport)
     pr = gh.get(f"/repos/{repo}/pulls/{number}")
+    # GitHub computes `mergeable` lazily; the first GET after a push can say null. Ask again
+    # a few times rather than deciding `owner` and waiting for the next push.
+    for _ in range(MERGEABLE_RETRIES):
+        if pr.get("merged") or pr.get("mergeable") is not None:
+            break
+        sleep(MERGEABLE_WAIT)
+        pr = gh.get(f"/repos/{repo}/pulls/{number}")
     if pr.get("merged"):
         log({"event": "promotion", "pr": number, "class": "noop", "reasons": ["already merged"]})
         return 0
     head_sha = pr["head"]["sha"]
-    base_sha = pr["base"]["sha"]
+    # The policy is read at the base REF (main), which the PR cannot change: un-loosenable by
+    # the PR, and a tightening applies to already-open PRs immediately (base.sha would lag
+    # until the PR's next rebase).
+    base_ref = pr["base"]["ref"]
     try:
-        policy = policy_at(gh, base_sha)
+        policy = policy_at(gh, base_ref)
     except (PolicyError, RuntimeError) as err:
-        log({"event": "promotion", "pr": number, "class": "owner", "reasons": [f"policy at base unreadable: {err}"]})
+        log({"event": "promotion", "pr": number, "class": "owner", "reasons": [f"policy at {base_ref} unreadable: {err}"]})
         return 0
     files = gh.get(f"/repos/{repo}/pulls/{number}/files?per_page=100")
     runs = gh.get(f"/repos/{repo}/commits/{head_sha}/check-runs?per_page=100").get("check_runs") or []
-    decision = decide(pr, files, runs, policy)
+    statuses = gh.get(f"/repos/{repo}/commits/{head_sha}/status").get("statuses") or []
+    decision = decide(pr, files, runs, policy, statuses)
     log({"event": "promotion", "pr": number, "class": decision.klass, "reasons": decision.reasons,
-         "head": head_sha, "policy_at": base_sha, "dry_run": dry_run})
+         "head": head_sha, "policy_at": base_ref, "dry_run": dry_run})
     if decision.klass != "auto" or dry_run:
         return 0
     result = merge(gh, number, decision.head_sha, policy["auto"]["merge_method"])
-    checks_line = ", ".join(sorted(str(r.get("name")) for r in runs))
+    checks_line = ", ".join(sorted(str(r.get("name")) for r in runs)
+                            + sorted(str(s.get("context")) for s in statuses))
     upsert_comment(gh, number, (
         f"{COMMENT_MARKER}\n### promotion: auto\n"
         f"Merged by the promotion policy ({policy['auto']['merge_method']}, head `{head_sha[:12]}`), "
-        f"policy read at base `{base_sha[:12]}`.\n"
+        f"policy read at `{base_ref}`.\n"
         f"**Why:** author in `auto.authors`, label(s) {', '.join(policy['auto']['require_labels'])} present, "
-        f"{len(files)} file(s) outside every deny prefix, every check green.\n"
-        f"<details><summary>Checks</summary>\n\n{checks_line}\n</details>\n"
+        f"{len(files)} file(s) outside every deny prefix and shaped like a docs-only or image-tag-bump change, "
+        f"every check and status green.\n"
+        f"<details><summary>Checks and statuses</summary>\n\n{checks_line}\n</details>\n"
         f"<sub>scripts/promote.py · .github/promotion-policy.yaml</sub>"))
     log({"event": "promotion", "pr": number, "merged": bool(result.get("merged")), "sha": result.get("sha")})
     return 0

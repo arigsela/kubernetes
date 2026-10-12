@@ -189,7 +189,7 @@ V85: ∀ logical backup artifact → ! end w/ the dumper's completion marker (`-
 V86: ∀ Grafana alert → n8n (Slack) via its own contact-point integration; dispatcher ∉ that path & ⊥ forwards to grafana-alerts. dispatcher down ⇒ ⊥ lost Slack alert.
 V87: dispatch table routes only → AgentTemplate whose ∀ bound tool ∈ taxonomy `read` & ⊥ `requireApproval: true` binding; ∀ Grafana rule title has a row. CI: tests/dispatch/test_table.py.
 V88: dispatcher sends A2A as `X-User-Id: dispatcher`, new session per investigation, ⊥ `tool_approval_response` / `ask_user_response` ever.
-V89: PR merged ⊥ human ⇔ `scripts/promote.py` → `auto` under `.github/promotion-policy.yaml` @ PR BASE sha & author ∉ humans. `.github/**`, `terraform/**`, deny_prefixes ⊥ auto ever.
+V89: PR merged ⊥ human ⇔ `scripts/promote.py` → `auto` under `.github/promotion-policy.yaml` @ base ref `main` & author ∉ humans & diff re-derived as always_skip shape & ∀ check run + commit status green. `.github/**`, `terraform/**`, deny_prefixes ⊥ auto ever.
 V90: promotion identity = GitHub App `arigsela-promotion` ≠ Renovate's app, installed on this repo only, ruleset bypass mode `pull_request` only.
 
 ## §T TASKS

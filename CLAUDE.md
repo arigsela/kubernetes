@@ -107,7 +107,7 @@ Every PR to `main` is triaged by `.github/workflows/pr-triage.yaml`. It gets exa
 - **Don't relabel by hand to change triage.** Change the policy instead. After changing thresholds, questions or the Jev model, re-run calibration in `arigsela/claude-agents`: `uv run --project pr-triage python -m pr_triage calibrate --repo arigsela/kubernetes --limit 200`.
 - **Next steps:** for `skim`/`read` PRs the comment suggests `/pr-explainer <n>`, a rendered-manifest resource map and must-read hunks, and `/code-review <n>`. `/review-retro <n>` compares a past `/code-review` session with the fix PRs that followed.
 - **Upgrading the action:** the workflow pins `arigsela/claude-agents/pr-triage` by commit SHA. Merge the change in claude-agents first, then bump the SHA here.
-- **Promotion:** `review:skip` PRs from Renovate that touch no deny-listed path and have every check green are merged by `.github/workflows/promote.yaml` under `.github/promotion-policy.yaml` (read at the PR's base commit). Nothing else merges without the owner. See `docs/platform/promotion.md`.
+- **Promotion:** `review:skip` PRs from Renovate that touch no deny-listed path and have every check green are merged by `.github/workflows/promote.yaml` under `.github/promotion-policy.yaml` (read at `main`, re-deriving triage's deterministic skip shape from the diff). Nothing else merges without the owner. See `docs/platform/promotion.md`.
 
 ## Important Notes
 
