@@ -54,6 +54,7 @@ generator. CI runs each with `--check` and fails on drift.
 | `scripts/gen-cluster-overview-dashboard.py --repo-root .` | `base-apps/logging/grafana-dashboard-cluster-overview.yaml` | panel definitions in the script |
 | `scripts/gen-agent-capability-policy.py --repo-root .` | `base-apps/admission-policies/agent-capability.yaml` | `agent-capability-taxonomy.yaml` |
 | `scripts/gen-agent-audit-cronjob.py --repo-root .` | `base-apps/postgresql/agent-audit-cronjob.yaml` | `scripts/agent-audit.py` |
+| `scripts/gen-dispatcher-configmap.py --repo-root .` | `base-apps/dispatcher/code-configmap.yaml` | `scripts/dispatch.py`, `scripts/kagent_a2a.py` |
 
 The `okf-autosync` workflow pushes a bot commit to any PR touching `base-apps/**`
 if `base-apps/index.md` or `scripts/agent-docs-scope.txt` is out of date. Pull

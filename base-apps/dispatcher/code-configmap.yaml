@@ -1,0 +1,659 @@
+---
+# Dispatcher code (ADP path 1, dispatch work).
+#
+# !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
+# Sources:    scripts/dispatch.py
+#             scripts/kagent_a2a.py
+# Regenerate: ./scripts/gen-dispatcher-configmap.py
+# CI fails if this file drifts from either source (tests/dispatch/test_gen_configmap.py).
+#
+# The Deployment (deployment.yaml) mounts this at /opt/dispatch and runs dispatch.py with
+# python:3.12-slim and no pip install: both files are standard-library only.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dispatcher-code
+  namespace: dispatcher
+  labels:
+    app: dispatcher
+data:
+  dispatch.py: |
+    #!/usr/bin/env python3
+    """Signal dispatcher — routes a Grafana alert to a read-only agent investigation, by table.
+
+        POST /signal/grafana      Grafana contact-point webhook payload (its second integration)
+        GET  /healthz             process is up
+        GET  /readyz              the table loaded
+
+    Humans get every alert regardless (Grafana → n8n → Slack on its own integration, V86);
+    this service only ADDS investigations. For each alert: match the table
+    (/etc/dispatch/dispatch.json, see base-apps/dispatcher/dispatch-table.yaml), check the
+    budget, and for an `agent:<name>` route open a NEW A2A session as X-User-Id `dispatcher`
+    with the rendered prompt, then post the finding to n8n's agent-findings webhook (→ Slack).
+
+    Never forwards the alert to n8n, never answers an approval or a question (V88): if the
+    agent pauses, the finding says so and points at the kagent UI. Logs one JSON line per
+    decision and per finding, never the answer text.
+
+    Environment (all have defaults for the cluster):
+        DISPATCH_TABLE          /etc/dispatch/dispatch.json
+        KAGENT_A2A_BASE         http://kagent-controller.kagent.svc.cluster.local:8083
+        N8N_WEBHOOK_BASE        http://n8n.n8n.svc.cluster.local:5678/webhook
+        DISPATCH_USER           dispatcher
+        INVESTIGATION_TIMEOUT   300   (seconds the A2A send may block)
+        KAGENT_UI_SESSION_URL   https://kagent.arigsela.com/agents/{session}/chat
+        PORT                    8080
+    """
+    from __future__ import annotations
+
+    import json
+    import os
+    import sys
+    import threading
+    import time
+    import urllib.error
+    import urllib.request
+    from dataclasses import dataclass
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import kagent_a2a as a2a  # noqa: E402
+
+    ANSWER_LIMIT = 3000       # chars of the agent's answer forwarded to Slack
+    SOURCES = {"grafana"}
+
+
+    class TableError(ValueError):
+        """The dispatch table is malformed; refuse to serve rather than route wrongly."""
+
+
+    # ------------------------------------------------------------------ the table
+
+    def load_table(text: str) -> dict:
+        table = json.loads(text)
+        if table.get("version") != 1:
+            raise TableError("version must be 1")
+        limits = table.get("limits") or {}
+        for key in ("investigations_per_hour", "repeat_after_hours"):
+            if not isinstance(limits.get(key), int) or limits[key] < 0:
+                raise TableError(f"limits.{key} must be a non-negative integer")
+        seen = set()
+        for rule in table.get("rules") or []:
+            rid = rule.get("id") or "?"
+            for key in ("id", "source", "match", "route", "why"):
+                if key not in rule:
+                    raise TableError(f"rule {rid}: missing {key}")
+            if rule["id"] in seen:
+                raise TableError(f"duplicate rule id {rule['id']}")
+            seen.add(rule["id"])
+            if rule["source"] not in SOURCES:
+                raise TableError(f"rule {rid}: unknown source {rule['source']!r}")
+            if not isinstance(rule["match"], dict) or not rule["match"]:
+                raise TableError(f"rule {rid}: match must be a non-empty object")
+            route = rule["route"]
+            if route != "none" and not (isinstance(route, str) and route.startswith("agent:")):
+                raise TableError(f"rule {rid}: route must be 'none' or 'agent:<name>', got {route!r}")
+            prompt = rule.get("prompt")
+            if isinstance(prompt, list):          # a list of strings keeps the JSON lines short
+                if not all(isinstance(p, str) for p in prompt):
+                    raise TableError(f"rule {rid}: prompt list must contain only strings")
+                rule["prompt"] = prompt = " ".join(p.strip() for p in prompt)
+            if route.startswith("agent:") and not str(prompt or "").strip():
+                raise TableError(f"rule {rid}: an agent route needs a prompt")
+            if not str(rule["why"]).strip():
+                raise TableError(f"rule {rid}: why is required")
+        table.setdefault("rules", [])
+        return table
+
+
+    def match_rule(table: dict, source: str, labels: dict) -> dict | None:
+        """First rule of this source whose match keys all equal the alert's labels."""
+        for rule in table["rules"]:
+            if rule["source"] != source:
+                continue
+            if all(labels.get(k) == v for k, v in rule["match"].items()):
+                return rule
+        return None
+
+
+    class _Safe(dict):
+        """A mapping that renders a missing key as '?' instead of raising."""
+
+        def __missing__(self, key):
+            return "?"
+
+
+    def render_prompt(rule: dict, alert: dict) -> str:
+        labels = _Safe(alert.get("labels") or {})
+        return rule["prompt"].format_map(_Safe(
+            alertname=labels.get("alertname", "?"),
+            status=alert.get("status") or "?",
+            starts_at=alert.get("startsAt") or "?",
+            labels=labels,
+            annotations=_Safe(alert.get("annotations") or {}),
+        ))
+
+
+    # ------------------------------------------------------------------ the budget
+
+    class Budget:
+        """Bounds investigations: at most `per_hour` sends, and one per fingerprint per
+        `repeat_after_hours`. In memory: a restart forgets, which errs on the side of looking."""
+
+        def __init__(self, per_hour: int, repeat_after_hours: int, clock=time.time):
+            self.per_hour = per_hour
+            self.repeat_s = repeat_after_hours * 3600
+            self.clock = clock
+            self._starts: list[float] = []
+            self._seen: dict[str, float] = {}
+            self._lock = threading.Lock()
+
+        def admit(self, fingerprint: str) -> str | None:
+            now = self.clock()
+            with self._lock:
+                self._starts = [t for t in self._starts if now - t < 3600]
+                last = self._seen.get(fingerprint)
+                if last is not None and now - last < self.repeat_s:
+                    return "repeat"
+                if len(self._starts) >= self.per_hour:
+                    return "budget"
+                self._starts.append(now)
+                self._seen[fingerprint] = now
+                return None
+    # ------------------------------------------------------------------ the service
+
+    @dataclass
+    class Config:
+        table_path: str
+        a2a_base: str
+        n8n_base: str
+        user: str
+        timeout: float
+        ui_url: str
+
+        @classmethod
+        def from_env(cls, env=os.environ) -> "Config":
+            return cls(
+                table_path=env.get("DISPATCH_TABLE", "/etc/dispatch/dispatch.json"),
+                a2a_base=env.get("KAGENT_A2A_BASE", a2a.IN_CLUSTER_BASE),
+                n8n_base=env.get("N8N_WEBHOOK_BASE", "http://n8n.n8n.svc.cluster.local:5678/webhook"),
+                user=env.get("DISPATCH_USER", "dispatcher"),
+                timeout=float(env.get("INVESTIGATION_TIMEOUT", "300")),
+                ui_url=env.get("KAGENT_UI_SESSION_URL", "https://kagent.arigsela.com/agents/{session}/chat"),
+            )
+
+
+    def log_line(obj: dict) -> None:
+        print(json.dumps(obj, sort_keys=True), flush=True)
+
+
+    def post_json(url: str, obj: dict, timeout: float = 10.0) -> None:
+        req = urllib.request.Request(url, data=json.dumps(obj).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            resp.read()
+
+
+    class Dispatcher:
+        def __init__(self, table: dict, config: Config, *, budget: Budget | None = None,
+                     send=a2a.send_message, post=post_json, log=log_line, run_async: bool = True):
+            self.table = table
+            self.config = config
+            limits = table["limits"]
+            self.budget = budget or Budget(limits["investigations_per_hour"], limits["repeat_after_hours"])
+            self.send, self.post, self.log, self.run_async = send, post, log, run_async
+
+        # One decision per alert; investigations start here (in a thread when serving HTTP).
+        def handle_grafana(self, payload: dict) -> list[dict]:
+            decisions = []
+            for alert in payload.get("alerts") or []:
+                if not isinstance(alert, dict):
+                    continue
+                decision = self.decide(alert)
+                decisions.append(decision)
+                self.log(decision)
+                if decision["decision"] == "investigate":
+                    rule = next(r for r in self.table["rules"] if r["id"] == decision["rule"])
+                    if self.run_async:
+                        threading.Thread(target=self.investigate, args=(alert, rule), daemon=True).start()
+                    else:
+                        self.investigate(alert, rule)
+            return decisions
+
+        def decide(self, alert: dict) -> dict:
+            labels = alert.get("labels") or {}
+            name = labels.get("alertname") or "?"
+            fingerprint = alert.get("fingerprint") or name
+            base = {"event": "dispatch", "source": "grafana", "alertname": name,
+                    "fingerprint": fingerprint, "status": alert.get("status"), "rule": None, "route": "none"}
+            rule = match_rule(self.table, "grafana", labels)
+            if rule is None:
+                return {**base, "decision": "unmatched"}
+            base.update(rule=rule["id"], route=rule["route"])
+            if rule["route"] == "none":
+                return {**base, "decision": "none"}
+            if alert.get("status") != "firing":
+                return {**base, "decision": "resolved"}
+            skipped = self.budget.admit(fingerprint)
+            if skipped:
+                return {**base, "decision": f"skip-{skipped}"}
+            return {**base, "decision": "investigate"}
+
+        def investigate(self, alert: dict, rule: dict) -> dict:
+            labels = alert.get("labels") or {}
+            agent = rule["route"].split(":", 1)[1]
+            url = a2a.resolve_endpoint(self.config.a2a_base, f"kagent/{agent}")
+            finding = {"rule": rule["id"], "alertname": labels.get("alertname") or "?", "labels": labels,
+                       "agent": agent, "session": None, "state": None, "text": None, "ui": None, "error": None}
+            try:
+                # A new session every time, as the dispatcher: no context_id, no task_id, no metadata (V88).
+                reply = a2a.parse_result(self.send(url, render_prompt(rule, alert), user=self.config.user,
+                                                   timeout=self.config.timeout))
+                finding["session"], finding["state"] = reply.context_id, reply.state
+                if reply.context_id:
+                    finding["ui"] = self.config.ui_url.format(session=reply.context_id)
+                if reply.completed:
+                    finding["text"] = (reply.answer or "")[:ANSWER_LIMIT]
+                elif reply.waiting:
+                    finding["text"] = ("The agent paused for input (an approval or a question). "
+                                       "The dispatcher never answers; continue it in the kagent UI.")
+                else:
+                    finding["error"] = f"task ended in {reply.state}: {(reply.status_text or '')[:300]}"
+            except (a2a.A2AError, OSError, ValueError) as err:
+                finding["error"] = str(err)[:500]
+            try:
+                self.post(self.config.n8n_base.rstrip("/") + "/agent-findings", finding)
+            except (OSError, ValueError) as err:
+                finding["error"] = (finding["error"] or "") + f" | post failed: {str(err)[:200]}"
+            self.log({"event": "finding", "rule": rule["id"], "alertname": finding["alertname"],
+                      "agent": agent, "session": finding["session"], "state": finding["state"],
+                      "error": finding["error"]})
+            return finding
+    # ------------------------------------------------------------------ http
+
+    def make_handler(dispatcher: Dispatcher):
+        class Handler(BaseHTTPRequestHandler):
+            server_version = "dispatcher/1"
+
+            def _reply(self, code: int, obj: dict) -> None:
+                body = json.dumps(obj).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):  # noqa: N802
+                if self.path in ("/healthz", "/readyz"):
+                    self._reply(200, {"ok": True})
+                else:
+                    self._reply(404, {"error": "not found"})
+
+            def do_POST(self):  # noqa: N802
+                if self.path != "/signal/grafana":
+                    self._reply(404, {"error": "not found"})
+                    return
+                length = int(self.headers.get("Content-Length") or 0)
+                try:
+                    payload = json.loads(self.rfile.read(length) or b"{}")
+                    if not isinstance(payload, dict):
+                        raise ValueError("payload must be an object")
+                except ValueError as err:
+                    self._reply(400, {"error": f"bad json: {err}"})
+                    return
+                decisions = dispatcher.handle_grafana(payload)
+                self._reply(200, {"decisions": [d["decision"] for d in decisions]})
+
+            def log_message(self, fmt, *args):  # access log as JSON, like everything else
+                log_line({"event": "http", "path": self.path, "message": fmt % args})
+
+        return Handler
+
+
+    def serve(dispatcher: Dispatcher, port: int) -> ThreadingHTTPServer:
+        server = ThreadingHTTPServer(("0.0.0.0", port), make_handler(dispatcher))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return server
+
+
+    def main(argv=None) -> int:
+        config = Config.from_env()
+        try:
+            table = load_table(Path(config.table_path).read_text())
+        except (OSError, ValueError) as err:
+            log_line({"event": "fatal", "error": f"cannot load {config.table_path}: {err}"})
+            return 1
+        dispatcher = Dispatcher(table, config)
+        port = int(os.environ.get("PORT", "8080"))
+        server = serve(dispatcher, port)
+        log_line({"event": "start", "port": port, "rules": len(table["rules"]),
+                  "a2a_base": config.a2a_base, "user": config.user})
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            server.shutdown()
+        return 0
+
+
+    if __name__ == "__main__":
+        raise SystemExit(main())
+  kagent_a2a.py: |
+    """Minimal A2A v1 JSON-RPC client for the kagent 1.0 controller (stdlib only).
+
+    Shared by scripts/ask-hk and scripts/capture-eval-answers.py.
+
+    kagent 1.0 has no per-agent Service. The controller serves every Agent's A2A
+    endpoint on its API listener (kagent-controller:8083):
+
+        POST <base>/agents/<namespace>/<name>                                  JSON-RPC
+        GET  <base>/agents/<namespace>/<name>/.well-known/agent-card.json      agent card
+
+    Sources (kagent v1.0.0-alpha11): docs/architecture/a2a-transports.md,
+    docs/architecture/a2a-gateway.md, go/core/internal/a2agateway/http.go. Wire
+    types come from the a2a-go v2.6.0 SDK the controller pins (a2a/core.go,
+    internal/jsonrpc/jsonrpc.go). This is A2A **v1**, not the 0.3 protocol kagent
+    0.10 spoke, and the differences break 0.3 clients:
+
+    - method `SendMessage` (was `message/send`); roles `ROLE_USER`/`ROLE_AGENT`;
+    - a part is `{"text": ...}` or `{"data": ...}` with no `kind` field;
+    - the result is wrapped: `{"task": {...}}` or `{"message": {...}}`;
+    - task states are `TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, ...
+
+    A send without a contextId creates a Session; the returned contextId IS the
+    Session id, and sending it back continues the conversation. Sessions are owned
+    by the caller identity, so a follow-up must use the same X-User-Id. In the
+    controller's default `insecure` auth mode that header is the whole identity: a
+    missing header means `admin@kagent.dev` (go/core/internal/httpserver/auth/authn.go).
+
+    Every send requests kagent's human-in-the-loop extension
+    (HITL_EXTENSION, `A2A-Extensions` header + the message's `extensions` list).
+    Without it a gated tool call still pauses the task, but the pause carries no
+    request id, so nothing can answer it and it waits until cancelled
+    (docs: examples/a2a-agents, agents/human-in-the-loop). With it, a paused task's
+    status.message.metadata[HITL_EXTENSION] is a `tool_approval_request` (each
+    pending call has an `id`, `name`, `args`) or an `ask_user_request`, and the
+    reply is a message on the same taskId + contextId whose metadata carries a
+    `tool_approval_response` (`approvals`, one per call) or an `ask_user_response`.
+    The reply's `extensions` list must name the URI again or kagent ignores the
+    payload and resumes without a decision.
+
+    The unary send blocks until the task settles (completed, failed, or waiting for
+    input), and the gateway returns the stored task. One artifact per ADK event
+    (Go ADK `OutputArtifactPerEvent`): text parts are what the agent said, data
+    parts are tool calls and results. The answer is the text parts, as in the
+    kagent CLI (go/core/cli/internal/commands/session/invoke.go, sendResultText).
+    """
+    from __future__ import annotations
+
+    import json
+    import time
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    import uuid
+    from dataclasses import dataclass
+
+    # The kagent-mcp host routes /agents/kagent/ to the controller (httproute-mcp.yaml)
+    # behind the Gateway IP allow-list. In-cluster callers use the Service directly.
+    PUBLIC_BASE = "https://kagent-mcp.arigsela.com"
+    IN_CLUSTER_BASE = "http://kagent-controller.kagent.svc.cluster.local:8083"
+    DEFAULT_USER = "admin@kagent.dev"
+    A2A_VERSION = "1.0"
+    # kagent's HITL A2A extension (go/core/internal/a2a/hitl): tool approvals and ask_user.
+    HITL_EXTENSION = "https://kagent.dev/extensions/hitl/v1"
+    HITL_TOOL_APPROVAL_REQUEST = "tool_approval_request"
+    HITL_TOOL_APPROVAL_RESPONSE = "tool_approval_response"
+    HITL_ASK_USER_REQUEST = "ask_user_request"
+    HITL_ASK_USER_RESPONSE = "ask_user_response"
+    # Multi-step agents (docs walk + live reads) take minutes; the unary call is
+    # silent until the task settles. Nothing on the path times out first: Istio
+    # 1.30 sets no route timeout and disables the stream idle timeout.
+    DEFAULT_TIMEOUT = 900.0
+
+    STATE_COMPLETED = "TASK_STATE_COMPLETED"
+    FAILED_STATES = {"TASK_STATE_FAILED", "TASK_STATE_CANCELED", "TASK_STATE_REJECTED"}
+    WAITING_STATES = {"TASK_STATE_INPUT_REQUIRED", "TASK_STATE_AUTH_REQUIRED"}
+
+    # a2a-go maps ErrUnsupportedOperation to -32004. kagent returns it with this
+    # ErrorInfo reason only when the input was provably NOT dispatched (the session
+    # was busy pausing or suspending), so resending the identical request is safe.
+    # Every other error, including a transport error, must not be blindly retried:
+    # the input may already be running (docs/architecture/a2a-gateway.md).
+    CODE_UNSUPPORTED_OPERATION = -32004
+    REASON_SEND_NOT_ACCEPTED = "KAGENT_SEND_NOT_ACCEPTED"
+    RETRY_DEADLINE = 30.0
+
+
+    class A2AError(RuntimeError):
+        """A JSON-RPC error, an HTTP error, or a result this client cannot read."""
+
+        def __init__(self, message: str, *, code: int | None = None, data=None):
+            super().__init__(message)
+            self.code = code
+            self.data = data
+
+
+    @dataclass
+    class Reply:
+        """What a SendMessage returned, reduced to what callers print or score."""
+
+        kind: str                 # "task" or "message"
+        state: str | None         # TASK_STATE_* for a task, None for a direct message
+        context_id: str | None    # the Session id; pass it back to continue
+        task_id: str | None
+        text: str | None          # text parts of the artifacts (or the message)
+        status_text: str | None   # text parts of task.status.message
+        hitl: dict | None = None  # status.message.metadata[HITL_EXTENSION] of a waiting task
+
+        @property
+        def failed(self) -> bool:
+            return self.state in FAILED_STATES
+
+        @property
+        def waiting(self) -> bool:
+            return self.state in WAITING_STATES
+
+        @property
+        def completed(self) -> bool:
+            return self.kind == "message" or self.state == STATE_COMPLETED
+
+        @property
+        def pending_calls(self) -> list[dict]:
+            """The tool calls a waiting task wants approved: [{id, name, args}, ...].
+
+            Empty unless the task paused with a tool_approval_request. alpha11 lists
+            them under `tools` (go/core/internal/a2a/hitl); the docs say `calls`."""
+            if not self.hitl or self.hitl.get("type") != HITL_TOOL_APPROVAL_REQUEST:
+                return []
+            calls = self.hitl.get("tools")
+            if not isinstance(calls, list):
+                calls = self.hitl.get("calls")
+            return [{"id": c.get("id"), "name": c.get("name"), "args": c.get("args") or {}}
+                    for c in (calls or []) if isinstance(c, dict) and c.get("id")]
+
+        @property
+        def pending_question(self) -> bool:
+            """True when the task paused with an ask_user_request (the agent asked something)."""
+            return bool(self.hitl) and self.hitl.get("type") == HITL_ASK_USER_REQUEST
+
+        @property
+        def answer(self) -> str | None:
+            """The agent's answer: only a completed task (or a direct message) has one.
+
+            A failed, canceled or rejected task puts its error text in
+            status.message; that is a tooling failure, not an answer. A task that
+            is still working or waiting for input has not answered yet."""
+            if not self.completed:
+                return None
+            return self.text or self.status_text
+
+
+    def agent_path(agent: str) -> str:
+        """`namespace/name` -> `/agents/namespace/name`."""
+        ns, sep, name = agent.partition("/")
+        if not sep or not ns or not name or "/" in name:
+            raise ValueError(f"agent must be namespace/name, got {agent!r}")
+        return f"/agents/{urllib.parse.quote(ns, safe='')}/{urllib.parse.quote(name, safe='')}"
+
+
+    def resolve_endpoint(endpoint: str, agent: str) -> str:
+        """A bare origin gets /agents/<ns>/<name> appended; a URL with a path is used as-is.
+
+        So `--endpoint http://127.0.0.1:8083` (a port-forward) and a full agent URL
+        both work."""
+        parsed = urllib.parse.urlsplit(endpoint)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError(f"endpoint must be an absolute http(s) URL, got {endpoint!r}")
+        if parsed.path in ("", "/"):
+            return endpoint.rstrip("/") + agent_path(agent)
+        return endpoint
+
+
+    def build_send_request(text: str, *, context_id: str | None = None,
+                           task_id: str | None = None, metadata: dict | None = None,
+                           message_id: str | None = None, rpc_id: str | None = None) -> dict:
+        """A SendMessage. `task_id` + `metadata` make it a reply to a paused task."""
+        message = {
+            "messageId": message_id or str(uuid.uuid4()),
+            "role": "ROLE_USER",
+            "parts": [{"text": text}],
+            # Request HITL on every message: an approval pause raised during this
+            # turn is only answerable if the message that started the turn asked.
+            "extensions": [HITL_EXTENSION],
+        }
+        if context_id:
+            message["contextId"] = context_id
+        if task_id:
+            message["taskId"] = task_id
+        if metadata:
+            message["metadata"] = metadata
+        return {"jsonrpc": "2.0", "id": rpc_id or str(uuid.uuid4()),
+                "method": "SendMessage", "params": {"message": message}}
+
+
+    def approval_metadata(call_ids: list[str], *, approved: bool, reason: str | None = None) -> dict:
+        """message.metadata for a tool_approval_response deciding every listed call the same way.
+
+        kagent requires a decision for every call in the request; a partial reply
+        is a protocol error. `reason` (rejections only) is shown to the agent so it
+        can adapt instead of just failing."""
+        approvals = []
+        for cid in call_ids:
+            entry = {"id": cid, "approved": approved}
+            if not approved and reason:
+                entry["rejection_reason"] = reason
+            approvals.append(entry)
+        return {HITL_EXTENSION: {"type": HITL_TOOL_APPROVAL_RESPONSE, "approvals": approvals}}
+
+
+    def answer_metadata(request_id: str, answer: str) -> dict:
+        """message.metadata for an ask_user_response to the request with this id."""
+        return {HITL_EXTENSION: {"type": HITL_ASK_USER_RESPONSE, "id": request_id,
+                                 "answers": [{"answer": [answer]}]}}
+
+
+    def request_headers(user: str | None) -> dict:
+        headers = {"Content-Type": "application/json", "Accept": "application/json",
+                   # Not enforced by the alpha11 JSON-RPC handler, but the kagent CLI
+                   # and the a2a-go client always send it (go/core/internal/utils/a2a_version.go).
+                   "A2A-Version": A2A_VERSION,
+                   # The HITL extension is negotiated per request (a2a-go reads this header).
+                   "A2A-Extensions": HITL_EXTENSION}
+        if user:
+            headers["X-User-Id"] = user
+        return headers
+
+
+    def http_post(url: str, payload: bytes, headers: dict, timeout: float) -> dict:
+        req = urllib.request.Request(url, data=payload, method="POST", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as err:
+            # JSON-RPC errors come back as HTTP 200. A non-2xx is the path, not the
+            # agent: 403 "RBAC: access denied" is the Gateway allow-list, 404 a
+            # missing route or Agent, 401 an auth mode other than insecure.
+            body = err.read(300).decode("utf-8", "replace").strip()
+            raise A2AError(f"HTTP {err.code} from {url}: {body or err.reason}") from err
+
+
+    def _send_not_accepted(error: dict) -> float | None:
+        """Seconds to wait before resending, or None if this error is not a proven rejection."""
+        if error.get("code") != CODE_UNSUPPORTED_OPERATION:
+            return None
+        data = error.get("data")
+        details = data if isinstance(data, list) else [data]
+        for detail in details:
+            meta = detail.get("metadata") if isinstance(detail, dict) else None
+            if isinstance(meta, dict) and meta.get("reason") == REASON_SEND_NOT_ACCEPTED:
+                try:
+                    return max(int(meta.get("retryAfterMs", 100)), 100) / 1000
+                except (TypeError, ValueError):
+                    return 0.1
+        return None
+
+
+    def send_message(endpoint: str, text: str, *, context_id: str | None = None,
+                     task_id: str | None = None, metadata: dict | None = None,
+                     user: str | None = DEFAULT_USER, timeout: float = DEFAULT_TIMEOUT,
+                     transport=None, sleep=time.sleep, clock=time.monotonic,
+                     retry_deadline: float = RETRY_DEADLINE) -> dict:
+        """POST one SendMessage and return the JSON-RPC `result` ({"task"|"message": ...}).
+
+        `task_id` + `metadata` (see approval_metadata / answer_metadata) answer a
+        paused task instead of starting a new turn.
+        `transport(url, payload_bytes, headers, timeout) -> dict` is injectable for tests.
+        A KAGENT_SEND_NOT_ACCEPTED rejection is retried with the byte-identical
+        request (same messageId) until `retry_deadline`; anything else raises."""
+        post = transport or http_post
+        payload = json.dumps(build_send_request(text, context_id=context_id, task_id=task_id,
+                                                metadata=metadata)).encode()
+        headers = request_headers(user)
+        give_up = clock() + retry_deadline
+        while True:
+            body = post(endpoint, payload, headers, timeout)
+            if not isinstance(body, dict):
+                raise A2AError(f"not a JSON-RPC response: {body!r:.200}")
+            error = body.get("error")
+            if not error:
+                result = body.get("result")
+                if not isinstance(result, dict):
+                    raise A2AError("JSON-RPC response has no result")
+                return result
+            if not isinstance(error, dict):
+                raise A2AError(f"A2A error: {error!r:.200}")
+            wait = _send_not_accepted(error)
+            if wait is None or clock() + wait > give_up:
+                raise A2AError(f"A2A error {error.get('code')}: {error.get('message', error)}",
+                               code=error.get("code"), data=error.get("data"))
+            sleep(wait)
+
+
+    def parts_text(parts) -> str | None:
+        """Join the text parts. Data parts (tool calls and results) are not the answer."""
+        texts = [p["text"] for p in (parts or [])
+                 if isinstance(p, dict) and isinstance(p.get("text"), str) and p["text"]]
+        return "\n".join(texts) if texts else None
+
+
+    def parse_result(result: dict) -> Reply:
+        """Reduce a SendMessage result to a Reply. Raises A2AError on an unknown shape."""
+        if isinstance(result.get("task"), dict):
+            task = result["task"]
+            status = task.get("status") or {}
+            texts = [t for t in (parts_text(a.get("parts")) for a in (task.get("artifacts") or [])
+                                 if isinstance(a, dict)) if t]
+            status_msg = status.get("message") or {}
+            hitl = (status_msg.get("metadata") or {}).get(HITL_EXTENSION)
+            return Reply(kind="task", state=status.get("state"), context_id=task.get("contextId"),
+                         task_id=task.get("id"), text="\n".join(texts) if texts else None,
+                         status_text=parts_text(status_msg.get("parts")),
+                         hitl=hitl if isinstance(hitl, dict) else None)
+        if isinstance(result.get("message"), dict):
+            msg = result["message"]
+            return Reply(kind="message", state=None, context_id=msg.get("contextId"),
+                         task_id=msg.get("taskId"), text=parts_text(msg.get("parts")),
+                         status_text=None)
+        raise A2AError(f"unrecognised SendMessage result (keys: {sorted(result)})")
