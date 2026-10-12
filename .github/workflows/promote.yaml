@@ -1,0 +1,44 @@
+---
+# Promotion (ADP path 5): merge the one class of PR the policy says needs no human.
+# Runs AFTER validate or pr-triage completes on a PR, on `workflow_run` ONLY, so the version of
+# this file on main is what runs, never the PR's. The decision and the merge are
+# scripts/promote.py under .github/promotion-policy.yaml read at the PR's base commit.
+# Identity: the arigsela-promotion GitHub App (bypass actor on the main ruleset, pull_request
+# mode), distinct from Renovate's app by design (§V.90).
+name: promote
+
+on:
+  workflow_run:
+    workflows: [validate, pr-triage]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: promote-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    # Same-repo PRs only (forks carry no pull_requests entry); any conclusion: the script
+    # re-checks every check run itself and stays `owner` while anything is pending or red.
+    if: github.event.workflow_run.pull_requests[0] != null && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Mint a token from the promotion GitHub App
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PROMOTION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PROMOTION_APP_PRIVATE_KEY }}
+          owner: arigsela
+          repositories: kubernetes
+      - name: Decide, and merge if auto
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: python scripts/promote.py --repo ${{ github.repository }} --pr ${{ github.event.workflow_run.pull_requests[0].number }}
