@@ -238,8 +238,8 @@ a routine Renovate merge. Sessions and long-term memory reset.
    (plus the component digests in its header); the golang-adk `workload.image` in **all three**
    Harnesses (identical); and the CRD fixture under `tests/admission-policies/fixtures/crds/`.
    Re-render both charts with `helm template --kube-version` and read the release notes for
-   CRD and value changes. A Renovate PR that bumps only the Harness image (the `kubernetes`
-   manager sees it) must not be merged on its own.
+   CRD and value changes. Renovate groups the Harness image with the charts (`renovate.json5`,
+   group `kagent-substrate`), so it never arrives as a Harness-only PR.
 2. **Run the guardrails** against the new CRDs: `python -m pytest tests/admission-policies -q`,
    the identity and capability validators, and `tests/agent-capability`.
 3. **Archive the record:** take a final audit export
