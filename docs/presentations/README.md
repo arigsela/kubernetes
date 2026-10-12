@@ -28,6 +28,17 @@ Regenerating: hand the brief to an infographic-capable agent; the brief specifie
 tone, visual tokens and exact copy. Update the brief first when the platform changes, then
 the deck.
 
+## Development workflow briefing — 2026-10-12
+
+The companion to the ADP deck: how changes reach the platform when an agent writes most of
+them. Spec-driven design and the ledger, the agent's written contract, PR triage that labels
+and never blocks, the 22-job check wall, merge-as-deployment, and the loop back into the
+ledger and memory. Same audience, same anonymization, same visual identity.
+
+| file | what it is |
+|---|---|
+| `dev-workflow-presentation-brief.md` | 15-screen brief for an infographic agent: per-screen message, copy, visual, speaker note; two recorded screens (a mis-triaged PR's own comment; the 26-PR upgrade day); data provenance and a "do not claim" list. No rendered deck yet. |
+
 ## Tech-stack talk — 2026-10-11
 
 | file | what it is |
