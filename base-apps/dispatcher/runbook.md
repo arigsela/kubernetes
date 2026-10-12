@@ -45,8 +45,9 @@ Expect `{"decisions":["investigate"]}`, then a Slack message within five minutes
 session under `dispatcher` in the UI. Use a new `fingerprint` each time, or wait
 `repeat_after_hours`.
 
-## Change the table
-Edit `dispatch-table.yaml`, run `python -m pytest tests/dispatch/ -q`, open a PR. The pod
-reads the file at start: Argo CD's sync updates the ConfigMap and kubelet refreshes the
-mount within a minute, but the process keeps its loaded copy; `kubectl rollout restart
-deploy/dispatcher -n dispatcher` after the sync, or wait for the next Deployment change.
+## Change the table or the code
+Edit `dispatch-table.yaml` (or `scripts/dispatch.py`), then run
+`python scripts/gen-dispatcher-configmap.py --repo-root .` and `python -m pytest tests/dispatch/ -q`,
+and open a PR. The generator rewrites the code ConfigMap and the two `checksum/*` annotations
+on the Deployment's pod template, so Argo CD's sync rolls the pod and it reads the new files
+at start. No `kubectl` is needed; a stale checksum fails CI (`tests/dispatch/test_manifests.py`).
