@@ -115,3 +115,78 @@ def test_each_condition_is_a_reason(over, reason):
 def test_too_many_files_is_owner():
     d = pm.decide(pr(), files("a.md", "b.md", "c.md"), checks("success"), policy())
     assert d.klass == "owner" and any("files" in r for r in d.reasons)
+# ---------------------------------------------------------------- github + run
+
+class FakeGitHub:
+    """Records every call; answers from a small table keyed by (method, path)."""
+
+    def __init__(self, answers):
+        self.answers, self.calls = answers, []
+
+    def __call__(self, method, url, headers, body):
+        path = url.replace("https://api.github.com", "")
+        self.calls.append((method, path, json.loads(body) if body else None, headers.get("Accept")))
+        status, payload = self.answers[(method, path)]
+        return status, (payload if isinstance(payload, bytes) else json.dumps(payload).encode())
+
+
+def answers_for(pr_obj, files_list, runs, policy_text=None):
+    policy_text = POLICY_FILE.read_text() if policy_text is None else policy_text
+    n = pr_obj["number"]
+    return {
+        ("GET", f"/repos/arigsela/kubernetes/pulls/{n}"): (200, pr_obj),
+        ("GET", f"/repos/arigsela/kubernetes/pulls/{n}/files?per_page=100"): (200, files_list),
+        ("GET", f"/repos/arigsela/kubernetes/commits/{pr_obj['head']['sha']}/check-runs?per_page=100"): (200, {"check_runs": runs}),
+        ("GET", f"/repos/arigsela/kubernetes/contents/.github/promotion-policy.yaml?ref={pr_obj['base']['sha']}"): (200, policy_text.encode()),
+        ("GET", f"/repos/arigsela/kubernetes/issues/{n}/comments?per_page=100"): (200, []),
+        ("PUT", f"/repos/arigsela/kubernetes/pulls/{n}/merge"): (200, {"merged": True, "sha": "m1"}),
+        ("POST", f"/repos/arigsela/kubernetes/issues/{n}/comments"): (201, {"id": 1}),
+    }
+
+
+def test_run_auto_merges_by_rebase_pinned_to_head_and_comments():
+    fake = FakeGitHub(answers_for(pr(), files("base-apps/donetick/deployment.yaml"), checks("success")))
+    rc = pm.run("arigsela/kubernetes", 760, "tok", transport=fake)
+    assert rc == 0
+    merge = next(c for c in fake.calls if c[0] == "PUT")
+    assert merge[2] == {"merge_method": "rebase", "sha": "abc123"}
+    comment = next(c for c in fake.calls if c[0] == "POST")
+    assert comment[2]["body"].startswith(pm.COMMENT_MARKER)
+    assert "auto" in comment[2]["body"] and "base456" in comment[2]["body"]
+
+
+def test_merge_sends_head_sha():
+    fake = FakeGitHub(answers_for(pr(head={"sha": "feedface", "repo": {"full_name": "arigsela/kubernetes"}}),
+                                  files("x.md"), checks("success")))
+    pm.run("arigsela/kubernetes", 760, "tok", transport=fake)
+    assert next(c for c in fake.calls if c[0] == "PUT")[2]["sha"] == "feedface"
+
+
+def test_run_owner_neither_merges_nor_comments():
+    fake = FakeGitHub(answers_for(pr(labels=[{"name": "review:read"}]), files("x.md"), checks("success")))
+    assert pm.run("arigsela/kubernetes", 760, "tok", transport=fake) == 0
+    assert all(c[0] == "GET" for c in fake.calls)
+
+
+def test_policy_is_read_at_the_base_sha():
+    fake = FakeGitHub(answers_for(pr(), files("x.md"), checks("success")))
+    pm.run("arigsela/kubernetes", 760, "tok", transport=fake)
+    assert any("contents/.github/promotion-policy.yaml?ref=base456" in c[1] for c in fake.calls)
+
+
+def test_bad_base_policy_is_owner_with_reason_and_no_merge():
+    fake = FakeGitHub(answers_for(pr(), files("x.md"), checks("success"), policy_text="version: 9\n"))
+    assert pm.run("arigsela/kubernetes", 760, "tok", transport=fake) == 0
+    assert all(c[0] == "GET" for c in fake.calls)
+
+
+def test_dry_run_decides_but_does_not_merge():
+    fake = FakeGitHub(answers_for(pr(), files("x.md"), checks("success")))
+    assert pm.run("arigsela/kubernetes", 760, "tok", dry_run=True, transport=fake) == 0
+    assert all(c[0] == "GET" for c in fake.calls)
+
+
+def test_already_merged_pr_is_a_noop():
+    fake = FakeGitHub(answers_for(pr(merged=True, state="closed"), files("x.md"), checks("success")))
+    assert pm.run("arigsela/kubernetes", 760, "tok", transport=fake) == 0
+    assert all(c[0] == "GET" for c in fake.calls)
