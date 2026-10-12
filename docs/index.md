@@ -26,6 +26,7 @@ and Evaluation.
 | `adp-resources-and-observability.md` | living | Review index: AWS resources created, dashboards to observe it in, and links to every tool used |
 | `presentations/adp-concept-infographics.pdf` | record | The ADP concept briefing for engineering leadership (seven infographic panels, 2026-10-12): the concept, with this platform as the anonymized working reference. Speaker notes and the full 15-screen source brief are beside it (`presentations/README.md`) |
 | `presentations/dev-workflow-infographics.pdf` | record | Companion deck (2026-10-12, seven panels): the development workflow with an agent in the loop, from spec-driven design through PR triage and the check wall to merge-as-deployment. Speaker notes and the 15-screen source brief are beside it |
+| `presentations/agents-as-a-service-presentation-brief.md` | record | Third brief (2026-10-12): agents defined once as platform resources and consumed from the UI, the coding assistant (MCP), the command line and automation (A2A), and the portal; three recorded cross-door transcripts; written for an infographic agent, no rendered deck yet |
 | `superpowers/specs/2026-07-14-adp-remaining-pillars-roadmap.md` | active | Roadmap for the remaining pillars + the O0 observability spike result |
 | `superpowers/specs/2026-07-11-agent-identity-principal-design.md` | record | Identity: the "agent-principal" pattern (scoped credentials) |
 | `superpowers/specs/2026-07-13-agent-capability-classes-design.md` | record | Security: per-agent capability classes + tool taxonomy |
@@ -40,7 +41,7 @@ in `scripts/validate-agent-*.py`.
 
 Decks and briefs about the platform for an outside audience, anonymized; each is a
 *record* of the platform at its date. `presentations/README.md` lists them and how
-to present. Today: the ADP concept briefing and its development-workflow companion (above), and the tech-stack talk brief.
+to present. Today: the ADP concept briefing, its development-workflow companion and the agents-as-a-service brief (above), and the tech-stack talk brief.
 
 ## Platform components (`platform/`)
 
