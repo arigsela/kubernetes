@@ -57,6 +57,8 @@ spec:
           n8n update:workflow --id=interview-janitor --active=true
           n8n import:workflow --input=/workflows/newsletter-digest-send.json
           n8n update:workflow --id=qX9W779auOovEQe9 --active=true
+          n8n import:workflow --input=/workflows/agent-findings.json
+          n8n update:workflow --id=agent-findings --active=true
         env:
         - name: DB_TYPE
           value: "postgresdb"

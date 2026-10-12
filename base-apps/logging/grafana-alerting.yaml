@@ -56,6 +56,15 @@ data:
               url: http://n8n.n8n.svc.cluster.local:5678/webhook/grafana-alerts
               httpMethod: POST
             disableResolveMessage: false
+          # Second copy to the dispatcher (base-apps/dispatcher/), which may add an agent
+          # investigation by its table. A separate integration on purpose (§V.86): Grafana
+          # delivers to both, so the dispatcher being down never costs a Slack alert.
+          - uid: dispatcher-webhook
+            type: webhook
+            settings:
+              url: http://dispatcher.dispatcher.svc.cluster.local:8080/signal/grafana
+              httpMethod: POST
+            disableResolveMessage: false
 
   policies.yaml: |
     apiVersion: 1

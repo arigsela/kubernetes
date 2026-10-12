@@ -628,3 +628,97 @@ data:
         "binaryMode": "separate"
       }
     }
+  agent-findings.json: |
+    {
+      "id": "agent-findings",
+      "name": "Agent Findings to Slack",
+      "active": true,
+      "settings": {
+        "executionOrder": "v1"
+      },
+      "nodes": [
+        {
+          "id": "wh",
+          "name": "Findings Webhook",
+          "type": "n8n-nodes-base.webhook",
+          "typeVersion": 2,
+          "position": [
+            0,
+            0
+          ],
+          "parameters": {
+            "httpMethod": "POST",
+            "path": "agent-findings",
+            "responseMode": "onReceived"
+          }
+        },
+        {
+          "id": "fmt",
+          "name": "Format Finding",
+          "type": "n8n-nodes-base.code",
+          "typeVersion": 2,
+          "position": [
+            220,
+            0
+          ],
+          "parameters": {
+            "jsCode": "const p = $json.body ?? $json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst l = p.labels || {};\nconst where = [l.namespace, l.pod].filter(Boolean).join('/') + (l.container ? ' (' + l.container + ')' : '');\nconst head = (p.error ? ':x: ' : ':mag: ') + '*Investigation: ' + esc(p.alertname) + '*' + (where ? ' ' + esc(where) : '') + ' by `' + esc(p.agent) + '`';\nconst body = p.error ? 'Failed: ' + esc(p.error) : esc((p.text || '').slice(0, 3000));\nconst link = p.ui ? '\\nSession: ' + p.ui : '';\nreturn [{ json: { slack: { channel: '#oncall-alerts', text: head + '\\n' + body + link, unfurl_links: false } } }];"
+          }
+        },
+        {
+          "id": "slack",
+          "name": "Post to Slack",
+          "type": "n8n-nodes-base.httpRequest",
+          "typeVersion": 4.2,
+          "position": [
+            440,
+            0
+          ],
+          "parameters": {
+            "method": "POST",
+            "url": "https://slack.com/api/chat.postMessage",
+            "sendHeaders": true,
+            "headerParameters": {
+              "parameters": [
+                {
+                  "name": "Authorization",
+                  "value": "=Bearer {{ $env.SLACK_BOT_TOKEN }}"
+                },
+                {
+                  "name": "Content-Type",
+                  "value": "application/json"
+                }
+              ]
+            },
+            "sendBody": true,
+            "specifyBody": "json",
+            "jsonBody": "={{ JSON.stringify($json.slack) }}",
+            "options": {}
+          }
+        }
+      ],
+      "connections": {
+        "Findings Webhook": {
+          "main": [
+            [
+              {
+                "node": "Format Finding",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        },
+        "Format Finding": {
+          "main": [
+            [
+              {
+                "node": "Post to Slack",
+                "type": "main",
+                "index": 0
+              }
+            ]
+          ]
+        }
+      }
+    }
