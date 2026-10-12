@@ -12,6 +12,9 @@ tags: [ai-agent, kagent, mcp, anthropic, substrate]
 sources:
   - base-apps/kagent.yaml
   - base-apps/kagent-crds.yaml
+  - base-apps/kagent/brave-search-mcp.yaml
+  - base-apps/kagent/brave-search-mcp-external-secret.yaml
+  - scripts/provision-brave-search-vault.sh
   - base-apps/kagent-secrets.yaml
   - base-apps/kagent/agents/homelab-knowledge.yaml
   - base-apps/kagent/agent-templates/homelab-knowledge.yaml
@@ -140,6 +143,10 @@ Open since 2026-10-11 (SPEC T101).
   `arigsela/kubernetes`, written to Vault key `kagent-agent-docs-mcp` (property `github-token`).
   Then `kubectl -n kagent annotate externalsecret agent-docs-github-mcp-token force-sync=$(date +%s) --overwrite`
   and `kubectl -n kagent rollout restart deploy/agent-docs-mcp` (it reads the token from an env var).
+
+### Symptom: web search fails (`homelab-knowledge` / `dungeon-crawler-carl-agent` say they cannot search, or `brave_web_search` errors)
+- **Check:** `kubectl -n kagent get externalsecret brave-search-mcp-api-key` (must be `SecretSynced`), then `kubectl -n kagent get pods -l app.kubernetes.io/name=brave-search-mcp` and its logs, then `kubectl -n kagent get remotemcpserver.api.kagent.dev brave-search -o yaml` for the discovered tools. A `SecretSyncedError` means the key is missing or wrong in Vault (`k8s-secrets/brave-search-mcp`, property `api-key`); the MCP server pod cannot start without it. A 401/403/429 in the pod logs is the Brave API: wrong key, or the Free plan's 2,000 queries/month used up (https://api-dashboard.search.brave.com/).
+- **Fix:** write or rotate the key with `BRAVE_API_KEY=... scripts/provision-brave-search-vault.sh` (it also recreates the Vault role and policy if they are missing), then force the ExternalSecret: `kubectl -n kagent annotate externalsecret brave-search-mcp-api-key force-sync=$(date +%s) --overwrite`. The pod starts on its own once the Secret exists. The agents keep answering without search in the meantime; they just say so.
 
 ### Symptom: a `RemoteMCPServer` isn't accepted, or an agent says it lacks a tool
 - **Check:** `kubectl -n kagent get remotemcpservers` (`ACCEPTED`) and
