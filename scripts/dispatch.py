@@ -141,3 +141,112 @@ class Budget:
             self._starts.append(now)
             self._seen[fingerprint] = now
             return None
+# ------------------------------------------------------------------ the service
+
+@dataclass
+class Config:
+    table_path: str
+    a2a_base: str
+    n8n_base: str
+    user: str
+    timeout: float
+    ui_url: str
+
+    @classmethod
+    def from_env(cls, env=os.environ) -> "Config":
+        return cls(
+            table_path=env.get("DISPATCH_TABLE", "/etc/dispatch/dispatch.json"),
+            a2a_base=env.get("KAGENT_A2A_BASE", a2a.IN_CLUSTER_BASE),
+            n8n_base=env.get("N8N_WEBHOOK_BASE", "http://n8n.n8n.svc.cluster.local:5678/webhook"),
+            user=env.get("DISPATCH_USER", "dispatcher"),
+            timeout=float(env.get("INVESTIGATION_TIMEOUT", "300")),
+            ui_url=env.get("KAGENT_UI_SESSION_URL", "https://kagent.arigsela.com/agents/{session}/chat"),
+        )
+
+
+def log_line(obj: dict) -> None:
+    print(json.dumps(obj, sort_keys=True), flush=True)
+
+
+def post_json(url: str, obj: dict, timeout: float = 10.0) -> None:
+    req = urllib.request.Request(url, data=json.dumps(obj).encode(), method="POST",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        resp.read()
+
+
+class Dispatcher:
+    def __init__(self, table: dict, config: Config, *, budget: Budget | None = None,
+                 send=a2a.send_message, post=post_json, log=log_line, run_async: bool = True):
+        self.table = table
+        self.config = config
+        limits = table["limits"]
+        self.budget = budget or Budget(limits["investigations_per_hour"], limits["repeat_after_hours"])
+        self.send, self.post, self.log, self.run_async = send, post, log, run_async
+
+    # One decision per alert; investigations start here (in a thread when serving HTTP).
+    def handle_grafana(self, payload: dict) -> list[dict]:
+        decisions = []
+        for alert in payload.get("alerts") or []:
+            if not isinstance(alert, dict):
+                continue
+            decision = self.decide(alert)
+            decisions.append(decision)
+            self.log(decision)
+            if decision["decision"] == "investigate":
+                rule = next(r for r in self.table["rules"] if r["id"] == decision["rule"])
+                if self.run_async:
+                    threading.Thread(target=self.investigate, args=(alert, rule), daemon=True).start()
+                else:
+                    self.investigate(alert, rule)
+        return decisions
+
+    def decide(self, alert: dict) -> dict:
+        labels = alert.get("labels") or {}
+        name = labels.get("alertname") or "?"
+        fingerprint = alert.get("fingerprint") or name
+        base = {"event": "dispatch", "source": "grafana", "alertname": name,
+                "fingerprint": fingerprint, "status": alert.get("status"), "rule": None, "route": "none"}
+        rule = match_rule(self.table, "grafana", labels)
+        if rule is None:
+            return {**base, "decision": "unmatched"}
+        base.update(rule=rule["id"], route=rule["route"])
+        if rule["route"] == "none":
+            return {**base, "decision": "none"}
+        if alert.get("status") != "firing":
+            return {**base, "decision": "resolved"}
+        skipped = self.budget.admit(fingerprint)
+        if skipped:
+            return {**base, "decision": f"skip-{skipped}"}
+        return {**base, "decision": "investigate"}
+
+    def investigate(self, alert: dict, rule: dict) -> dict:
+        labels = alert.get("labels") or {}
+        agent = rule["route"].split(":", 1)[1]
+        url = a2a.resolve_endpoint(self.config.a2a_base, f"kagent/{agent}")
+        finding = {"rule": rule["id"], "alertname": labels.get("alertname") or "?", "labels": labels,
+                   "agent": agent, "session": None, "state": None, "text": None, "ui": None, "error": None}
+        try:
+            # A new session every time, as the dispatcher: no context_id, no task_id, no metadata (V88).
+            reply = a2a.parse_result(self.send(url, render_prompt(rule, alert), user=self.config.user,
+                                               timeout=self.config.timeout))
+            finding["session"], finding["state"] = reply.context_id, reply.state
+            if reply.context_id:
+                finding["ui"] = self.config.ui_url.format(session=reply.context_id)
+            if reply.completed:
+                finding["text"] = (reply.answer or "")[:ANSWER_LIMIT]
+            elif reply.waiting:
+                finding["text"] = ("The agent paused for input (an approval or a question). "
+                                   "The dispatcher never answers; continue it in the kagent UI.")
+            else:
+                finding["error"] = f"task ended in {reply.state}: {(reply.status_text or '')[:300]}"
+        except (a2a.A2AError, OSError, ValueError) as err:
+            finding["error"] = str(err)[:500]
+        try:
+            self.post(self.config.n8n_base.rstrip("/") + "/agent-findings", finding)
+        except (OSError, ValueError) as err:
+            finding["error"] = (finding["error"] or "") + f" | post failed: {str(err)[:200]}"
+        self.log({"event": "finding", "rule": rule["id"], "alertname": finding["alertname"],
+                  "agent": agent, "session": finding["session"], "state": finding["state"],
+                  "error": finding["error"]})
+        return finding

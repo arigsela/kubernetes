@@ -97,3 +97,122 @@ def test_budget_caps_investigations_per_hour():
     assert b.admit("c") == "budget"
     now[0] += 3601
     assert b.admit("c") is None
+# ---------------------------------------------------------------- dispatcher
+
+def completed_task(text="The pod is throttled by its own 100m limit.", session="sess-1"):
+    return {"task": {"id": "task-1", "contextId": session,
+                     "status": {"state": a2a.STATE_COMPLETED},
+                     "artifacts": [{"parts": [{"text": text}]}]}}
+
+
+def waiting_task(session="sess-2"):
+    return {"task": {"id": "task-2", "contextId": session,
+                     "status": {"state": "TASK_STATE_INPUT_REQUIRED",
+                                "message": {"parts": [{"text": "Which namespace?"}]}}}}
+
+
+class Fake:
+    def __init__(self, reply=None, error=None):
+        self.reply, self.error = reply, error
+        self.sent, self.posted, self.logged = [], [], []
+
+    def send(self, url, text, **kw):
+        self.sent.append({"url": url, "text": text, **kw})
+        if self.error:
+            raise self.error
+        return self.reply
+
+    def post(self, url, obj, timeout=10.0):
+        self.posted.append((url, obj))
+
+    def log(self, obj):
+        self.logged.append(obj)
+
+
+def make(fake, table=TABLE, per_hour=2):
+    t = json.loads(json.dumps(table))
+    t["limits"]["investigations_per_hour"] = per_hour
+    cfg = dp.Config(table_path="/dev/null", a2a_base="http://a2a:8083", n8n_base="http://n8n:5678/webhook",
+                    user="dispatcher", timeout=5.0, ui_url="https://ui/agents/{session}/chat")
+    return dp.Dispatcher(dp.load_table(json.dumps(t)), cfg, send=fake.send, post=fake.post,
+                         log=fake.log, run_async=False)
+
+
+def test_firing_matched_alert_is_investigated_as_dispatcher_in_a_new_session():
+    fake = Fake(reply=completed_task())
+    d = make(fake)
+    decisions = d.handle_grafana({"alerts": [alert()]})
+    assert [x["decision"] for x in decisions] == ["investigate"]
+    sent = fake.sent[0]
+    assert sent["url"] == "http://a2a:8083/agents/kagent/k8s-reader"
+    assert sent["user"] == "dispatcher"
+    assert sent.get("context_id") is None and sent.get("task_id") is None and sent.get("metadata") is None
+    assert sent["text"] == "Pod n8n/n8n-0: waiting 40% for CPU"
+    url, finding = fake.posted[0]
+    assert url == "http://n8n:5678/webhook/agent-findings"
+    assert finding["session"] == "sess-1" and finding["agent"] == "k8s-reader"
+    assert finding["ui"] == "https://ui/agents/sess-1/chat"
+    assert finding["text"].startswith("The pod is throttled")
+    assert finding["error"] is None
+    events = [x["event"] for x in fake.logged]
+    assert events == ["dispatch", "finding"]
+    assert all("text" not in x for x in fake.logged)
+
+
+def test_none_resolved_and_unmatched_are_logged_not_sent():
+    fake = Fake(reply=completed_task())
+    d = make(fake)
+    decisions = d.handle_grafana({"alerts": [alert("Quiet"), alert(status="resolved"), alert("Nope")]})
+    assert [x["decision"] for x in decisions] == ["none", "resolved", "unmatched"]
+    assert fake.sent == [] and fake.posted == []
+
+
+def test_same_fingerprint_twice_investigates_once():
+    fake = Fake(reply=completed_task())
+    d = make(fake)
+    first = d.handle_grafana({"alerts": [alert(), alert()]})
+    second = d.handle_grafana({"alerts": [alert()]})
+    assert [x["decision"] for x in first + second] == ["investigate", "skip-repeat", "skip-repeat"]
+    assert len(fake.sent) == 1
+
+
+def test_budget_exhaustion_is_logged_as_skip_budget():
+    fake = Fake(reply=completed_task())
+    d = make(fake, per_hour=1)
+    out = d.handle_grafana({"alerts": [alert(fingerprint="a"), alert(fingerprint="b", pod="other")]})
+    assert [x["decision"] for x in out] == ["investigate", "skip-budget"]
+
+
+def test_waiting_reply_posts_paused_finding_without_answering():
+    fake = Fake(reply=waiting_task())
+    make(fake).handle_grafana({"alerts": [alert()]})
+    _, finding = fake.posted[0]
+    assert finding["state"] == "TASK_STATE_INPUT_REQUIRED"
+    assert "paused" in finding["text"]
+    assert finding["ui"] == "https://ui/agents/sess-2/chat"
+    assert len(fake.sent) == 1, "the dispatcher never answers a paused task"
+
+
+def test_a2a_error_posts_error_finding():
+    fake = Fake(error=a2a.A2AError("A2A error -32000: boom"))
+    make(fake).handle_grafana({"alerts": [alert()]})
+    _, finding = fake.posted[0]
+    assert finding["error"].startswith("A2A error")
+    assert finding["session"] is None and finding["text"] is None
+    assert fake.logged[-1]["event"] == "finding" and fake.logged[-1]["error"].startswith("A2A error")
+
+
+def test_handle_grafana_tolerates_missing_alerts_and_labels():
+    fake = Fake(reply=completed_task())
+    d = make(fake)
+    assert d.handle_grafana({}) == []
+    out = d.handle_grafana({"alerts": [{"status": "firing"}]})
+    assert out[0]["decision"] == "unmatched" and out[0]["alertname"] == "?"
+
+
+def test_config_from_env_defaults_and_overrides():
+    cfg = dp.Config.from_env({})
+    assert cfg.a2a_base == a2a.IN_CLUSTER_BASE
+    assert cfg.user == "dispatcher" and cfg.timeout == 300.0
+    cfg = dp.Config.from_env({"INVESTIGATION_TIMEOUT": "12", "DISPATCH_USER": "x"})
+    assert cfg.timeout == 12.0 and cfg.user == "x"
