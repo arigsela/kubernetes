@@ -4,7 +4,8 @@
 when an AI agent writes most of them: spec-driven design, an agent executing, an automated
 triage of every pull request, a wall of checks, and a merge that is also the deployment. It is
 written for an agent that will turn it into infographics, in the same form as
-`adp-concept-presentation-brief.md` (the Agentic Developer Platform concept deck). Every screen
+`adp-concept-presentation-brief.md` (the Agentic Developer Platform concept deck). The rendering
+built from it is `dev-workflow-infographics.pdf` beside it, with `dev-workflow-speaker-notes.md`. Every screen
 gives: the message, the exact copy, the visual to draw, and speaker notes. Data provenance is at
 the end.
 
