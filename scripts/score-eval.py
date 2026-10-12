@@ -140,6 +140,15 @@ def run(corpus: dict, answers: dict[str, str], judge=None) -> list[dict]:
 # --------------------------------------------------------------- LLM judge
 
 
+JUDGE_MODEL = "claude-sonnet-5-5"
+VERDICT_SCHEMA = {
+    "type": "object",
+    "properties": {"pass": {"type": "boolean"}, "rationale": {"type": "string"}},
+    "required": ["pass", "rationale"],
+    "additionalProperties": False,
+}
+
+
 def anthropic_judge(entry: dict, answer: str) -> dict:
     """Real semantic judge, used only where an API key exists. Imported lazily so
     the scorer has no hard dependency on the SDK or a key."""
@@ -159,16 +168,33 @@ def anthropic_judge(entry: dict, answer: str) -> dict:
         f"EXPECTED BEHAVIOR: {golden.get('behavior')}\n\n"
         f"AGENT ANSWER:\n{answer}\n\n"
         "Grade only whether the answer conveys the required facts / performs the "
-        "expected behavior — phrasing does not matter. Reply with a single JSON "
-        'object: {"pass": true|false, "rationale": "<one sentence>"}.'
+        "expected behavior — phrasing does not matter. Set pass to true or false and "
+        "give a one-sentence rationale."
     )
-    msg = client.messages.create(
-        model="claude-sonnet-4-6", max_tokens=300,
+    # Claude Sonnet 5.5. It thinks by default (it cannot be disabled), and thinking counts
+    # toward max_tokens, so the old 300 would truncate the verdict: low effort keeps the
+    # thinking short on a grading call, and max_tokens leaves room for it. No sampling
+    # params (a non-default temperature is a 400). The verdict comes back through
+    # structured outputs, so the text is schema-valid JSON, no brace-scraping.
+    # fallbacks="default": if a safety classifier declines, the API re-runs the call on
+    # Anthropic's recommended fallback model inside the same request.
+    msg = client.beta.messages.create(
+        model=JUDGE_MODEL, max_tokens=16000,
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+        output_config={"effort": "low",
+                       "format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
         messages=[{"role": "user", "content": prompt}],
     )
-    text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
-    start, end = text.find("{"), text.rfind("}")
-    return json.loads(text[start:end + 1])
+    if msg.stop_reason in ("refusal", "max_tokens"):
+        # Not a verdict: pass None hands the decision back to the deterministic rubric
+        # (score_entry: "judge unsure"), instead of scoring the answer as a failure.
+        why = getattr(getattr(msg, "stop_details", None), "category", None)
+        return {"pass": None,
+                "rationale": f"claude judge stopped: {msg.stop_reason}"
+                             + (f" ({why})" if why else "")}
+    text = next(b.text for b in msg.content if getattr(b, "type", "") == "text")
+    return json.loads(text)
 
 
 # ---------------------------------------------------------------- Jev judge
@@ -330,13 +356,19 @@ def cascade_judge(entry: dict, answer: str, *, transport=None, claude=None) -> d
         j = jev_judge(entry, answer, transport=transport)
     except JevError as err:
         c = claude(entry, answer)
-        return {"pass": bool(c.get("pass")), "rationale": c.get("rationale", ""),
+        return {"pass": _claude_pass(c), "rationale": c.get("rationale", ""),
                 "tier": "claude", "jev": None, "degraded": str(err)}
     if j["pass"] is not None:
         return {**j, "degraded": None}
     c = claude(entry, answer)
-    return {"pass": bool(c.get("pass")), "rationale": c.get("rationale", ""),
+    return {"pass": _claude_pass(c), "rationale": c.get("rationale", ""),
             "tier": "claude", "jev": j["jev"], "degraded": None}
+
+
+def _claude_pass(c: dict):
+    """Claude's verdict as a bool, or None when it gave none (a declined or truncated
+    call): score_entry then falls back to the rubric instead of counting a failure."""
+    return None if c.get("pass") is None else bool(c["pass"])
 
 
 # ------------------------------------------------------------ calibration
