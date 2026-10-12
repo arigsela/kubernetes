@@ -63,6 +63,9 @@ def test_send_request_uses_a2a_v1_names():
     assert msg["role"] == "ROLE_USER"
     assert msg["parts"] == [{"text": "hi"}], "v1 parts have no `kind`"
     assert msg["messageId"] and "contextId" not in msg
+    assert msg["extensions"] == ["https://kagent.dev/extensions/hitl/v1"], \
+        "every send requests HITL, or a pause raised in that turn cannot be answered"
+    assert "taskId" not in msg and "metadata" not in msg
 
 
 def test_send_request_continues_a_context():
@@ -70,9 +73,10 @@ def test_send_request_continues_a_context():
     assert msg["contextId"] == "ctx-1"
 
 
-def test_headers_carry_version_and_identity():
+def test_headers_carry_version_identity_and_hitl():
     h = a2a.request_headers("someone")
     assert h["A2A-Version"] == "1.0" and h["X-User-Id"] == "someone"
+    assert h["A2A-Extensions"] == "https://kagent.dev/extensions/hitl/v1"
     assert h["Content-Type"] == "application/json"
     assert "X-User-Id" not in a2a.request_headers(None)
 
@@ -172,6 +176,69 @@ def test_waiting_task():
     assert r.waiting and r.answer is None
     assert r.status_text == "Approve k8s_delete_resource on configmap/kagent-scratch?"
     assert r.text == "Deleting it needs your approval."
+    assert r.hitl["type"] == "tool_approval_request"
+    assert r.pending_calls == [{"id": "adk-147fe663-08da-4fe0-869d-2204e24f2219", "name": "k8s_delete_resource",
+                                "args": {"resource_type": "configmap", "resource_name": "kagent-scratch"}}]
+    assert not r.pending_question
+
+
+def test_waiting_task_with_a_question():
+    r = a2a.parse_result(recorded("send-ask-user")["result"])
+    assert r.waiting and r.pending_question and r.pending_calls == []
+    assert r.hitl["id"] == "adk-9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b"
+
+
+def test_pause_without_hitl_metadata_has_no_pending_calls():
+    r = a2a.parse_result({"task": {"id": "t", "contextId": "c",
+                                   "status": {"state": "TASK_STATE_INPUT_REQUIRED",
+                                              "message": {"parts": [{"text": "?"}]}}}})
+    assert r.waiting and r.hitl is None and r.pending_calls == [] and not r.pending_question
+
+
+def test_pending_calls_accept_the_documented_calls_key():
+    r = a2a.Reply(kind="task", state="TASK_STATE_INPUT_REQUIRED", context_id="c", task_id="t",
+                  text=None, status_text=None,
+                  hitl={"type": "tool_approval_request", "id": "adk-1",
+                        "calls": [{"id": "x", "name": "n", "args": {"a": 1}}, {"name": "no-id"}]})
+    assert r.pending_calls == [{"id": "x", "name": "n", "args": {"a": 1}}]
+
+
+# ------------------------------------------------------------------ HITL replies
+
+def test_approval_reply_decides_every_call_on_the_paused_task():
+    meta = a2a.approval_metadata(["toolu_07", "toolu_08"], approved=True)
+    req = a2a.build_send_request("approved", context_id="ctx", task_id="task-1", metadata=meta)
+    msg = req["params"]["message"]
+    assert msg["taskId"] == "task-1" and msg["contextId"] == "ctx"
+    assert msg["extensions"] == [a2a.HITL_EXTENSION], "kagent ignores the payload without it"
+    payload = msg["metadata"][a2a.HITL_EXTENSION]
+    assert payload == {"type": "tool_approval_response",
+                       "approvals": [{"id": "toolu_07", "approved": True},
+                                     {"id": "toolu_08", "approved": True}]}
+
+
+def test_rejection_carries_the_reason_only_when_rejecting():
+    rej = a2a.approval_metadata(["toolu_07"], approved=False, reason="not during the demo")
+    assert rej[a2a.HITL_EXTENSION]["approvals"] == [
+        {"id": "toolu_07", "approved": False, "rejection_reason": "not during the demo"}]
+    ok = a2a.approval_metadata(["toolu_07"], approved=True, reason="ignored")
+    assert "rejection_reason" not in ok[a2a.HITL_EXTENSION]["approvals"][0]
+
+
+def test_answer_reply_names_the_request():
+    meta = a2a.answer_metadata("adk-9", "kagent")
+    assert meta == {a2a.HITL_EXTENSION: {"type": "ask_user_response", "id": "adk-9",
+                                         "answers": [{"answer": ["kagent"]}]}}
+
+
+def test_send_message_passes_task_and_metadata_through():
+    t = Recorder(recorded("send-completed"))
+    a2a.send_message("http://h/x", "approved", context_id="c", task_id="t1",
+                     metadata=a2a.approval_metadata(["a"], approved=True), transport=t)
+    msg = t.calls[0]["body"]["params"]["message"]
+    assert msg["taskId"] == "t1" and msg["contextId"] == "c"
+    assert msg["metadata"][a2a.HITL_EXTENSION]["type"] == "tool_approval_response"
+    assert t.calls[0]["headers"]["A2A-Extensions"] == a2a.HITL_EXTENSION
 
 
 def test_unfinished_task_has_no_answer():
@@ -243,6 +310,16 @@ def run(argv, transport, stdin=""):
     return rc, out.getvalue(), err.getvalue()
 
 
+CTX = "7b1e4d2a-9c3f-4e8b-a1d6-5f2e3c4b5a69"
+
+
+@pytest.fixture(autouse=True)
+def state_dir(tmp_path, monkeypatch):
+    """ask-hk remembers pauses on disk; keep every test's state private."""
+    monkeypatch.setenv("ASK_HK_STATE_DIR", str(tmp_path / "ask-hk"))
+    return tmp_path / "ask-hk"
+
+
 def test_ask_hk_is_executable():
     path = SCRIPTS / "ask-hk"
     assert os.access(path, os.X_OK)
@@ -287,11 +364,88 @@ def test_ask_hk_user_from_environment(monkeypatch):
     assert t.calls[0]["headers"]["X-User-Id"] == "env-user"
 
 
-def test_ask_hk_waiting_exits_2_with_the_question():
+def test_ask_hk_waiting_exits_2_with_the_question(state_dir):
     rc, out, err = run(["delete it"], Recorder(recorded("send-input-required")))
     assert rc == 2
-    assert "Approve k8s_delete_resource" in out and out.splitlines()[-1].startswith("context: ")
-    assert "TASK_STATE_INPUT_REQUIRED" in err
+    assert "Approve k8s_delete_resource" in out and out.splitlines()[-1] == f"context: {CTX}"
+    assert "waiting for approval of:" in err
+    assert 'k8s_delete_resource {"resource_name": "kagent-scratch", "resource_type": "configmap"}' in err
+    assert f"ask-hk --context {CTX} --approve | --reject REASON" in err
+    saved = json.loads((state_dir / f"{CTX}.json").read_text())
+    assert saved["kind"] == "approval" and saved["task_id"] == "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d"
+    assert [c["id"] for c in saved["calls"]] == ["adk-147fe663-08da-4fe0-869d-2204e24f2219"]
+    assert saved["request_id"] is None, "alpha11 approval requests carry no top-level id"
+
+
+def test_ask_hk_pause_without_request_id_points_at_the_ui(state_dir):
+    fx = recorded("send-input-required")
+    del fx["result"]["task"]["status"]["message"]["metadata"]
+    rc, out, err = run(["delete it"], Recorder(fx))
+    assert rc == 2 and "decide it in the kagent UI" in err
+    assert not (state_dir / f"{CTX}.json").exists()
+
+
+def test_ask_hk_approve_answers_the_paused_task(state_dir):
+    run(["delete it"], Recorder(recorded("send-input-required")))
+    t = Recorder(recorded("send-completed"))
+    rc, out, err = run(["--context", CTX, "--approve"], t)
+    assert rc == 0 and out.splitlines()[-1] == f"context: {CTX}"
+    msg = t.calls[0]["body"]["params"]["message"]
+    assert msg["taskId"] == "5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d" and msg["contextId"] == CTX
+    assert msg["parts"] == [{"text": "approved"}]
+    assert msg["metadata"][a2a.HITL_EXTENSION] == {
+        "type": "tool_approval_response",
+        "approvals": [{"id": "adk-147fe663-08da-4fe0-869d-2204e24f2219", "approved": True}]}
+    assert not (state_dir / f"{CTX}.json").exists(), "a decided pause is forgotten"
+
+
+def test_ask_hk_reject_passes_the_reason(state_dir):
+    run(["delete it"], Recorder(recorded("send-input-required")))
+    t = Recorder(recorded("send-completed"))
+    rc, _, _ = run(["--context", CTX, "--reject", "not during the demo"], t)
+    assert rc == 0
+    msg = t.calls[0]["body"]["params"]["message"]
+    assert msg["metadata"][a2a.HITL_EXTENSION]["approvals"] == [
+        {"id": "adk-147fe663-08da-4fe0-869d-2204e24f2219", "approved": False,
+         "rejection_reason": "not during the demo"}]
+    assert msg["parts"] == [{"text": "rejected: not during the demo"}]
+
+
+def test_ask_hk_decision_needs_a_pending_approval():
+    rc, _, err = run(["--context", CTX, "--approve"], Recorder())
+    assert rc == 1 and "nothing is waiting for approval" in err
+    rc, _, err = run(["--approve"], Recorder())
+    assert rc == 1 and "need --context" in err
+    rc, _, err = run(["--context", CTX, "--approve", "and also this"], Recorder())
+    assert rc == 1 and "take no message" in err
+
+
+def test_ask_hk_refuses_a_plain_message_while_an_approval_is_pending():
+    run(["delete it"], Recorder(recorded("send-input-required")))
+    t = Recorder()
+    rc, _, err = run(["--context", CTX, "never mind"], t)
+    assert rc == 1 and "decide it first" in err and t.calls == []
+
+
+def test_ask_hk_plain_message_answers_a_pending_question(state_dir):
+    rc, out, err = run(["list the pods"], Recorder(recorded("send-ask-user")))
+    assert rc == 2 and "Which namespace" in out and f'ask-hk --context {CTX} "<answer>"' in err
+    t = Recorder(recorded("send-completed"))
+    rc, _, _ = run(["--context", CTX, "kagent"], t)
+    assert rc == 0
+    msg = t.calls[0]["body"]["params"]["message"]
+    assert msg["taskId"] == "6b7c8d9e-0f1a-4b2c-9d3e-4f5a6b7c8d9e"
+    assert msg["metadata"][a2a.HITL_EXTENSION] == {
+        "type": "ask_user_response", "id": "adk-9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b",
+        "answers": [{"answer": ["kagent"]}]}
+    assert not (state_dir / f"{CTX}.json").exists()
+
+
+def test_ask_hk_a_second_pause_replaces_the_first(state_dir):
+    run(["delete it"], Recorder(recorded("send-input-required")))
+    rc, _, _ = run(["--context", CTX, "--approve"], Recorder(recorded("send-ask-user")))
+    assert rc == 2
+    assert json.loads((state_dir / f"{CTX}.json").read_text())["kind"] == "question"
 
 
 def test_ask_hk_failed_task_exits_1_and_keeps_the_context():
@@ -313,4 +467,5 @@ def test_ask_hk_rpc_error():
 
 def test_ask_hk_rejects_empty_question_and_bad_agent():
     assert run(["  "], Recorder())[0] == 1
+    assert run([], Recorder())[0] == 1
     assert run(["--agent", "homelab-knowledge", "q"], Recorder())[0] == 1

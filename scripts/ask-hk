@@ -10,6 +10,19 @@ Prints the agent's answer, then `context: <id>` on its own line. The first call
 continue it. The conversation belongs to the --user identity, so a follow-up has
 to use the same one.
 
+Approvals and questions (exit status 2). An agent whose binding has
+`requireApproval` pauses before a mutating call; an agent can also ask a
+question. ask-hk prints what it is waiting on and remembers it (per context, in
+$ASK_HK_STATE_DIR, default ~/.cache/ask-hk). Then:
+
+    scripts/ask-hk --context <id> --approve              # run the pending call(s)
+    scripts/ask-hk --context <id> --reject "not now"     # refuse them; the agent sees why
+    scripts/ask-hk --context <id> "kagent"               # answer a question
+
+One decision covers every call in the request (kagent requires that). A plain
+message while an approval is pending is refused: decide first. The kagent UI
+(https://kagent.arigsela.com) can decide the same pause.
+
 kagent 1.0 serves A2A for every Agent on the controller at
 /agents/<namespace>/<name>; kagent-mcp.arigsela.com routes /agents/kagent/ there,
 behind the Gateway's IP allow-list (so off-network calls get HTTP 403). With a
@@ -21,12 +34,13 @@ port-forward instead:
 --endpoint takes a bare origin (the /agents/<ns>/<name> path is appended) or a
 full agent URL (used as-is).
 
-Exit status: 0 answered; 2 the agent is waiting for input or approval (answer it
-in the kagent UI, or reply with --context); 1 the task failed or the call errored.
+Exit status: 0 answered; 2 the agent is waiting for an approval or an answer
+(see above); 1 the task failed or the call errored.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -37,14 +51,76 @@ import kagent_a2a as a2a  # noqa: E402
 DEFAULT_AGENT = "kagent/homelab-knowledge"
 
 
+# ------------------------------------------------------------------ pending state
+# What a context is waiting on, so --approve / --reject / an answer can address the
+# paused task without the caller juggling task and request ids.
+
+def state_dir() -> Path:
+    return Path(os.environ.get("ASK_HK_STATE_DIR")
+                or os.path.join(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"), "ask-hk"))
+
+
+def state_path(context: str) -> Path:
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in context)
+    return state_dir() / f"{safe}.json"
+
+
+def load_pending(context: str | None) -> dict | None:
+    if not context:
+        return None
+    try:
+        return json.loads(state_path(context).read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def save_pending(context: str, pending: dict | None) -> None:
+    path = state_path(context)
+    if pending is None:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(pending, indent=2) + "\n")
+
+
+def pending_from(reply: a2a.Reply) -> dict | None:
+    """The state to remember for a waiting reply, or None if it carries no request id."""
+    if reply.pending_calls:
+        return {"kind": "approval", "task_id": reply.task_id, "request_id": reply.hitl.get("id"),
+                "calls": reply.pending_calls}
+    if reply.pending_question:
+        return {"kind": "question", "task_id": reply.task_id, "request_id": reply.hitl.get("id")}
+    return None
+
+
+def describe_pending(pending: dict) -> str:
+    if pending["kind"] == "approval":
+        lines = ["waiting for approval of:"]
+        for c in pending["calls"]:
+            lines.append(f"  {c['name']} {json.dumps(c['args'], sort_keys=True)}")
+        return "\n".join(lines)
+    return "waiting for an answer"
+
+
+# ------------------------------------------------------------------------- main
+
 def main(argv=None, *, stdin=None, stdout=None, stderr=None, transport=None) -> int:
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
     ap = argparse.ArgumentParser(prog="ask-hk", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("question", help='the question, or "-" to read it from stdin')
+    ap.add_argument("question", nargs="?",
+                    help='the question (or the answer to a pending question), "-" for stdin')
     ap.add_argument("--context", help="continue this conversation (the id a previous call printed)")
+    decide = ap.add_mutually_exclusive_group()
+    decide.add_argument("--approve", action="store_true",
+                        help="approve the tool call(s) the --context conversation is waiting on")
+    decide.add_argument("--reject", metavar="REASON",
+                        help="reject them; REASON is passed to the agent")
     ap.add_argument("--agent", default=DEFAULT_AGENT, help="namespace/name (default: %(default)s)")
     ap.add_argument("--endpoint", default=a2a.PUBLIC_BASE,
                     help="gateway origin or full agent URL (default: %(default)s)")
@@ -55,20 +131,56 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None, transport=None) -> 
                     help="seconds to wait for the answer (default: %(default)s)")
     args = ap.parse_args(argv)
 
-    question = stdin.read() if args.question == "-" else args.question
-    if not question.strip():
-        print("ask-hk: the question is empty", file=stderr)
+    deciding = args.approve or args.reject is not None
+    if deciding and not args.context:
+        print("ask-hk: --approve/--reject need --context (the conversation that is waiting)",
+              file=stderr)
         return 1
+    if deciding and args.question is not None:
+        print("ask-hk: --approve/--reject take no message", file=stderr)
+        return 1
+
     try:
         url = a2a.resolve_endpoint(args.endpoint, args.agent)
     except ValueError as err:
         print(f"ask-hk: {err}", file=stderr)
         return 1
 
+    pending = load_pending(args.context)
+    text, task_id, metadata = None, None, None
+    if deciding:
+        if not pending or pending["kind"] != "approval":
+            print("ask-hk: nothing is waiting for approval in this conversation "
+                  "(or ask-hk did not see the pause; decide it in the kagent UI)", file=stderr)
+            return 1
+        approved = bool(args.approve)
+        task_id = pending["task_id"]
+        metadata = a2a.approval_metadata([c["id"] for c in pending["calls"]],
+                                         approved=approved, reason=args.reject)
+        text = "approved" if approved else f"rejected: {args.reject}"
+    else:
+        if args.question is None:
+            ap.print_usage(stderr)
+            print("ask-hk: a question is required", file=stderr)
+            return 1
+        text = stdin.read() if args.question == "-" else args.question
+        if not text.strip():
+            print("ask-hk: the question is empty", file=stderr)
+            return 1
+        if pending and pending["kind"] == "approval":
+            print("ask-hk: this conversation is waiting for an approval; decide it first:\n"
+                  f"  {describe_pending(pending)}\n"
+                  f"  ask-hk --context {args.context} --approve | --reject REASON", file=stderr)
+            return 1
+        if pending and pending["kind"] == "question":
+            # A plain message answers the agent's question on its paused task.
+            task_id = pending["task_id"]
+            metadata = a2a.answer_metadata(pending["request_id"], text.strip())
+
     try:
         reply = a2a.parse_result(a2a.send_message(
-            url, question, context_id=args.context, user=args.user,
-            timeout=args.timeout, transport=transport))
+            url, text, context_id=args.context, task_id=task_id, metadata=metadata,
+            user=args.user, timeout=args.timeout, transport=transport))
     except (a2a.A2AError, OSError, ValueError) as err:
         # A timeout does not cancel the agent: the answer still lands in the
         # conversation, visible in the kagent UI.
@@ -76,6 +188,10 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None, transport=None) -> 
         if args.context:
             print(f"context: {args.context}", file=stdout)
         return 1
+
+    context = reply.context_id or args.context
+    if context and pending:
+        save_pending(context, None)   # the paused task was answered (or superseded)
 
     body, rc = None, 0
     if reply.failed:
@@ -85,8 +201,16 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None, transport=None) -> 
     elif reply.waiting:
         # What the agent is waiting on (an approval, a question) is in status.message.
         body = "\n".join(t for t in (reply.text, reply.status_text) if t) or None
-        print(f"ask-hk: the agent is waiting ({reply.state}); answer with --context "
-              "or in the kagent UI", file=stderr)
+        new_pending = pending_from(reply)
+        if context and new_pending:
+            save_pending(context, new_pending)
+            hint = (f"ask-hk --context {context} --approve | --reject REASON"
+                    if new_pending["kind"] == "approval"
+                    else f'ask-hk --context {context} "<answer>"')
+            print(f"ask-hk: {describe_pending(new_pending)}\n  {hint}", file=stderr)
+        else:
+            print(f"ask-hk: the agent is waiting ({reply.state}) but sent no request id; "
+                  "decide it in the kagent UI", file=stderr)
         rc = 2
     elif not reply.completed:
         print(f"ask-hk: task {reply.task_id} came back unfinished ({reply.state}); "
@@ -100,7 +224,6 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None, transport=None) -> 
     if body:
         print(body.rstrip("\n"), file=stdout)
 
-    context = reply.context_id or args.context
     if context:
         print(f"context: {context}", file=stdout)
     return rc

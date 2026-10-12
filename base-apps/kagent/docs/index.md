@@ -298,11 +298,16 @@ Both public hosts are Gateway API `HTTPRoute`s in this namespace on the shared `
   `http://kagent-controller.kagent.svc.cluster.local:8083/agents/<ns>/<agent>` (Backstage does).
   The route is scoped to `/agents/kagent/`, so other namespaces' agents stay unreachable from
   outside.[^httproute-mcp] `scripts/ask-hk` is the client ("ask hk"; `--agent` for any other
-  agent, `--context` to continue a conversation); `scripts/capture-eval-answers.py` uses the same
-  library (`scripts/kagent_a2a.py`). Answers take minutes; nothing on the path times out first.
-- **`/mcp`**: the controller's MCP endpoint. In 1.0 it offers `list_sessions` and
-  `invoke_session` but no create-session or invoke-by-agent tool, so an MCP client can't start a
-  conversation with an agent. Use A2A for that.
+  agent, `--context` to continue a conversation, `--approve`/`--reject` to decide a gated call);
+  `scripts/capture-eval-answers.py` uses the same library (`scripts/kagent_a2a.py`). Every send
+  requests the HITL extension (`https://kagent.dev/extensions/hitl/v1`): without it an approval
+  pause has no request id and can only be cancelled. Answers take minutes; nothing on the path
+  times out first.
+- **`/mcp`**: the controller's MCP endpoint (`list_sessions`, `invoke_session`, checkpoint
+  create/list, `fork_session`). It can't create a Session or invoke by agent name, so an MCP
+  client (Claude Code has it registered as `kagent`) can't start a conversation: open one over
+  A2A, then continue it with `invoke_session` and the same id. Approvals through MCP need the
+  MCP tasks extension, which Claude Code doesn't declare; decide them with `ask-hk` or the UI.
 - **Identity and access.** A2A runs in kagent's insecure mode: the caller names itself in the
   `X-User-Id` header, and a conversation belongs to that user (`scripts/ask-hk` defaults to
   `admin@kagent.dev`, Backstage sends `backstage-portal`). The Gateway's IP allow-list
