@@ -1,6 +1,6 @@
 # .github/promotion-policy.yaml
 # Promotion policy (ADP path 5): the one class of pull request that merges WITHOUT a human.
-# Read by scripts/promote.py at the PR's BASE commit, like review-policy.yaml, so a PR cannot
+# Read by scripts/promote.py at the PR's base ref (main), which the PR cannot change, so it cannot
 # loosen its own promotion. Spec: docs/superpowers/specs/2026-10-12-signal-dispatch-and-promotion-design.md
 # (§V.89, §V.90). Changing this file is itself `review:read` (.github/**) and never `auto`.
 version: 1
