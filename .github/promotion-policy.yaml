@@ -1,0 +1,28 @@
+# .github/promotion-policy.yaml
+# Promotion policy (ADP path 5): the one class of pull request that merges WITHOUT a human.
+# Read by scripts/promote.py at the PR's BASE commit, like review-policy.yaml, so a PR cannot
+# loosen its own promotion. Spec: docs/superpowers/specs/2026-10-12-signal-dispatch-and-promotion-design.md
+# (§V.89, §V.90). Changing this file is itself `review:read` (.github/**) and never `auto`.
+version: 1
+auto:                                   # merged by .github/workflows/promote.yaml, no human
+  authors: ["arigsela-renovate[bot]"]   # the API login; `gh` shows app/arigsela-renovate
+  require_labels: ["review:skip"]       # triage found nothing to read: docs-only, or an image-tag bump of <= 4 lines
+  deny_prefixes:                        # never automatic, whatever triage said (path starts-with)
+    - terraform/                        # applies before merge, via Atlantis
+    - .github/                          # the workflows and the policies themselves
+    - appsets/
+    - ansible/
+    - node-config/
+    - base-apps/vault                   # covers vault.yaml and vault/
+    - base-apps/postgresql
+    - base-apps/kagent
+    - base-apps/substrate
+    - base-apps/admission-policies
+    - base-apps/istio-
+    - base-apps/dex
+    - base-apps/cluster-rbac
+    - base-apps/dispatcher
+  max_changed_files: 2
+  merge_method: rebase                  # the only method the main ruleset allows
+owner:                                  # everything else; the triage label says how closely to read
+  approvers: ["arigsela"]
