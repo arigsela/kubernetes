@@ -37,7 +37,9 @@ ledger and memory. Same audience, same anonymization, same visual identity.
 
 | file | what it is |
 |---|---|
-| `dev-workflow-presentation-brief.md` | 15-screen brief for an infographic agent: per-screen message, copy, visual, speaker note; two recorded screens (a mis-triaged PR's own comment; the 26-PR upgrade day); data provenance and a "do not claim" list. No rendered deck yet. |
+| `dev-workflow-infographics.pdf` | The deck to present: seven 16:9 infographic panels (the bottleneck moved to deciding; one change start to finish; triage guides attention; the wall of checks; merge is the deployment; a triage comment caught its own mistake; reuse the mechanisms, decide the ownership). Raster pages, no selectable text. |
+| `dev-workflow-speaker-notes.md` | Per-panel text alternative, what to say, qualifications and sources. Read it before presenting. |
+| `dev-workflow-presentation-brief.md` | The source brief: the full 15-screen version with two recorded screens (a mis-triaged PR's own comment; the 26-PR upgrade day), data provenance and the "do not claim" list. The seven-panel deck is its permitted short cut (screens 02, 03, 06, 07, 09, 11, 14). |
 
 ## Tech-stack talk — 2026-10-11
 
