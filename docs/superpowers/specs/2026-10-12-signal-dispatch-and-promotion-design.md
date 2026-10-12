@@ -158,12 +158,16 @@ runbook gives the LogQL.
 ### Shape
 
 `.github/promotion-policy.yaml` declares two classes. `scripts/promote.py` decides which one
-a PR is in and, for `auto`, merges it. `.github/workflows/promote.yaml` runs the script after
+a PR is in and, for `auto`, merges it. (Implementation notes, 2026-10-12: the policy is read at
+the base **ref**, `main`, rather than `base.sha`, so a tightening applies to open PRs at once;
+`auto` additionally re-derives triage's deterministic skip shape from the diff, because the
+classifier can also emit `skip`; commit statuses such as Renovate's stability gate count
+alongside check runs; `renovate.json5` and Crossplane packages are deny-listed.) `.github/workflows/promote.yaml` runs the script after
 `validate` or `pr-triage` completes on a PR, with a token minted from a dedicated GitHub App.
 
 ```yaml
 version: 1
-# Read at the PR's BASE commit, like review-policy.yaml: a PR cannot loosen its own promotion.
+# Read at the PR's base ref (main): a PR cannot loosen its own promotion.
 auto:                                   # merged by the promotion workflow, no human
   authors: ["arigsela-renovate[bot]"]   # API login; `gh` shows it as app/arigsela-renovate
   require_labels: ["review:skip"]       # triage found nothing to read: docs-only, or an image-tag bump of <= 4 lines
@@ -199,7 +203,7 @@ owner:                                  # everything else; the triage label says
 5. Every check run on the head SHA has completed with `success`, `skipped` or `neutral`; there
    is at least one check run; none is queued or in progress. (The ruleset has no required
    status checks; the script is that check.)
-6. The policy was read from the PR's base SHA, and it parsed.
+6. The policy was read from the PR's base ref (`main`), and it parsed.
 
 On `auto`: `PUT /repos/{repo}/pulls/{n}/merge` with `merge_method: rebase` and the head SHA
 (so a push between decision and merge fails the merge rather than merging something unseen),
@@ -235,7 +239,9 @@ platform's policy, not the dependency bot's setting.
 - **V88** The dispatcher sends A2A as `X-User-Id: dispatcher`, opens a new session per
   investigation, and never sends a `tool_approval_response` or an `ask_user_response`.
 - **V89** A pull request is merged without a human only when `scripts/promote.py` decides
-  `auto` under the policy read at the PR's **base** commit, and the PR's author is not a human.
+  `auto` under the policy read at the PR's base ref (`main`), the diff re-derives as triage's
+  deterministic skip shape, every check run and commit status is green, and the PR's author
+  is not a human.
   `.github/**`, `terraform/**` and the `deny_prefixes` list are never `auto`.
 - **V90** The promotion identity is its own GitHub App, distinct from Renovate's, installed
   on this repository only, bypassing the ruleset in `pull_request` mode only.
