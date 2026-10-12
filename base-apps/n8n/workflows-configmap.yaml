@@ -649,8 +649,10 @@ data:
           "parameters": {
             "httpMethod": "POST",
             "path": "agent-findings",
-            "responseMode": "onReceived"
-          }
+            "responseMode": "onReceived",
+            "options": {}
+          },
+          "webhookId": "f300c8f8-bcb2-53db-9991-4110defe34e5"
         },
         {
           "id": "fmt",
