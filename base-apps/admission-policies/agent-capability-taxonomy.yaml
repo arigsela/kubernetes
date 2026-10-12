@@ -44,7 +44,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: agent-guardrails
 data:
-  # ---------------------------------------------------------------- read (53)
+  # ---------------------------------------------------------------- read (55)
   read: |
     [
       "k8s_get_resources",
@@ -102,7 +102,10 @@ data:
 
       "get_file_contents",
       "search_code",
-      "get-catalog-entity"
+      "get-catalog-entity",
+
+      "brave_web_search",
+      "brave_news_search"
     ]
 
   # --------------------------------------------------------------- write (13)

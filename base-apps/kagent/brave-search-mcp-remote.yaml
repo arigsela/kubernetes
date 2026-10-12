@@ -1,0 +1,23 @@
+apiVersion: api.kagent.dev/v1alpha3
+kind: RemoteMCPServer
+metadata:
+  name: brave-search
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: brave-search
+spec:
+  # Registers the Brave Search tools with kagent so AgentTemplates can bind them. The kmcp
+  # MCPServer `brave-search-mcp` (brave-search-mcp.yaml) only deploys the server + Service;
+  # an AgentTemplate MCP binding accepts only a same-namespace RemoteMCPServer.
+  #
+  # Web search returns UNTRUSTED text. Bind these tools to read-class agents only
+  # (homelab-knowledge, dungeon-crawler-carl-agent); never to k8s-agent or istio-agent, whose
+  # mutating tools a crafted page could try to talk them into (the approval gate would still
+  # stand, but there is no reason to open the door). The taxonomy classifies them `read`.
+  description: Brave web search (read-only, untrusted web content)
+  protocol: STREAMABLE_HTTP
+  url: http://brave-search-mcp.kagent:3000/mcp
+  timeout: 30s
+  sseReadTimeout: 5m0s
+  terminateOnClose: true

@@ -1,0 +1,47 @@
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: brave-search-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: brave-search-mcp
+spec:
+  # Brave Search over MCP, the official server (github.com/brave/brave-search-mcp-server) from
+  # Docker's MCP catalog. Same shape as agent-docs-mcp.yaml: kmcp wraps the stdio server in an
+  # agentgateway adapter and exposes it as a Service on :3000; the RemoteMCPServer
+  # `brave-search` (brave-search-mcp-remote.yaml) is what agents bind.
+  #
+  # Image pinned by digest only: Docker Hub publishes this image under `latest` alone
+  # (disallow-latest-tag accepts a digest). Renovate's docker manager tracks the digest.
+  # Node 25 on these x86-64-v2 nodes: Node 24 (the kagent UI) ran clean here on 2026-09-26.
+  #
+  # Only two of its eight tools are enabled, the two the taxonomy classifies `read`
+  # (agent-capability-taxonomy.yaml). Enabling more here is not enough: a tool absent from the
+  # taxonomy is denied at admission when an AgentTemplate binds it.
+  transportType: stdio
+  deployment:
+    image: docker.io/mcp/brave-search@sha256:f58a5c22c1196ec7bd1ca586ce216f2334fc298550ddcf652c0e8adb6d256d78
+    cmd: node
+    args:
+      - dist/index.js
+      - --transport
+      - stdio
+    env:
+      BRAVE_MCP_ENABLED_TOOLS: "brave_web_search brave_news_search"
+      BRAVE_MCP_LOG_LEVEL: warning
+    # Injects BRAVE_API_KEY from the K8s Secret (brave-search-mcp-external-secret.yaml).
+    secretRefs:
+      - name: brave-search-mcp-api-key
+    resources:
+      requests:
+        cpu: 50m
+        memory: 96Mi
+      limits:
+        cpu: 300m
+        memory: 384Mi
+    nodeSelector:
+      node.kubernetes.io/workload: infrastructure
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
