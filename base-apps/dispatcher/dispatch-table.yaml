@@ -1,0 +1,86 @@
+# base-apps/dispatcher/dispatch-table.yaml
+---
+# Dispatch table — THE single place that says which signal an agent looks at (ADP path 1).
+#
+# Humans get every alert regardless: Grafana's contact point delivers to n8n → Slack on its
+# own integration (V86). This table only ADDS agent investigations. Rules are checked in
+# order; the first whose `match` keys all equal the alert's labels wins. `route` is `none`
+# or `agent:<AgentTemplate>`; agent routes need a `prompt`, and may only name templates whose
+# every tool is `read` in the capability taxonomy with no requireApproval binding (V87,
+# tests/dispatch/test_table.py). Every Grafana rule title must have a row: `none` with a
+# `why` is a decision, a missing row fails CI.
+#
+# Placeholders in prompts: {alertname} {status} {starts_at} {labels[<name>]} {annotations[<name>]};
+# a missing key renders as `?`. A prompt is a string, or a list of strings joined with spaces
+# (JSON has no line continuation; the list keeps lines under 200 characters).
+#
+# JSON, not YAML, so the dispatcher needs no pip install (python:3.12-slim, stdlib only).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dispatcher-table
+  namespace: dispatcher
+  labels:
+    app: dispatcher
+data:
+  dispatch.json: |
+    {
+      "version": 1,
+      "limits": {"investigations_per_hour": 4, "repeat_after_hours": 6},
+      "rules": [
+        {
+          "id": "pod-cpu-starved",
+          "source": "grafana",
+          "match": {"alertname": "Pod CPU starved"},
+          "route": "agent:k8s-reader",
+          "prompt": [
+            "Grafana alert '{alertname}' is firing for pod {labels[namespace]}/{labels[pod]}: {annotations[summary]}",
+            "Investigate with your read-only tools: describe the pod, read its recent events and the last 100 log lines,",
+            "and say whether the pod's own CPU limit or node contention is the likely cause, quoting what you saw.",
+            "Do not propose running changes on the cluster; a fix is a pull request. Runbook hint: {annotations[runbook]}"
+          ],
+          "why": "A starved pod needs describe + events + logs read before anyone can act; the read-only investigator does exactly that and nothing else."
+        },
+        {
+          "id": "container-near-memory-limit",
+          "source": "grafana",
+          "match": {"alertname": "Container near memory limit"},
+          "route": "agent:k8s-reader",
+          "prompt": [
+            "Grafana alert '{alertname}' is firing for {labels[namespace]}/{labels[pod]} container {labels[container]}: {annotations[summary]}",
+            "Investigate with your read-only tools: describe the pod, check for OOMKilled in its last state and events,",
+            "read the last 100 log lines, and say whether this looks like a leak or a limit set too low, quoting what you saw.",
+            "Do not propose running changes on the cluster; a fix is a pull request. Runbook hint: {annotations[runbook]}"
+          ],
+          "why": "Memory pressure has two causes with two fixes; the evidence (last state, events, logs) is readable without any write tool."
+        },
+        {
+          "id": "agent-ungated-tool",
+          "source": "grafana",
+          "match": {"alertname": "Agent invoked a gated tool with NO approval"},
+          "route": "none",
+          "why": "A security finding about the agents themselves. A human reads the record behind the SELECT-only credential; no agent investigates the agents."
+        },
+        {
+          "id": "agent-audit-risk-high",
+          "source": "grafana",
+          "match": {"alertname": "Agent session scored high risk"},
+          "route": "none",
+          "why": "Same as above: the risk UI and the acknowledged file are the human's tools, and the record is not readable by any in-cluster agent."
+        },
+        {
+          "id": "falco-sensitive-detection",
+          "source": "grafana",
+          "match": {"alertname": "Falco detected a sensitive-file read or unexpected API access"},
+          "route": "none",
+          "why": "Falco output can name sensitive paths; until a redaction rule for its lines is agreed, no summary of them goes to Slack through an agent. Next source candidate."
+        },
+        {
+          "id": "substrate-ca-expiry",
+          "source": "grafana",
+          "match": {"alertname": "Substrate CA expires in under 30 days"},
+          "route": "none",
+          "why": "The runbook is deterministic (rotate the CAs); there is nothing to investigate."
+        }
+      ]
+    }
