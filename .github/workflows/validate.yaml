@@ -399,10 +399,6 @@ jobs:
   # agents (§V.87); the dispatcher's ConfigMap must match the tested script. See
   # tests/dispatch/ and scripts/gen-dispatcher-configmap.py.
   dispatch-validate:
-
-  # The promotion decision is the only thing that merges without a human (§V.89); its tests
-  # are the proof that the deny list and the base-commit policy read hold.
-  promotion-validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -417,6 +413,18 @@ jobs:
       - name: Check the dispatcher ConfigMap is in sync with the scripts
         run: python scripts/gen-dispatcher-configmap.py --check --repo-root .
 
+  # The promotion decision is the only thing that merges without a human (§V.89); its tests
+  # are the proof that the deny list and the base-ref policy read hold.
+  promotion-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run promotion tests
         run: python -m pytest tests/promotion/ -q
 
