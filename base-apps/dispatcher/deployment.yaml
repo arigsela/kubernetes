@@ -26,9 +26,10 @@ spec:
         # pattern as Grafana's checksum/alerting). scripts/gen-dispatcher-configmap.py writes both;
         # tests/dispatch/test_manifests.py fails if either is stale.
         checksum/table: "dbc68856901cfaff3f05631eea66cdb78a58894b81d3b0765b25ecd0e129c8d0"
-        checksum/code: "4a50cdf911d149938fec985fc66ec05ad5f94661332b0e095302d682c953fc55"
+        checksum/code: "dd31456d9ed224fcd70003a88c54ae181bbe3ccbcea95c2a05ce0dec9241490e"
     spec:
-      automountServiceAccountToken: false   # it talks to kagent and n8n over HTTP, never to the API server
+      serviceAccountName: dispatcher
+      automountServiceAccountToken: false   # never talks to the API server; the projected token below is for kagent
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -46,8 +47,6 @@ spec:
               value: http://kagent-controller.kagent.svc.cluster.local:8083
             - name: N8N_WEBHOOK_BASE
               value: http://n8n.n8n.svc.cluster.local:5678/webhook
-            - name: DISPATCH_USER
-              value: dispatcher
             - name: INVESTIGATION_TIMEOUT
               value: "300"
             - name: PORT
@@ -84,6 +83,9 @@ spec:
             - name: table
               mountPath: /etc/dispatch
               readOnly: true
+            - name: kagent-token
+              mountPath: /var/run/kagent
+              readOnly: true
       volumes:
         - name: code
           configMap:
@@ -91,3 +93,13 @@ spec:
         - name: table
           configMap:
             name: dispatcher-table
+        # Projected token, audience kagent, rotated by the kubelet before it expires; the mesh
+        # verifies it and sets X-User-Id to this service account (V91, V92). Read on every
+        # send, never cached.
+        - name: kagent-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: kagent
+                  expirationSeconds: 3600
+                  path: token

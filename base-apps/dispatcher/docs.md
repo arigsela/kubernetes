@@ -28,7 +28,8 @@ sources:
 One Python process (`scripts/dispatch.py`, standard library only, shipped in the generated
 ConfigMap `dispatcher-code`) that receives a second copy of every Grafana alert notification,
 matches it against the table in `dispatch-table.yaml`, and for an `agent:<name>` route opens a
-new A2A session with that agent as `X-User-Id: dispatcher`, then posts the answer to n8n's
+new A2A session with that agent, presenting its projected service account token (the mesh
+verifies it: the session is owned by `system:serviceaccount:dispatcher:dispatcher`, V91), then posts the answer to n8n's
 `agent-findings` webhook, which formats it for Slack `#oncall-alerts`.
 
 ## What it is not
@@ -47,8 +48,11 @@ on alert labels, `route`, `prompt` for agent routes, `why`). Every Grafana rule 
 have a row; `none` with a `why` is a decision. Only `firing` alerts are routed.
 
 ## Identity and record
-Sessions appear in the kagent UI under `dispatcher`; the daily audit attributes their tool
-calls; `scripts/ask-hk --user dispatcher --context <id>` continues one by hand.
+Sessions are owned by `system:serviceaccount:dispatcher:dispatcher` (the projected token in
+`deployment.yaml`, audience `kagent`, read on every send; `serviceaccount.yaml`); the daily
+audit attributes their tool calls; `scripts/ask-hk --as-serviceaccount dispatcher/dispatcher
+--agent kagent/<agent> --context <id>` continues one by hand (an audited TokenRequest, no
+shared secret).
 
 ## Observability
 One JSON line per decision (`event: dispatch`, `decision` ∈ investigate / none / resolved /
