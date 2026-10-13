@@ -18,6 +18,8 @@ provenance is at the end.
 added: the owner's docs-only pull requests (`*.md` or `docs/`, ≤10 files, never the agent
 instruction files) merge by policy too. Where this brief and the deck say "one declared class",
 read "two declared classes, both trivial by construction"; the scorecard and ladder are unchanged.
+Later still on 2026-10-13, callers became principals (screen 07) and evaluation became a post-deploy
+gate (screen 06); the "needs a decision" column on screen 14 no longer includes caller identity.
 
 **Audience:** engineering leadership; first target is the company's AI pathfinders group. They
 are technical but not Kubernetes specialists. Vocabulary rule: name the mechanism in plain
@@ -267,12 +269,14 @@ number; it is more convincing than "we have evals".
 
 **Visual:** three panels, each with a status chip and a monospace evidence line where one exists.
 
-1. **Non-human identity** — BUILT, with one gap. Each agent and each tool server is a principal
-   with its own credential, scoped to one path in the vault; keys are injected at the network
-   edge, never inside the agent. Gap: the gateway the clients call does not authenticate
-   callers; the reference relies on an IP allow-list and TLS, and the command line and the
-   coding assistant share one caller identity. — evidence line: `one Vault role per credential;
-   0 API keys on clients`
+1. **Non-human identity** — BUILT. Each agent and each tool server is a principal with its own
+   credential, scoped to one path in the vault; keys are injected at the network edge, never
+   inside the agent. Since 2026-10-13 every caller is a principal too: the mesh verifies a token
+   (the person's single sign-on, or a short-lived platform token for an automation) in front of
+   the agent gateway and writes the verified identity into the request; the record, memory and
+   session ownership key on it. Remaining: the UI is one identity until it gets its own login.
+   — evidence line: `one Vault role per credential; 0 API keys on clients; 2 token issuers, 0
+   self-declared identities`
 2. **Security** — BUILT. The capability classes above; admission refuses an unsafe agent
    definition; the firewall and allow-list at the edge; the audit record redacts tool responses
    at its boundary because they can contain secret material; the evaluation corpus is checked
@@ -490,7 +494,7 @@ track, a small "what a new agent or path reuses" checklist panel.
 | # | Piece | Fills | Why now, why this order |
 |---|---|---|---|
 | 1 | **Evaluation as a gate** — score the knowledge agent against the corpus after every deploy that changed it; grow the corpus from real history | harness · evaluation (BUILT 2026-10-13, post-deploy) | Done as a post-sync gate (a status on the change, an alert on regression); pre-merge would need an in-cluster runner. Still thin: one agent, eight questions. |
-| 2 | **Callers as principals** — authenticate the gateway's callers, one identity per person and per automation, in front of the shared one | governance · identity (gap → closed) | Required before any door is offered to more than one person; sessions already carry a caller identity, so the record can be read per person once callers are real. |
+| 2 | **Callers as principals** — authenticate the gateway's callers, one identity per person and per automation, in front of the shared one | governance · identity (BUILT 2026-10-13) | Done in the mesh: a waypoint in front of the agent gateway verifies the person's SSO token or an automation's platform token and sets the identity; the runtime's own calls stay inside the platform. Still thin: the UI is one identity until it gets its own login. |
 | 3 | **A dispatcher** — a declared table from signal to recipient (an agent, a human, nobody), applied by a service | path 1 · dispatch (BUILT 2026-10-12) | Done, read-only as planned: an alert opens an agent *investigation*, never a change, and the policy-merged promotion class landed beside it (2026-10-13). Still to route: failing checks, issues, triage labels. |
 | 4 | **Implement inside the platform** — a sandbox template so an in-cluster agent can run checks and open a pull request under its own identity, through the same triage, checks and promotion policy | path 3 · implement (PARTIAL → BUILT) | Needs 2 (its own identity); 3 is in place to hand it work. The pull request path is unchanged; the only new thing is who opens it. |
 | 5 | **Remediate on signal** — the investigation's proposed fix becomes a pull request (via 4) or a gated operator call | path 8 (PARTIAL → BUILT) | Last, because it is the first path where an unprompted agent touches production, and it inherits every gate above. The observe half (path 7) is done. |
@@ -577,7 +581,7 @@ All measured on the reference repository and platform on 2026-10-12 unless noted
 | The runtime supports sandbox templates; none defined | the kagent docs list the kind; no such manifest exists in the repository |
 | The dispatcher: declared table, CI completeness check, hourly budget, own identity, no approvals; accepted live with a real alert and three replays | the dispatcher app and its tests; the ledger's acceptance entry, 2026-10-12 |
 | Promotion: one class, policy read from main, a dedicated merge identity; first decisions on real pull requests | the promotion policy and workflow; the ledger entries closed 2026-10-13; the workflow's logged decisions |
-| The gateway does not authenticate callers; one shared identity | the kagent docs ("trusted-proxy OIDC mode doesn't verify tokens"); the command-line and assistant configuration |
+| Callers are principals: two issuers, identity set by the mesh, session owners verified in the database | the kagent app's identity manifests and tests; the ledger's acceptance entry, 2026-10-13 |
 
 ## Do not claim
 

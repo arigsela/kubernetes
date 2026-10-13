@@ -1,8 +1,11 @@
 # Callers as principals, and evaluation as a gate — Design
 
 **Date:** 2026-10-13
-**Status:** approved in conversation (section 1 reviewed by the owner; sections 2–4 written on
-stated assumptions while the owner was away, per their instruction to continue)
+**Status:** implemented 2026-10-13 (identity plan T1–T6, eval-gate plan T1–T5). Shape chosen: the
+primary (ambient + waypoint) with three live corrections: the Kubernetes JWKS inline, the ingress
+routed through the waypoint (`istio.io/ingress-use-waypoint`), and NO PeerAuthentication STRICT
+(the runtime's task-state calls arrive in plaintext from atenet); the waypoint rules are scoped to
+the controller's port because the waypoint fronts every Service. Owner items: SPEC T110, T112, T113.
 **Follows:** `2026-10-12-signal-dispatch-and-promotion-design.md` (ADP paths 1, 5, 7)
 **Fills:** the whole-picture brief's "what next" items 2 (callers as principals) and 1
 (evaluation as a gate); ADP L3 governance · identity, and harness · evaluation (E3)

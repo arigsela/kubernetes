@@ -308,13 +308,30 @@ Both public hosts are Gateway API `HTTPRoute`s in this namespace on the shared `
   client (Claude Code has it registered as `kagent`) can't start a conversation: open one over
   A2A, then continue it with `invoke_session` and the same id. Approvals through MCP need the
   MCP tasks extension, which Claude Code doesn't declare; decide them with `ask-hk` or the UI.
-- **Identity and access.** A2A runs in kagent's insecure mode: the caller names itself in the
-  `X-User-Id` header, and a conversation belongs to that user (`scripts/ask-hk` defaults to
-  `admin@kagent.dev`, Backstage sends `backstage-portal`). The Gateway's IP allow-list
-  (`base-apps/istio-ingress/authorizationpolicy.yaml`) is the **only** control on both hosts;
-  off-network calls get 403. kagent's trusted-proxy OIDC mode doesn't verify tokens, so it is not
-  enabled. (The nginx basic auth on `/mcp` was dropped in the move to Gateway API, SPEC T52; its
-  Vault-backed htpasswd was removed on 2026-10-11.)
+- **Identity and access (V91, V92).** Every A2A caller is a verified principal since 2026-10-13.
+  The `kagent`, `dispatcher` and `backstage` namespaces are in the ambient mesh; the waypoint
+  `kagent-waypoint` (`waypoint.yaml`) fronts every Service here, and the ingress Gateway routes
+  `kagent-mcp.arigsela.com` through it too (`istio.io/ingress-use-waypoint`). `request-authentication.yaml`
+  verifies two issuers only: Dex client `kubernetes` (the token kubectl caches with kubelogin; a
+  human is their `email`) and the Kubernetes service account issuer, audience `kagent` (an
+  automation is `system:serviceaccount:<ns>:<name>`; the issuer's public JWKS is inline because
+  istiod cannot verify the API server's certificate). The verified claim is written into
+  `x-user-id`, replacing anything the client sent, and that is what the controller reads: it stays
+  in `insecure` mode on purpose (`base-apps/kagent.yaml`), the mesh is the identity authority.
+  `authorization-policy.yaml` allows the controller's user paths (`/agents/*`, `/mcp`, `/api/*`,
+  port 8083) only with a token, or from the UI's own principal (UI sessions are the controller
+  default identity, and the UI route strips any identity header a browser sends), or, until
+  `arigsela/backstage` sends its token (SPEC T110), from Backstage's principal; a DENY refuses the
+  runtime's `X-Agent-Name` from anyone but the workers and the controller; `httproute-waypoint.yaml`
+  refuses `?user_id=`. The ingress ANDs the same token requirement with the IP allow-list
+  (`base-apps/istio-ingress/`), so the external path is checked twice. Clients: `scripts/ask-hk`
+  sends your Dex token by default, `--as-serviceaccount ns/name` mints a 10-minute token to
+  continue a session an automation owns, `--no-token` is the port-forward path; the dispatcher
+  and the eval gate present projected tokens. Residual, by decision: no PeerAuthentication
+  STRICT (the Substrate runtime in `ate-system` saves task state on the controller in plaintext
+  from atenet; STRICT cut it off), so a pod in `kagent` or `ate-system` can still reach the
+  controller directly; `network-policy-controller.yaml` bounds that at L4. Per-person UI login
+  (oauth2-proxy + Dex, then `trusted-proxy`) is the follow-up.
 - **Human approval (HITL).** A call through a `requireApproval: true` binding pauses the turn
   (task state `TASK_STATE_INPUT_REQUIRED`). Approve or reject it in the UI, or over A2A with the
   HITL extension `https://kagent.dev/extensions/hitl/v1`: the paused task carries a
