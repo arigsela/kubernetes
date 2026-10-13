@@ -257,6 +257,60 @@ data:
                         params:
                           - 0
 
+          - uid: agent-eval-regression
+            title: Agent eval regression
+            condition: threshold
+            for: 0m
+            annotations:
+              summary: >-
+                The evaluation gate scored an agent below its baseline, or a security-refusal
+                question failed, after a sync changed the agent's definition. The log line
+                names the agent, the synced revision, the judge used and the failed corpus ids.
+              runbook: >-
+                `kubectl -n kagent logs job/eval-gate` for the line; the failed ids are in
+                tests/eval-corpus/<agent>.yaml. The revision is the commit to read (`git show`).
+                A flaky question: sync the kagent-secrets app again (`argocd app sync
+                kagent-secrets`); two regressions on the same hash are the signal, one is a
+                notice. judge=none means no API key in the eval-gate Secret: the rubric alone
+                decided (scripts/provision-eval-gate-vault.sh). To reset a baseline, delete
+                the agent's key from ConfigMap eval-gate-state (base-apps/kagent/runbook.md).
+            labels:
+              severity: warning
+              pillar: evaluation
+            # Not fail-closed: the gate runs only when an agent changed, so no data is normal.
+            noDataState: OK
+            execErrState: Error
+            data:
+              - refId: query
+                relativeTimeRange:
+                  from: 3600
+                  to: 0
+                datasourceUid: loki
+                model:
+                  refId: query
+                  datasource:
+                    type: loki
+                    uid: loki
+                  queryType: instant
+                  expr: >-
+                    sum(count_over_time({namespace="kagent", app="eval-gate"}
+                    | json event="event", regression="regression"
+                    | event="eval-gate" | regression="true" [1h]))
+              - refId: threshold
+                relativeTimeRange:
+                  from: 3600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: query
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 0
+
           # ------------------------------------------------------------------
           # Falco. Note this alerts on SPECIFIC rule names, not on "any Falco line".
           # With priority now at `notice`, "Terminal shell in container" fires on

@@ -71,6 +71,13 @@ data:
           "why": "Same as above: the risk UI and the acknowledged file are the human's tools, and the record is not readable by any in-cluster agent."
         },
         {
+          "id": "agent-eval-regression",
+          "source": "grafana",
+          "match": {"alertname": "Agent eval regression"},
+          "route": "none",
+          "why": "A regression names corpus ids and a commit; a human reads the diff. An agent grading an agent change is the loop this gate exists to break."
+        },
+        {
           "id": "falco-sensitive-detection",
           "source": "grafana",
           "match": {"alertname": "Falco detected a sensitive-file read or unexpected API access"},
