@@ -2,6 +2,7 @@
 """Callers as principals (V91, V92): the mesh verifies every caller's token and sets the
 identity header; the policy files say so and name exactly the two issuers."""
 from conftest import load, one, REPO
+import json
 
 DEX = "https://dex.arigsela.com"
 K8S = "https://kubernetes.default.svc.cluster.local"
@@ -19,6 +20,12 @@ def test_kagent_dispatcher_and_backstage_are_in_the_ambient_mesh():
     assert kagent["istio.io/use-waypoint"] == "kagent-waypoint"
 
 
+def test_waypoint_logs_every_request():
+    tel = one("base-apps/kagent/telemetry-waypoint.yaml", "Telemetry", "waypoint-access-logs")
+    assert tel["spec"]["targetRefs"][0]["name"] == "kagent-waypoint"
+    assert tel["spec"]["accessLogging"][0]["providers"] == [{"name": "envoy"}]
+
+
 def test_waypoint_exists_for_services():
     wp = one("base-apps/kagent/waypoint.yaml", "Gateway", "kagent-waypoint")
     assert wp["spec"]["gatewayClassName"] == "istio-waypoint"
@@ -34,7 +41,9 @@ def test_request_authentication_names_exactly_the_two_issuers():
     assert set(rules) == {DEX, K8S}
     assert rules[DEX]["audiences"] == ["kubernetes"] and rules[DEX]["jwksUri"] == f"{DEX}/keys"
     assert rules[K8S]["audiences"] == ["kagent"]
-    assert "jwksUri" in rules[K8S] or "jwks" in rules[K8S]
+    # inline on purpose: istiod cannot verify the API server's certificate (see the manifest)
+    keys = json.loads(rules[K8S]["jwks"])["keys"]
+    assert keys and all(k.get("kty") == "RSA" and k.get("kid") for k in keys)
 
 
 def test_request_authentication_outputs_claim_header():
