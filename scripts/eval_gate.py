@@ -206,6 +206,12 @@ def post_status(repo: str, sha: str, context: str, state: str, description: str,
     post(f"{GITHUB_API}/repos/{repo}/statuses/{sha}", json.dumps(body).encode(), headers, 30)
 
 
+def agent_ref(corpus: dict, agent: str) -> str:
+    """namespace/name for resolve_endpoint: the corpus names the agent bare (`homelab-knowledge`)."""
+    ref = corpus.get("agent") or agent
+    return ref if "/" in ref else f"kagent/{ref}"
+
+
 def load_corpora(corpus_dir: Path) -> dict[str, dict]:
     """corpus__<agent>.json (what the generator writes) or <agent>.yaml (the repo); keyed by agent."""
     out = {}
@@ -247,7 +253,7 @@ def run(env, *, kube, send, judge, judge_name: str, status_post, log, corpus_dir
             log({"event": "eval-gate", "agent": agent, "hash": h, "revision": rev, "skipped": "unchanged"})
             continue
         entries = corpus["entries"]
-        endpoint = a2a.resolve_endpoint(base, corpus.get("agent") or f"kagent/{agent}")
+        endpoint = a2a.resolve_endpoint(base, agent_ref(corpus, agent))
         answers = capture_mod.capture(entries, endpoint, send=send, timeout=timeout,
                                       token_file=token_file, log=log)
         if all(v is None for v in answers.values()):

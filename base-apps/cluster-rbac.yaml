@@ -13,7 +13,8 @@ spec:
     path: base-apps/cluster-rbac
   destination:
     server: https://kubernetes.default.svc
-    # Every object here is cluster-scoped (ClusterRoleBindings); the namespace is required
+    # Objects here are cluster-scoped (ClusterRoleBindings) or name their own namespace
+    # (eval-gate-argocd-read.yaml: a Role in argo-cd); this default namespace is required
     # by Argo but unused.
     namespace: kube-system
   syncPolicy:
