@@ -1,0 +1,21 @@
+# base-apps/kagent/telemetry-waypoint.yaml
+# Access logging for the kagent waypoint: who called the controller, as which principal, on
+# which path. Waypoints log nothing by default (like the ingress Gateway,
+# base-apps/istio-ingress/telemetry.yaml). The observe window of the callers-as-principals
+# rollout reads this log to write the enforcement rules, and afterwards it is the audit trail
+# for "RBAC: access denied". Same built-in `envoy` provider and mesh-level format (query
+# string stripped) as the ingress.
+---
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: waypoint-access-logs
+  namespace: kagent
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: kagent-waypoint
+  accessLogging:
+    - providers:
+        - name: envoy

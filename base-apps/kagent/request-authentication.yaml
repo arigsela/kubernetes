@@ -28,10 +28,13 @@ spec:
         - header: x-user-id
           claim: email
     - issuer: https://kubernetes.default.svc.cluster.local
-      # istiod fetches this with the API server's CA. If the istiod log says
-      # "Jwks remote fetch is failed" for this issuer, replace jwksUri with an inline `jwks:`
-      # from `kubectl get --raw /openid/v1/jwks` (public keys; safe in git) and note it in SPEC.
-      jwksUri: https://kubernetes.default.svc/openid/v1/jwks
+      # INLINE on purpose (2026-10-13): istiod cannot fetch https://kubernetes.default.svc/openid/v1/jwks
+      # ("x509: certificate signed by unknown authority": the API server's CA is not in istiod's
+      # trust store). These are the PUBLIC keys of the service account issuer, safe in git.
+      # They change only when k3s rotates its service-account signing key: refresh with
+      #   kubectl get --raw /openid/v1/jwks
+      # (runbook "Agents unreachable after an identity change"; tests/identity checks the shape).
+      jwks: '{"keys":[{"use":"sig","kty":"RSA","kid":"BBNzB3N5yJuPKQs3OHZwaoUun7YR66d0OdoSgXsIwzg","alg":"RS256","n":"wcgYlH31ADlLEonXo1Hga-ZjBK7sg3bFgcuFrTblCKFp3QuIt0N_ew4UWnzZcigQ7Xav4XHFgLnWUDFoMNqPkI0eqrH8r0rJCbsDR9N5yHPLcJUXsZo8sQln41_uDCEq1sc7rbdZWIpb-S7Jl07_V9tlu0RIKtS10NjeOsHFf1W9aM4kysR0DXuRQDxoL_5gTTwgPNlUwWMkWL0JN--etn4Qj2Q0QPGQZA_cwV6xDJBoRU_RoZIEzqFUfbwDkpGglLajlwiKiw2o-qEwVKLXgSXEweAvgeR3uURCCjzg4bkEQKeCMAvnH7b03MSnQVi1BTrjFR7uRVHhYTOpd-Td-Q","e":"AQAB"}]}'
       audiences: ["kagent"]
       forwardOriginalToken: true
       outputClaimToHeaders:
