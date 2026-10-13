@@ -95,6 +95,7 @@ git checkout -b feature/my-feature
 ### Deployment Patterns
 - Applications use `syncPolicy.automated` with `prune` and `selfHeal`
 - Namespaces are auto-created with `CreateNamespace=true`
+- An agent-definition change (`base-apps/kagent/agent-templates/`, `agents/`, `harnesses/`, `model-configs/`) is scored after it syncs: the `eval-gate` PostSync Job posts `eval/<agent>` on the merged commit and alerts on regression. Read that status before the next agent change (`base-apps/kagent/docs.md`, "Evaluation gate")
 - Each application manages its own SecretStore configuration
 - Image versions are pinned in the manifests; an image update is a Git commit. Renovate (`renovate.json5`, weekly) opens those PRs for upstream images, charts, Actions and Crossplane packages; it never merges (`docs/platform/renovate.md`)
 

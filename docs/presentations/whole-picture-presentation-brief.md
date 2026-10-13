@@ -154,7 +154,7 @@ left spanning all three layers.
 |---|---|---|---|
 | **Layer 1 · Tooling** (bottom) | The internal developer platform you need anyway: delivery, resources, security, observability, a portal. Unchanged by agents. | GitOps, infrastructure as code, a secrets vault, an edge with allow-list and firewall, admission policy, databases with drills, metrics/logs/traces, a developer portal. 59 applications. | BUILT |
 | **Layer 2 · Path definitions** (middle) | How work moves through the tooling: **deterministic** paths (same input, same output), **probabilistic** paths (an agent reasons and acts), and **hybrid** paths that chain the two. | Deterministic: the check wall and the deployment. Probabilistic: PR triage, the knowledge agent. Hybrid: an agent's change passing the gates with a human deciding. No path registry yet. | PARTIAL |
-| **Layer 3 · Agent infrastructure** (top) | New with agents. A **harness** (context, capabilities, execution, evaluation) and **governance** (non-human identity, security, agent-level observability). Universal across every kind of agent platform. | Agent definitions as manifests; a tool taxonomy and admission policy; sandboxed sessions; an audit record with a daily check; an evaluation corpus with a judge. Runtime is alpha. | BUILT (evaluation PARTIAL) |
+| **Layer 3 · Agent infrastructure** (top) | New with agents. A **harness** (context, capabilities, execution, evaluation) and **governance** (non-human identity, security, agent-level observability). Universal across every kind of agent platform. | Agent definitions as manifests; a tool taxonomy and admission policy; sandboxed sessions; an audit record with a daily check; an evaluation corpus with a judge. Runtime is alpha. | BUILT (evaluation thin) |
 | **As code** (left band) | Prompts, paths, skills and model configuration are code: versioned, reviewed, auditable, like everything else. | One repository holds all of it; every change is a pull request through the same triage and checks. | BUILT |
 
 **Footer right:** "Two things added; nothing removed".
@@ -245,13 +245,14 @@ tooling gap.
    sandbox that suspends to a snapshot between turns and resumes anywhere; the API key never
    enters it; idle sessions are deleted after 30 days. — *In the reference: kagent 1.0 on Agent
    Substrate, gVisor actors, two shared workers.*
-4. **Evaluation** — PARTIAL. *Was the work right?* A corpus of golden questions mined from the
+4. **Evaluation** — BUILT (thin). *Was the work right?* A corpus of golden questions mined from the
    agents' real history (eight so far, each answer verified against repo facts), scored by rules
-   first, a small classifier second, a frontier model only when unsure. It runs on demand; nothing
-   scores an agent automatically when its model or prompt changes. — *In the reference: the
-   eval corpus and the cascade judge; the regression gate is open work.*
+   first, a small classifier second, a frontier model only when unsure. Since 2026-10-13 it runs
+   automatically after any deploy that changed an agent's definition: a commit status on the
+   change and an alert on regression. One agent has a corpus. — *In the reference: the eval
+   corpus, the cascade judge, the post-sync gate.*
 
-**Footer right:** "Three built, one still a tool".
+**Footer right:** "Four built; evaluation is the thinnest".
 
 **Speaker note:** The model says evaluation is where the industry struggles most. The reference
 agrees from experience: it is the thinnest layer, and the corpus is eight questions. Say the
@@ -488,7 +489,7 @@ track, a small "what a new agent or path reuses" checklist panel.
 
 | # | Piece | Fills | Why now, why this order |
 |---|---|---|---|
-| 1 | **Evaluation as a gate** — score the knowledge agent against the corpus on every model or prompt change, in CI; grow the corpus from real history | harness · evaluation (PARTIAL → BUILT) | Cheapest; everything else below changes agent behaviour and needs a regression signal first. The corpus mining and the judge exist. |
+| 1 | **Evaluation as a gate** — score the knowledge agent against the corpus after every deploy that changed it; grow the corpus from real history | harness · evaluation (BUILT 2026-10-13, post-deploy) | Done as a post-sync gate (a status on the change, an alert on regression); pre-merge would need an in-cluster runner. Still thin: one agent, eight questions. |
 | 2 | **Callers as principals** — authenticate the gateway's callers, one identity per person and per automation, in front of the shared one | governance · identity (gap → closed) | Required before any door is offered to more than one person; sessions already carry a caller identity, so the record can be read per person once callers are real. |
 | 3 | **A dispatcher** — a declared table from signal to recipient (an agent, a human, nobody), applied by a service | path 1 · dispatch (BUILT 2026-10-12) | Done, read-only as planned: an alert opens an agent *investigation*, never a change, and the policy-merged promotion class landed beside it (2026-10-13). Still to route: failing checks, issues, triage labels. |
 | 4 | **Implement inside the platform** — a sandbox template so an in-cluster agent can run checks and open a pull request under its own identity, through the same triage, checks and promotion policy | path 3 · implement (PARTIAL → BUILT) | Needs 2 (its own identity); 3 is in place to hand it work. The pull request path is unchanged; the only new thing is who opens it. |
