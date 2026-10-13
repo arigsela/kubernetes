@@ -33,7 +33,7 @@ Each suite has its own conftest; `pytest tests/` as a whole is not what CI runs.
 
 | Suite | Extra needs |
 |---|---|
-| `agent-docs`, `catalog-refs`, `waf`, `techdocs`, `dashboards`, `resize`, `models`, `wan_ip`, `istio_logging`, `cve_report`, `okf`, `agent-identity`, `agent-capability`, `agent-audit`, `eval-corpus`, `eval_gate`, `appset` | none |
+| `agent-docs`, `catalog-refs`, `waf`, `techdocs`, `dashboards`, `resize`, `models`, `wan_ip`, `istio_logging`, `cve_report`, `okf`, `agent-identity`, `agent-capability`, `agent-audit`, `eval-corpus`, `eval_gate`, `identity`, `appset` | none |
 | `new-app-template` | `jinja2==3.1.4`, `yamllint==1.35.1`, kubeconform v0.6.7 |
 | `admission-policies` | Docker (boots a real k3s and server-side dry-runs the fixtures) |
 | `ansible` | Docker; `ansible-core==2.21.4 ansible-lint==26.9.0 kubernetes==36.0.3`, then `ansible-galaxy collection install -r ansible/requirements.yml` |

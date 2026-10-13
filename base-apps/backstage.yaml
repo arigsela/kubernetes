@@ -24,3 +24,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+    # Backstage calls the kagent controller; in the mesh its calls carry its workload principal
+    # (ztunnel mTLS) and traverse the kagent waypoint (V91).
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
