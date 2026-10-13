@@ -209,6 +209,19 @@ Start a new conversation after an AgentTemplate change (a Session is pinned to t
 was created from) and after 30 idle days (`sessionIdleTTL: 720h` in `base-apps/kagent.yaml`;
 the Session is deleted, memory is kept).
 
+### Read, re-run or reset the evaluation gate
+`kubectl -n kagent logs job/eval-gate` shows the last run: one `eval-gate` line per agent with
+`passed`, `total`, `judge`, `regression`, `failed` (corpus ids) and `revision`, or `skipped:
+unchanged`. Re-run it by syncing the app (`argocd app sync kagent-secrets`, or any merge touching
+`base-apps/kagent/`); it only scores agents whose definition hash changed, so to force a score
+reset the state: read it with `kubectl -n kagent get cm eval-gate-state -o
+jsonpath='{.data.state\.json}'`, then delete the ConfigMap (`kubectl -n kagent delete cm
+eval-gate-state`; it is the job's own scratch, not a Git-managed object): the next run recreates
+it and sets a fresh baseline, stated as `first_run: true`. The `memory` question expects state saved earlier
+by the gate's own identity: `scripts/ask-hk --as-serviceaccount kagent/eval-gate "My favorite color
+is octarine. Please save that."` once, then re-run. `judge: none` means no API key in Secret
+`eval-gate`: run `scripts/provision-eval-gate-vault.sh` (owner), then add the ExternalSecret.
+
 ### Approve or reject a gated tool call from the CLI
 `ask-hk` requests kagent's HITL A2A extension on every message, so a `requireApproval` pause
 comes back with a request id. On exit 2 it prints the pending call(s) and remembers them per

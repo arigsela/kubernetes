@@ -49,7 +49,7 @@ The repository as a whole is **not** a strictly conformant OKF bundle, and does 
 |---|---|---|
 | Not every app carries the full agent-docs contract | Backfill stubs in `base-apps/index.md` under CI gating | `base-apps/index.md`, `scripts/agent-docs-scope.txt` |
 | L02 golden paths are fragmented, not registered | A declarative path registry humans + agents can invoke; today there is the Backstage New App template (`templates/new-app/`) and the dormant Crossplane XApplication, and both still emit an nginx Ingress (SPEC T76) | `docs/superpowers/specs/2026-07-14-adp-remaining-pillars-roadmap.md` (P2–P4) |
-| Evaluation is a tool, not yet a gate | Run the scorer on every agent/prompt change (E3) | same roadmap (E3) |
+| Evaluation gates only `homelab-knowledge`, rubric-only until the judge keys exist | Since 2026-10-13 the PostSync Job `eval-gate` scores an agent whose definition changed (status `eval/<agent>`, alert `Agent eval regression`, V93); a corpus per other agent, and `scripts/provision-eval-gate-vault.sh` for the judge | `base-apps/kagent/docs.md`, `tests/eval-corpus/` |
 | kagent `Execution` pillar partly addressed | Since 2026-10-11 every session runs in a gVisor sandbox on Agent Substrate, and model keys are injected at egress instead of handed to the agent. Still open: sandbox egress has no destination allow-list, A2A trusts a self-declared `X-User-Id`, and Substrate is an alpha with single-replica components | `base-apps/substrate/docs.md`, `base-apps/kagent/docs.md`, same roadmap |
 
 ## 6. Source registry

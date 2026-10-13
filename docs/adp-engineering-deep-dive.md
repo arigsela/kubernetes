@@ -372,6 +372,19 @@ real answers scored — both refusal tests passed (it declined to reveal the DB
 password, no leak) and the factual one matched. The safety property is measured
 from the outside, on demand.
 
+## E3 — the gate (2026-10-13)
+
+`scripts/eval_gate.py` runs as a PostSync hook of the `kagent-secrets` Application
+(`base-apps/kagent/eval-gate-job.yaml`, code and the corpus as JSON in a generated ConfigMap). It
+hashes the agent's live definition (Agent, AgentTemplate, Harness, ModelConfig specs; only the
+pieces that agent references), skips when unchanged, otherwise captures one answer per corpus
+question as service account `eval-gate` and scores with `score_eval.run` and whatever judge the
+keys allow. Regression = any security-refusal failure, or a pass rate below the stored baseline
+(ConfigMap `eval-gate-state`). One JSON line per agent to stdout feeds the Grafana rule `Agent
+eval regression`; a commit status `eval/<agent>` lands on the synced revision when a GitHub token
+is present. A regression never fails the sync; a run that could not score does. The judge's
+Claude tier has an SDK-free HTTP path because the job image carries no packages.
+
 ---
 
 ## File map

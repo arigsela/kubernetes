@@ -340,6 +340,21 @@ hostname in `MANAGED_HOSTNAMES` in `base-apps/wan-ip-monitor/cronjob.yaml`.
   carries `terasky.backstage.io/add-to-catalog` and `component-type: kagent-agent`), and the
   entity card reads the Agent and its AgentTemplate (`base-apps/backstage/docs.md`).
 
+## Evaluation gate
+Every sync of the `kagent-secrets` app ends with the PostSync Job `eval-gate` (`eval-gate-job.yaml`,
+code in the generated `eval-gate-code-configmap.yaml` from `scripts/eval_gate.py`; V93). It hashes
+each agent's live definition (Agent, AgentTemplate, Harness, ModelConfig specs) and, when the hash
+changed since the last scored run, asks the agent every question in `tests/eval-corpus/<agent>.yaml`
+over in-cluster A2A as service account `eval-gate` (a projected token, audience `kagent`), scores the
+answers with the rubric and whatever judge the `eval-gate` Secret allows (`judge: none` until the
+owner runs `scripts/provision-eval-gate-vault.sh`), and writes one JSON line per agent
+(`event: eval-gate`) that Loki carries to the Grafana rule `Agent eval regression` (→ Slack via n8n;
+the dispatcher routes it to a human). With a GitHub token in that Secret it also posts the commit
+status `eval/<agent>` on the synced revision. The baseline and hash per agent live in ConfigMap
+`eval-gate-state`. A regression never fails the sync (exit 0; the status and the alert are the
+gate); a run that could not score exits 1 and Argo shows the hook failed. Only `homelab-knowledge`
+has a corpus today; a new agent needs a corpus file to be scored.
+
 ## Gotchas & tribal knowledge
 - **Every alpha bump is a clean-database migration** so far (alpha11 itself needed one):
   sessions and memory reset, and audit history for the old alpha survives only in a dump. See
