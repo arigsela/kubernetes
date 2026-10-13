@@ -7,8 +7,10 @@ it describes, and the eight core paths it says an organisation has to nail. The 
 decks each took one slice (the governance that makes agents safe to run; agents changing the
 platform; agents consumed through many doors). This one is the map they sit on, with an honest
 score per piece and the order of what gets built next. It is written for an agent that will
-turn it into infographics, in the same form as `adp-concept-presentation-brief.md`,
-`dev-workflow-presentation-brief.md` and `agents-as-a-service-presentation-brief.md`. Every
+turn it into infographics (the rendering built from it is `whole-picture-infographics.pdf`
+beside it, with `whole-picture-speaker-notes.md`, 2026-10-13), in the same form as
+`adp-concept-presentation-brief.md`, `dev-workflow-presentation-brief.md` and
+`agents-as-a-service-presentation-brief.md`. Every
 screen gives: the message, the exact copy, the visual to draw, and speaker notes. Data
 provenance is at the end.
 
