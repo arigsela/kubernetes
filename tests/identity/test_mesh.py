@@ -141,7 +141,9 @@ def test_waypoint_route_refuses_user_id_query():
     assert route["spec"]["parentRefs"][0] == {"group": "", "kind": "Service", "name": "kagent-controller"}
     first = route["spec"]["rules"][0]
     assert first["matches"][0]["queryParams"] == [{"type": "RegularExpression", "name": "user_id", "value": ".*"}]
-    assert first["backendRefs"][0]["name"] == "refused"      # no such Service: a 5xx, never the controller
+    assert first["backendRefs"][0]["name"] == "refused"      # a Service with no endpoints: 503, never the controller
+    svc = one("base-apps/kagent/refused-service.yaml", "Service", "refused")
+    assert "selector" not in svc["spec"], "no endpoints, ever: the route must resolve but nothing may answer"
     assert route["spec"]["rules"][-1]["backendRefs"][0]["name"] == "kagent-controller"
 
 
