@@ -29,6 +29,12 @@ spec:
         - path:
             type: PathPrefix
             value: /
+      filters:
+        # A browser user on the allow-list cannot smuggle an identity through the UI's nginx
+        # (V91): the UI is one identity, the controller default, and that is decided here.
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: ["X-User-Id", "X-Agent-Name", "Authorization"]
       backendRefs:
         - name: kagent-ui
           port: 8080
