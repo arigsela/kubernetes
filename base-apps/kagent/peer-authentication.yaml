@@ -1,12 +1,22 @@
 # base-apps/kagent/peer-authentication.yaml
-# Nothing outside the mesh talks to anything in `kagent` (V91): plaintext from an unenrolled
-# namespace is refused by ztunnel, so the only way to the controller is through the waypoint.
+# Plaintext never reaches the CONTROLLER (V91): every caller must come over the mesh (HBONE
+# from a captured namespace, or the ingress Gateway through the waypoint), so the only way in
+# is through the waypoint's policies. Scoped to the controller pods, not the namespace: the
+# Substrate workers in this namespace are driven by ate-system (atelet, atenet), which is not
+# in the mesh, and a namespace-wide STRICT would cut the runtime off from its own control
+# plane. If a sub-agent hand-off stops working after this lands, the actor's call to the
+# controller is arriving in plaintext from atenet: remove this object (the waypoint policy and
+# the NetworkPolicy still stand) and record it in SPEC.
 ---
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication
 metadata:
-  name: default
+  name: kagent-controller
   namespace: kagent
 spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kagent
+      app.kubernetes.io/component: controller
   mtls:
     mode: STRICT

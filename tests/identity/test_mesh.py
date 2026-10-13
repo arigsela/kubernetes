@@ -98,9 +98,11 @@ def test_backstage_exception_is_dated():
         assert "EXCEPTION until" in text and "arigsela/backstage" in text
 
 
-def test_peer_authentication_is_strict():
-    pa = one("base-apps/kagent/peer-authentication.yaml", "PeerAuthentication", "default")
-    assert pa["spec"]["mtls"]["mode"] == "STRICT" and "selector" not in pa["spec"]
+def test_peer_authentication_is_strict_on_the_controller_only():
+    pa = one("base-apps/kagent/peer-authentication.yaml", "PeerAuthentication", "kagent-controller")
+    assert pa["spec"]["mtls"]["mode"] == "STRICT"
+    assert pa["spec"]["selector"]["matchLabels"] == {"app.kubernetes.io/name": "kagent",
+                                                     "app.kubernetes.io/component": "controller"}
 
 
 def test_network_policy_limits_controller_ingress():
@@ -108,7 +110,7 @@ def test_network_policy_limits_controller_ingress():
     assert np["spec"]["podSelector"]["matchLabels"] == {"app.kubernetes.io/name": "kagent", "app.kubernetes.io/component": "controller"}
     allowed = {p["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
                for rule in np["spec"]["ingress"] for p in rule["from"]}
-    assert allowed == {"istio-ingress", "istio-system", "kagent", "dispatcher", "backstage"}
+    assert allowed == {"istio-ingress", "istio-system", "kagent", "dispatcher", "backstage", "ate-system"}
 
 
 def test_waypoint_route_refuses_user_id_query():
