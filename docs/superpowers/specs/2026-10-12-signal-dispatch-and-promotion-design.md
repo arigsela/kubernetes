@@ -228,6 +228,18 @@ human and never promoted automatically.
 Renovate's config does not change: `automerge` stays off in the bot. Promotion is the
 platform's policy, not the dependency bot's setting.
 
+### Amendment 2026-10-13: a second class, the owner's docs-only PRs
+The owner asked for docs-only pull requests to promote too, after the first class went live.
+A sibling policy section `auto_docs` admits a PR when the author is the owner, the label is
+`review:skip`, every changed file is `*.md` or under `docs/` (triage's `always_skip.paths`),
+at most 10 files, and none is under `.github/`, `.claude/`, `CLAUDE.md`, `AGENTS.md` or
+`templates/` (the files that steer the coding agent and the contracts it generates from). The
+common gates are unchanged; `decide()` evaluates the classes in order and logs the admitting
+`rule`, or every class's reasons. The loader refuses any class that does not deny `.github/`.
+Consequence stated plainly: the coding agent's docs PRs, opened under the owner's account,
+merge themselves once green until the agent has its own identity (path 3), at which point the
+class moves to that identity.
+
 ## Invariants (new §V rows)
 
 - **V86** Every Grafana alert reaches the human sink (n8n → Slack) by a path that does not

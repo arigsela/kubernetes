@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Promotion: merge the one declared class of pull request without a human (ADP path 5).
+"""Promotion: merge the declared classes of pull request without a human (ADP path 5).
 
     scripts/promote.py --repo arigsela/kubernetes --pr 123          # decide and, if auto, merge
     scripts/promote.py --repo arigsela/kubernetes --pr 123 --dry-run
@@ -32,6 +32,10 @@ OK_CONCLUSIONS = {"success", "skipped", "neutral"}
 
 class PolicyError(ValueError):
     pass
+
+
+# The classes that merge without a human, in evaluation order: policy section -> rule name.
+CLASS_SECTIONS = {"auto": "renovate-bump", "auto_docs": "docs-only"}
 
 
 # ------------------------------------------------------------------ the policy
@@ -93,13 +97,21 @@ def load_policy(text: str) -> dict:
     auto = policy.get("auto")
     if not isinstance(auto, dict):
         raise PolicyError("auto section is required")
-    for key in ("authors", "require_labels", "deny_prefixes"):
-        if not isinstance(auto.get(key), list) or not auto[key]:
-            raise PolicyError(f"auto.{key} must be a non-empty list")
     if auto.get("merge_method") != "rebase":
         raise PolicyError("auto.merge_method must be rebase (the main ruleset allows nothing else)")
-    if not isinstance(auto.get("max_changed_files"), int) or auto["max_changed_files"] < 1:
-        raise PolicyError("auto.max_changed_files must be a positive integer")
+    for name in CLASS_SECTIONS:
+        section = policy.get(name)
+        if section is None and name != "auto":
+            continue                                  # the docs class is optional
+        if not isinstance(section, dict):
+            raise PolicyError(f"{name} must be a section")
+        for key in ("authors", "require_labels", "deny_prefixes"):
+            if not isinstance(section.get(key), list) or not section[key]:
+                raise PolicyError(f"{name}.{key} must be a non-empty list")
+        if not isinstance(section.get("max_changed_files"), int) or section["max_changed_files"] < 1:
+            raise PolicyError(f"{name}.max_changed_files must be a positive integer")
+        if not any(".github/".startswith(d) for d in section["deny_prefixes"]):
+            raise PolicyError(f"{name}.deny_prefixes must cover .github/ (the workflows and this policy)")
     policy.setdefault("owner", {})
     return policy
 # ------------------------------------------------------------------ the decision
@@ -109,6 +121,12 @@ class Decision:
     klass: str                       # "auto" or "owner"
     reasons: list[str] = field(default_factory=list)
     head_sha: str = ""
+    rule: str | None = None          # which class admitted an "auto" (renovate-bump / docs-only)
+
+
+def is_docs(name: str) -> bool:
+    """triage's always_skip.paths: `docs/**` or `**/*.md`."""
+    return name.endswith(".md") or name.startswith("docs/")
 
 
 SKIP_LINE = re.compile(r"^[+-]\s*(-\s+)?(image|tag):\s")   # a changed image:/tag: value line
@@ -126,7 +144,7 @@ def skip_shaped(files: list[dict]) -> list[str]:
     changed = 0
     for f in files:
         name = f.get("filename") or ""
-        if name.endswith(".md") or name.startswith("docs/"):
+        if is_docs(name):
             continue
         patch = f.get("patch")
         if not isinstance(patch, str):
@@ -143,10 +161,39 @@ def skip_shaped(files: list[dict]) -> list[str]:
     return reasons
 
 
+def docs_only(files: list[dict]) -> list[str]:
+    """Reasons the diff is NOT documentation only (empty = every file is docs)."""
+    return [f"{f.get('filename')}: not docs" for f in files if not is_docs(f.get("filename") or "")]
+
+
+SHAPES = {"renovate-bump": skip_shaped, "docs-only": docs_only}
+
+
+def _class_reasons(rule: str, section: dict, pr: dict, files: list[dict]) -> list[str]:
+    """The conditions one class adds on top of the common ones."""
+    reasons: list[str] = []
+    author = (pr.get("user") or {}).get("login")
+    if author not in section["authors"]:
+        reasons.append(f"author {author!r} is not in {rule} authors")
+    labels = {lab.get("name") for lab in (pr.get("labels") or [])}
+    for need in section["require_labels"]:
+        if need not in labels:
+            reasons.append(f"label {need} missing")
+    names = [f.get("filename") or "" for f in files]
+    if len(names) > section["max_changed_files"]:
+        reasons.append(f"{len(names)} changed files > max {section['max_changed_files']}")
+    for name in names:
+        hit = next((p for p in section["deny_prefixes"] if name.startswith(p)), None)
+        if hit:
+            reasons.append(f"{name} is under deny prefix {hit}")
+    reasons += SHAPES[rule](files)
+    return reasons
+
+
 def decide(pr: dict, files: list[dict], check_runs: list[dict], policy: dict,
            statuses: list[dict] | None = None) -> Decision:
-    """`auto` only when every condition holds; otherwise `owner` with every failed one listed."""
-    auto = policy["auto"]
+    """`auto` when every common condition holds and at least one class admits the PR;
+    otherwise `owner` with every failed condition listed, per class."""
     reasons: list[str] = []
     head_sha = ((pr.get("head") or {}).get("sha")) or ""
     if pr.get("state") != "open" or pr.get("merged"):
@@ -159,21 +206,6 @@ def decide(pr: dict, files: list[dict], check_runs: list[dict], policy: dict,
     base_repo = ((pr.get("base") or {}).get("repo") or {}).get("full_name")
     if not head_repo or head_repo != base_repo:
         reasons.append("head is a fork")
-    author = (pr.get("user") or {}).get("login")
-    if author not in auto["authors"]:
-        reasons.append(f"author {author!r} is not in auto.authors")
-    labels = {lab.get("name") for lab in (pr.get("labels") or [])}
-    for need in auto["require_labels"]:
-        if need not in labels:
-            reasons.append(f"label {need} missing")
-    names = [f.get("filename") or "" for f in files]
-    if len(names) > auto["max_changed_files"]:
-        reasons.append(f"{len(names)} changed files > max {auto['max_changed_files']}")
-    for name in names:
-        hit = next((p for p in auto["deny_prefixes"] if name.startswith(p)), None)
-        if hit:
-            reasons.append(f"{name} is under deny prefix {hit}")
-    reasons += skip_shaped(files)
     if not check_runs:
         reasons.append("no check runs on the head commit")
     pending = [c.get("name") for c in check_runs if c.get("status") != "completed"]
@@ -190,7 +222,14 @@ def decide(pr: dict, files: list[dict], check_runs: list[dict], policy: dict,
         if state != "success":
             reasons.append(f"status {status.get('context')} is {state or 'unknown'}"
                            + (" (pending)" if state == "pending" else ""))
-    return Decision("auto" if not reasons else "owner", reasons, head_sha)
+    per_class = {rule: _class_reasons(rule, policy[section], pr, files)
+                 for section, rule in CLASS_SECTIONS.items() if section in policy}
+    admitted = next((rule for rule, why in per_class.items() if not why), None)
+    if not reasons and admitted:
+        return Decision("auto", [], head_sha, admitted)
+    for rule, why in per_class.items():
+        reasons += [f"{rule}: {r}" for r in why]
+    return Decision("owner", reasons, head_sha)
 # ------------------------------------------------------------------ github
 
 def http_transport(method: str, url: str, headers: dict, body: bytes | None):
@@ -290,19 +329,22 @@ def run(repo: str, number: int, token: str, *, dry_run: bool = False, transport=
     runs = gh.get(f"/repos/{repo}/commits/{head_sha}/check-runs?per_page=100").get("check_runs") or []
     statuses = gh.get(f"/repos/{repo}/commits/{head_sha}/status").get("statuses") or []
     decision = decide(pr, files, runs, policy, statuses)
-    log({"event": "promotion", "pr": number, "class": decision.klass, "reasons": decision.reasons,
-         "head": head_sha, "policy_at": base_ref, "dry_run": dry_run})
+    log({"event": "promotion", "pr": number, "class": decision.klass, "rule": decision.rule,
+         "reasons": decision.reasons, "head": head_sha, "policy_at": base_ref, "dry_run": dry_run})
     if decision.klass != "auto" or dry_run:
         return 0
     result = merge(gh, number, decision.head_sha, policy["auto"]["merge_method"])
     checks_line = ", ".join(sorted(str(r.get("name")) for r in runs)
                             + sorted(str(s.get("context")) for s in statuses))
+    section = next(s for s, r in CLASS_SECTIONS.items() if r == decision.rule)
+    shape = ("every file documentation (`*.md` or `docs/`)" if decision.rule == "docs-only"
+             else "shaped like a docs-only or image-tag-bump change")
     upsert_comment(gh, number, (
-        f"{COMMENT_MARKER}\n### promotion: auto\n"
+        f"{COMMENT_MARKER}\n### promotion: auto ({decision.rule})\n"
         f"Merged by the promotion policy ({policy['auto']['merge_method']}, head `{head_sha[:12]}`), "
         f"policy read at `{base_ref}`.\n"
-        f"**Why:** author in `auto.authors`, label(s) {', '.join(policy['auto']['require_labels'])} present, "
-        f"{len(files)} file(s) outside every deny prefix and shaped like a docs-only or image-tag-bump change, "
+        f"**Why:** author in `{section}.authors`, label(s) {', '.join(policy[section]['require_labels'])} present, "
+        f"{len(files)} file(s) outside every deny prefix and {shape}, "
         f"every check and status green.\n"
         f"<details><summary>Checks and statuses</summary>\n\n{checks_line}\n</details>\n"
         f"<sub>scripts/promote.py · .github/promotion-policy.yaml</sub>"))

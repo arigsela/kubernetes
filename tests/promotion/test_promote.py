@@ -1,5 +1,5 @@
 # tests/promotion/test_promote.py
-"""scripts/promote.py: the one class of PR that merges without a human, decided from the base commit."""
+"""scripts/promote.py: the two classes of PR that merge without a human, decided from the policy at main."""
 from pathlib import Path
 import importlib.util
 import json
@@ -29,7 +29,7 @@ def test_repo_policy_loads_and_denies_the_dangerous_prefixes():
 
 def policy_text(**auto):
     """A block-style policy (the only YAML shape promote.py's parser accepts) with overrides."""
-    fields = {"authors": "[b]", "require_labels": "[x]", "deny_prefixes": "[a]",
+    fields = {"authors": "[b]", "require_labels": "[x]", "deny_prefixes": "[.github/]",
               "max_changed_files": "1", "merge_method": "rebase"}
     fields.update(auto)
     return "version: 1\nauto:\n" + "".join(f"  {k}: {v}\n" for k, v in fields.items())
@@ -48,9 +48,9 @@ def test_load_policy_rejects_bad_policies(text, message):
 
 
 def test_parser_reads_block_lists_and_ignores_comments():
-    text = "version: 1  # the schema\nauto:\n  authors: [b]\n  require_labels: [x]\n  deny_prefixes:\n    - a/   # first\n    - b\n  max_changed_files: 1\n  merge_method: rebase\nowner:\n  approvers: [me]\n"
+    text = "version: 1  # the schema\nauto:\n  authors: [b]\n  require_labels: [x]\n  deny_prefixes:\n    - .github/   # first\n    - b\n  max_changed_files: 1\n  merge_method: rebase\nowner:\n  approvers: [me]\n"
     policy = pm.load_policy(text)
-    assert policy["auto"]["deny_prefixes"] == ["a/", "b"]
+    assert policy["auto"]["deny_prefixes"] == [".github/", "b"]
     assert policy["owner"]["approvers"] == ["me"]
 # ---------------------------------------------------------------- decide
 
@@ -105,7 +105,7 @@ def test_failed_or_absent_checks_are_owner():
 
 
 @pytest.mark.parametrize("over, reason", [
-    ({"user": {"login": "arigsela"}}, "author"),
+    ({"user": {"login": "someone-else"}}, "author"),
     ({"labels": [{"name": "renovate"}, {"name": "review:skim"}]}, "label"),
     ({"draft": True}, "draft"),
     ({"state": "closed"}, "not open"),
@@ -294,3 +294,79 @@ def test_mergeable_still_null_after_retries_is_owner():
     fake = SequencedGitHub(answers)
     assert pm.run("arigsela/kubernetes", 760, "tok", transport=fake, sleep=lambda s: None) == 0
     assert all(c[0] == "GET" for c in fake.calls)
+# ---------------------------------------------------------------- the docs-only class (2026-10-13)
+
+def owner_pr(**over):
+    base = {"user": {"login": "arigsela"}, "labels": [{"name": "review:skip"}]}
+    base.update(over)
+    return pr(**base)
+
+
+def test_repo_policy_has_the_owner_docs_class_and_denies_the_instruction_files():
+    p = policy()
+    docs = p["auto_docs"]
+    assert docs["authors"] == ["arigsela"] and docs["require_labels"] == ["review:skip"]
+    for must in (".github/", "CLAUDE.md", "AGENTS.md", ".claude/"):
+        assert any(must.startswith(d) or d.startswith(must) for d in docs["deny_prefixes"]), must
+
+
+def test_load_policy_requires_every_class_to_deny_the_workflows_dir():
+    text = policy_text(deny_prefixes="[.github/]") + "auto_docs:\n  authors: [o]\n  require_labels: [x]\n  deny_prefixes: [CLAUDE.md]\n  max_changed_files: 5\n"
+    with pytest.raises(pm.PolicyError, match=r"auto_docs.*\.github/"):
+        pm.load_policy(text)
+    text = policy_text(deny_prefixes="[x/]")
+    with pytest.raises(pm.PolicyError, match=r"auto.*\.github/"):
+        pm.load_policy(text)
+
+
+def test_owner_docs_only_skip_green_is_auto():
+    d = pm.decide(owner_pr(), files("README.md", "docs/platform/promotion.md", "index.md"),
+                  checks("success", "skipped"), policy())
+    assert d.klass == "auto" and d.reasons == [] and d.rule == "docs-only"
+
+
+def test_renovate_bump_still_reports_its_rule():
+    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy())
+    assert d.klass == "auto" and d.rule == "renovate-bump"
+
+
+@pytest.mark.parametrize("name", ["CLAUDE.md", "AGENTS.md", ".github/README.md", ".claude/skills/x.md"])
+def test_owner_docs_class_never_merges_the_instruction_files(name):
+    d = pm.decide(owner_pr(), files(name), checks("success"), policy())
+    assert d.klass == "owner" and any("deny" in r for r in d.reasons), d.reasons
+
+
+def test_owner_docs_class_rejects_a_non_docs_file():
+    d = pm.decide(owner_pr(), files("README.md", "base-apps/donetick/deployment.yaml"),
+                  checks("success"), policy())
+    assert d.klass == "owner" and any("not docs" in r for r in d.reasons), d.reasons
+
+
+def test_owner_docs_class_has_its_own_file_limit():
+    many = files(*[f"docs/n{i}.md" for i in range(11)])
+    d = pm.decide(owner_pr(), many, checks("success"), policy())
+    assert d.klass == "owner" and any("files" in r for r in d.reasons)
+    ten = files(*[f"docs/n{i}.md" for i in range(10)])
+    assert pm.decide(owner_pr(), ten, checks("success"), policy()).klass == "auto"
+
+
+def test_owner_docs_class_needs_the_skip_label_and_green_checks():
+    d = pm.decide(owner_pr(labels=[{"name": "review:skim"}]), files("README.md"), checks("success"), policy())
+    assert d.klass == "owner" and any("label" in r for r in d.reasons)
+    d = pm.decide(owner_pr(), files("README.md"), checks("success", "failure"), policy())
+    assert d.klass == "owner"
+
+
+def test_third_party_author_is_owner_and_both_classes_say_why():
+    d = pm.decide(pr(user={"login": "someone"}), files("README.md"), checks("success"), policy())
+    assert d.klass == "owner"
+    assert any(r.startswith("renovate-bump:") and "author" in r for r in d.reasons), d.reasons
+    assert any(r.startswith("docs-only:") and "author" in r for r in d.reasons), d.reasons
+
+
+def test_run_auto_docs_merges_and_the_comment_names_the_class():
+    fake = FakeGitHub(answers_for(owner_pr(), files("README.md", "docs/index.md"), checks("success")))
+    assert pm.run("arigsela/kubernetes", 760, "tok", transport=fake) == 0
+    assert any(c[0] == "PUT" for c in fake.calls)
+    comment = next(c for c in fake.calls if c[0] == "POST")
+    assert "docs-only" in comment[2]["body"]

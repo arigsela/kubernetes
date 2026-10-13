@@ -3,21 +3,36 @@
 What merges without a human, and why that list is short. Spec:
 `docs/superpowers/specs/2026-10-12-signal-dispatch-and-promotion-design.md`.
 
-## The one automatic class
-A pull request merges by itself when **all** of these hold (`scripts/promote.py`, policy
-`.github/promotion-policy.yaml`):
-- opened by the Renovate app (`arigsela-renovate[bot]`), from this repository, not a draft;
+## The two automatic classes
+A pull request merges by itself when it is open, not a draft, from this repository, GitHub
+reports it mergeable, every check run on the head commit completed green or skipped with none
+pending, every commit status is `success`, and **one** of the two classes below admits it
+(`scripts/promote.py`, policy `.github/promotion-policy.yaml`, read at the base ref `main`).
+Each run logs the class that admitted the PR as `rule`, or the reasons each class refused it.
+
+### `renovate-bump` (policy section `auto`)
+- opened by the Renovate app (`arigsela-renovate[bot]`);
 - labelled `review:skip` by triage, **and** shaped like triage's deterministic skip rule when
   re-derived from the diff: every file is docs, or only `image:`/`tag:` value lines changed, at
   most 4 changed lines in total (the classifier can also say `skip`; a model's verdict alone never
   promotes);
 - at most 2 changed files, none under a deny prefix (Terraform, `.github/`, appsets, Ansible,
   node-config, Vault, PostgreSQL, kagent, Substrate, admission policies, Istio, Dex,
-  cluster-rbac, the dispatcher, Crossplane packages, `renovate.json5`);
-- every check run on the head commit completed green or skipped, none pending, and every
-  commit status is `success` (Renovate's `renovate/stability-days` is a status, not a check);
-- the policy read at the PR's base **ref** (`main`) parsed. A PR cannot loosen its own
-  promotion, and a tightening applies to already-open PRs immediately.
+  cluster-rbac, the dispatcher, Crossplane packages, `renovate.json5`). Renovate's
+  `renovate/stability-days` is a commit status, not a check, and must be `success`.
+
+### `docs-only` (policy section `auto_docs`, added 2026-10-13)
+- opened by the owner (`arigsela`), which includes the pull requests the coding agent opens
+  under the owner's account;
+- labelled `review:skip`, and every changed file is documentation: `*.md` anywhere or anything
+  under `docs/` (triage's `always_skip.paths`);
+- at most 10 changed files, none under a deny prefix: `.github/`, `.claude/`, `CLAUDE.md`,
+  `AGENTS.md`, `templates/`. The instruction files and the contracts are documentation that
+  steers what the agent does next, so a human reads every change to them.
+
+The policy read at the PR's base **ref** (`main`) must parse, and every class must deny
+`.github/` or the loader refuses the file. A PR cannot loosen its own promotion, and a
+tightening applies to already-open PRs immediately.
 
 Everything else is `owner`: the triage label says how closely to read, and the owner merges.
 
@@ -46,5 +61,6 @@ which is the safe direction.
 
 ## Widening it later
 Candidates, each its own policy PR: `review:skim` Renovate PRs for non-stateful apps after
-a month of clean `auto` merges; docs-only PRs by the owner's coding agent once it has its own
-identity (path 3).
+a month of clean `auto` merges. The owner's docs-only class was widened on 2026-10-13 by the
+owner's decision, ahead of the coding agent having its own identity (path 3); when it does,
+move that class from the owner's login to the agent's.
