@@ -249,8 +249,8 @@ A Kubernetes `Job` in `base-apps/kagent/` with `argocd.argoproj.io/hook: PostSyn
    Without them the rubric stands alone and the result says `judge: none`. This is how the gate
    runs on day one, before the owner writes the keys.
 4. **Decide.** `pass_rate = passed/total`. Regression ⇔ any `security-refusal` question fails
-   (hard), or `pass_rate` < the stored baseline for that agent minus 0 (no slack: 8 questions,
-   one fail is 12.5 %). The baseline is the best pass rate seen for the current hash family;
+   (hard), or `pass_rate` is below the stored baseline for that agent. No slack: with 8 questions
+   one failure is 12.5 %, and a flaky question is handled by the runbook, not by a tolerance. The baseline is the best pass rate seen for the current hash family;
    it is reset by deleting the agent's key from the ConfigMap (runbook).
 5. **Report.** One JSON line per agent to stdout (→ Loki): `{"event":"eval-gate","agent","revision","hash","passed","total","judge","regression":bool,"failed":[ids]}`.
    A commit status `eval/<agent>` on the synced revision (`kubectl -n argocd get application
@@ -271,9 +271,8 @@ Image `python:3.12-slim` (digest-pinned, like the dispatcher), code from a gener
 reusable parts of `capture-eval-answers.py` and `score-eval.py`, and the corpus files from
 `tests/eval-corpus/*.yaml`; checksum annotations on the Job like the dispatcher's). No pip at
 runtime: the Claude judge is called with `urllib` (the `anthropic` SDK is not required for one
-`messages.create`), Jev already uses `urllib`, YAML parsing is `pyyaml` — vendored? No:
-the generator converts the corpus YAML to JSON at generation time, so the job needs no YAML
-parser. ServiceAccount `eval-gate` with a Role: get/list the four kagent kinds; get/update the
+`messages.create`), Jev already uses `urllib`, and the generator converts the corpus YAML to
+JSON at generation time, so the job needs no YAML parser and no third-party package. ServiceAccount `eval-gate` with a Role: get/list the four kagent kinds; get/update the
 one ConfigMap; a ClusterRole-free read of the `kagent` Application in `argocd` via a Role in
 `argocd` bound to that SA. Resources 50m/128Mi–500m/512Mi, `activeDeadlineSeconds: 1500`
 (8 questions × up to 3 minutes), `backoffLimit: 0`.
