@@ -1,0 +1,18 @@
+# base-apps/kagent/authorization-policy.yaml
+# OBSERVE MODE (Task 4 of docs/superpowers/plans/2026-10-13-callers-as-principals.md): one rule
+# that matches everything, so the policy exists, the waypoint logs every call with its source
+# principal and path, and nothing is refused yet. Task 6 replaces the rules with the real ones.
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: kagent-controller
+  namespace: kagent
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: kagent-waypoint
+  action: ALLOW
+  rules:
+    - {}

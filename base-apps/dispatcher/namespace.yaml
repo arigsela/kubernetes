@@ -6,3 +6,4 @@ metadata:
   name: dispatcher
   labels:
     app.kubernetes.io/part-of: agent-guardrails
+    istio.io/dataplane-mode: ambient   # in the mesh, so its calls reach the controller through the waypoint (V91)

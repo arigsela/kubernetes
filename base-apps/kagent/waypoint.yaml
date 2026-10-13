@@ -1,0 +1,22 @@
+# base-apps/kagent/waypoint.yaml
+# The L7 proxy every Service in `kagent` is fronted by (namespace label istio.io/use-waypoint
+# in base-apps/kagent-secrets.yaml). It is where callers of the controller are authenticated:
+# request-authentication.yaml verifies tokens, authorization-policy.yaml decides who may call
+# what. Spec: docs/superpowers/specs/2026-10-13-callers-as-principals-and-eval-gate-design.md.
+# One replica (Istio renders the Deployment); a dead waypoint makes the controller unreachable
+# from everything, including the UI, which is the safe direction. Revert the enrolment label
+# to bypass it in an emergency (runbook).
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: kagent-waypoint
+  namespace: kagent
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE

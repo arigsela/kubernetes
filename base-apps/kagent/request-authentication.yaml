@@ -1,0 +1,39 @@
+# base-apps/kagent/request-authentication.yaml
+# Who a caller is (V91, V92). Two issuers, nothing else:
+#   * Dex, client `kubernetes` (the token kubectl already caches with kubelogin): a human; the
+#     identity is the verified `email` claim.
+#   * the Kubernetes service account issuer, audience `kagent` (projected tokens, <= 1 h): an
+#     automation; the identity is `sub` = system:serviceaccount:<ns>:<name>.
+# The verified claim is WRITTEN into x-user-id, replacing anything the client sent, which is
+# what the controller (insecure mode) reads. A request with no token passes this object (it only
+# rejects invalid tokens) and is then refused by authorization-policy.yaml unless it comes from
+# the UI or the worker principal.
+---
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: kagent-callers
+  namespace: kagent
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: kagent-waypoint
+  jwtRules:
+    - issuer: https://dex.arigsela.com
+      jwksUri: https://dex.arigsela.com/keys
+      audiences: ["kubernetes"]
+      forwardOriginalToken: true
+      outputClaimToHeaders:
+        - header: x-user-id
+          claim: email
+    - issuer: https://kubernetes.default.svc.cluster.local
+      # istiod fetches this with the API server's CA. If the istiod log says
+      # "Jwks remote fetch is failed" for this issuer, replace jwksUri with an inline `jwks:`
+      # from `kubectl get --raw /openid/v1/jwks` (public keys; safe in git) and note it in SPEC.
+      jwksUri: https://kubernetes.default.svc/openid/v1/jwks
+      audiences: ["kagent"]
+      forwardOriginalToken: true
+      outputClaimToHeaders:
+        - header: x-user-id
+          claim: sub

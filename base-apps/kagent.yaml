@@ -44,6 +44,13 @@ spec:
             vectorEnabled: true
 
         controller:
+          # Callers as principals (V91): the mesh is the identity authority. The waypoint in
+          # base-apps/kagent/ verifies every caller's token and sets x-user-id from the claim;
+          # the controller reads that header, so `insecure` here is exact, not an omission.
+          # `trusted-proxy` would need every caller, the UI included, to carry a JWT: that is
+          # the UI-login follow-up (oauth2-proxy + Dex).
+          auth:
+            mode: insecure
           image:
             tag: "1.0.0-alpha11@sha256:ae898c7e84c4adeaff7f1f5c1a6ad1a418dd3266e42cf11083b465c1010ab512"
           # Default agent image. Each Harness names its own (golang-adk, by digest), so this is a
