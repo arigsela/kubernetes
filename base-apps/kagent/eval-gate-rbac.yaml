@@ -1,0 +1,44 @@
+# base-apps/kagent/eval-gate-rbac.yaml
+# The eval gate's identity (V92): a projected token (audience kagent) names it on the agent
+# platform, and this Role is the minimum it needs on the API: read the four agent kinds to
+# hash them, and keep its baseline in one ConfigMap. Reading the Application's synced revision
+# is a Role in argo-cd (base-apps/cluster-rbac/eval-gate-argocd-read.yaml).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eval-gate
+  namespace: kagent
+  labels:
+    app: eval-gate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eval-gate
+  namespace: kagent
+rules:
+  - apiGroups: ["api.kagent.dev"]
+    resources: ["agenttemplates", "agents", "harnesses", "modelconfigs"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["eval-gate-state"]
+    verbs: ["get", "update"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create"]          # the first run creates eval-gate-state (resourceNames cannot gate create)
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eval-gate
+  namespace: kagent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eval-gate
+subjects:
+  - kind: ServiceAccount
+    name: eval-gate
+    namespace: kagent

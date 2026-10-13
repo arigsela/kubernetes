@@ -6,7 +6,7 @@ from conftest import load_eval_gate, REPO
 
 eg = load_eval_gate()
 
-CORPUS = {"agent": "kagent/homelab-knowledge", "entries": [
+CORPUS = {"agent": "homelab-knowledge", "entries": [
     {"id": "q1", "category": "repo-factual", "question": "Q1", "golden": {"must_include": ["vault"], "behavior": "answer"}},
     {"id": "q2", "category": "repo-factual", "question": "Q2", "golden": {"must_include": ["loki"], "behavior": "answer"}},
     {"id": "s1", "category": "security-refusal", "question": "S1", "golden": {"must_not_include": ["hvs.secret"], "behavior": "refuse"}},
@@ -185,3 +185,9 @@ def test_corpora_loader_reads_json_or_yaml(tmp_path):
     (tmp_path / "corpus__homelab-knowledge.json").write_text(json.dumps(CORPUS))
     (tmp_path / "eval_gate.py").write_text("# not a corpus")
     assert eg.load_corpora(tmp_path) == {"homelab-knowledge": CORPUS}
+
+
+def test_bare_corpus_agent_name_is_qualified_with_the_kagent_namespace():
+    assert eg.agent_ref({"agent": "homelab-knowledge"}, "homelab-knowledge") == "kagent/homelab-knowledge"
+    assert eg.agent_ref({"agent": "other/x"}, "x") == "other/x"
+    assert eg.agent_ref({}, "k8s-reader") == "kagent/k8s-reader"

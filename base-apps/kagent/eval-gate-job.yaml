@@ -1,0 +1,102 @@
+# base-apps/kagent/eval-gate-job.yaml
+# Evaluation as a gate (ADP harness · evaluation, E3; V93). An Argo CD PostSync hook of the
+# kagent-secrets Application: after every sync it hashes each agent's live definition and,
+# when it changed, scores the agent against tests/eval-corpus as service account eval-gate.
+# Result: one JSON line (Loki -> Grafana "Agent eval regression" -> Slack), a commit status
+# eval/<agent> on the synced revision when the eval-gate Secret carries a GitHub token, and
+# the baseline in ConfigMap eval-gate-state. Exit 0 on a regression (the sync stands; the
+# status and the alert are the gate), exit 1 only when it could not score (Argo shows the
+# hook failed). Spec: docs/superpowers/specs/2026-10-13-callers-as-principals-and-eval-gate-design.md
+# Secrets are OPTIONAL: without keys the rubric alone decides and the line says judge=none.
+# BeforeHookCreation keeps the last Job for `kubectl -n kagent logs job/eval-gate`.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eval-gate
+  namespace: kagent
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800          # 8 questions x up to 180 s, plus the judge
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app: eval-gate
+      annotations:
+        # sha256 (first 16 hex) over the eval-gate-code ConfigMap's values, sorted by key;
+        # written by scripts/gen-eval-gate-configmap.py so a code or corpus change is a new
+        # pod template (tests/eval_gate/test_manifests.py).
+        checksum/code: bbd86f04b8310d7d
+    spec:
+      serviceAccountName: eval-gate
+      restartPolicy: Never
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: eval-gate
+          # Renovate pins the digest on its next run (kubernetes manager, pinDigests for base-apps).
+          image: python:3.12-slim
+          command: ["python", "-u", "/opt/eval-gate/eval_gate.py"]
+          env:
+            - name: KAGENT_A2A_BASE
+              value: http://kagent-controller.kagent.svc.cluster.local:8083
+            - name: KAGENT_TOKEN_FILE
+              value: /var/run/kagent/token
+            - name: CORPUS_DIR
+              value: /opt/eval-gate
+            - name: ARGOCD_NAMESPACE
+              value: argo-cd
+            - name: ARGOCD_APP
+              value: kagent-secrets
+            - name: GITHUB_REPO
+              value: arigsela/kubernetes
+            - name: QUESTION_TIMEOUT
+              value: "180"
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef: {name: eval-gate, key: anthropic-api-key, optional: true}
+            - name: TYPESAFE_API_KEY
+              valueFrom:
+                secretKeyRef: {name: eval-gate, key: typesafe-api-key, optional: true}
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef: {name: eval-gate, key: github-token, optional: true}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: code
+              mountPath: /opt/eval-gate
+              readOnly: true
+            - name: kagent-token
+              mountPath: /var/run/kagent
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: eval-gate-code
+        - name: kagent-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: kagent
+                  expirationSeconds: 3600
+                  path: token

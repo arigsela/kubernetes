@@ -1,0 +1,32 @@
+# base-apps/cluster-rbac/eval-gate-argocd-read.yaml
+# Lets the eval gate (kagent/eval-gate) read ONE Application's status: the revision
+# kagent-secrets just synced, which is the commit its status is posted on (V93).
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eval-gate-application-read
+  namespace: argo-cd
+  labels:
+    app.kubernetes.io/name: cluster-rbac
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    resourceNames: ["kagent-secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eval-gate-application-read
+  namespace: argo-cd
+  labels:
+    app.kubernetes.io/name: cluster-rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eval-gate-application-read
+subjects:
+  - kind: ServiceAccount
+    name: eval-gate
+    namespace: kagent
