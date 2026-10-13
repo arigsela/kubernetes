@@ -23,6 +23,9 @@ spec:
       audiences: ["kubernetes"]
       forwardOriginalToken: true
     - issuer: https://kubernetes.default.svc.cluster.local
-      jwksUri: https://kubernetes.default.svc/openid/v1/jwks
+      # Inline, as on the waypoint: istiod cannot verify the API server's certificate when it
+      # fetches /openid/v1/jwks. Public keys; refresh with `kubectl get --raw /openid/v1/jwks`
+      # when k3s rotates the service-account signing key (keep both files identical).
+      jwks: '{"keys":[{"use":"sig","kty":"RSA","kid":"BBNzB3N5yJuPKQs3OHZwaoUun7YR66d0OdoSgXsIwzg","alg":"RS256","n":"wcgYlH31ADlLEonXo1Hga-ZjBK7sg3bFgcuFrTblCKFp3QuIt0N_ew4UWnzZcigQ7Xav4XHFgLnWUDFoMNqPkI0eqrH8r0rJCbsDR9N5yHPLcJUXsZo8sQln41_uDCEq1sc7rbdZWIpb-S7Jl07_V9tlu0RIKtS10NjeOsHFf1W9aM4kysR0DXuRQDxoL_5gTTwgPNlUwWMkWL0JN--etn4Qj2Q0QPGQZA_cwV6xDJBoRU_RoZIEzqFUfbwDkpGglLajlwiKiw2o-qEwVKLXgSXEweAvgeR3uURCCjzg4bkEQKeCMAvnH7b03MSnQVi1BTrjFR7uRVHhYTOpd-Td-Q","e":"AQAB"}]}'
       audiences: ["kagent"]
       forwardOriginalToken: true
