@@ -1,0 +1,28 @@
+# base-apps/istio-ingress/request-authentication.yaml
+# Token verification at the edge for the agent API host (V91). Same two issuers as the kagent
+# waypoint (base-apps/kagent/request-authentication.yaml): Dex for humans, the Kubernetes
+# service account issuer for automations. This object only rejects INVALID tokens; the
+# kagent-mcp rule in authorizationpolicy.yaml is what requires one. The token is forwarded, so
+# the waypoint verifies it a second time on the way to the controller: two independent checks
+# on the external path. Other hosts are untouched: a request to them with no token passes here
+# and is judged by their own allow-list rules as before.
+---
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: gateway-kagent-callers
+  namespace: istio-ingress
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: main
+  jwtRules:
+    - issuer: https://dex.arigsela.com
+      jwksUri: https://dex.arigsela.com/keys
+      audiences: ["kubernetes"]
+      forwardOriginalToken: true
+    - issuer: https://kubernetes.default.svc.cluster.local
+      jwksUri: https://kubernetes.default.svc/openid/v1/jwks
+      audiences: ["kagent"]
+      forwardOriginalToken: true

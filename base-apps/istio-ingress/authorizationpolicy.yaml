@@ -316,8 +316,10 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
-    # kagent-mcp - restricted. Basic auth dropped (T52); the allow-list is now the
-      # only control, which is why it must be right.
+    # kagent-mcp - restricted. Basic auth dropped (T52). Since 2026-10-13 the allow-list is
+      # ANDed with a verified token (request-authentication.yaml; V91): both conditions sit in
+      # the same `source`, which Istio ANDs. Never add a second rule for this host: ALLOW rules
+      # are ORed and a token-less one would reopen the door.
     - to:
         - operation:
             hosts:
@@ -325,6 +327,7 @@ spec:
               - kagent-mcp.arigsela.com:*
       from:
         - source:
+            requestPrincipals: ["*"]
             ipBlocks:
               - 76.97.4.210/32
               - 170.85.56.189/32
