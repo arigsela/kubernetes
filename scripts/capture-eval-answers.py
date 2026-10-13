@@ -31,7 +31,6 @@ import json
 import sys
 from pathlib import Path
 
-import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kagent_a2a as a2a  # noqa: E402
@@ -43,6 +42,7 @@ DEFAULT_USER = "eval-capture"
 
 
 def load_entries(repo_root: Path) -> list[dict]:
+    import yaml  # lazy: the eval-gate job has no pyyaml (it gets the corpus as JSON)
     out = []
     for path in sorted((repo_root / CORPUS_DIR).glob("*.yaml")):
         doc = yaml.safe_load(path.read_text()) or {}
@@ -65,6 +65,22 @@ def send_message(endpoint: str, question: str, *, transport=None,
     """One SendMessage in a new session; returns the JSON-RPC result."""
     return a2a.send_message(endpoint, question, user=None if (token or token_file) else user,
                             token=token, token_file=token_file, timeout=timeout, transport=transport)
+
+
+def capture(entries: list[dict], endpoint: str, *, send=None, timeout: float = a2a.DEFAULT_TIMEOUT,
+            token_file: str | None = None, log=None) -> dict[str, str | None]:
+    """One new session per question; None where the agent failed or said nothing."""
+    send = send or send_message
+    out: dict[str, str | None] = {}
+    for e in entries:
+        try:
+            out[e["id"]] = extract_text(send(endpoint, e["question"], timeout=timeout,
+                                             token_file=token_file))
+        except (RuntimeError, OSError, ValueError) as err:
+            if log:
+                log({"event": "eval-capture", "id": e["id"], "error": str(err)[:300]})
+            out[e["id"]] = None
+    return out
 
 
 def main(argv=None) -> int:
