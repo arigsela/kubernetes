@@ -74,8 +74,7 @@ def test_user_paths_need_a_verified_principal():
     user_rules = [r for r in ap["spec"]["rules"]
                   if any("/agents/*" in t["operation"].get("paths", []) for t in r.get("to", []))]
     assert user_rules, "a rule for /agents/* is required"
-    allowed_principals = {"cluster.local/ns/kagent/sa/kagent-ui", "cluster.local/ns/kagent/sa/default",
-                          "cluster.local/ns/backstage/sa/default"}
+    allowed_principals = {"cluster.local/ns/kagent/sa/kagent-ui", "cluster.local/ns/kagent/sa/default"}
     for r in user_rules:
         src = r["from"][0]["source"]
         assert src.get("requestPrincipals") or set(src.get("principals", [])) <= allowed_principals, r
@@ -169,3 +168,5 @@ def test_backstage_presents_a_projected_token():
     env = {e["name"]: e.get("value") for e in c.get("env", [])}
     assert env["KAGENT_TOKEN_FILE"] == "/var/run/kagent/token"
     assert any(m["mountPath"] == "/var/run/kagent" and m["readOnly"] for m in c["volumeMounts"])
+    text = (REPO / "base-apps/kagent/authorization-policy.yaml").read_text()
+    assert "ns/backstage/sa/default" not in text, "the Backstage exception rule must go with the token"

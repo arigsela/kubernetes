@@ -320,8 +320,8 @@ Both public hosts are Gateway API `HTTPRoute`s in this namespace on the shared `
   in `insecure` mode on purpose (`base-apps/kagent.yaml`), the mesh is the identity authority.
   `authorization-policy.yaml` allows the controller's user paths (`/agents/*`, `/mcp`, `/api/*`,
   port 8083) only with a token, or from the UI's own principal (UI sessions are the controller
-  default identity, and the UI route strips any identity header a browser sends), or, until
-  `arigsela/backstage` sends its token (SPEC T110), from Backstage's principal; a DENY refuses the
+  default identity, and the UI route strips any identity header a browser sends); Backstage presents
+  its own projected token since portal v1.5.1 (T110); a DENY refuses the
   runtime's `X-Agent-Name` from anyone but the workers and the controller; `httproute-waypoint.yaml`
   refuses `?user_id=`. The ingress keeps its IP allow-list
   only and routes the host through the waypoint, where the token is verified once: a

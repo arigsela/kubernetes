@@ -13,10 +13,8 @@
 #   5. The worker principal on the runtime paths. (The actors' task-state calls arrive from
 #      atenet in ate-system and never traverse the waypoint; this rule covers a worker pod
 #      that calls the controller directly.)
-#   6. EXCEPTION until arigsela/backstage sends its projected token (plugin PR, SPEC T110):
-#      Backstage's workload principal on the user paths without a JWT. Remove this rule in
-#      that PR's wake.
-#   7. Anything that is not the controller: allowed, as before this policy existed.
+#   6. Anything that is not the controller: allowed, as before this policy existed.
+# Backstage presents its projected token since portal v1.5.1 (SPEC T110): it is rule 2.
 # The DENY policy below refuses the runtime's X-Agent-Name header from anyone but the workers
 # and the controller.
 # No PeerAuthentication STRICT: the Substrate runtime (ate-system, not in the mesh) saves task
@@ -71,13 +69,6 @@ spec:
       to:
         - operation:
             ports: ["8083"]
-    - from:
-        - source:
-            principals: ["cluster.local/ns/backstage/sa/default"]   # EXCEPTION until arigsela/backstage sends a token (T110)
-      to:
-        - operation:
-            ports: ["8083"]
-            paths: ["/agents/*", "/api/*"]
     - to:
         - operation:
             notPorts: ["8083"]
