@@ -18,6 +18,7 @@ def test_kagent_dispatcher_and_backstage_are_in_the_ambient_mesh():
     assert ns["metadata"]["labels"]["istio.io/dataplane-mode"] == "ambient"
     kagent = load("base-apps/kagent-secrets.yaml")[0]["spec"]["syncPolicy"]["managedNamespaceMetadata"]["labels"]
     assert kagent["istio.io/use-waypoint"] == "kagent-waypoint"
+    assert kagent["istio.io/ingress-use-waypoint"] == "true", "the ingress Gateway must route through the waypoint too"
 
 
 def test_waypoint_logs_every_request():
