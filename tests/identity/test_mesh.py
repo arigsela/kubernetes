@@ -30,7 +30,9 @@ def test_waypoint_logs_every_request():
 def test_waypoint_exists_for_services():
     wp = one("base-apps/kagent/waypoint.yaml", "Gateway", "kagent-waypoint")
     assert wp["spec"]["gatewayClassName"] == "istio-waypoint"
-    assert wp["metadata"]["labels"]["istio.io/waypoint-for"] == "service"
+    # "all": pod-addressed traffic from an enrolled namespace must traverse the policy too,
+    # or a pod in dispatcher/backstage could curl the controller's pod IP with any X-User-Id
+    assert wp["metadata"]["labels"]["istio.io/waypoint-for"] == "all"
     assert wp["spec"]["listeners"][0]["protocol"] == "HBONE"
 
 
@@ -52,7 +54,9 @@ def test_request_authentication_outputs_claim_header():
     out = {r["issuer"]: r["outputClaimToHeaders"] for r in ra["spec"]["jwtRules"]}
     assert out[DEX] == [{"header": "x-user-id", "claim": "email"}]
     assert out[K8S] == [{"header": "x-user-id", "claim": "sub"}]
-    assert all(r["forwardOriginalToken"] is True for r in ra["spec"]["jwtRules"])
+    # never forward: the human's Dex token is a kubectl credential, and the controller stores
+    # the Authorization header on the session and re-sends it to the actor (review 2026-10-13)
+    assert all(r["forwardOriginalToken"] is False for r in ra["spec"]["jwtRules"])
 
 
 def _policy():

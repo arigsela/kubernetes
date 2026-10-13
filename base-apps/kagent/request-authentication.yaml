@@ -5,7 +5,10 @@
 #   * the Kubernetes service account issuer, audience `kagent` (projected tokens, <= 1 h): an
 #     automation; the identity is `sub` = system:serviceaccount:<ns>:<name>.
 # The verified claim is WRITTEN into x-user-id, replacing anything the client sent, which is
-# what the controller (insecure mode) reads. A request with no token passes this object (it only
+# what the controller (insecure mode) reads. The token itself is NEVER forwarded: the human's
+# Dex token is a kubectl credential, and the controller stores the Authorization header on the
+# session and re-sends it to the actor (go/core/internal/httpserver/auth/authn.go), which would
+# put the owner's API-server credential inside a sandbox. A request with no token passes this object (it only
 # rejects invalid tokens) and is then refused by authorization-policy.yaml unless it comes from
 # the UI or the worker principal.
 ---
@@ -23,7 +26,7 @@ spec:
     - issuer: https://dex.arigsela.com
       jwksUri: https://dex.arigsela.com/keys
       audiences: ["kubernetes"]
-      forwardOriginalToken: true
+      forwardOriginalToken: false
       outputClaimToHeaders:
         - header: x-user-id
           claim: email
@@ -36,7 +39,7 @@ spec:
       # (runbook "Agents unreachable after an identity change"; tests/identity checks the shape).
       jwks: '{"keys":[{"use":"sig","kty":"RSA","kid":"BBNzB3N5yJuPKQs3OHZwaoUun7YR66d0OdoSgXsIwzg","alg":"RS256","n":"wcgYlH31ADlLEonXo1Hga-ZjBK7sg3bFgcuFrTblCKFp3QuIt0N_ew4UWnzZcigQ7Xav4XHFgLnWUDFoMNqPkI0eqrH8r0rJCbsDR9N5yHPLcJUXsZo8sQln41_uDCEq1sc7rbdZWIpb-S7Jl07_V9tlu0RIKtS10NjeOsHFf1W9aM4kysR0DXuRQDxoL_5gTTwgPNlUwWMkWL0JN--etn4Qj2Q0QPGQZA_cwV6xDJBoRU_RoZIEzqFUfbwDkpGglLajlwiKiw2o-qEwVKLXgSXEweAvgeR3uURCCjzg4bkEQKeCMAvnH7b03MSnQVi1BTrjFR7uRVHhYTOpd-Td-Q","e":"AQAB"}]}'
       audiences: ["kagent"]
-      forwardOriginalToken: true
+      forwardOriginalToken: false
       outputClaimToHeaders:
         - header: x-user-id
           claim: sub

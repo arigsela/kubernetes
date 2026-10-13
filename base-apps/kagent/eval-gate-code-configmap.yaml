@@ -108,6 +108,8 @@ data:
                 return _json_transport(self.base + path, payload, headers, 30, method=method, context=self.ctx)
             except urllib.error.HTTPError as err:
                 raise KubeError(err.code, path) from err
+            except OSError as err:           # URLError, timeouts, resets: status 0, never a traceback
+                raise KubeError(0, f"{path} ({err})") from err
 
         def get(self, path):
             return self._call("GET", path)
@@ -125,9 +127,19 @@ data:
         out = {}
         for kind in KINDS:
             items = kube.get(f"{KAGENT_API}/{kind}").get("items") or []
-            out[kind] = sorted(({"name": i["metadata"]["name"], "spec": i.get("spec") or {}} for i in items),
+            out[kind] = sorted(({"name": i["metadata"]["name"], "spec": i.get("spec") or {},
+                                 "generation": (i.get("metadata") or {}).get("generation"),
+                                 "observed": (i.get("status") or {}).get("observedGeneration")} for i in items),
                                key=lambda o: o["name"])
         return out
+
+
+    def agents_behind(surf: dict, agents) -> list[str]:
+        """Agents whose controller has not yet observed the applied generation (when it reports one)."""
+        by = {o["name"]: o for o in surf.get("agents", [])}
+        return [a for a in agents
+                if by.get(a) and by[a].get("generation") is not None and by[a].get("observed") is not None
+                and by[a]["observed"] < by[a]["generation"]]
 
 
     def _ref(spec: dict, key: str) -> str | None:
@@ -245,10 +257,24 @@ data:
 
     # ------------------------------------------------------------------ run
 
-    def run(env, *, kube, send, judge, judge_name: str, status_post, log, corpus_dir, corpora=None) -> int:
+    def run(env, *, kube, send, judge, judge_name: str, status_post, log, corpus_dir, corpora=None,
+            sleep=None, clock=None) -> int:
+        import time
+        sleep = sleep or time.sleep
+        clock = clock or time.monotonic
         corpora = corpora if corpora is not None else load_corpora(corpus_dir)
         try:
             surf = surface(kube)
+            # PostSync fires when the CRs are applied, before the runtime rolls the new definition.
+            # Wait, bounded, for the controller to observe the applied generation of each agent we
+            # are about to score (kinds without the field pass straight through).
+            deadline = clock() + float(env.get("AGENT_READY_TIMEOUT", "180"))
+            while agents_behind(surf, corpora) and clock() < deadline:
+                sleep(5)
+                surf = surface(kube)
+            behind = agents_behind(surf, corpora)
+            if behind:
+                log({"event": "eval-gate", "warning": f"still rolling after the wait: {', '.join(behind)}"})
         except KubeError as err:
             log({"event": "eval-gate", "error": f"cannot read the agent surface: {err}"})
             return 1
@@ -279,8 +305,19 @@ data:
             by_id = {e["id"]: {**e, "_agent": corpus.get("agent")} for e in entries}
             results = score_eval.run(by_id, {k: v for k, v in answers.items() if v is not None}, judge)
             d = decide(results, state.baselines.get(agent))
-            line = {"event": "eval-gate", "agent": agent, "hash": h, "revision": rev, "judge": judge_name, **d}
+            # The answers must belong to the definition we hashed: re-read, and if it moved during
+            # capture record nothing, so the next sync scores the new definition.
+            try:
+                h_after = surface_hash(surface(kube), agent)
+            except KubeError as err:
+                h_after = None
+                log({"event": "eval-gate", "agent": agent, "warning": f"cannot re-read the surface: {err}"})
+            moved = h_after is not None and h_after != h
+            line = {"event": "eval-gate", "agent": agent, "hash": h, "revision": rev, "judge": judge_name,
+                    "surface_moved": moved, **d}
             log(line)
+            if moved:
+                continue
             state.hashes[agent] = h
             state.baselines[agent] = d["baseline"]
             if env.get("GITHUB_TOKEN") and env.get("GITHUB_REPO") and rev:
