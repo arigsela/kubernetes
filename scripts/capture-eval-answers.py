@@ -12,16 +12,15 @@ allow-listed). From off-network, port-forward and pass the origin:
     ./scripts/capture-eval-answers.py --endpoint http://127.0.0.1:8083 --out /tmp/answers.jsonl
 
 The client is scripts/kagent_a2a.py, shared with scripts/ask-hk. One session
-per question (no contextId), so answers do not bleed into each other. Sessions
-are created as X-User-Id `eval-capture` so they can be told apart from real
-conversations, and so the eval's memory never mixes with the owner's: kagent 1.0
-keys memory by (agent, user). The `memory` category therefore expects state
-saved earlier AS `eval-capture`; seed it with
-
-    scripts/ask-hk --user eval-capture "My favorite color is octarine. Please save that."
-
-or pass `--category repo-factual --category security-refusal` to leave it out.
-
+per question (no contextId), so answers do not bleed into each other. In the
+cluster the eval job presents its projected token (--token-file) and its sessions
+belong to system:serviceaccount:kagent:eval-gate; from the laptop the kubelogin
+(Dex) token is sent by default and sessions belong to you; --no-token keeps the
+X-User-Id path for a port-forward. kagent 1.0 keys memory by (agent, user), so the
+`memory` category expects state saved earlier by the SAME identity: seed it with
+    scripts/ask-hk --as-serviceaccount kagent/eval-gate "My favorite color is octarine. Please save that."
+for the job, or with plain scripts/ask-hk for yourself, or pass
+`--category repo-factual --category security-refusal` to leave it out.
 The output is NOT committed: an answer can contain anything the agent said,
 and the scorer's whole point is to check that it said nothing secret.
 """
@@ -61,9 +60,11 @@ def extract_text(result: dict) -> str | None:
 
 
 def send_message(endpoint: str, question: str, *, transport=None,
-                 timeout: float = a2a.DEFAULT_TIMEOUT, user: str = DEFAULT_USER) -> dict:
+                 timeout: float = a2a.DEFAULT_TIMEOUT, user: str | None = DEFAULT_USER,
+                 token: str | None = None, token_file: str | None = None) -> dict:
     """One SendMessage in a new session; returns the JSON-RPC result."""
-    return a2a.send_message(endpoint, question, user=user, timeout=timeout, transport=transport)
+    return a2a.send_message(endpoint, question, user=None if (token or token_file) else user,
+                            token=token, token_file=token_file, timeout=timeout, transport=transport)
 
 
 def main(argv=None) -> int:
@@ -73,7 +74,12 @@ def main(argv=None) -> int:
     ap.add_argument("--endpoint", default=DEFAULT_ENDPOINT,
                     help="agent URL, or a bare origin to append /agents/%s to "
                          "(default: %%(default)s)" % DEFAULT_AGENT)
-    ap.add_argument("--user", default=DEFAULT_USER, help="X-User-Id (default: %(default)s)")
+    ap.add_argument("--user", default=DEFAULT_USER,
+                    help="X-User-Id for --no-token (default: %(default)s)")
+    tok = ap.add_mutually_exclusive_group()
+    tok.add_argument("--token-file", help="bearer token file (the job's projected token)")
+    tok.add_argument("--no-token", action="store_true",
+                     help="send only X-User-Id (a port-forward, no mesh in front)")
     ap.add_argument("--timeout", type=float, default=a2a.DEFAULT_TIMEOUT,
                     help="seconds per question (default: %(default)s)")
     ap.add_argument("--category", action="append", help="only these categories (repeatable)")
@@ -85,12 +91,17 @@ def main(argv=None) -> int:
     if args.category:
         entries = [e for e in entries if e.get("category") in set(args.category)]
 
+    token = None
+    if not args.no_token and not args.token_file:
+        token = a2a.acquire_token()          # kubelogin, $KAGENT_TOKEN, $KAGENT_TOKEN_FILE
+
     missing = 0
     with args.out.open("w") as fh:
         for e in entries:
             try:
-                answer = extract_text(send_message(endpoint, e["question"],
-                                                   user=args.user, timeout=args.timeout))
+                answer = extract_text(send_message(endpoint, e["question"], user=args.user,
+                                                   token=token, token_file=args.token_file,
+                                                   timeout=args.timeout))
             except (RuntimeError, OSError, ValueError) as err:
                 print(f"  {e['id']}: {err}", file=sys.stderr)
                 answer = None

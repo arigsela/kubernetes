@@ -122,3 +122,17 @@ def test_main_writes_jsonl_and_fails_on_missing_answer(tmp_path, monkeypatch):
     assert rc == 1
     # A bare origin gets the agent path; the eval identity is used.
     assert seen[0] == ("http://x/agents/kagent/homelab-knowledge", "eval-capture")
+
+
+def test_capture_sends_the_token_file(tmp_path):
+    f = tmp_path / "token"
+    f.write_text("cap.tok.en")
+    seen = {}
+
+    def transport(url, payload, headers, timeout):
+        seen.update(headers)
+        return {"result": {"message": {"role": "agent", "parts": [{"text": "answer"}]}}}
+
+    res = cap.send_message("http://x/agents/kagent/a", "q", transport=transport, token_file=str(f))
+    assert cap.extract_text(res) == "answer"
+    assert seen["Authorization"] == "Bearer cap.tok.en" and "X-User-Id" not in seen

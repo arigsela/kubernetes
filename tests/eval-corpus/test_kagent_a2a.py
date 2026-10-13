@@ -315,8 +315,11 @@ CTX = "7b1e4d2a-9c3f-4e8b-a1d6-5f2e3c4b5a69"
 
 @pytest.fixture(autouse=True)
 def state_dir(tmp_path, monkeypatch):
-    """ask-hk remembers pauses on disk; keep every test's state private."""
+    """ask-hk remembers pauses on disk; keep every test's state private. It also sends a
+    Dex token by default: fake the kubelogin cache so no test opens a browser."""
     monkeypatch.setenv("ASK_HK_STATE_DIR", str(tmp_path / "ask-hk"))
+    monkeypatch.setenv("KAGENT_TOKEN", "test.id.token")
+    monkeypatch.delenv("KAGENT_TOKEN_FILE", raising=False)
     return tmp_path / "ask-hk"
 
 
@@ -336,7 +339,8 @@ def test_ask_hk_prints_answer_then_context(monkeypatch):
     assert lines[-2].endswith("`letsencrypt-route53`.")
     call = t.calls[0]
     assert call["url"] == "https://kagent-mcp.arigsela.com/agents/kagent/homelab-knowledge"
-    assert call["headers"]["X-User-Id"] == "admin@kagent.dev"
+    assert call["headers"]["Authorization"] == "Bearer test.id.token"   # the kubelogin token
+    assert "X-User-Id" not in call["headers"]
     assert "contextId" not in call["body"]["params"]["message"]
 
 
@@ -350,18 +354,21 @@ def test_ask_hk_follow_up_sends_the_context():
 def test_ask_hk_agent_endpoint_user_and_stdin():
     t = Recorder(recorded("send-message"))
     rc, out, _ = run(["--agent", "kagent/k8s-reader", "--endpoint", "http://127.0.0.1:8083",
-                      "--user", "ari", "-"], t, stdin="from stdin\n")
+                      "--no-token", "--user", "ari", "-"], t, stdin="from stdin\n")
     assert rc == 0 and out.splitlines()[0] == "Hello."
     assert t.calls[0]["url"] == "http://127.0.0.1:8083/agents/kagent/k8s-reader"
     assert t.calls[0]["headers"]["X-User-Id"] == "ari"
     assert t.calls[0]["body"]["params"]["message"]["parts"] == [{"text": "from stdin\n"}]
 
 
-def test_ask_hk_user_from_environment(monkeypatch):
+def test_ask_hk_user_from_environment_only_without_a_token(monkeypatch):
     monkeypatch.setenv("KAGENT_USER_ID", "env-user")
     t = Recorder(recorded("send-message"))
-    run(["q"], t)
+    run(["--no-token", "q"], t)
     assert t.calls[0]["headers"]["X-User-Id"] == "env-user"
+    t = Recorder(recorded("send-message"))
+    run(["q"], t)
+    assert "X-User-Id" not in t.calls[0]["headers"], "a token is sent: the user header must not be"
 
 
 def test_ask_hk_waiting_exits_2_with_the_question(state_dir):
@@ -546,3 +553,59 @@ def test_acquire_token_reports_a_failed_kubectl():
         return R()
     with pytest.raises(RuntimeError, match="no browser"):
         a2a.acquire_token(env={}, run=run)
+
+
+def test_ask_hk_sends_the_kubelogin_token_by_default(monkeypatch):
+    mod = _load_ask_hk()
+    monkeypatch.delenv("KAGENT_TOKEN", raising=False)
+    monkeypatch.setattr(mod.a2a, "kubelogin_token", lambda run=None: "kl.tok.en")
+    seen = {}
+
+    def transport(url, payload, headers, timeout):
+        seen.update(headers)
+        return {"result": {"message": {"role": "agent", "parts": [{"text": "hi"}]}}}
+
+    out = io.StringIO()
+    rc = mod.main(["hello"], stdout=out, stderr=io.StringIO(), transport=transport)
+    assert rc == 0
+    assert seen["Authorization"] == "Bearer kl.tok.en" and "X-User-Id" not in seen
+
+
+def test_ask_hk_as_serviceaccount_mints_a_token(monkeypatch):
+    mod = _load_ask_hk()
+    monkeypatch.delenv("KAGENT_TOKEN", raising=False)
+    monkeypatch.setattr(mod.a2a, "serviceaccount_token", lambda ref, run=None: f"sa:{ref}")
+    seen = {}
+
+    def transport(url, payload, headers, timeout):
+        seen.update(headers)
+        return {"result": {"message": {"role": "agent", "parts": [{"text": "hi"}]}}}
+
+    rc = mod.main(["--as-serviceaccount", "dispatcher/dispatcher", "hello"],
+                  stdout=io.StringIO(), stderr=io.StringIO(), transport=transport)
+    assert rc == 0 and seen["Authorization"] == "Bearer sa:dispatcher/dispatcher"
+
+
+def test_ask_hk_no_token_keeps_the_user_header_for_port_forwards():
+    mod = _load_ask_hk()
+    seen = {}
+
+    def transport(url, payload, headers, timeout):
+        seen.update(headers)
+        return {"result": {"message": {"role": "agent", "parts": [{"text": "hi"}]}}}
+
+    rc = mod.main(["--no-token", "--endpoint", "http://127.0.0.1:8083", "--user", "dev", "hello"],
+                  stdout=io.StringIO(), stderr=io.StringIO(), transport=transport)
+    assert rc == 0 and seen["X-User-Id"] == "dev" and "Authorization" not in seen
+
+
+def test_ask_hk_reports_a_token_failure_before_sending(monkeypatch):
+    mod = _load_ask_hk()
+    monkeypatch.delenv("KAGENT_TOKEN", raising=False)
+    def boom(run=None):
+        raise RuntimeError("kubectl oidc-login failed: no browser")
+    monkeypatch.setattr(mod.a2a, "kubelogin_token", boom)
+    err = io.StringIO()
+    rc = mod.main(["hello"], stdout=io.StringIO(), stderr=err,
+                  transport=lambda *a: pytest.fail("must not send"))
+    assert rc == 1 and "no browser" in err.getvalue()
