@@ -3,7 +3,7 @@
 ## §G GOAL
 **REACHED 2026-07-29** — ∀ 3 node @ `v1.35.6+k3s1`, ⊥ data loss. walk 1.33.5 → 1.34.9 → 1.35.6 complete (§T.17, §T.18, §T.19). remaining ∈ this spec = follow-ons + §T.42/§T.45 drift + §T.46/§T.47.
 
-**2026-10-11 20:17Z — kagent 1.0 LIVE.** kagent `1.0.0-alpha11` on Agent Substrate `0.5.0-alpha2`, in place; 7/7 agents Ready on Claude Sonnet/Haiku 5.5; HITL reject/approve, memory, caching, audit & reboot-resume verified (§T.97-§T.99). §T.101 closed 2026-10-12. open: §T.102 (WorkerPool spread), §T.103 (revoke retired Anthropic keys). §T.105-§T.107 closed 2026-10-12/13 (dispatcher accepted; promotion live, first auto merge pending the next Renovate `review:skip` PR).
+**2026-10-11 20:17Z — kagent 1.0 LIVE.** kagent `1.0.0-alpha11` on Agent Substrate `0.5.0-alpha2`, in place; 7/7 agents Ready on Claude Sonnet/Haiku 5.5; HITL reject/approve, memory, caching, audit & reboot-resume verified (§T.97-§T.99). §T.101 closed 2026-10-12. open: §T.102 (WorkerPool spread), §T.103 (revoke retired Anthropic keys). §T.105-§T.108 closed 2026-10-12/13 (dispatcher accepted; promotion live with two classes: Renovate bumps and the owner's docs-only PRs; first `auto` merge still unobserved).
 
 **2026-10-11 19:15Z — 1.37 REACHED.** ∀ 3 node @ `v1.37.1+k3s1` (from `latest`, §T.89 amended), ⊥ data loss, control-plane API window 42 s, gate PASSED (§T.96). next = kagent 1.0 in place (§T.97-§T.100).
 
@@ -189,7 +189,7 @@ V85: ∀ logical backup artifact → ! end w/ the dumper's completion marker (`-
 V86: ∀ Grafana alert → n8n (Slack) via its own contact-point integration; dispatcher ∉ that path & ⊥ forwards to grafana-alerts. dispatcher down ⇒ ⊥ lost Slack alert.
 V87: dispatch table routes only → AgentTemplate whose ∀ bound tool ∈ taxonomy `read` & ⊥ `requireApproval: true` binding; ∀ Grafana rule title has a row. CI: tests/dispatch/test_table.py.
 V88: dispatcher sends A2A as `X-User-Id: dispatcher`, new session per investigation, ⊥ `tool_approval_response` / `ask_user_response` ever.
-V89: PR merged ⊥ human ⇔ `scripts/promote.py` → `auto` under `.github/promotion-policy.yaml` @ base ref `main` & author ∉ humans & diff re-derived as always_skip shape & ∀ check run + commit status green. `.github/**`, `terraform/**`, deny_prefixes ⊥ auto ever.
+V89: PR merged ⊥ human ⇔ `scripts/promote.py` → `auto` under `.github/promotion-policy.yaml` @ base ref `main` & ∀ check run + commit status green & `review:skip` & one class admits: `renovate-bump` (author = Renovate app & diff re-derived as always_skip shape & ≤2 files & ∉ deny) | `docs-only` (author ∈ `auto_docs.authors` (owner, 2026-10-13) & ∀ file `*.md` | `docs/` & ≤10 files & ∉ {`.github/`, `.claude/`, `CLAUDE.md`, `AGENTS.md`, `templates/`}). `.github/**`, `terraform/**`, deny_prefixes ⊥ auto ever; loader refuses a class that ⊥ denies `.github/`.
 V90: promotion identity = GitHub App `arigsela-promotion` ≠ Renovate's app, installed on this repo only, ruleset bypass mode `pull_request` only.
 
 ## §T TASKS
@@ -301,6 +301,7 @@ T104|x|**DONE 2026-10-11:** image `backstage-portal:v1.5.0@sha256:077dd368…` b
 T105|x|**DONE 2026-10-12:** accepted live (three replays; one real `Container near memory limit` alert investigated unprompted; session continued as `dispatcher` via ask-hk; finding → n8n → Slack after #775/#776: a webhook node needs `webhookId`, and n8n re-imports only when `checksum/workflows` changes). dispatcher (ADP path 1): `base-apps/dispatcher/` + `scripts/dispatch.py` route Grafana alerts → read-only agent investigation by table; findings → n8n `agent-findings` → Slack. spec `docs/superpowers/specs/2026-10-12-signal-dispatch-and-promotion-design.md`|V86,V87,V88
 T106|x|**DONE 2026-10-13:** live. first run with the owner's app minted a token and decided #771 → `owner` (`author 'arigsela' is not in auto.authors`, `3 changed files > max 2`); dry-runs on real data #759 → `auto`, #763 → `owner`. the first real `auto` merge lands on the next Renovate `review:skip` PR (watch `gh run list --workflow promote`). promotion policy (ADP path 5): `.github/promotion-policy.yaml` + `scripts/promote.py` + `promote.yaml` (workflow_run only) merge `review:skip` Renovate PRs by rebase; one sticky comment|V89,V90
 T107|x|**DONE 2026-10-13:** app created, installed (`arigsela-promotion[bot]`), var + secret set, ruleset 11283229 bypass actor (Integration, pull_request). was: OWNER ACTION: create GitHub App `arigsela-promotion` (Contents RW, Pull requests RW, Checks R), install on this repo, set `PROMOTION_APP_CLIENT_ID` var + `PROMOTION_APP_PRIVATE_KEY` secret, add as ruleset bypass actor (pull_request mode)|V90
+T108|x|**DONE 2026-10-13:** owner decision ("i want docs-only prs to promote too"): second promotion class `auto_docs` (`docs-only`): owner-authored, `review:skip`, ∀ file `*.md` | `docs/`, ≤10 files, deny `.github/` `.claude/` `CLAUDE.md` `AGENTS.md` `templates/`; same check/status gates; `rule` in the log + comment; loader requires every class to deny `.github/`. 46 tests. widened before the agent has its own identity (ADP path 3) ∴ the agent's docs PRs under the owner's account self-merge once green (CLAUDE.md says so)|V89
 
 ## §B BUGS
 id|date|cause|fix

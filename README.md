@@ -139,7 +139,7 @@ GitOps infrastructure for a homelab k3s cluster: automated deployment, secret ma
 
 ### Promotion (what merges without a human)
 
-- **Promotion workflow** (`.github/workflows/promote.yaml`, `scripts/promote.py`) runs after triage and validation on every PR and merges exactly one class: Renovate PRs labelled `review:skip` whose diff is docs-only or image-tag bumps, at most 2 files, outside a deny list (Terraform, `.github/`, Renovate's own config, Crossplane, Vault, PostgreSQL, kagent, admission policies, ingress, identity), with every check run and commit status green
+- **Promotion workflow** (`.github/workflows/promote.yaml`, `scripts/promote.py`) runs after triage and validation on every PR and merges exactly two classes, each needing `review:skip` and every check run and commit status green: Renovate PRs whose diff is docs-only or image-tag bumps, at most 2 files, outside a deny list (Terraform, `.github/`, Renovate's own config, Crossplane, Vault, PostgreSQL, kagent, admission policies, ingress, identity); and the owner's docs-only PRs (`*.md` or `docs/`, at most 10 files, never `.github/`, `.claude/`, `CLAUDE.md`, `AGENTS.md` or `templates/`)
 - **Policy** (`.github/promotion-policy.yaml`) is read at `main`, so a PR can't loosen its own promotion; the skip shape is re-derived from the diff, not trusted from the label
 - **Identity**: a dedicated GitHub App (`arigsela-promotion`) is the ruleset bypass actor in pull-request mode. Author (Renovate's app) and promoter are different principals; the app cannot push to `main`
 - Every run logs one JSON decision line (`class`, `reasons`); an `auto` merge leaves one sticky PR comment. Everything else waits for the owner. See `docs/platform/promotion.md`

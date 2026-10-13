@@ -12,6 +12,11 @@ turn it into infographics, in the same form as `adp-concept-presentation-brief.m
 screen gives: the message, the exact copy, the visual to draw, and speaker notes. Data
 provenance is at the end.
 
+**As of:** rescored 2026-10-13 with one promotion class. Later the same day a second class was
+added: the owner's docs-only pull requests (`*.md` or `docs/`, ≤10 files, never the agent
+instruction files) merge by policy too. Where this brief and the deck say "one declared class",
+read "two declared classes, both trivial by construction"; the scorecard and ladder are unchanged.
+
 **Audience:** engineering leadership; first target is the company's AI pathfinders group. They
 are technical but not Kubernetes specialists. Vocabulary rule: name the mechanism in plain
 words first; the specific tool goes in a smaller "in the reference" line, never in the headline.

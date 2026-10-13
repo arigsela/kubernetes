@@ -32,3 +32,16 @@ auto:                                   # merged by .github/workflows/promote.ya
   merge_method: rebase                  # the only method the main ruleset allows
 owner:                                  # everything else; the triage label says how closely to read
   approvers: ["arigsela"]
+auto_docs:                              # second class (2026-10-13): the owner's documentation
+  # Every changed file is docs (`*.md` or under `docs/`, triage's always_skip.paths), by the
+  # owner, labelled review:skip, every check green. The agent-instruction files are denied:
+  # they steer what the coding agent does next, so a human reads every change to them.
+  authors: ["arigsela"]
+  require_labels: ["review:skip"]
+  deny_prefixes:
+    - .github/
+    - .claude/
+    - CLAUDE.md
+    - AGENTS.md
+    - templates/                        # the contracts new apps and agents are generated from
+  max_changed_files: 10
