@@ -1,7 +1,17 @@
 # base-apps/kagent/authorization-policy.yaml
-# OBSERVE MODE (Task 4 of docs/superpowers/plans/2026-10-13-callers-as-principals.md): one rule
-# that matches everything, so the policy exists, the waypoint logs every call with its source
-# principal and path, and nothing is refused yet. Task 6 replaces the rules with the real ones.
+# Who may call the controller, through the waypoint (V91). ALLOW semantics: anything not listed
+# is refused. Identity was set by request-authentication.yaml.
+#   1. The user paths with a Dex token that carries an email (a human).
+#   2. The user paths with a Kubernetes service account token (an automation).
+#   3. The user paths from the UI's own workload principal, no token: the UI is one identity,
+#      the controller default; httproute.yaml strips any header a browser user sends.
+#   4. The runtime paths from the worker principal (Substrate workers run as `default` in this
+#      namespace): sub-agent A2A, task updates, push notifications. The path list comes from
+#      the observe-mode waypoint log (plan Task 4, step 7.9).
+#   5. EXCEPTION until arigsela/backstage sends its projected token (plugin PR, SPEC T110):
+#      Backstage's workload principal on the user paths without a JWT. Remove this rule in
+#      that PR's wake.
+# The DENY policy below refuses the runtime's X-Agent-Name header from anyone but the workers.
 ---
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
@@ -15,4 +25,55 @@ spec:
       name: kagent-waypoint
   action: ALLOW
   rules:
-    - {}
+    - from:
+        - source:
+            requestPrincipals: ["https://dex.arigsela.com/*"]
+      to:
+        - operation:
+            paths: ["/agents/*", "/mcp", "/mcp/*", "/api/*"]
+      when:
+        - key: request.auth.claims[email]
+          values: ["*"]
+    - from:
+        - source:
+            requestPrincipals: ["https://kubernetes.default.svc.cluster.local/*"]
+      to:
+        - operation:
+            paths: ["/agents/*", "/mcp", "/mcp/*", "/api/*"]
+    - from:
+        - source:
+            principals: ["cluster.local/ns/kagent/sa/kagent-ui"]
+      to:
+        - operation:
+            paths: ["/agents/*", "/mcp", "/mcp/*", "/api/*"]
+    - from:
+        - source:
+            principals: ["cluster.local/ns/kagent/sa/default"]
+      to:
+        - operation:
+            paths: ["/agents/*", "/api/*", "/a2a/*"]     # corrected from the observe log (Task 4 ledger)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/backstage/sa/default"]   # EXCEPTION until arigsela/backstage sends a token (T110)
+      to:
+        - operation:
+            paths: ["/agents/*", "/api/*"]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: kagent-controller-deny-agent-header
+  namespace: kagent
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: kagent-waypoint
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals: ["cluster.local/ns/kagent/sa/default"]
+      when:
+        - key: request.headers[x-agent-name]
+          values: ["*"]
