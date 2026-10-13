@@ -1,0 +1,12 @@
+# base-apps/kagent/peer-authentication.yaml
+# Nothing outside the mesh talks to anything in `kagent` (V91): plaintext from an unenrolled
+# namespace is refused by ztunnel, so the only way to the controller is through the waypoint.
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: kagent
+spec:
+  mtls:
+    mode: STRICT

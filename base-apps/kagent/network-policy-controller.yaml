@@ -1,0 +1,27 @@
+# base-apps/kagent/network-policy-controller.yaml
+# Belt and braces under the mesh policy (upstream kagent's own advice): only these namespaces
+# may open a connection to the controller pods at all. istio-system carries ztunnel/HBONE.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kagent-controller-ingress
+  namespace: kagent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kagent
+      app.kubernetes.io/component: controller
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: istio-ingress}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: istio-system}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kagent}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: dispatcher}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: backstage}

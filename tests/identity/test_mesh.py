@@ -55,10 +55,69 @@ def test_request_authentication_outputs_claim_header():
     assert all(r["forwardOriginalToken"] is True for r in ra["spec"]["jwtRules"])
 
 
-def test_authorization_policy_targets_the_waypoint():
-    ap = one("base-apps/kagent/authorization-policy.yaml", "AuthorizationPolicy", "kagent-controller")
-    assert ap["spec"]["targetRefs"][0]["name"] == "kagent-waypoint"
-    assert ap["spec"]["action"] == "ALLOW"
+def _policy():
+    return one("base-apps/kagent/authorization-policy.yaml", "AuthorizationPolicy", "kagent-controller")
+
+
+def test_authorization_policy_is_allow_on_the_waypoint_with_no_match_all_rule():
+    ap = _policy()
+    assert ap["spec"]["targetRefs"][0]["name"] == "kagent-waypoint" and ap["spec"]["action"] == "ALLOW"
+    assert {} not in ap["spec"]["rules"], "the observe-mode rule must be gone"
+
+
+def test_user_paths_need_a_verified_principal():
+    ap = _policy()
+    user_rules = [r for r in ap["spec"]["rules"]
+                  if any("/agents/*" in t["operation"].get("paths", []) for t in r.get("to", []))]
+    assert user_rules, "a rule for /agents/* is required"
+    allowed_principals = {"cluster.local/ns/kagent/sa/kagent-ui", "cluster.local/ns/kagent/sa/default",
+                          "cluster.local/ns/backstage/sa/default"}
+    for r in user_rules:
+        src = r["from"][0]["source"]
+        assert src.get("requestPrincipals") or set(src.get("principals", [])) <= allowed_principals, r
+
+
+def test_dex_rule_requires_email_claim():
+    ap = _policy()
+    dex = [r for r in ap["spec"]["rules"]
+           if r.get("from") and r["from"][0]["source"].get("requestPrincipals") == ["https://dex.arigsela.com/*"]]
+    assert dex and any(w["key"] == "request.auth.claims[email]" and w["values"] == ["*"] for w in dex[0]["when"])
+
+
+def test_agent_name_header_only_from_the_workers():
+    deny = one("base-apps/kagent/authorization-policy.yaml", "AuthorizationPolicy", "kagent-controller-deny-agent-header")
+    assert deny["spec"]["action"] == "DENY"
+    rule = deny["spec"]["rules"][0]
+    assert rule["when"][0] == {"key": "request.headers[x-agent-name]", "values": ["*"]}
+    assert rule["from"][0]["source"]["notPrincipals"] == ["cluster.local/ns/kagent/sa/default"]
+
+
+def test_backstage_exception_is_dated():
+    text = (REPO / "base-apps/kagent/authorization-policy.yaml").read_text()
+    if "ns/backstage/sa/default" in text:
+        assert "EXCEPTION until" in text and "arigsela/backstage" in text
+
+
+def test_peer_authentication_is_strict():
+    pa = one("base-apps/kagent/peer-authentication.yaml", "PeerAuthentication", "default")
+    assert pa["spec"]["mtls"]["mode"] == "STRICT" and "selector" not in pa["spec"]
+
+
+def test_network_policy_limits_controller_ingress():
+    np = one("base-apps/kagent/network-policy-controller.yaml", "NetworkPolicy", "kagent-controller-ingress")
+    assert np["spec"]["podSelector"]["matchLabels"] == {"app.kubernetes.io/name": "kagent", "app.kubernetes.io/component": "controller"}
+    allowed = {p["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
+               for rule in np["spec"]["ingress"] for p in rule["from"]}
+    assert allowed == {"istio-ingress", "istio-system", "kagent", "dispatcher", "backstage"}
+
+
+def test_waypoint_route_refuses_user_id_query():
+    route = one("base-apps/kagent/httproute-waypoint.yaml", "HTTPRoute", "kagent-controller-waypoint")
+    assert route["spec"]["parentRefs"][0] == {"group": "", "kind": "Service", "name": "kagent-controller"}
+    first = route["spec"]["rules"][0]
+    assert first["matches"][0]["queryParams"] == [{"type": "RegularExpression", "name": "user_id", "value": ".*"}]
+    assert first["backendRefs"][0]["name"] == "refused"      # no such Service: a 5xx, never the controller
+    assert route["spec"]["rules"][-1]["backendRefs"][0]["name"] == "kagent-controller"
 
 
 def test_issuer_discovery_is_readable_by_istiod():
