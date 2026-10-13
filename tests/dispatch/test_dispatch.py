@@ -145,7 +145,7 @@ def test_firing_matched_alert_is_investigated_as_dispatcher_in_a_new_session():
     assert [x["decision"] for x in decisions] == ["investigate"]
     sent = fake.sent[0]
     assert sent["url"] == "http://a2a:8083/agents/kagent/k8s-reader"
-    assert sent["user"] == "dispatcher"
+    assert sent["token_file"] == "/var/run/kagent/token" and sent["user"] is None   # its own identity (V91)
     assert sent.get("context_id") is None and sent.get("task_id") is None and sent.get("metadata") is None
     assert sent["text"] == "Pod n8n/n8n-0: waiting 40% for CPU"
     url, finding = fake.posted[0]
@@ -296,3 +296,28 @@ def test_secret_looking_values_are_scrubbed_before_posting():
 
 def test_scrub_leaves_ordinary_text_alone():
     assert dp.scrub("pod n8n-0 restarted 3 times; see events") == "pod n8n-0 restarted 3 times; see events"
+
+
+# ---------------------------------------------------------------- identity (callers as principals)
+
+def test_investigation_sends_the_projected_token_not_a_user(tmp_path):
+    f = tmp_path / "token"
+    f.write_text("disp.tok.en")
+    seen = {}
+
+    def send(url, text, **kw):
+        seen.update(kw)
+        return {"task": {"id": "t1", "contextId": "c1", "status": {"state": "TASK_STATE_COMPLETED"},
+                         "artifacts": [{"parts": [{"text": "looked"}]}]}}
+
+    cfg = dp.Config(table_path="x", a2a_base="http://a", n8n_base="http://n", user="dispatcher",
+                    timeout=5, ui_url="u/{session}", token_file=str(f))
+    d = dp.Dispatcher(dp.load_table(json.dumps(TABLE)), cfg, send=send, post=lambda *a, **k: None,
+                      log=lambda o: None, run_async=False)
+    d.handle_grafana({"alerts": [alert()]})
+    assert seen["token_file"] == str(f) and seen["user"] is None
+
+
+def test_config_token_file_default_and_disable():
+    assert dp.Config.from_env({}).token_file == "/var/run/kagent/token"
+    assert dp.Config.from_env({"KAGENT_TOKEN_FILE": ""}).token_file is None

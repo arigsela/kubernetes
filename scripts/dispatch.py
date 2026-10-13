@@ -19,7 +19,9 @@ Environment (all have defaults for the cluster):
     DISPATCH_TABLE          /etc/dispatch/dispatch.json
     KAGENT_A2A_BASE         http://kagent-controller.kagent.svc.cluster.local:8083
     N8N_WEBHOOK_BASE        http://n8n.n8n.svc.cluster.local:5678/webhook
-    DISPATCH_USER           dispatcher
+    KAGENT_TOKEN_FILE       /var/run/kagent/token (projected SA token, audience kagent; the mesh
+                            sets the identity from it; empty = X-User-Id DISPATCH_USER, dev only)
+    DISPATCH_USER           dispatcher (only without a token file)
     INVESTIGATION_TIMEOUT   300   (seconds the A2A send may block)
     KAGENT_UI_SESSION_URL   https://kagent.arigsela.com/agents/{session}/chat
     PORT                    8080
@@ -173,6 +175,7 @@ class Config:
     user: str
     timeout: float
     ui_url: str
+    token_file: str | None = "/var/run/kagent/token"   # projected SA token; "" = none (dev)
 
     @classmethod
     def from_env(cls, env=os.environ) -> "Config":
@@ -183,6 +186,7 @@ class Config:
             user=env.get("DISPATCH_USER", "dispatcher"),
             timeout=float(env.get("INVESTIGATION_TIMEOUT", "300")),
             ui_url=env.get("KAGENT_UI_SESSION_URL", "https://kagent.arigsela.com/agents/{session}/chat"),
+            token_file=env.get("KAGENT_TOKEN_FILE", "/var/run/kagent/token") or None,
         )
 
 
@@ -258,7 +262,9 @@ class Dispatcher:
                    "agent": agent, "session": None, "state": None, "text": None, "ui": None, "error": None}
         try:
             # A new session every time, as the dispatcher: no context_id, no task_id, no metadata (V88).
-            reply = a2a.parse_result(self.send(url, render_prompt(rule, alert), user=self.config.user,
+            reply = a2a.parse_result(self.send(url, render_prompt(rule, alert),
+                                               user=None if self.config.token_file else self.config.user,
+                                               token_file=self.config.token_file,
                                                timeout=self.config.timeout))
             finding["session"], finding["state"] = reply.context_id, reply.state
             if reply.context_id:
@@ -276,8 +282,9 @@ class Dispatcher:
                 # answer lands in its session. The session id only comes back with the reply,
                 # so there is no link yet: say where to look.
                 finding["text"] = (f"The agent is still running after {self.config.timeout:.0f}s; "
-                                   f"the answer lands in its session, listed under `{self.config.user}` "
-                                   "in the kagent UI.")
+                                   "the answer lands in its session, owned by the dispatcher's service "
+                                   "account: continue it with ask-hk --as-serviceaccount "
+                                   "dispatcher/dispatcher --context <id>.")
             else:
                 finding["error"] = scrub(str(err))[:500]
         except Exception as err:  # noqa: BLE001 - every investigation must produce a finding
@@ -348,7 +355,8 @@ def main(argv=None) -> int:
     port = int(os.environ.get("PORT", "8080"))
     server = serve(dispatcher, port)
     log_line({"event": "start", "port": port, "rules": len(table["rules"]),
-              "a2a_base": config.a2a_base, "user": config.user})
+              "a2a_base": config.a2a_base,
+              "identity": "token" if config.token_file else config.user})
     try:
         while True:
             time.sleep(3600)

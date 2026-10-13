@@ -42,7 +42,8 @@ kubectl run -n dispatcher curl --rm -i --restart=Never --image=curlimages/curl:8
   -d '{"alerts":[{"status":"firing","fingerprint":"manual-1","labels":{"alertname":"Pod CPU starved","namespace":"n8n","pod":"<a real pod>"},"annotations":{"summary":"manual replay","runbook":"none"}}]}'
 ```
 Expect `{"decisions":["investigate"]}`, then a Slack message within five minutes and a
-session under `dispatcher` in the UI. Use a new `fingerprint` each time, or wait
+session owned by the dispatcher's service account (continue it with `scripts/ask-hk
+--as-serviceaccount dispatcher/dispatcher --agent kagent/k8s-reader --context <session>`). Use a new `fingerprint` each time, or wait
 `repeat_after_hours`.
 
 ## Change the table or the code
