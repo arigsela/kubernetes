@@ -64,3 +64,17 @@ def test_rbac_is_the_minimum():
                               "resourceNames": ["kagent-secrets"], "verbs": ["get"]}]
     rb = _one("base-apps/cluster-rbac/eval-gate-argocd-read.yaml", "RoleBinding", "eval-gate-application-read")
     assert rb["subjects"] == [{"kind": "ServiceAccount", "name": "eval-gate", "namespace": "kagent"}]
+
+
+def test_external_secret_reads_the_three_optional_keys():
+    es = _one("base-apps/kagent/eval-gate-external-secret.yaml", "ExternalSecret", "eval-gate")
+    assert es["spec"]["secretStoreRef"] == {"name": "vault-eval-gate", "kind": "SecretStore"}
+    assert es["spec"]["target"]["name"] == "eval-gate"
+    keys = {d["secretKey"]: d["remoteRef"] for d in es["spec"]["data"]}
+    assert set(keys) == {"anthropic-api-key", "typesafe-api-key", "github-token"}
+    assert all(r["key"] == "eval-gate" for r in keys.values())
+    store = _one("base-apps/kagent/eval-gate-secret-store.yaml", "SecretStore", "vault-eval-gate")
+    auth = store["spec"]["provider"]["vault"]["auth"]["kubernetes"]
+    assert auth["role"] == "eval-gate" and auth["serviceAccountRef"]["name"] == "eso-eval-gate"
+    sa = _one("base-apps/kagent/eso-eval-gate-serviceaccount.yaml", "ServiceAccount", "eso-eval-gate")
+    assert sa["metadata"]["labels"]["arigsela.com/idp-managed"] == "true"
