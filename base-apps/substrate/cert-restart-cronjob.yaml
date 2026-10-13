@@ -76,25 +76,23 @@ spec:
             node.kubernetes.io/workload: application
           securityContext:
             runAsNonRoot: true
-            runAsUser: 1001
-            runAsGroup: 1001
+            runAsUser: 65532   # distroless nonroot
+            runAsGroup: 65532
             seccompProfile:
               type: RuntimeDefault
           containers:
             - name: restart
-              # Same kubectl image the argo-workflow-tasks use; Renovate pins the digest.
-              image: bitnami/kubectl:1.30
-              command:
-                - /bin/sh
-                - -c
-                - |
-                  set -eu
-                  for d in atenet-router atenet-egress; do
-                    kubectl -n ate-system rollout restart deployment/$d
-                    kubectl -n ate-system rollout status deployment/$d --timeout=240s
-                  done
-                  printf '{"check":"substrate-cert-restart","restarted":["atenet-router","atenet-egress"]}\n'
-                  sleep 90   # stay Running long enough for Alloy to ship the line (see ca-expiry)
+              # The official kubectl image (distroless, no shell): one kubectl invocation restarts
+              # both deployments. bitnami/kubectl tags were removed from Docker Hub in 2025 and
+              # 1.30 no longer pulls (SPEC T115 for the other user of that tag).
+              image: registry.k8s.io/kubectl:v1.37.1@sha256:b7cab618e281b1ee7484e7b706a96e2135fbb6e072c2a573a7dab4e87d7f2385
+              args:
+                - -n
+                - ate-system
+                - rollout
+                - restart
+                - deployment/atenet-router
+                - deployment/atenet-egress
               resources:
                 requests:
                   cpu: 10m
