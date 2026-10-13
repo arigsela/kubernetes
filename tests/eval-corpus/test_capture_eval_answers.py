@@ -23,6 +23,13 @@ def _load(name):
 cap = _load("capture-eval-answers")
 
 
+@pytest.fixture(autouse=True)
+def fake_token(monkeypatch):
+    """main() sends a Dex token by default; fake it so no test runs kubelogin or opens a browser."""
+    monkeypatch.setenv("KAGENT_TOKEN", "test.id.token")
+    monkeypatch.delenv("KAGENT_TOKEN_FILE", raising=False)
+
+
 def recorded(name):
     return json.loads((FIXTURES / f"{name}.json").read_text())
 
