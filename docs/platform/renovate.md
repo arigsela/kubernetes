@@ -2,7 +2,7 @@
 
 **Status:** living. Written 2026-10-05 with Phase 2 of `docs/plans/cve-remediation-automation-implementation-plan.md`. Config: `renovate.json5`. Workflow: `.github/workflows/renovate.yaml`.
 
-Renovate keeps this repo's pinned versions current by opening PRs. Most CVEs in upstream images are fixed by upgrading, so this is the main route by which those fixes reach the cluster (`docs/platform/vulnerability-management.md`). It never merges anything; you do.
+Renovate keeps this repo's pinned versions current by opening PRs. Most CVEs in upstream images are fixed by upgrading, so this is the main route by which those fixes reach the cluster (`docs/platform/vulnerability-management.md`). Renovate itself never merges. Since 2026-10-13 its `review:skip` PRs (docs-only or image-tag bumps outside the deny list, every check green) are merged by the promotion workflow under `.github/promotion-policy.yaml` (`docs/platform/promotion.md`); everything else you merge.
 
 ## How it runs
 
@@ -42,9 +42,9 @@ Renovate keeps this repo's pinned versions current by opening PRs. Most CVEs in 
 
 1. Open the **Dependency Dashboard** issue. Tick any major update you want raised.
 2. Work through the new PRs:
-   - **`review:skip` image bumps:** skim the release notes, approve and merge.
+   - **`review:skip` image bumps:** usually already merged by promotion (`gh run list --workflow promote` shows the decision). One still open is outside the policy (deny-listed path, more than 2 files, a red check): the run's `reasons` say why; skim the release notes, approve and merge.
    - **Chart bumps:** run `/pr-explainer <n>`. It renders the chart at both versions and shows the Kubernetes resources that actually change.
-3. **Merging:** Renovate's PRs are authored by the App, so **you can approve them yourself** and rebase-merge, with no `--admin` needed. If the App or the `okf-autosync` bot pushes after your approval, approve again (the ruleset requires approval of the latest push).
+3. **Merging** (the ones promotion left for you): Renovate's PRs are authored by the App, so **you can approve them yourself** and rebase-merge, with no `--admin` needed. If the App or the `okf-autosync` bot pushes after your approval, approve again (the ruleset requires approval of the latest push).
 
 ## Running it by hand
 

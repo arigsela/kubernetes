@@ -6,6 +6,8 @@ that will turn it into infographics. Every screen below gives: the message, the 
 the visual to draw, any interaction the HTML version had (so you can decide what to replace it
 with in a static medium), and speaker notes. Data provenance is at the end.
 
+**As of:** this brief describes the platform before 2026-10-13. Since then two pieces exist that it does not mention: `review:skip` Renovate PRs are merged by a promotion workflow under `.github/promotion-policy.yaml` (so "Renovate never merges" and "the owner merges everything" now read "Renovate never merges; promotion merges its skip class, the owner merges the rest"), and a dispatcher routes Grafana alerts to read-only agent investigations (`base-apps/dispatcher/`). The current map is `docs/presentations/whole-picture-presentation-brief.md`.
+
 **Audience:** engineering leadership; first target is the company's AI pathfinders group (the
 people setting AI strategy). They are technical but not Kubernetes specialists. Vocabulary
 rule: name mechanisms in plain words first; the specific tool goes in a smaller "in the
