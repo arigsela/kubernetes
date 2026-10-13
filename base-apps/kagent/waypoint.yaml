@@ -13,7 +13,10 @@ metadata:
   name: kagent-waypoint
   namespace: kagent
   labels:
-    istio.io/waypoint-for: service
+    # "all": Service AND pod-addressed traffic from an enrolled namespace traverses the policy.
+    # With "service" a pod in dispatcher or backstage could curl the controller's pod IP and
+    # name any X-User-Id (review 2026-10-13).
+    istio.io/waypoint-for: all
 spec:
   gatewayClassName: istio-waypoint
   listeners:

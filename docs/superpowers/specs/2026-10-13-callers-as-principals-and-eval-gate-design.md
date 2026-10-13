@@ -3,7 +3,9 @@
 **Date:** 2026-10-13
 **Status:** implemented 2026-10-13 (identity plan T1–T6, eval-gate plan T1–T5). Shape chosen: the
 primary (ambient + waypoint) with three live corrections: the Kubernetes JWKS inline, the ingress
-routed through the waypoint (`istio.io/ingress-use-waypoint`), and NO PeerAuthentication STRICT
+routed through the waypoint (`istio.io/ingress-use-waypoint`) with NO edge RequestAuthentication
+(Gateway-wide, it 401s foreign bearers on every host), `forwardOriginalToken: false` (the controller
+re-sends the header to the actor), `waypoint-for: all`, and NO PeerAuthentication STRICT
 (the runtime's task-state calls arrive in plaintext from atenet); the waypoint rules are scoped to
 the controller's port because the waypoint fronts every Service. Owner items: SPEC T110, T112, T113.
 **Follows:** `2026-10-12-signal-dispatch-and-promotion-design.md` (ADP paths 1, 5, 7)

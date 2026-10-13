@@ -323,8 +323,14 @@ Both public hosts are Gateway API `HTTPRoute`s in this namespace on the shared `
   default identity, and the UI route strips any identity header a browser sends), or, until
   `arigsela/backstage` sends its token (SPEC T110), from Backstage's principal; a DENY refuses the
   runtime's `X-Agent-Name` from anyone but the workers and the controller; `httproute-waypoint.yaml`
-  refuses `?user_id=`. The ingress ANDs the same token requirement with the IP allow-list
-  (`base-apps/istio-ingress/`), so the external path is checked twice. Clients: `scripts/ask-hk`
+  refuses `?user_id=`. The ingress keeps its IP allow-list
+  only and routes the host through the waypoint, where the token is verified once: a
+  RequestAuthentication on the shared Gateway would 401 every non-JWT bearer on every host (the
+  n8n webhook token, API tokens), as it did for 40 minutes on 2026-10-13. The token is never
+  forwarded to the controller (it would reach the actor). Known residual: `?user_id=` is refused
+  by exact key only; a percent-encoded key (`user%5Fid`) still reaches the controller, which reads
+  it first in insecure mode, so a token holder can name another principal until the controller
+  runs in `trusted-proxy` (the UI-login follow-up). Clients: `scripts/ask-hk`
   sends your Dex token by default, `--as-serviceaccount ns/name` mints a 10-minute token to
   continue a session an automation owns, `--no-token` is the port-forward path; the dispatcher
   and the eval gate present projected tokens. Residual, by decision: no PeerAuthentication

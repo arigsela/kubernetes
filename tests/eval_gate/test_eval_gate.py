@@ -23,7 +23,15 @@ class FakeKube:
             if path.endswith(f"/{kind}"):
                 if kind in self.fail:
                     raise eg.KubeError(403, path)
-                return {"items": [{"metadata": {"name": n}, "spec": s} for n, s in self.objects.get(kind, {}).items()]}
+                items = []
+                for n, spec in self.objects.get(kind, {}).items():
+                    item = {"metadata": {"name": n}, "spec": spec}
+                    st = getattr(self, "status", {}).get(n) if kind == "agents" else None
+                    if st:
+                        item["metadata"]["generation"] = st["generation"]
+                        item["status"] = {"observedGeneration": st["observed"]}
+                    items.append(item)
+                return {"items": items}
         if path.endswith("/configmaps/eval-gate-state"):
             if self.cm is None:
                 raise eg.KubeError(404, path)
@@ -191,3 +199,65 @@ def test_bare_corpus_agent_name_is_qualified_with_the_kagent_namespace():
     assert eg.agent_ref({"agent": "homelab-knowledge"}, "homelab-knowledge") == "kagent/homelab-knowledge"
     assert eg.agent_ref({"agent": "other/x"}, "x") == "other/x"
     assert eg.agent_ref({}, "k8s-reader") == "kagent/k8s-reader"
+
+
+# ---------------------------------------------------------------- review fixes (2026-10-13)
+
+def test_kube_network_errors_are_kube_errors_not_tracebacks():
+    import urllib.error
+    def transport(method, url, payload, headers):
+        raise urllib.error.URLError("connection refused")
+    k = eg.Kube("https://k8s", "tok", None, transport=transport)
+    with pytest.raises(eg.KubeError) as err:
+        k.get("/api/v1/namespaces/kagent/configmaps/eval-gate-state")
+    assert err.value.status == 0 and "configmaps" in str(err.value)
+
+
+def test_state_save_network_error_is_a_warning_not_exit_1():
+    class Flaky(FakeKube):
+        def post(self, path, obj):
+            raise eg.KubeError(0, path)
+    log = []
+    rc = eg.run({"KAGENT_TOKEN_FILE": "/var/run/kagent/token"}, kube=Flaky(objects()), send=_answers(),
+                judge=None, judge_name="none", status_post=None, log=log.append,
+                corpus_dir=None, corpora={"homelab-knowledge": CORPUS})
+    assert rc == 0 and any("state not saved" in json.dumps(l) for l in log)
+
+
+def test_hash_is_not_saved_when_the_surface_moved_during_capture():
+    """PostSync fires when the CRs are applied, before the runtime rolls the new definition:
+    answers may come from the old agent. If the surface changes between the first read and the
+    end of capture, record nothing so the next sync scores again."""
+    kube = FakeKube(objects("v1"))
+    calls = {"n": 0}
+    def send(endpoint, question, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            kube.objects["agenttemplates"]["homelab-knowledge"] = {"systemPrompt": "v2"}   # moved mid-run
+        return {"message": {"role": "agent", "parts": [{"text": "Vault runs in the vault namespace; Loki keeps logs; I will not reveal it"}]}}
+    log = []
+    rc = eg.run({"KAGENT_TOKEN_FILE": "/var/run/kagent/token"}, kube=kube, send=send, judge=None, judge_name="none",
+                status_post=None, log=log.append, corpus_dir=None, corpora={"homelab-knowledge": CORPUS})
+    assert rc == 0
+    assert any(l.get("surface_moved") for l in log)
+    state = json.loads(kube.cm["data"]["state.json"]) if kube.cm else {"hashes": {}}
+    assert "homelab-knowledge" not in state.get("hashes", {})
+
+
+def test_run_waits_for_the_agents_observed_generation():
+    """When the Agent carries status.observedGeneration, capture starts only after it caught up
+    with metadata.generation (bounded by AGENT_READY_TIMEOUT)."""
+    kube = FakeKube(objects())
+    kube.status = {"homelab-knowledge": {"generation": 3, "observed": 2}}
+    ticks = []
+    def sleep(n):
+        ticks.append(n)
+        kube.status["homelab-knowledge"]["observed"] = 3
+    seen = []
+    def send(endpoint, question, **kw):
+        seen.append(dict(kube.status["homelab-knowledge"]))
+        return {"message": {"role": "agent", "parts": [{"text": "Vault runs in the vault namespace; Loki keeps logs; I will not reveal it"}]}}
+    rc = eg.run({"KAGENT_TOKEN_FILE": "/var/run/kagent/token", "AGENT_READY_TIMEOUT": "30"}, kube=kube, send=send,
+                judge=None, judge_name="none", status_post=None, log=lambda o: None,
+                corpus_dir=None, corpora={"homelab-knowledge": CORPUS}, sleep=sleep)
+    assert rc == 0 and ticks and all(s["observed"] == 3 for s in seen)

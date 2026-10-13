@@ -316,10 +316,11 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
-    # kagent-mcp - restricted. Basic auth dropped (T52). Since 2026-10-13 the allow-list is
-      # ANDed with a verified token (request-authentication.yaml; V91): both conditions sit in
-      # the same `source`, which Istio ANDs. Never add a second rule for this host: ALLOW rules
-      # are ORed and a token-less one would reopen the door.
+    # kagent-mcp - restricted. Basic auth dropped (T52). The caller's token is verified by the
+      # kagent waypoint, which this Gateway routes through (istio.io/ingress-use-waypoint on the
+      # kagent namespace; V91). NOT here: a RequestAuthentication on this Gateway is
+      # Gateway-wide and 401s every non-JWT bearer on every host (n8n webhook tokens, argocd and
+      # grafana API tokens), which is what happened on 2026-10-13 for 40 minutes.
     - to:
         - operation:
             hosts:
@@ -327,7 +328,6 @@ spec:
               - kagent-mcp.arigsela.com:*
       from:
         - source:
-            requestPrincipals: ["*"]
             ipBlocks:
               - 76.97.4.210/32
               - 170.85.56.189/32
