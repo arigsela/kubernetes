@@ -469,3 +469,80 @@ def test_ask_hk_rejects_empty_question_and_bad_agent():
     assert run(["  "], Recorder())[0] == 1
     assert run([], Recorder())[0] == 1
     assert run(["--agent", "homelab-knowledge", "q"], Recorder())[0] == 1
+
+
+# ---------------------------------------------------------------- tokens (callers as principals)
+
+def test_headers_with_a_token_carry_bearer_and_no_user_id():
+    h = a2a.request_headers("someone@example.com", token="abc.def.ghi")
+    assert h["Authorization"] == "Bearer abc.def.ghi"
+    assert "X-User-Id" not in h
+
+
+def test_headers_without_a_token_keep_the_user_header():
+    h = a2a.request_headers("eval-capture")
+    assert h["X-User-Id"] == "eval-capture" and "Authorization" not in h
+
+
+def test_send_reads_the_token_file_on_every_call(tmp_path):
+    f = tmp_path / "token"
+    f.write_text("first\n")
+    seen = []
+
+    def transport(url, payload, headers, timeout):
+        seen.append(headers.get("Authorization"))
+        return {"result": {"message": {"role": "agent", "parts": [{"text": "ok"}]}}}
+
+    a2a.send_message("http://x/agents/kagent/a", "q", token_file=str(f), transport=transport)
+    f.write_text("second\n")
+    a2a.send_message("http://x/agents/kagent/a", "q", token_file=str(f), transport=transport)
+    assert seen == ["Bearer first", "Bearer second"]
+
+
+def test_kubelogin_token_parses_the_exec_credential():
+    def run(cmd, **kw):
+        assert cmd[:3] == ["kubectl", "oidc-login", "get-token"]
+        assert "--oidc-issuer-url=https://dex.arigsela.com" in cmd
+        assert "--oidc-client-id=kubernetes" in cmd
+        assert "--oidc-extra-scope=email" in cmd
+        class R: returncode = 0; stdout = '{"kind":"ExecCredential","status":{"token":"id.tok.en"}}'; stderr = ""
+        return R()
+    assert a2a.kubelogin_token(run=run) == "id.tok.en"
+
+
+def test_serviceaccount_token_mints_with_the_kagent_audience():
+    def run(cmd, **kw):
+        assert cmd == ["kubectl", "create", "token", "dispatcher", "-n", "dispatcher",
+                       "--audience", "kagent", "--duration", "10m"]
+        class R: returncode = 0; stdout = "sa.tok.en\n"; stderr = ""
+        return R()
+    assert a2a.serviceaccount_token("dispatcher/dispatcher", run=run) == "sa.tok.en"
+
+
+def test_serviceaccount_token_rejects_a_bad_ref():
+    with pytest.raises(ValueError):
+        a2a.serviceaccount_token("dispatcher", run=lambda *a, **k: None)
+
+
+def test_acquire_token_precedence(tmp_path):
+    f = tmp_path / "t"
+    f.write_text("from-file")
+    assert a2a.acquire_token(token="explicit", token_file=str(f), env={}) == "explicit"
+    assert a2a.acquire_token(token_file=str(f), env={"KAGENT_TOKEN": "env"}) == "from-file"
+    assert a2a.acquire_token(env={"KAGENT_TOKEN": "env"}) == "env"
+    assert a2a.acquire_token(env={"KAGENT_TOKEN_FILE": str(f)}) == "from-file"
+    called = []
+    def run(cmd, **kw):
+        called.append(cmd[:3])
+        class R: returncode = 0; stdout = '{"status":{"token":"kl"}}'; stderr = ""
+        return R()
+    assert a2a.acquire_token(env={}, run=run) == "kl"
+    assert called == [["kubectl", "oidc-login", "get-token"]]
+
+
+def test_acquire_token_reports_a_failed_kubectl():
+    def run(cmd, **kw):
+        class R: returncode = 1; stdout = ""; stderr = "no browser"
+        return R()
+    with pytest.raises(RuntimeError, match="no browser"):
+        a2a.acquire_token(env={}, run=run)

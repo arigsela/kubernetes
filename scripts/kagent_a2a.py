@@ -21,7 +21,9 @@ internal/jsonrpc/jsonrpc.go). This is A2A **v1**, not the 0.3 protocol kagent
 
 A send without a contextId creates a Session; the returned contextId IS the
 Session id, and sending it back continues the conversation. Sessions are owned
-by the caller identity, so a follow-up must use the same X-User-Id. In the
+by the verified identity (the Dex `email` for a human, system:serviceaccount:<ns>:<sa>
+for an automation), so a follow-up must present the same identity. X-User-Id is honoured
+only where no mesh sits in front of the controller (a port-forward). In the
 controller's default `insecure` auth mode that header is the whole identity: a
 missing header means `admin@kagent.dev` (go/core/internal/httpserver/auth/authn.go).
 
@@ -46,18 +48,29 @@ kagent CLI (go/core/cli/internal/commands/session/invoke.go, sendResultText).
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 
 # The kagent-mcp host routes /agents/kagent/ to the controller (httproute-mcp.yaml)
 # behind the Gateway IP allow-list. In-cluster callers use the Service directly.
 PUBLIC_BASE = "https://kagent-mcp.arigsela.com"
 IN_CLUSTER_BASE = "http://kagent-controller.kagent.svc.cluster.local:8083"
 DEFAULT_USER = "admin@kagent.dev"
+
+# Callers as principals (docs/superpowers/specs/2026-10-13-callers-as-principals-and-eval-gate-design.md).
+# The mesh verifies the bearer token and sets X-User-Id from its claim; a client that sends a
+# token must not also name itself. Humans reuse kubectl's Dex login (kubelogin cache);
+# automations present a projected service account token with this audience.
+DEX_ISSUER = "https://dex.arigsela.com"
+DEX_CLIENT_ID = "kubernetes"
+TOKEN_AUDIENCE = "kagent"
 A2A_VERSION = "1.0"
 # kagent's HITL A2A extension (go/core/internal/a2a/hitl): tool approvals and ask_user.
 HITL_EXTENSION = "https://kagent.dev/extensions/hitl/v1"
@@ -212,16 +225,65 @@ def answer_metadata(request_id: str, answer: str) -> dict:
                              "answers": [{"answer": [answer]}]}}
 
 
-def request_headers(user: str | None) -> dict:
+def request_headers(user: str | None, token: str | None = None) -> dict:
     headers = {"Content-Type": "application/json", "Accept": "application/json",
                # Not enforced by the alpha11 JSON-RPC handler, but the kagent CLI
                # and the a2a-go client always send it (go/core/internal/utils/a2a_version.go).
                "A2A-Version": A2A_VERSION,
                # The HITL extension is negotiated per request (a2a-go reads this header).
                "A2A-Extensions": HITL_EXTENSION}
-    if user:
-        headers["X-User-Id"] = user
+    if token:
+        headers["Authorization"] = f"Bearer {token}"   # identity = the verified claim (mesh)
+    elif user:
+        headers["X-User-Id"] = user                     # the no-mesh dev path (port-forward)
     return headers
+
+
+def read_token_file(path: str) -> str:
+    return Path(path).read_text().strip()
+
+
+def _run_kubectl(cmd: list[str], run) -> str:
+    r = run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"{' '.join(cmd[:3])} failed: {(r.stderr or r.stdout).strip()[:300]}")
+    return r.stdout
+
+
+def kubelogin_token(run=subprocess.run) -> str:
+    """The Dex ID token kubectl caches (int128/kubelogin). The browser opens only when the
+    cached refresh token is gone. The ExecCredential's status.token is the ID token."""
+    out = _run_kubectl(["kubectl", "oidc-login", "get-token",
+                        f"--oidc-issuer-url={DEX_ISSUER}", f"--oidc-client-id={DEX_CLIENT_ID}",
+                        "--oidc-extra-scope=email", "--oidc-extra-scope=offline_access"], run)
+    return json.loads(out)["status"]["token"]
+
+
+def serviceaccount_token(ref: str, run=subprocess.run) -> str:
+    """A 10-minute projected token for namespace/name with the kagent audience: an audited
+    TokenRequest, which is how the owner continues a session an automation owns."""
+    ns, _, name = ref.partition("/")
+    if not ns or not name or "/" in name:
+        raise ValueError(f"--as-serviceaccount wants namespace/name, got {ref!r}")
+    return _run_kubectl(["kubectl", "create", "token", name, "-n", ns,
+                         "--audience", TOKEN_AUDIENCE, "--duration", "10m"], run).strip()
+
+
+def acquire_token(*, token: str | None = None, token_file: str | None = None,
+                  as_serviceaccount: str | None = None, env=os.environ, run=subprocess.run) -> str:
+    """Explicit token, then a file, then $KAGENT_TOKEN, $KAGENT_TOKEN_FILE, a service account
+    to impersonate, else the kubelogin cache."""
+    if token:
+        return token
+    if token_file:
+        return read_token_file(token_file)
+    if env.get("KAGENT_TOKEN"):
+        return env["KAGENT_TOKEN"]
+    if env.get("KAGENT_TOKEN_FILE"):
+        return read_token_file(env["KAGENT_TOKEN_FILE"])
+    if as_serviceaccount:
+        return serviceaccount_token(as_serviceaccount, run)
+    return kubelogin_token(run)
 
 
 def http_post(url: str, payload: bytes, headers: dict, timeout: float) -> dict:
@@ -255,7 +317,8 @@ def _send_not_accepted(error: dict) -> float | None:
 
 def send_message(endpoint: str, text: str, *, context_id: str | None = None,
                  task_id: str | None = None, metadata: dict | None = None,
-                 user: str | None = DEFAULT_USER, timeout: float = DEFAULT_TIMEOUT,
+                 user: str | None = DEFAULT_USER, token: str | None = None,
+                 token_file: str | None = None, timeout: float = DEFAULT_TIMEOUT,
                  transport=None, sleep=time.sleep, clock=time.monotonic,
                  retry_deadline: float = RETRY_DEADLINE) -> dict:
     """POST one SendMessage and return the JSON-RPC `result` ({"task"|"message": ...}).
@@ -268,7 +331,7 @@ def send_message(endpoint: str, text: str, *, context_id: str | None = None,
     post = transport or http_post
     payload = json.dumps(build_send_request(text, context_id=context_id, task_id=task_id,
                                             metadata=metadata)).encode()
-    headers = request_headers(user)
+    headers = request_headers(user, token or (read_token_file(token_file) if token_file else None))
     give_up = clock() + retry_deadline
     while True:
         body = post(endpoint, payload, headers, timeout)
