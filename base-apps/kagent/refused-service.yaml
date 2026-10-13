@@ -1,0 +1,22 @@
+# base-apps/kagent/refused-service.yaml
+# A Service with NO selector and NO endpoints: the backend httproute-waypoint.yaml sends a
+# request to when it carries `?user_id=` (the identity-override the controller would honour).
+# It exists so the HTTPRoute resolves (ResolvedRefs=True): a backend that does not exist makes
+# Gateway API mark the route unresolved, Argo reports it Degraded, and a Degraded resource
+# fails the whole kagent-secrets sync before the PostSync hook runs (2026-10-13, 17:30Z until
+# this fix: the eval gate never ran). Traffic to it gets a 503 from the waypoint, which is the
+# refusal we want; nothing ever listens here.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: refused
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: ClusterIP
+  ports:
+    - name: refused
+      port: 1
+      targetPort: 1
