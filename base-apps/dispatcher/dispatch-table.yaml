@@ -78,6 +78,13 @@ data:
           "why": "A regression names corpus ids and a commit; a human reads the diff. An agent grading an agent change is the loop this gate exists to break."
         },
         {
+          "id": "substrate-certificate-expired",
+          "source": "grafana",
+          "match": {"alertname": "Substrate pod certificate expired"},
+          "route": "none",
+          "why": "The agents themselves are down when this fires; only a human (or the CronJob) can restart the Substrate pods."
+        },
+        {
           "id": "falco-sensitive-detection",
           "source": "grafana",
           "match": {"alertname": "Falco detected a sensitive-file read or unexpected API access"},
