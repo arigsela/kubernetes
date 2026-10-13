@@ -119,15 +119,28 @@ it, possibly on the other node.
   is a hypervisor fix; see `base-apps/substrate/runbook.md`.
 
 ### Symptom: `scripts/ask-hk` (or any A2A call) gets HTTP 403
-- **Check:** a 403 `RBAC: access denied` from `kagent-mcp.arigsela.com` comes from the Gateway's
-  IP allow-list (`base-apps/istio-ingress/authorizationpolicy.yaml`), not kagent: your address
-  isn't on it, or the WAN IP rotated. A timeout instead usually means the Route 53 record is stale.
+- **Check:** a 403 `RBAC: access denied` from `kagent-mcp.arigsela.com` comes from the Gateway:
+  the IP allow-list (`base-apps/istio-ingress/authorizationpolicy.yaml`) or, since 2026-10-13, a
+  missing token on that host (the rule ANDs both). A 401 is a token that did not verify (wrong
+  issuer or audience, expired: `kubectl oidc-login get-token …` again, or `--as-serviceaccount`).
+  Your address isn't on the list, or the WAN IP rotated. A timeout instead usually means the Route 53 record is stale.
   `kubectl -n kagent get httproute kagent-mcp -o yaml` shows whether `/agents/kagent/` is accepted.
   (A 403 from the *model*, inside a completed task, is the egress credential policy above.)
 - **Fix:** if the WAN IP rotated, `base-apps/wan-ip-monitor/` moves DNS and opens the allow-list
   PR; see its runbook. A new client address goes into the rule for this host by PR. Meanwhile,
   bypass the Gateway: `kubectl port-forward -n kagent svc/kagent-controller 8083:8083 &` and
   `scripts/ask-hk --endpoint http://127.0.0.1:8083 "…"`.
+
+### Symptom: agents unreachable or every turn fails after an identity change
+- **Check:** `kubectl -n kagent get gateway kagent-waypoint` (PROGRAMMED), `kubectl -n kagent logs
+  deploy/kagent-waypoint | grep ' 403 '` (which host/path the policy refused; the controller is
+  port 8083, everything else behind the waypoint must pass), `kubectl -n istio-system logs
+  deploy/istiod | grep -i jwks` (a key fetch failure; the Kubernetes issuer's keys are inline and
+  must be refreshed with `kubectl get --raw /openid/v1/jwks` when k3s rotates them), and the
+  worker log for `failed to save task state: connection reset` (plaintext from atenet refused:
+  a PeerAuthentication STRICT crept in; there must be none in `kagent`).
+- **Fix:** by PR. Emergency bypass: revert the enrolment labels in `base-apps/kagent-secrets.yaml`
+  (`managedNamespaceMetadata`); the controller is then reachable as before 2026-10-13.
 
 ### Symptom: A2A returns `-32004` / `KAGENT_SEND_NOT_ACCEPTED`
 - **Cause:** the session was busy pausing or suspending, and the message was provably not
@@ -203,8 +216,9 @@ group to the role, and note it in the manifest header's dated list.
 `--context <id>` to continue (the id is printed after each answer). Exit 0 answered, 2 waiting for
 an approval or an answer, 1 failed. The UI is `https://kagent.arigsela.com`.
 
-From Claude Code, the first message goes through `ask-hk` (the MCP endpoint can't create a
-Session); follow-ups can use the `kagent` MCP server's `invoke_session` tool with the same id.
+From Claude Code every message goes through `ask-hk` (`--context <id>` for follow-ups); the
+`kagent` MCP server was retired on 2026-10-13 (the endpoint needs a bearer token Claude Code
+cannot mint).
 Start a new conversation after an AgentTemplate change (a Session is pinned to the revision it
 was created from) and after 30 idle days (`sessionIdleTTL: 720h` in `base-apps/kagent.yaml`;
 the Session is deleted, memory is kept).
