@@ -66,13 +66,14 @@ def test_rbac_is_the_minimum():
     assert rb["subjects"] == [{"kind": "ServiceAccount", "name": "eval-gate", "namespace": "kagent"}]
 
 
-def test_external_secret_reads_the_three_optional_keys():
+def test_external_secret_extracts_whatever_properties_exist():
     es = _one("base-apps/kagent/eval-gate-external-secret.yaml", "ExternalSecret", "eval-gate")
     assert es["spec"]["secretStoreRef"] == {"name": "vault-eval-gate", "kind": "SecretStore"}
     assert es["spec"]["target"]["name"] == "eval-gate"
-    keys = {d["secretKey"]: d["remoteRef"] for d in es["spec"]["data"]}
-    assert set(keys) == {"anthropic-api-key", "typesafe-api-key", "github-token"}
-    assert all(r["key"] == "eval-gate" for r in keys.values())
+    # extract, not a data list: a listed property missing in Vault (github-token until the
+    # owner mints a PAT) is a SecretSyncedError that fails the kagent-secrets sync
+    assert "data" not in es["spec"]
+    assert es["spec"]["dataFrom"] == [{"extract": {"key": "eval-gate"}}]
     store = _one("base-apps/kagent/eval-gate-secret-store.yaml", "SecretStore", "vault-eval-gate")
     auth = store["spec"]["provider"]["vault"]["auth"]["kubernetes"]
     assert auth["role"] == "eval-gate" and auth["serviceAccountRef"]["name"] == "eso-eval-gate"
