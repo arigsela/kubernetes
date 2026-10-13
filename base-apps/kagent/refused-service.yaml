@@ -4,7 +4,7 @@
 # It exists so the HTTPRoute resolves (ResolvedRefs=True): a backend that does not exist makes
 # Gateway API mark the route unresolved, Argo reports it Degraded, and a Degraded resource
 # fails the whole kagent-secrets sync before the PostSync hook runs (2026-10-13, 17:30Z until
-# this fix: the eval gate never ran). Traffic to it gets a 503 from the waypoint, which is the
+# this fix: the eval gate never ran; the next run after it was defeated by SPEC T114 instead). Traffic to it gets a 503 from the waypoint, which is the
 # refusal we want; nothing ever listens here.
 ---
 apiVersion: v1
