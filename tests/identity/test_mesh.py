@@ -75,6 +75,21 @@ def test_user_paths_need_a_verified_principal():
     for r in user_rules:
         src = r["from"][0]["source"]
         assert src.get("requestPrincipals") or set(src.get("principals", [])) <= allowed_principals, r
+        assert r["to"][0]["operation"]["ports"] == ["8083"], "controller rules are scoped to its port"
+
+
+def test_everything_that_is_not_the_controller_passes_the_waypoint():
+    """The waypoint fronts every Service in kagent; the controller's own calls to the MCP
+    servers were refused (403) when this rule was missing (2026-10-13)."""
+    ap = _policy()
+    assert any(r.get("to") and r["to"][0]["operation"].get("notPorts") == ["8083"] and "from" not in r
+               for r in ap["spec"]["rules"])
+
+
+def test_the_controller_may_call_itself():
+    ap = _policy()
+    assert any(r.get("from") and r["from"][0]["source"].get("principals") == ["cluster.local/ns/kagent/sa/kagent-controller"]
+               for r in ap["spec"]["rules"])
 
 
 def test_dex_rule_requires_email_claim():
@@ -89,7 +104,9 @@ def test_agent_name_header_only_from_the_workers():
     assert deny["spec"]["action"] == "DENY"
     rule = deny["spec"]["rules"][0]
     assert rule["when"][0] == {"key": "request.headers[x-agent-name]", "values": ["*"]}
-    assert rule["from"][0]["source"]["notPrincipals"] == ["cluster.local/ns/kagent/sa/default"]
+    assert set(rule["from"][0]["source"]["notPrincipals"]) == {"cluster.local/ns/kagent/sa/default",
+                                                               "cluster.local/ns/kagent/sa/kagent-controller"}
+    assert rule["to"][0]["operation"]["ports"] == ["8083"]
 
 
 def test_backstage_exception_is_dated():
@@ -98,11 +115,14 @@ def test_backstage_exception_is_dated():
         assert "EXCEPTION until" in text and "arigsela/backstage" in text
 
 
-def test_peer_authentication_is_strict_on_the_controller_only():
-    pa = one("base-apps/kagent/peer-authentication.yaml", "PeerAuthentication", "kagent-controller")
-    assert pa["spec"]["mtls"]["mode"] == "STRICT"
-    assert pa["spec"]["selector"]["matchLabels"] == {"app.kubernetes.io/name": "kagent",
-                                                     "app.kubernetes.io/component": "controller"}
+def test_no_strict_peer_authentication_in_kagent():
+    """STRICT cut the Substrate runtime (ate-system, unenrolled) off from the controller
+    (2026-10-13: "failed to save task state: connection reset"). The decision and the residual
+    risk are in the policy header and SPEC; a STRICT object here reopens that incident."""
+    import glob
+    for f in glob.glob(str(REPO / "base-apps/kagent/*.yaml")):
+        for d in load(f.replace(str(REPO) + "/", "")):
+            assert d.get("kind") != "PeerAuthentication", f
 
 
 def test_network_policy_limits_controller_ingress():

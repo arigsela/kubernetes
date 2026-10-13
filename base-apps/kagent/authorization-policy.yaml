@@ -1,17 +1,27 @@
 # base-apps/kagent/authorization-policy.yaml
-# Who may call the controller, through the waypoint (V91). ALLOW semantics: anything not listed
-# is refused. Identity was set by request-authentication.yaml.
+# Who may call the CONTROLLER (port 8083), through the waypoint (V91). ALLOW semantics: a
+# request to the controller that matches none of these rules is refused. Identity was set by
+# request-authentication.yaml. The waypoint fronts EVERY Service in this namespace (namespace
+# label istio.io/use-waypoint), so the last rule lets everything that is not the controller
+# (the MCP tool servers, the UI, ...) pass untouched: this policy is about the controller only.
 #   1. The user paths with a Dex token that carries an email (a human).
 #   2. The user paths with a Kubernetes service account token (an automation).
 #   3. The user paths from the UI's own workload principal, no token: the UI is one identity,
 #      the controller default; httproute.yaml strips any header a browser user sends.
-#   4. The runtime paths from the worker principal (Substrate workers run as `default` in this
-#      namespace): sub-agent A2A, task updates, push notifications. The path list comes from
-#      the observe-mode waypoint log (plan Task 4, step 7.9).
-#   5. EXCEPTION until arigsela/backstage sends its projected token (plugin PR, SPEC T110):
+#   4. The controller itself: its `kagent-api` RemoteMCPServer is its own /mcp, discovered
+#      and called by the controller's principal.
+#   5. The worker principal on the runtime paths. (The actors' task-state calls arrive from
+#      atenet in ate-system and never traverse the waypoint; this rule covers a worker pod
+#      that calls the controller directly.)
+#   6. EXCEPTION until arigsela/backstage sends its projected token (plugin PR, SPEC T110):
 #      Backstage's workload principal on the user paths without a JWT. Remove this rule in
 #      that PR's wake.
-# The DENY policy below refuses the runtime's X-Agent-Name header from anyone but the workers.
+#   7. Anything that is not the controller: allowed, as before this policy existed.
+# The DENY policy below refuses the runtime's X-Agent-Name header from anyone but the workers
+# and the controller.
+# No PeerAuthentication STRICT: the Substrate runtime (ate-system, not in the mesh) saves task
+# state on the controller in plaintext; STRICT cut it off (2026-10-13 17:31Z, "failed to save
+# task state: connection reset"). The NetworkPolicy limits who may reach the controller at L4.
 ---
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
@@ -30,6 +40,7 @@ spec:
             requestPrincipals: ["https://dex.arigsela.com/*"]
       to:
         - operation:
+            ports: ["8083"]
             paths: ["/agents/*", "/mcp", "/mcp/*", "/api/*"]
       when:
         - key: request.auth.claims[email]
@@ -39,25 +50,37 @@ spec:
             requestPrincipals: ["https://kubernetes.default.svc.cluster.local/*"]
       to:
         - operation:
+            ports: ["8083"]
             paths: ["/agents/*", "/mcp", "/mcp/*", "/api/*"]
     - from:
         - source:
             principals: ["cluster.local/ns/kagent/sa/kagent-ui"]
       to:
         - operation:
+            ports: ["8083"]
             paths: ["/agents/*", "/mcp", "/mcp/*", "/api/*"]
+    - from:
+        - source:
+            principals: ["cluster.local/ns/kagent/sa/kagent-controller"]
+      to:
+        - operation:
+            ports: ["8083"]
     - from:
         - source:
             principals: ["cluster.local/ns/kagent/sa/default"]
       to:
         - operation:
-            paths: ["/agents/*", "/api/*", "/a2a/*"]     # corrected from the observe log (Task 4 ledger)
+            ports: ["8083"]
     - from:
         - source:
             principals: ["cluster.local/ns/backstage/sa/default"]   # EXCEPTION until arigsela/backstage sends a token (T110)
       to:
         - operation:
+            ports: ["8083"]
             paths: ["/agents/*", "/api/*"]
+    - to:
+        - operation:
+            notPorts: ["8083"]
 ---
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
@@ -73,7 +96,12 @@ spec:
   rules:
     - from:
         - source:
-            notPrincipals: ["cluster.local/ns/kagent/sa/default"]
+            notPrincipals:
+              - cluster.local/ns/kagent/sa/default
+              - cluster.local/ns/kagent/sa/kagent-controller
+      to:
+        - operation:
+            ports: ["8083"]
       when:
         - key: request.headers[x-agent-name]
           values: ["*"]
