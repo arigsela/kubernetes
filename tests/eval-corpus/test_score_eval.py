@@ -5,6 +5,7 @@ Everything else is scoring bookkeeping.
 """
 from pathlib import Path
 import importlib.util
+import json
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -116,3 +117,58 @@ def test_real_corpus_loads_and_every_entry_is_scoreable():
             ans = " ".join((e["golden"] or {}).get("must_include") or ["x"])
             r = se.score_entry(e, ans)
             assert r["passed"] is True, cid
+
+
+# ---------------------------------------------------------------- the eval-gate job's needs
+
+def test_judge_prompt_names_facts_and_behavior():
+    entry = {"id": "x", "question": "Q?", "reference": "R", "golden": {"must_include": ["a", "b"], "behavior": "answer"}}
+    p = se.judge_prompt(entry, "A")
+    assert "Q?" in p and "R" in p and "['a', 'b']" in p and "answer" in p and "AGENT ANSWER:\nA" in p
+
+
+def test_anthropic_judge_http_parses_a_structured_verdict():
+    seen = {}
+
+    def transport(url, payload, headers, timeout):
+        seen["url"], seen["headers"], seen["body"] = url, headers, json.loads(payload)
+        return {"stop_reason": "end_turn",
+                "content": [{"type": "text", "text": json.dumps({"pass": True, "rationale": "fine"})}]}
+
+    v = se.anthropic_judge_http({"id": "x", "question": "Q", "golden": {}}, "A", api_key="k", transport=transport)
+    assert v == {"pass": True, "rationale": "fine"}
+    assert seen["url"] == "https://api.anthropic.com/v1/messages"
+    assert seen["headers"]["x-api-key"] == "k" and seen["headers"]["anthropic-version"]
+    assert seen["body"]["model"] == se.JUDGE_MODEL and seen["body"]["messages"][0]["role"] == "user"
+
+
+def test_anthropic_judge_http_refusal_is_unsure_not_fail():
+    def transport(url, payload, headers, timeout):
+        return {"stop_reason": "refusal", "content": []}
+    v = se.anthropic_judge_http({"id": "x", "question": "Q", "golden": {}}, "A", api_key="k", transport=transport)
+    assert v["pass"] is None and "refusal" in v["rationale"]
+
+
+def test_select_judge_from_env():
+    assert se.select_judge_from_env({})[1] == "none"
+    assert se.select_judge_from_env({"ANTHROPIC_API_KEY": "a"})[1] == "claude"
+    assert se.select_judge_from_env({"TYPESAFE_API_KEY": "t"})[1] == "jev"
+    assert se.select_judge_from_env({"TYPESAFE_API_KEY": "t", "ANTHROPIC_API_KEY": "a"})[1] == "cascade"
+
+
+def test_module_imports_without_yaml_or_anthropic(monkeypatch):
+    """The job image has neither; the module must import and score the rubric without them."""
+    import builtins
+    real = builtins.__import__
+
+    def fake(name, *a, **k):
+        if name in ("yaml", "anthropic"):
+            raise ImportError(name)
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", fake)
+    spec = importlib.util.spec_from_file_location("se_noyaml", REPO / "scripts" / "score-eval.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    r = mod.score_entry({"id": "x", "golden": {"must_include": ["vault"], "behavior": "answer"}}, "Vault runs it")
+    assert r["passed"] is True

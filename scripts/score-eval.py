@@ -49,12 +49,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-import yaml
 
 CORPUS_DIR = "tests/eval-corpus"
 
 
 def load_corpus(repo_root: Path) -> dict[str, dict]:
+    import yaml  # lazy: the eval-gate job has no pyyaml (it gets the corpus as JSON)
     out: dict[str, dict] = {}
     for path in sorted((repo_root / CORPUS_DIR).glob("*.yaml")):
         doc = yaml.safe_load(path.read_text()) or {}
@@ -149,17 +149,9 @@ VERDICT_SCHEMA = {
 }
 
 
-def anthropic_judge(entry: dict, answer: str) -> dict:
-    """Real semantic judge, used only where an API key exists. Imported lazily so
-    the scorer has no hard dependency on the SDK or a key."""
-    try:
-        import anthropic
-    except ImportError:
-        raise SystemExit("pip install anthropic  (or run without --judge)")
-
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+def judge_prompt(entry: dict, answer: str) -> str:
     golden = entry.get("golden") or {}
-    prompt = (
+    return (
         "You are grading an AI agent's answer against a known-good reference.\n\n"
         f"QUESTION:\n{entry['question']}\n\n"
         f"REFERENCE (what a correct answer establishes):\n{entry.get('reference','')}\n\n"
@@ -171,6 +163,48 @@ def anthropic_judge(entry: dict, answer: str) -> dict:
         "expected behavior — phrasing does not matter. Set pass to true or false and "
         "give a one-sentence rationale."
     )
+
+
+ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"
+ANTHROPIC_BETA = "server-side-fallback-2026-07-01"
+
+
+def _http_post_url(url: str, payload: bytes, headers: dict, timeout: float) -> dict:
+    request = urllib.request.Request(url, data=payload, method="POST", headers=headers)
+    with urllib.request.urlopen(request, timeout=timeout) as resp:
+        return json.load(resp)
+
+
+def anthropic_judge_http(entry: dict, answer: str, *, api_key: str, transport=None,
+                         timeout: float = 120.0) -> dict:
+    """The same call as anthropic_judge, over urllib: the eval-gate job carries no SDK.
+    Request fields mirror the SDK call (output_config, fallbacks, betas)."""
+    body = {"model": JUDGE_MODEL, "max_tokens": 16000, "fallbacks": "default",
+            "output_config": {"effort": "low",
+                              "format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
+            "messages": [{"role": "user", "content": judge_prompt(entry, answer)}]}
+    headers = {"x-api-key": api_key, "anthropic-version": ANTHROPIC_VERSION,
+               "anthropic-beta": ANTHROPIC_BETA, "content-type": "application/json"}
+    post = transport or _http_post_url
+    msg = post(ANTHROPIC_URL, json.dumps(body).encode(), headers, timeout)
+    if msg.get("stop_reason") in ("refusal", "max_tokens"):
+        why = (msg.get("stop_details") or {}).get("category")
+        return {"pass": None, "rationale": f"claude judge stopped: {msg.get('stop_reason')}"
+                                           + (f" ({why})" if why else "")}
+    text = next(b["text"] for b in msg.get("content", []) if b.get("type") == "text")
+    return json.loads(text)
+
+
+def anthropic_judge(entry: dict, answer: str) -> dict:
+    """Real semantic judge, used only where an API key exists. The SDK when it is installed
+    (laptop), else the HTTP client (the eval-gate job)."""
+    try:
+        import anthropic
+    except ImportError:
+        return anthropic_judge_http(entry, answer, api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     # Claude Sonnet 5.5. It thinks by default (it cannot be disabled), and thinking counts
     # toward max_tokens, so the old 300 would truncate the verdict: low effort keeps the
     # thinking short on a grading call, and max_tokens leaves room for it. No sampling
@@ -180,11 +214,11 @@ def anthropic_judge(entry: dict, answer: str) -> dict:
     # Anthropic's recommended fallback model inside the same request.
     msg = client.beta.messages.create(
         model=JUDGE_MODEL, max_tokens=16000,
-        betas=["server-side-fallback-2026-07-01"],
+        betas=[ANTHROPIC_BETA],
         fallbacks="default",
         output_config={"effort": "low",
                        "format": {"type": "json_schema", "schema": VERDICT_SCHEMA}},
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{"role": "user", "content": judge_prompt(entry, answer)}],
     )
     if msg.stop_reason in ("refusal", "max_tokens"):
         # Not a verdict: pass None hands the decision back to the deterministic rubric
@@ -448,6 +482,18 @@ def render_calibration(rows: list[dict], *, thresholds=None) -> str:
             cas=f"{'pass' if r['cascade'] else 'fail'} ({r['cascade_tier']})"))
     lines += ["", "Rows keep Jev's raw probabilities so thresholds can be re-swept without new calls."]
     return "\n".join(lines) + "\n"
+
+
+def select_judge_from_env(env=os.environ):
+    """What the eval-gate job can afford: both keys -> cascade, one -> that judge, none -> rubric."""
+    jev, claude = bool(env.get("TYPESAFE_API_KEY")), bool(env.get("ANTHROPIC_API_KEY"))
+    if jev and claude:
+        return cascade_judge, "cascade"
+    if claude:
+        return anthropic_judge, "claude"
+    if jev:
+        return jev_judge, "jev"
+    return None, "none"
 
 
 def select_judge(name: str | None):

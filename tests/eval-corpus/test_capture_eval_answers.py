@@ -143,3 +143,15 @@ def test_capture_sends_the_token_file(tmp_path):
     res = cap.send_message("http://x/agents/kagent/a", "q", transport=transport, token_file=str(f))
     assert cap.extract_text(res) == "answer"
     assert seen["Authorization"] == "Bearer cap.tok.en" and "X-User-Id" not in seen
+
+
+def test_capture_returns_answers_and_none_for_failures():
+    entries = [{"id": "a", "question": "qa"}, {"id": "b", "question": "qb"}]
+
+    def send(endpoint, question, **kw):
+        if question == "qb":
+            raise RuntimeError("boom")
+        return {"message": {"role": "agent", "parts": [{"text": f"answer to {question}"}]}}
+
+    out = cap.capture(entries, "http://x/agents/kagent/a", send=send, timeout=1)
+    assert out == {"a": "answer to qa", "b": None}
