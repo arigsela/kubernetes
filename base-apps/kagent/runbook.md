@@ -220,7 +220,7 @@ eval-gate-state`; it is the job's own scratch, not a Git-managed object): the ne
 it and sets a fresh baseline, stated as `first_run: true`. The `memory` question expects state saved earlier
 by the gate's own identity: `scripts/ask-hk --as-serviceaccount kagent/eval-gate "My favorite color
 is octarine. Please save that."` once, then re-run. `judge: none` means no API key in Secret
-`eval-gate`: run `scripts/provision-eval-gate-vault.sh` (owner), then add the ExternalSecret.
+`eval-gate`: run `scripts/provision-eval-gate-vault.sh` (owner), then add the SecretStore, ESO ServiceAccount and ExternalSecret (plan Task 6).
 
 ### Approve or reject a gated tool call from the CLI
 `ask-hk` requests kagent's HITL A2A extension on every message, so a `requireApproval` pause

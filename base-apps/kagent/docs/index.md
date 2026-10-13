@@ -347,7 +347,7 @@ each agent's live definition (Agent, AgentTemplate, Harness, ModelConfig specs) 
 changed since the last scored run, asks the agent every question in `tests/eval-corpus/<agent>.yaml`
 over in-cluster A2A as service account `eval-gate` (a projected token, audience `kagent`), scores the
 answers with the rubric and whatever judge the `eval-gate` Secret allows (`judge: none` until the
-owner runs `scripts/provision-eval-gate-vault.sh`), and writes one JSON line per agent
+owner runs `scripts/provision-eval-gate-vault.sh` and the Vault-backed Secret is added), and writes one JSON line per agent
 (`event: eval-gate`) that Loki carries to the Grafana rule `Agent eval regression` (→ Slack via n8n;
 the dispatcher routes it to a human). With a GitHub token in that Secret it also posts the commit
 status `eval/<agent>` on the synced revision. The baseline and hash per agent live in ConfigMap
