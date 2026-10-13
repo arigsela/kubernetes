@@ -4,6 +4,8 @@
 that builds the deck. Every factual claim below cites where in the repo (or the cluster) it can
 be verified. Facts marked *(verify)* were not re-checked for this brief; confirm before stating.
 
+**As of:** this brief describes the platform before 2026-10-13. Since then two pieces exist that it does not mention: `review:skip` Renovate PRs are merged by a promotion workflow under `.github/promotion-policy.yaml` (so "Renovate never merges" and "the owner merges everything" now read "Renovate never merges; promotion merges its skip class, the owner merges the rest"), and a dispatcher routes Grafana alerts to read-only agent investigations (`base-apps/dispatcher/`). The current map is `docs/presentations/whole-picture-presentation-brief.md`.
+
 **Prepared:** 2026-10-11, the day the cluster reached k3s v1.37.1 and kagent 1.0 went live.
 Re-check versions against `base-apps/*.yaml` and `SPEC.md` if the talk is given later.
 

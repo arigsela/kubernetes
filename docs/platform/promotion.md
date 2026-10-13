@@ -39,8 +39,10 @@ deny prefix here, so a policy change is always read by a human and never auto-me
 ## Observability
 `gh run list --workflow promote` lists decisions; each run logs one JSON line with `class`
 and `reasons`. `gh pr list --state merged --search "promotion: auto in:comments"` lists what
-was promoted. Until the owner actions (the app, its secret and the ruleset bypass) are done,
-every run fails at the token step and nothing merges.
+was promoted. Live since 2026-10-13: the app, its secret and the ruleset bypass exist, and the
+first run with a minted token decided #771 as `owner` for the expected reasons. If the app's
+key or installation is ever removed, every run fails at the token step and nothing merges,
+which is the safe direction.
 
 ## Widening it later
 Candidates, each its own policy PR: `review:skim` Renovate PRs for non-stateful apps after

@@ -137,6 +137,19 @@ GitOps infrastructure for a homelab k3s cluster: automated deployment, secret ma
   - Thresholds and 26 "hot components" come from calibration on the last 200 PRs: none of the 43 PRs that later needed a fix was labelled skip ([report](https://github.com/arigsela/claude-agents/blob/main/pr-triage/calibration/kubernetes-2026-09.md))
 - **Explain and learn** - the [`pr-explainer`](https://github.com/arigsela/claude-agents/tree/main/skills/pr-explainer) and [`review-retro`](https://github.com/arigsela/claude-agents/tree/main/skills/review-retro) Claude Code skills: `/pr-explainer <n>` turns a GitOps PR into a rendered-manifest resource map with must-read hunks; `/review-retro <n>` compares a `/code-review` session with the fixes that followed
 
+### Promotion (what merges without a human)
+
+- **Promotion workflow** (`.github/workflows/promote.yaml`, `scripts/promote.py`) runs after triage and validation on every PR and merges exactly one class: Renovate PRs labelled `review:skip` whose diff is docs-only or image-tag bumps, at most 2 files, outside a deny list (Terraform, `.github/`, Renovate's own config, Crossplane, Vault, PostgreSQL, kagent, admission policies, ingress, identity), with every check run and commit status green
+- **Policy** (`.github/promotion-policy.yaml`) is read at `main`, so a PR can't loosen its own promotion; the skip shape is re-derived from the diff, not trusted from the label
+- **Identity**: a dedicated GitHub App (`arigsela-promotion`) is the ruleset bypass actor in pull-request mode. Author (Renovate's app) and promoter are different principals; the app cannot push to `main`
+- Every run logs one JSON decision line (`class`, `reasons`); an `auto` merge leaves one sticky PR comment. Everything else waits for the owner. See `docs/platform/promotion.md`
+
+### Dispatcher (alert → read-only agent investigation)
+
+- **Dispatcher** (`base-apps/dispatcher/`, `scripts/dispatch.py`) is a second receiver on Grafana's alert contact point. A declared table (`dispatch-table.yaml`) maps each alert title to an agent and a prompt, or to nobody; CI fails if an alert title has no row
+- Routed alerts open a fresh kagent session as the `dispatcher` identity on a read-only agent, with a per-hour budget and a repeat window per alert fingerprint. The finding (or "still running", or the error) goes to n8n and on to Slack `#oncall-alerts` with secrets scrubbed; the session id lets a human continue the investigation
+- The human alert path to n8n is untouched; the dispatcher only adds investigation and never answers an approval
+
 ### AI Agents (kagent)
 
 - **kagent 1.0** (`1.0.0-alpha11`) - each agent is an `AgentTemplate` (model, prompt, tools), a `Harness` (runtime) and an `Agent` that binds them, all in `base-apps/kagent/`
