@@ -199,7 +199,7 @@ both and has the gate glyph (⚿) from the ADP deck. Locator glyph with layer 2 
 |---|---|---|---|---|
 | **Deterministic** | Same input, same output; nothing reasons | **Deploy.** A merge to main is applied by the controller, drift is reverted, infrastructure applies before merge. | commit → controller → cluster → healthy | BUILT |
 | **Probabilistic** | An agent reasons and acts; the output is a judgement | **PR review.** Every pull request is read by a cascade (rules, then a small classifier, then a frontier model) that labels it skip / skim / read and explains why. It never blocks. | PR opened → rules → classifier → label + comment | BUILT |
-| **Hybrid** | A probabilistic step inside deterministic gates, with retries bounded and a human deciding on evidence | **Validate and promote a change.** A coding agent writes the change under a written contract; 22 validation jobs gate it; the agent fixes what fails when asked; a human merges on the evidence, not by re-reading the code. | spec → agent → ⚿ checks → human merge → deploy | BUILT (retry limit is the human) |
+| **Hybrid** | A probabilistic step inside deterministic gates, with retries bounded and a human deciding on evidence | **Validate and promote a change.** A coding agent writes the change under a written contract; 22 validation jobs gate it; the agent fixes what fails when asked; a human merges on the evidence, not by re-reading the code; for one declared class (a dependency bump triage found nothing to read in) a policy merges instead. | spec → agent → ⚿ checks → human or policy merge → deploy | BUILT (retry limit is the human) |
 
 **Standing caption:** The model's phrase for the hybrid path is "the human reviews the evidence
 of the fix, not the code". That is exactly what the triage label and the check wall exist to
@@ -327,36 +327,38 @@ files, next to the manifests, reviewed by the same workflow. Nothing special was
 ## 09 — The eight core paths, scored
 
 **Message:** the model names eight paths that make up the development life cycle; the
-reference has four built, three partial, one missing.
+reference has six built and two partial; the last missing one, dispatch, was built on 2026-10-12.
 
 **Headline:** *The eight core paths, scored*
 
 **Visual:** a 2 × 4 grid of cards in the model's order, top row the pre-merge paths, bottom row
 the post-merge ones. Each card: the path name, its kind (DET / PROB / HYBRID), one line on what
-does it today, and a status chip. The one NOT YET card is drawn dashed and left visibly empty
-in the middle.
+does it today, and a status chip. No card is empty; the two PARTIAL cards (implement,
+remediate) sit at the ends of the bottom row, and the dispatch card carries a small "new" tag.
 
 | # | Path | Kind | On the reference today | State |
 |---|---|---|---|---|
-| 1 | **Dispatch work** — route a signal to the right agent or human | hybrid | Fragments: a pull request routes itself to triage; an orchestrator agent hands a request to a specialist; schedules and webhooks route alerts to chat. No dispatcher takes a signal and opens work for an agent. | NOT YET |
+| 1 | **Dispatch work** — route a signal to the right agent or human | hybrid | A declared table maps every alert title to a read-only agent investigation, a human, or nobody; CI refuses an alert with no row. Budgeted per hour, deduplicated per alert, and the dispatcher sends under its own identity and never answers an approval. The finding reaches chat with the session to continue by hand. A pull request still routes itself to triage. | BUILT (read-only) |
 | 2 | **Retrieve context** — assemble what the work needs | prob | The docs contract, the catalog, long-term memory, the ledger, the repository contract. The strongest path. | BUILT |
 | 3 | **Implement** — write and modify code | prob | A coding agent at the owner's desk writes most commits under the contract. No in-cluster agent writes code or opens a pull request; the runtime supports sandboxes, none is defined. | PARTIAL |
 | 4 | **Validate change** — gate it | hybrid | 22 jobs: lint, schema, contracts, generated-file drift, admission and upgrade drills against a real cluster; the agent fixes failures when asked. | BUILT |
-| 5 | **Promote change** — merge, approve, release | hybrid | Triage labels and explains; a human merges, rebase-only, with an admin override because there is one reviewer. Infrastructure applies before merge. | BUILT (one human) |
+| 5 | **Promote change** — merge, approve, release | hybrid | Triage labels and explains. A written policy, read from the main branch so a pull request cannot loosen it, merges one class with no human: dependency bumps that triage found nothing to read in, outside a deny list, every check green, by a dedicated identity that is not the author's. A human merges everything else, rebase-only. Infrastructure applies before merge. | BUILT (policy for one class, one human for the rest) |
 | 6 | **Deploy** — provision and roll out | det | The controller applies main, prunes drift, self-heals; per-app AWS resources are declared alongside. | BUILT |
-| 7 | **Observe** — know it is working | hybrid | Metrics, logs, traces, runtime security with fail-closed alerts; a read-only agent inspects live state when asked; the audit's risk triage is a classifier. No agent watches signals unprompted. | PARTIAL |
-| 8 | **Remediate** — diagnose and fix production | prob | Two operator agents with every mutating tool behind approval, decided in the UI or from the command line. Human-initiated only. | PARTIAL |
+| 7 | **Observe** — know it is working | hybrid | Metrics, logs, traces, runtime security with fail-closed alerts; a read-only agent inspects live state when asked, and since the dispatcher, unprompted: an alert becomes an investigation and a finding in chat, secrets scrubbed. The audit's risk triage is a classifier. | BUILT |
+| 8 | **Remediate** — diagnose and fix production | prob | Two operator agents with every mutating tool behind approval, decided in the UI or from the command line. The diagnosis now arrives unprompted; the fix is still human-initiated. | PARTIAL |
 
 **Standing caption:** The model's advice is to start with two paths, validate change and PR
 review, because they force the minimum infrastructure: identity, dispatch, execution,
-evaluation, observability. The reference started with exactly those two and built four of the
-five. Dispatch is the one it skipped.
+evaluation, observability. The reference started with exactly those two and now has all five;
+dispatch came last, and started read-only.
 
-**Footer right:** "Four built, three partial, one not yet".
+**Footer right:** "Six built, two partial, none missing".
 
 **Speaker note:** The scoring is the point of the deck. A company's map will differ, but the
-exercise is the same: eight cards, three states, and the empty card is where the next design
-document goes. Say out loud that dispatch was skipped because one owner is his own dispatcher.
+exercise is the same: eight cards, three states, and the weakest card is where the next design
+document goes. Say out loud that dispatch came last because one owner was his own dispatcher,
+and that when it came it was read-only by design: a signal opens an investigation, never a
+change. Promotion is the same shape: one declared class, a policy the pull request cannot edit.
 
 ## 10 — Where the reference sits on the maturity ladder
 
@@ -372,18 +374,20 @@ one line of evidence. The band for level 2 is filled orange (where the reference
 |---|---|---|---|
 | **1 · Human in the loop** | Assistance in the editor; the human does the work | Yes, and it is the smallest part | BUILT |
 | **2 · Human as validator** | Agents do the work; humans check it | The daily mode: the agent writes, triage and checks grade, the human merges. 79% of commits since July. | BUILT |
-| **3 · Human orchestrates** | Agents are directed in parallel; throughput is the measure | In places: the coding assistant runs sub-agents; an in-cluster orchestrator hands off to specialists; one plan became 26 merged pull requests in a day. No orchestration of agents across the platform. | PARTIAL |
-| **4 · Human out of the loop** | No human trigger; a signal becomes a shipped change | Declined for now: every mutation on the reference has a human trigger or a human gate. Scheduled jobs are deterministic. | NOT YET, by choice |
+| **3 · Human orchestrates** | Agents are directed in parallel; throughput is the measure | In places: the coding assistant runs sub-agents; an in-cluster orchestrator hands off to specialists; one plan became 26 merged pull requests in a day; on the platform, a dispatcher hands alerts to an agent unprompted. No agent orchestrates other agents across the platform. | PARTIAL |
+| **4 · Human out of the loop** | No human trigger; a signal becomes a shipped change | Declined, with one declared exception: a dependency bump that triage found nothing to read in is merged and deployed by policy with no human. Every other mutation has a human trigger or a human gate; scheduled jobs are deterministic. | NOT YET, by choice (one class excepted) |
 
 **Standing caption:** The model says most organisations are between levels 1 and 2 and that
 level 2 is unreachable without a platform. The reference is a one-person demonstration that
 the platform, not the model, is what gets you there.
 
-**Footer right:** "Level 2 daily; level 3 in places; level 4 declined".
+**Footer right:** "Level 2 daily; level 3 in places; level 4 for one declared class".
 
 **Speaker note:** Resist the urge to claim level 3. The honest statement is that throughput
 rose (26 pull requests in a day) because of orchestration at the desk, not on the platform. The
-platform piece that would make it level 3 is the dispatcher from screen 09.
+dispatcher from screen 09 is the first level-3 piece on the platform; the next is an agent that
+hands work to agents. The level-4 exception is deliberately boring: it is the class a human was
+merging without reading, now merged by a policy the pull request cannot change.
 
 ## 11 — In use: one change through every layer, in 23 minutes `recorded`
 
@@ -466,12 +470,12 @@ the reference drew is the order on screen 13: record first, then gate, then eval
 
 ## 13 — What gets built next, in what order
 
-**Message:** the map makes the next five pieces obvious, and their order follows the
-dependencies, not the excitement.
+**Message:** the map makes the next pieces obvious, and their order follows the
+dependencies, not the excitement; one of the five is already solid.
 
 **Headline:** *What gets built next, in what order*
 
-**Visual:** a five-node track, all nodes NOT YET (dashed) except where marked, each with the
+**Visual:** a five-node track, nodes NOT YET (dashed) except where marked BUILT, each with the
 path or pillar it fills (from screens 06, 07, 09) and one line of "why this order". Under the
 track, a small "what a new agent or path reuses" checklist panel.
 
@@ -479,9 +483,9 @@ track, a small "what a new agent or path reuses" checklist panel.
 |---|---|---|---|
 | 1 | **Evaluation as a gate** — score the knowledge agent against the corpus on every model or prompt change, in CI; grow the corpus from real history | harness · evaluation (PARTIAL → BUILT) | Cheapest; everything else below changes agent behaviour and needs a regression signal first. The corpus mining and the judge exist. |
 | 2 | **Callers as principals** — authenticate the gateway's callers, one identity per person and per automation, in front of the shared one | governance · identity (gap → closed) | Required before any door is offered to more than one person; sessions already carry a caller identity, so the record can be read per person once callers are real. |
-| 3 | **A dispatcher** — a declared table from signal (failing check, alert, issue, triage label) to recipient (an agent, a human, nobody), applied by a workflow | path 1 · dispatch (NOT YET → BUILT) | The one missing core path, and the precondition for level 3. Starts read-only: a signal opens an agent *investigation*, never a change. |
-| 4 | **Implement inside the platform** — a sandbox template so an in-cluster agent can run checks and open a pull request under its own identity, through the same triage and checks | path 3 · implement (PARTIAL → BUILT) | Needs 2 (its own identity) and 3 (something to hand it work). The pull request path is unchanged; the only new thing is who opens it. |
-| 5 | **Observe → remediate on signal** — the dispatcher routes an alert to the read-only investigator; a proposed fix becomes a pull request (via 4) or a gated operator call | paths 7 and 8 (PARTIAL → BUILT) | Last, because it is the first path where an unprompted agent touches production, and it inherits every gate above. |
+| 3 | **A dispatcher** — a declared table from signal to recipient (an agent, a human, nobody), applied by a service | path 1 · dispatch (BUILT 2026-10-12) | Done, read-only as planned: an alert opens an agent *investigation*, never a change, and the policy-merged promotion class landed beside it (2026-10-13). Still to route: failing checks, issues, triage labels. |
+| 4 | **Implement inside the platform** — a sandbox template so an in-cluster agent can run checks and open a pull request under its own identity, through the same triage, checks and promotion policy | path 3 · implement (PARTIAL → BUILT) | Needs 2 (its own identity); 3 is in place to hand it work. The pull request path is unchanged; the only new thing is who opens it. |
+| 5 | **Remediate on signal** — the investigation's proposed fix becomes a pull request (via 4) or a gated operator call | path 8 (PARTIAL → BUILT) | Last, because it is the first path where an unprompted agent touches production, and it inherits every gate above. The observe half (path 7) is done. |
 
 **Checklist panel — what a new agent or path reuses, unchanged:** the vault and its one-role-
 per-credential pattern · the edge and allow-list · the tool taxonomy and admission policy ·
@@ -495,9 +499,10 @@ moving from dashed to solid, in the order the arrows point.
 **Footer right:** "Record, then gate, then evaluate, then dispatch".
 
 **Speaker note:** If asked for dates: none promised. The point is the ordering and that each
-item is small because of what is already there. If asked why not start with the dispatcher:
-because an unauthenticated gateway plus a dispatcher is an agent anyone on the network can
-hand work to.
+item is small because of what is already there. If asked why the dispatcher landed before
+callers were principals (item 2): because it is read-only, sends under its own named identity,
+and only an alert from the platform's own monitoring can reach it; the gateway gap still bounds
+what it may be given, which is why item 4 waits.
 
 ## 14 — What maps, five questions, close
 
@@ -562,14 +567,18 @@ All measured on the reference repository and platform on 2026-10-12 unless noted
 | 26 pull requests merged in a day | merged-at timestamps, 2026-10-11, as recorded for the workflow deck |
 | An in-cluster orchestrator hands off to specialists | the orchestrator template's description ("hand-off, not delegation") |
 | The runtime supports sandbox templates; none defined | the kagent docs list the kind; no such manifest exists in the repository |
+| The dispatcher: declared table, CI completeness check, hourly budget, own identity, no approvals; accepted live with a real alert and three replays | the dispatcher app and its tests; the ledger's acceptance entry, 2026-10-12 |
+| Promotion: one class, policy read from main, a dedicated merge identity; first decisions on real pull requests | the promotion policy and workflow; the ledger entries closed 2026-10-13; the workflow's logged decisions |
 | The gateway does not authenticate callers; one shared identity | the kagent docs ("trusted-proxy OIDC mode doesn't verify tokens"); the command-line and assistant configuration |
 
 ## Do not claim
 
-- That the reference implements the reference architecture *fully*: three paths are partial,
-  one is missing, evaluation is not a gate, and the runtime is alpha.
-- Level 3 maturity for the platform. Orchestration happened at the owner's desk; the platform
-  has no dispatcher.
+- That the reference implements the reference architecture *fully*: two paths are partial,
+  evaluation is not a gate, and the runtime is alpha.
+- Level 3 maturity for the platform. Orchestration happened at the owner's desk; one dispatcher
+  routing alerts to one read-only agent is a first piece, not orchestration.
+- That promotion merges anything but its one declared class, or that the dispatcher can change
+  anything: it opens investigations and never answers an approval.
 - That the webinar's authors reviewed or endorsed the reference; the frame is borrowed from
   their public material, the scoring is the owner's.
 - That any pull request is blocked by triage (labels only) or reviewed by a second human
