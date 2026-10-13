@@ -156,3 +156,16 @@ def test_issuer_discovery_is_readable_by_istiod():
 def test_controller_auth_mode_is_insecure_on_purpose():
     text = (REPO / "base-apps/kagent.yaml").read_text()
     assert "mode: insecure" in text and "the mesh is the identity authority" in text
+
+
+def test_backstage_presents_a_projected_token():
+    """T110: the portal sends its own token; the exception rule for its principal is gone."""
+    dep = one("base-apps/backstage/deployments.yaml", "Deployment", "backstage")
+    pod = dep["spec"]["template"]["spec"]
+    vol = next(v for v in pod["volumes"] if v["name"] == "kagent-token")
+    src = vol["projected"]["sources"][0]["serviceAccountToken"]
+    assert src["audience"] == "kagent" and src["expirationSeconds"] <= 3600 and src["path"] == "token"
+    c = pod["containers"][0]
+    env = {e["name"]: e.get("value") for e in c.get("env", [])}
+    assert env["KAGENT_TOKEN_FILE"] == "/var/run/kagent/token"
+    assert any(m["mountPath"] == "/var/run/kagent" and m["readOnly"] for m in c["volumeMounts"])

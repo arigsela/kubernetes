@@ -24,7 +24,7 @@ spec:
         runAsNonRoot: true
       containers:
       - name: backstage
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/backstage-portal:v1.5.0
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/backstage-portal:v1.5.1@sha256:ad99c6454bad82839c3e111b2aebae670824e504374ece30362bdfc2f2ae107e
         imagePullPolicy: Always
         ports:
         - containerPort: 7007
@@ -33,6 +33,13 @@ spec:
             name: backstage-config
         - secretRef:
             name: backstage-secrets
+        env:
+        # Callers as principals (kubernetes SPEC V91/T110): the kagent plugin reads this
+        # projected token on every call and sends it as a bearer instead of X-User-Id;
+        # the mesh in front of the controller verifies it, so the portal's sessions are
+        # owned by system:serviceaccount:backstage:default.
+        - name: KAGENT_TOKEN_FILE
+          value: /var/run/kagent/token
         securityContext:
           allowPrivilegeEscalation: false
         livenessProbe:
@@ -63,3 +70,16 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "2000m"
+        volumeMounts:
+        - name: kagent-token
+          mountPath: /var/run/kagent
+          readOnly: true
+      volumes:
+      # Projected token, audience kagent, rotated by the kubelet before it expires (V92).
+      - name: kagent-token
+        projected:
+          sources:
+          - serviceAccountToken:
+              audience: kagent
+              expirationSeconds: 3600
+              path: token
