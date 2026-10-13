@@ -72,9 +72,11 @@ sources:
 ### Symptom: every new agent session fails with `-32004 KAGENT_SEND_NOT_ACCEPTED`, the controller logs nothing
 - **Check:** `kubectl -n ate-system logs deploy/atenet-router --since=10m | grep ResumeActor`. `received
   fatal alert: CertificateExpired` means a Substrate pod certificate ran out: they are issued at pod
-  start for 24 h (`kubectl get podcertificaterequests -A` shows `notAfter`) and the kubelet does
-  not refresh them (SPEC T114). Everything started together dies together, 24 h after the last
-  restart; a restarted `kagent-controller` alone does not help.
+  start for 24 h (`kubectl get podcertificaterequests -A` shows `notAfter`); the kubelet refreshes
+  them at 23.5 h but the agentgateway in atenet-router/egress never reloads the file
+  (agentgateway#3751, substrate#2329; SPEC T114). `cert-restart-cronjob.yaml` restarts both twice
+  a day; if this fires anyway, check `kubectl -n ate-system get jobs -l app=substrate-cert-restart`.
+  A restarted `kagent-controller` alone does not help.
 - **Fix:** `kubectl -n ate-system rollout restart deploy/atenet-router deploy/atenet-egress
   deploy/ate-api-server deploy/ate-controller deploy/k8s-credential-provider ds/atelet` and
   `kubectl -n kagent rollout restart deploy/kagent-default` (the same as a node drain; sessions

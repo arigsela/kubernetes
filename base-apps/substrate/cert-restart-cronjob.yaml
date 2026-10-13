@@ -1,0 +1,109 @@
+# base-apps/substrate/cert-restart-cronjob.yaml
+# Twice-daily restart of atenet-router and atenet-egress (SPEC T114).
+#
+# WHY: their pod certificates (podidentity/servicedns.podcert.ate.dev) are issued for 24 h, the
+# signer caps them there (no Helm knob), and the kubelet does refresh them at 23.5 h, but the
+# agentgateway inside both pods never reloads the rotated file (agentgateway#3751, fix #3794;
+# substrate#2329). On 2026-10-13 every new agent session failed with `-32004` for an hour
+# after the certificates ran out ("received fatal alert: CertificateExpired" in the router).
+# A restart reissues the certificate; twice a day keeps every process well inside 24 h.
+# Sessions survive (actors resume from snapshots); a turn in flight at that moment is retried
+# by the client (KAGENT_SEND_NOT_ACCEPTED). Remove this when the chart ships an agentgateway
+# with the fix (0.5.0-alpha3 exists; check its digest against #3794 at the next lockstep bump).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: substrate-cert-restart
+  namespace: ate-system
+  labels:
+    app.kubernetes.io/name: substrate-cert-restart
+    app.kubernetes.io/part-of: substrate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: substrate-cert-restart
+  namespace: ate-system
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["atenet-router", "atenet-egress"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: substrate-cert-restart
+  namespace: ate-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: substrate-cert-restart
+subjects:
+  - kind: ServiceAccount
+    name: substrate-cert-restart
+    namespace: ate-system
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: substrate-cert-restart
+  namespace: ate-system
+  labels:
+    app.kubernetes.io/name: substrate-cert-restart
+    app.kubernetes.io/part-of: substrate
+spec:
+  # 03:23 and 15:23 UTC: twelve hours apart, so a certificate is never older than ~12 h.
+  schedule: "23 3,15 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app: substrate-cert-restart
+            app.kubernetes.io/name: substrate-cert-restart
+            app.kubernetes.io/part-of: substrate
+        spec:
+          serviceAccountName: substrate-cert-restart
+          restartPolicy: Never
+          nodeSelector:
+            node.kubernetes.io/workload: application
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: restart
+              # Same kubectl image the argo-workflow-tasks use; Renovate pins the digest.
+              image: bitnami/kubectl:1.30
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  for d in atenet-router atenet-egress; do
+                    kubectl -n ate-system rollout restart deployment/$d
+                    kubectl -n ate-system rollout status deployment/$d --timeout=240s
+                  done
+                  printf '{"check":"substrate-cert-restart","restarted":["atenet-router","atenet-egress"]}\n'
+                  sleep 90   # stay Running long enough for Alloy to ship the line (see ca-expiry)
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]

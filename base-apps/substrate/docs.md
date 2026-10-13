@@ -122,6 +122,9 @@ Nothing runs privileged, but Substrate is not a hardened workload:
   bucket-init Job.
 
 ## Gotchas & tribal knowledge
+- **Pod certificates (24 h) are refreshed by the kubelet but not reloaded by the agentgateway** in
+  atenet-router/egress (agentgateway#3751, substrate#2329): `cert-restart-cronjob.yaml` restarts
+  both at 03:23 and 15:23 UTC until a chart ships the fix (SPEC T114).
 - **CAs expire after 365 days and nothing renews them** (substrate#1931). The CronJob
   `substrate-ca-expiry` and the Grafana rule `substrate-ca-expiry` warn 30 days ahead (and when the
   check stops reporting). Rotation needs restarts: `runbook.md`.

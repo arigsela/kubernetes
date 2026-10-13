@@ -311,6 +311,57 @@ data:
                         params:
                           - 0
 
+          - uid: substrate-certificate-expired
+            title: Substrate pod certificate expired
+            condition: threshold
+            for: 0m
+            annotations:
+              summary: >-
+                atenet-router logged "CertificateExpired": a Substrate pod certificate (24 h,
+                refreshed by the kubelet but not reloaded by the agentgateway in the router and
+                egress pods) ran out. Every new agent session fails with -32004 until the pods
+                are restarted. The substrate-cert-restart CronJob should prevent this (SPEC T114).
+              runbook: >-
+                `kubectl -n ate-system rollout restart deployment/atenet-router
+                deployment/atenet-egress`, then `kubectl -n kagent get agents` all Ready and one
+                `scripts/ask-hk`. Check `kubectl -n ate-system get cronjob substrate-cert-restart`
+                ran (`get jobs`); base-apps/substrate/runbook.md.
+            labels:
+              severity: critical
+              pillar: agents
+            # Not fail-closed: the line only exists when the failure happens.
+            noDataState: OK
+            execErrState: Error
+            data:
+              - refId: query
+                relativeTimeRange:
+                  from: 900
+                  to: 0
+                datasourceUid: loki
+                model:
+                  refId: query
+                  datasource:
+                    type: loki
+                    uid: loki
+                  queryType: instant
+                  expr: >-
+                    sum(count_over_time({namespace="ate-system", app="atenet-router"}
+                    |= "CertificateExpired" [15m]))
+              - refId: threshold
+                relativeTimeRange:
+                  from: 900
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: query
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 0
+
           # ------------------------------------------------------------------
           # Falco. Note this alerts on SPECIFIC rule names, not on "any Falco line".
           # With priority now at `notice`, "Terminal shell in container" fires on
