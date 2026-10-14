@@ -59,6 +59,7 @@ onboard yet).
 | `platform/vulnerability-management.md` | CVE policy: actionable vs actively exploited (KEV) vs EPSS, fix deadlines, how findings get fixed, accepted risks |
 | `platform/renovate.md` | Renovate: what it updates and skips, how its PRs are grouped, the weekly routine, running and changing it |
 | `platform/promotion.md` | What merges without a human: the `review:skip` Renovate class, the deny list, the base-commit policy read, the promotion GitHub App |
+| `platform/implementer.md` | The in-cluster `implementer` agent: opens pull requests under its own GitHub App (class `propose`), the change contract, the two alerts that become PRs, every gate, how to call it |
 
 Also cross-cutting, elsewhere in the repo: backup & recovery in
 `recovery/CLUSTER-RECOVERY.md`, k3s upgrades in
