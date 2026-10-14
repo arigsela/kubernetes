@@ -25,6 +25,9 @@ sources:
   - id: implementer
     resource: base-apps/kagent/agent-templates/implementer.yaml
     title: implementer AgentTemplate (class propose; pull requests under its own GitHub App)
+  - id: restarter
+    resource: base-apps/kagent/agent-templates/restarter.yaml
+    title: restarter AgentTemplate (class admin; one gated pod delete for the dispatcher's leak verdict)
   - base-apps/kagent/agents/homelab-knowledge.yaml
   - base-apps/kagent/agents/k8s-reader.yaml
   - base-apps/kagent/agents/k8s-agent.yaml
@@ -33,6 +36,7 @@ sources:
   - base-apps/kagent/agents/skill-suggester.yaml
   - base-apps/kagent/agents/dungeon-crawler-carl-agent.yaml
   - base-apps/kagent/agents/implementer.yaml
+  - base-apps/kagent/agents/restarter.yaml
   - base-apps/kagent/harnesses/kagent-memory.yaml
   - base-apps/kagent/harnesses/kagent-stateless.yaml
   - base-apps/kagent/harnesses/kagent-chat.yaml
@@ -157,6 +161,7 @@ group moves all five charts in one PR, and only after approval on the Dependency
 | `skill-suggester` | `anthropic-claude-haiku-5-5` | `kagent-chat` | read | none (called by the Backstage wizard) |
 | `dungeon-crawler-carl-agent` | `anthropic-claude-haiku-5-5` | `kagent-chat` | read | `brave-search` (`brave_web_search`) for book facts it is unsure of |
 | `implementer` | `anthropic-claude-sonnet-5-5` | `kagent-stateless` | propose | `implementer` (7 read + the 4 propose tools, ungated: the merge is the gate) and the 8 read tools of `kagent-tool-server` (not `agent-docs` too: a tool name bound twice is refused by the runtime). Opens PRs under GitHub App `arigsela-implementer`; called by a human (ask-hk) or the dispatcher (§T.116) |
+| `restarter` | `anthropic-claude-sonnet-5-5` | `kagent-stateless` | admin | `kagent-tool-server` bound twice: the 8 read tools `requireApproval: false`, and ONLY `k8s_delete_resource` `requireApproval: true`. Restarts the one pod a request names; the dispatcher opens its session after the implementer's `leak` verdict and the owner approves the pending delete (`ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --approve`) (§T.118) |
 
 The class label lives on the AgentTemplate and is checked against the capability taxonomy
 (`base-apps/admission-policies/agent-capability-taxonomy.yaml`): a `read` template binds only
