@@ -104,13 +104,16 @@ spec:
         # sets GOMEMLIMIT once at startup to 0.9 x limit, so a memory raise only takes
         # full effect after a restart; an in-place raise alone removes the OOM risk but
         # not the GC pressure.
+        # 2026-10-14: alert "Container near memory limit" (logging/prometheus-0, 90% of
+        # the 3Gi limit, no OOMKilled, steady) -> limit 3Gi -> 4608Mi, request 2Gi -> 3Gi
+        # (same 2:3 ratio).
         resources:
           requests:
             cpu: 250m
-            memory: 2Gi
+            memory: 3Gi
           limits:
             cpu: 1000m
-            memory: 3Gi
+            memory: 4608Mi
         # Resize in place without restarting the container (the default, stated so the
         # intent is explicit). In-place resize is GA in k8s 1.35.
         resizePolicy:
