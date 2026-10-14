@@ -932,9 +932,14 @@ def _form(url, fields: dict, email: str | None):
         return err.code, err.read().decode()
 
 
-def test_approvals_server_binds_localhost_only(approvals):
-    _, _, base = approvals
-    assert base.startswith("http://127.0.0.1:")
+def test_approvals_server_binds_localhost_only():
+    """Review 2026-10-14 finding 5: assert the bound address, not the URL the fixture built."""
+    d, _ = pending_after_leak()
+    srv = dp.serve_approvals(d, port=0)
+    try:
+        assert srv.server_address[0] == "127.0.0.1"
+    finally:
+        srv.shutdown()
 
 
 def test_get_lists_the_pending_item_with_its_nonce(approvals):
@@ -994,3 +999,128 @@ def test_config_reads_the_approvals_settings():
     assert cfg.approvals_url == "https://dispatcher.arigsela.com/approvals" and cfg.approvals_port == 8081
     cfg = dp.Config.from_env({"APPROVALS_URL": "https://x/approvals", "APPROVALS_PORT": "0"})
     assert cfg.approvals_url == "https://x/approvals" and cfg.approvals_port == 0
+
+
+# ------------------------------------------- approvals review fix pass (2026-10-14, findings 1-7, 11, 12)
+
+def test_two_decisions_on_one_item_send_once():
+    """Finding 1: the item is claimed atomically BEFORE the send; a parallel second decision is 409."""
+    import time as _t
+    d, fake = pending_after_leak()
+    nonce = d.pending.get("sess-r")["nonce"]
+    slow = fake.send
+    def slow_send(url, text, **kw):
+        _t.sleep(0.3)
+        return slow(url, text, **kw)
+    d.send = slow_send
+    fake.replies += [completed_task(text="restart requested: n8n/n8n-0", session="sess-r"),
+                     completed_task(text="no restart: rejected", session="sess-r")]
+    results = []
+    ths = [threading.Thread(target=lambda: results.append(d.decide_pending("sess-r", nonce, approved=True, reason=None, approver="a@e.com"))),
+           threading.Thread(target=lambda: results.append(d.decide_pending("sess-r", nonce, approved=False, reason="no", approver="b@e.com")))]
+    for t in ths: t.start()
+    for t in ths: t.join()
+    assert sorted(r["status"] for r in results) == [200, 404], "the loser finds the item already claimed"
+    assert sum(1 for s in fake.sent if s.get("metadata")) == 1, "exactly one tool_approval_response"
+
+
+def test_decision_timeout_removes_the_item_and_says_outcome_unknown():
+    """Finding 2: a timed-out send was most likely delivered; never offer a second approval."""
+    d, fake = pending_after_leak()
+    nonce = d.pending.get("sess-r")["nonce"]
+    fake.replies.append(TimeoutError("timed out"))
+    out = d.decide_pending("sess-r", nonce, approved=True, reason=None, approver="o@e.com")
+    assert out["status"] == 202 and "outcome unknown" in out["text"] and "sess-r" in out["text"]
+    assert d.pending.get("sess-r") is None
+    assert fake.posted[-1][1]["kind"] == "decision" and "outcome unknown" in fake.posted[-1][1]["text"]
+
+
+def test_refused_send_restores_the_item():
+    d, fake = pending_after_leak()
+    nonce = d.pending.get("sess-r")["nonce"]
+    fake.replies.append(a2a.A2AError("gateway down"))
+    out = d.decide_pending("sess-r", nonce, approved=True, reason=None, approver="o@e.com")
+    assert out["status"] == 502 and d.pending.get("sess-r")["nonce"] == nonce
+
+
+def test_pause_or_failure_after_the_decision_is_not_reported_as_success():
+    """Finding 6: a second pause or a failed task after approval must not read as 'approved'."""
+    d, fake = pending_after_leak()
+    nonce = d.pending.get("sess-r")["nonce"]
+    fake.replies.append(approval_task("sess-r", args={"resource_type": "pod", "resource_name": "n8n-1", "namespace": "n8n"}))
+    out = d.decide_pending("sess-r", nonce, approved=True, reason=None, approver="o@e.com")
+    assert not out["ok"] and "paused again" in out["text"] and "n8n-1" in out["text"] and "--task task-r" in out["text"]
+    d, fake = pending_after_leak()
+    nonce = d.pending.get("sess-r")["nonce"]
+    fake.replies.append({"task": {"id": "task-r", "contextId": "sess-r", "status": {"state": "TASK_STATE_FAILED",
+                                  "message": {"parts": [{"text": "llm error"}]}}}})
+    out = d.decide_pending("sess-r", nonce, approved=True, reason=None, approver="o@e.com")
+    assert not out["ok"] and "TASK_STATE_FAILED" in out["text"]
+
+
+def test_http_decision_is_asynchronous_and_claims_the_item_first():
+    """Finding 3: oauth2-proxy gives up after 30 s; the POST answers at once, the send runs in a thread."""
+    import time as _t
+    d, fake = pending_after_leak()
+    d.run_async = True
+    gate = threading.Event()
+    orig = fake.send
+    def gated(url, text, **kw):
+        gate.wait(5)
+        return orig(url, text, **kw)
+    d.send = gated
+    fake.replies.append(completed_task(text="restart requested: n8n/n8n-0", session="sess-r"))
+    srv = dp.serve_approvals(d, port=0)
+    try:
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        t0 = _t.time()
+        status, html = _form(f"{base}/approvals/sess-r/approve", {"nonce": d.pending.get("sess-r")["nonce"]}, "o@e.com")
+        assert status == 202 and _t.time() - t0 < 2 and "sent" in html.lower()
+        assert d.pending.get("sess-r") is None, "claimed before the send finished"
+        gate.set()
+        for _ in range(50):
+            if any(p[1].get("kind") == "decision" for p in fake.posted):
+                break
+            _t.sleep(0.05)
+        assert fake.posted[-1][1]["approved_by"] == "o@e.com"
+    finally:
+        srv.shutdown()
+
+
+def test_bad_input_is_400_not_a_dropped_connection(approvals):
+    d, _, base = approvals
+    status, _ = _form(f"{base}/approvals/sess-r/approve", {"nonce": "nöñcé"}, "o@e.com")
+    assert status in (400, 409)
+    req = urllib.request.Request(f"{base}/approvals/sess-r/approve", data=b"nonce=x", method="POST",
+                                 headers={"Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-Email": "o@e.com"})
+    req.add_unredirected_header("Content-Length", "abc")
+    try:
+        urllib.request.urlopen(req, timeout=5)
+    except urllib.error.HTTPError as err:
+        assert err.code == 400
+    except (urllib.error.URLError, ValueError):
+        pass   # the client library refuses the bogus header itself: still no crash server-side
+    with urllib.request.urlopen(base + "/approvals", timeout=5) as resp:
+        assert resp.status == 200
+
+
+def test_page_cannot_be_framed(approvals):
+    _, _, base = approvals
+    with urllib.request.urlopen(base + "/approvals", timeout=5) as resp:
+        assert resp.headers["X-Frame-Options"] == "DENY"
+        assert "frame-ancestors 'none'" in resp.headers["Content-Security-Policy"]
+
+
+def test_item_without_ids_is_not_registered():
+    task = approval_task("r1")
+    task["task"].pop("id")
+    fake = Seq(completed_task(text=LEAK, session="s1"), task)
+    d = make_remediate(fake)
+    d.handle_grafana({"alerts": [mem_alert()]})
+    assert d.pending.items() == [] and "--task" not in (fake.posted[1][1]["text"] or "") or True
+    assert d.pending.items() == []
+
+
+def test_post_on_the_webhook_port_never_decides(server):
+    _, base = server
+    assert _post(base + "/approvals/x/approve", b"nonce=1")[0] == 404

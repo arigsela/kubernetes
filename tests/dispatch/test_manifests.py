@@ -167,3 +167,15 @@ def test_dex_has_the_dispatcher_client_and_its_secret():
     es = next(d for d in yaml.safe_load_all((DEX / "external-secret.yaml").read_text()) if d and d["kind"] == "ExternalSecret")
     assert {"secretKey": "DISPATCHER_CLIENT_SECRET", "remoteRef": {"key": "dex", "property": "dispatcher-client-secret"}} \
         in es["spec"]["data"]
+
+
+def test_sidecar_does_not_depend_on_dex_at_startup_and_never_skips_auth():
+    """Review 2026-10-14 finding 4: a sidecar that cannot start takes the webhook out of the Service.
+    Explicit endpoints replace OIDC discovery; and no flag may widen who gets in."""
+    pod = _one("deployment.yaml", "Deployment")["spec"]["template"]["spec"]
+    args = pod["containers"][1]["args"]
+    for flag in ("--skip-oidc-discovery", "--login-url=https://dex.arigsela.com/auth",
+                 "--redeem-url=https://dex.arigsela.com/token", "--oidc-jwks-url=https://dex.arigsela.com/keys"):
+        assert flag in args, flag
+    for bad in ("--skip-auth", "--email-domain", "--skip-jwt-bearer", "--allowed-group"):
+        assert not any(a.startswith(bad) for a in args), bad

@@ -26,7 +26,7 @@ spec:
         # pattern as Grafana's checksum/alerting). scripts/gen-dispatcher-configmap.py writes both;
         # tests/dispatch/test_manifests.py fails if either is stale.
         checksum/table: "52a2b5113c31e29e09670e419185c3121589650b451a1e637eb1bc5b702a80dc"
-        checksum/code: "06256a1def567a08a28b4e4620f4bb4a5db6f2c01dd182eb9ab8747dbf06f5b4"
+        checksum/code: "ec794161fc88b88dad599f43c5986b01d30111d950f7c45ea9ffc50f97402db4"
     spec:
       serviceAccountName: dispatcher
       automountServiceAccountToken: false   # never talks to the API server; the projected token below is for kagent
@@ -108,6 +108,13 @@ spec:
             - --provider=oidc
             - --provider-display-name=GitHub (via Dex)
             - --oidc-issuer-url=https://dex.arigsela.com
+            # No OIDC discovery at startup: a sidecar that cannot start takes the whole pod out of
+            # the Service and with it the alert webhook (review 2026-10-14). Dex's endpoints are
+            # fixed; the JWKS is still fetched when a token is verified.
+            - --skip-oidc-discovery
+            - --login-url=https://dex.arigsela.com/auth
+            - --redeem-url=https://dex.arigsela.com/token
+            - --oidc-jwks-url=https://dex.arigsela.com/keys
             - --client-id=dispatcher
             - --client-secret-file=/etc/oauth2-proxy/secrets/client-secret
             - --cookie-secret-file=/etc/oauth2-proxy/secrets/cookie-secret

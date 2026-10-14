@@ -35,8 +35,8 @@ ports `4180` and `15008` (HBONE).
 A second `ThreadingHTTPServer` on `127.0.0.1:APPROVALS_PORT` (default 8081; `0` disables it).
 
 - `GET /approvals`: an HTML list of pending restarts from the in-memory registry: alert,
-  namespace/pod, the restarter's exact pending call (tool and JSON args), the evidence session
-  link, age, and two forms: Approve, and Reject with a reason. Empty list: "nothing pending".
+  namespace/pod, the restarter's exact pending call (tool and JSON args), the implementer's answer as the
+  evidence (inline, #838: a dispatcher-owned session has no usable UI link), age, and two forms: Approve, and Reject with a reason. Empty list: "nothing pending".
 - `POST /approvals/<ctx>/approve` and `POST /approvals/<ctx>/reject` (form-encoded `nonce`,
   `reason`). The approver is `X-Forwarded-Email`, set by the sidecar; a missing header is 403.
   A wrong or missing nonce is 409 (the nonce is per pending item, generated when it was
@@ -70,7 +70,8 @@ The remediation finding's text now reads: "Restart awaiting approval … Decide 
   `allowed-emails` (one line);
 - `k8s-secrets/dex`: patches `dispatcher-client-secret` (same value as the client secret);
 - policy and Kubernetes-auth role `dispatcher-web` for SA `eso-dispatcher-web` in `dispatcher`.
-Re-running rotates both secrets; Dex and the sidecar pick them up within the ESO refresh.
+Re-running rotates both secrets (`--rotate-cookie` the cookie only); after the ESO refresh BOTH
+Dex and the dispatcher pod must restart, since each reads the values only at start.
 A SecretStore whose role does not exist fails the whole app sync, so the script runs first.
 
 Manifests: SA `eso-dispatcher-web`, SecretStore `vault-dispatcher-web`, ExternalSecret

@@ -23,8 +23,7 @@ sources:
    `skip-budget` / `skip-repeat` means the limits held; `resolved` means the notification was
    the all-clear.
 2. Did the investigation finish? `grep '"event": "finding"'`: `error` names an A2A failure
-   or a post failure; `session` is the kagent session (continue it with `scripts/ask-hk --agent kagent/<agent> --as-serviceaccount dispatcher/dispatcher --context <id>`; the kagent UI cannot open a dispatcher-owned session)
-   (`https://kagent.arigsela.com/agents/<session>/chat`).
+   or a post failure; `session` is the kagent session id (continue it with `scripts/ask-hk --agent kagent/<agent> --as-serviceaccount dispatcher/dispatcher --context <id>`; the kagent UI cannot open a dispatcher-owned session, so there is no link)
 3. Is Grafana delivering at all? Grafana → Alerting → Contact points → `n8n` → the second
    integration's last delivery. A 404 there means the Service or the pod is gone.
 
@@ -90,6 +89,17 @@ starts, and a curl fired at once is reset too (seen 2026-10-14). For the two res
 with a pull request link, or `no pull request: <reason>`; the PR is authored by
 `app/arigsela-implementer` and waits for you. `{"decisions":["skip-open-prs"]}` means that
 agent already has `open_prs_max` pull requests open: merge or close one first.
+
+## The approvals page is down, or every alert stopped being dispatched at once
+The two are one symptom: the pod is Ready only when both containers are, so an `oauth2-proxy`
+sidecar that cannot start takes the dispatcher out of its Service and Grafana's deliveries to
+`:8080` fail too (seen 2026-10-14: a 44-byte cookie secret). `kubectl logs -n dispatcher
+deploy/dispatcher -c oauth2-proxy` says why. The sidecar no longer needs Dex at startup
+(`--skip-oidc-discovery`, fixed endpoints), so the usual causes are the Secret
+`dispatcher-web-oauth2` (missing or malformed: `scripts/provision-dispatcher-web-vault.sh
+--rotate-cookie`, then force-sync the ExternalSecret and delete the pod) and the certificate.
+After rotating any of its secrets, restart Dex and the dispatcher pod: both read them only at
+start, and a dispatcher restart empties the pending list.
 
 ## Change the table or the code
 Edit `dispatch-table.yaml` (or `scripts/dispatch.py`), then run
