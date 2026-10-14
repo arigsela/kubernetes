@@ -10,6 +10,7 @@
 # their Dex identity) and the dispatcher (base-apps/dispatcher/dispatch-table.yaml, owned by
 # system:serviceaccount:dispatcher:dispatcher). The system prompt is the change contract and
 # tests/implementer/test_agent.py pins its load-bearing lines.
+# Acceptance 2026-10-14: first pull request opened by the implementer itself.
 apiVersion: api.kagent.dev/v1alpha3
 kind: AgentTemplate
 metadata:
