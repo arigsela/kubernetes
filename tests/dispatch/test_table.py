@@ -115,6 +115,17 @@ def test_resource_alerts_route_to_the_implementer():
         assert "limit too low" in p and "no pull request" in p and "{labels[pod]}" in p
 
 
+def test_resource_rows_key_the_branch_on_the_workload_not_the_pod():
+    """Review finding I5: a pod name carries a replica hash, so a slug built from it gives one PR
+    per restart; the branch is keyed on the pod's owner workload and the agent checks its own
+    open PRs touching the same file first."""
+    rows = {r["match"]["alertname"]: r for r in load_table()["rules"] if r["source"] == "grafana"}
+    for title in ("Container near memory limit", "Pod CPU starved"):
+        p = prompt_of(rows[title])
+        assert "{labels[pod]}." not in p, "the pod name must not end the branch slug"
+        assert "owner workload" in p and "open pull requests" in p and "same file" in p
+
+
 def test_prompts_only_use_known_placeholders():
     import string
     allowed = {"alertname", "status", "labels", "annotations", "starts_at"}

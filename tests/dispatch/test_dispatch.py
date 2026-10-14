@@ -415,3 +415,19 @@ def test_open_prs_fetch_filters_by_author_login():
 def test_config_reads_implementer_login_and_repo():
     c = dp.Config.from_env({})
     assert c.implementer_login == "arigsela-implementer[bot]" and c.github_repo == "arigsela/kubernetes"
+
+
+def test_open_prs_count_survives_a_mid_body_disconnect_and_caches_the_failure():
+    """Review finding I4: http.client errors are not OSError; one must not kill the webhook
+    handler (that fails closed on a read), and a failed count must not refetch on every alert."""
+    import http.client
+    calls = []
+    def broken():
+        calls.append(1)
+        raise http.client.IncompleteRead(b"partial")
+    now = [0.0]
+    c = dp.OpenPRs("r", "l", fetch=broken, clock=lambda: now[0], ttl=300)
+    assert c.count() is None and "IncompleteRead" in (c.last_error or "")
+    assert c.count() is None and len(calls) == 1, "a failed count is cached for the ttl"
+    now[0] = 301.0
+    assert c.count() is None and len(calls) == 2

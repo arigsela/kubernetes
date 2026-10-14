@@ -41,6 +41,9 @@ verifies it: the session is owned by `system:serviceaccount:dispatcher:dispatche
   enforces it. It never answers an approval or a question (§V.88).
 - Not a second source of truth for Slack: n8n holds the Slack token; this service holds no
   credential at all.
+- Not reachable from anywhere: `network-policy.yaml` admits only Grafana's pods (namespace
+  `logging`) and a replay pod labelled `dispatcher/replay: "true"`. Since a row can end in a
+  pull request, a forged alert would be a write-capable prompt under the dispatcher's identity.
 
 ## The table
 `dispatch-table.yaml` is a ConfigMap whose `dispatch.json` key is the table: `limits`

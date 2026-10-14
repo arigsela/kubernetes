@@ -46,3 +46,22 @@ def test_deployment_runs_as_the_dispatcher_service_account_with_a_projected_toke
     assert "DISPATCH_USER" not in env
     sa = _one("serviceaccount.yaml", "ServiceAccount")
     assert sa["metadata"]["name"] == "dispatcher" and sa["metadata"]["namespace"] == "dispatcher"
+
+
+def test_network_policy_admits_only_grafana_and_a_labelled_replay_pod():
+    """Review finding I1 (2026-10-14): the webhook is a write-capable prompt once a row proposes;
+    anything in the cluster could POST a forged alert. Grafana runs outside the mesh (logging is
+    not ambient, SA default), so the gate is a NetworkPolicy on the pod, not an identity policy."""
+    docs = [d for d in yaml.safe_load_all((APP / "network-policy.yaml").read_text()) if d]
+    np = next(d for d in docs if d["kind"] == "NetworkPolicy")
+    assert np["metadata"]["namespace"] == "dispatcher"
+    assert np["spec"]["podSelector"] == {"matchLabels": {"app": "dispatcher"}}
+    assert np["spec"]["policyTypes"] == ["Ingress"]
+    rules = np["spec"]["ingress"]
+    assert len(rules) == 1
+    froms = rules[0]["from"]
+    assert {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "logging"}},
+            "podSelector": {"matchLabels": {"app.kubernetes.io/name": "grafana"}}} in froms
+    assert {"podSelector": {"matchLabels": {"dispatcher/replay": "true"}}} in froms
+    assert len(froms) == 2
+    assert rules[0]["ports"] == [{"port": 8080, "protocol": "TCP"}]
