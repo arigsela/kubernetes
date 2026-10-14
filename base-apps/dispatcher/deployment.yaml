@@ -25,8 +25,8 @@ spec:
         # nothing restarts the pod, so these checksums change the pod template instead (the same
         # pattern as Grafana's checksum/alerting). scripts/gen-dispatcher-configmap.py writes both;
         # tests/dispatch/test_manifests.py fails if either is stale.
-        checksum/table: "221f373d15e748a1d5fca6d3e40f2f920dd05bc41cca0774498d8411ae030b0a"
-        checksum/code: "b56d671197998376d431c3393d466f18390018b226a6b9e9efbde3e28fb35dee"
+        checksum/table: "2da5b3d0e94e18e1215eec5fb74713011908e86583b7127ea58ffb425cd24b48"
+        checksum/code: "7ac441a9d6df692480da679c9270d74ab3777cade0f38d4bf2a6f63473b86f43"
     spec:
       serviceAccountName: dispatcher
       automountServiceAccountToken: false   # never talks to the API server; the projected token below is for kagent

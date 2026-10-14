@@ -229,8 +229,13 @@ data:
                 try:
                     self._value, self._at, self.last_error = len(self.fetch()), now, None
                     return self._value
-                except (OSError, ValueError) as err:
-                    self.last_error = str(err)[:200]
+                except Exception as err:  # noqa: BLE001 - a read must never fail the webhook closed
+                    # http.client raises its own errors (IncompleteRead, BadStatusLine), not
+                    # OSError; any of them escaping here would kill the handler thread and leave
+                    # the alert undecided. The failure is cached for the ttl too, so an outage
+                    # costs one 10 s fetch per five minutes, not one per alert under the lock.
+                    self._value, self._at = None, now
+                    self.last_error = f"{type(err).__name__}: {str(err)[:160]}"
                     return None
 
 

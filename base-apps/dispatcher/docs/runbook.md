@@ -36,7 +36,7 @@ and decide there. If a read-only agent pauses, something bound a gated tool to i
 ## Replay a signal by hand (also the acceptance test)
 From inside the cluster, post a synthetic payload for a real pod:
 ```
-kubectl run -n dispatcher curl --rm -i --restart=Never --image=curlimages/curl:8.11.1 -- \
+kubectl run -n dispatcher curl --rm -i --restart=Never --labels=dispatcher/replay=true --image=curlimages/curl:8.11.1 -- \
   curl -s -X POST http://dispatcher.dispatcher.svc.cluster.local:8080/signal/grafana \
   -H 'Content-Type: application/json' \
   -d '{"alerts":[{"status":"firing","fingerprint":"manual-1","labels":{"alertname":"Pod CPU starved","namespace":"n8n","pod":"<a real pod>"},"annotations":{"summary":"manual replay","runbook":"none"}}]}'
@@ -44,7 +44,8 @@ kubectl run -n dispatcher curl --rm -i --restart=Never --image=curlimages/curl:8
 Expect `{"decisions":["investigate"]}`, then a Slack message within five minutes and a
 session owned by the dispatcher's service account (continue it with `scripts/ask-hk
 --as-serviceaccount dispatcher/dispatcher --agent kagent/<agent> --context <session>`). Use a new `fingerprint` each time, or wait
-`repeat_after_hours`. For the two resource alerts (routed to `implementer`) the finding ends
+`repeat_after_hours`. The `--labels=dispatcher/replay=true` is what `network-policy.yaml` admits; without it
+the POST hangs (only Grafana's pods may reach the webhook). For the two resource alerts (routed to `implementer`) the finding ends
 with a pull request link, or `no pull request: <reason>`; the PR is authored by
 `app/arigsela-implementer` and waits for you. `{"decisions":["skip-open-prs"]}` means that
 agent already has `open_prs_max` pull requests open: merge or close one first.
