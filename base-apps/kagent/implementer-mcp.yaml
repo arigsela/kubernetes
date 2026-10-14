@@ -1,0 +1,43 @@
+# The implementer's GitHub tool server (§T.116, §V.94): a second instance of the official GitHub
+# MCP server, beside the read-only agent-docs-mcp, authenticating as GitHub App
+# `arigsela-implementer` (installed on this repo only; Contents + Pull requests read/write,
+# Metadata + Checks read, NO Workflows permission, so GitHub itself refuses any change under
+# .github/workflows). In stdio mode the server mints and refreshes installation tokens itself
+# from GITHUB_APP_ID / GITHUB_APP_INSTALLATION_ID / GITHUB_APP_PRIVATE_KEY (envFrom the
+# Vault-backed Secret implementer-github-app; scripts/provision-implementer-vault.sh).
+#
+# `--tools` is the whole surface: the named read tools and exactly the taxonomy's `propose`
+# list. No toolset is enabled, so merge_pull_request, the review tools, delete_file and the
+# repository tools never exist here (tests/implementer/test_mcp_server.py). A misspelt name
+# fails the server at startup, by design.
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: implementer-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: implementer-mcp
+spec:
+  transportType: stdio
+  deployment:
+    image: ghcr.io/github/github-mcp-server:v1.14.0@sha256:7aaeeec9ae4fe9a736d100c1ff0798f3c219b5009e05f5d3945fcacb13cc196b
+    cmd: ./github-mcp-server
+    args:
+      - stdio
+      - --tools
+      - get_file_contents,search_code,list_commits,get_commit,list_branches,list_pull_requests,pull_request_read,create_branch,create_or_update_file,push_files,create_pull_request,update_pull_request
+    secretRefs:
+      - name: implementer-github-app
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    nodeSelector:
+      node.kubernetes.io/workload: infrastructure
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
