@@ -6,6 +6,8 @@ Class admin because pod delete is destructive-class; exactly the eight read tool
 everything else. The prompt is the first fence; the human who sees the pending call's
 arguments is the second."""
 from pathlib import Path
+import importlib.util
+import sys
 
 import yaml
 
@@ -20,6 +22,19 @@ READ = {"k8s_get_resources", "k8s_get_resource_yaml", "k8s_get_pod_logs", "k8s_d
 DENY = ["kube-system", "kube-public", "kube-node-lease", "vault", "postgresql", "cnpg-system", "argo-cd",
         "istio-system", "istio-ingress", "cert-manager", "external-secrets", "ate-system",
         "podcertificate-controller-system", "kagent", "kmcp", "kmcp-system", "dispatcher"]
+
+
+def dispatch_module():
+    spec = importlib.util.spec_from_file_location("dispatch_for_restarter", REPO / "scripts" / "dispatch.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["dispatch_for_restarter"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_deny_list_matches_the_dispatchers():
+    """The dispatcher refuses these before any session opens; the prompt refuses them again."""
+    assert set(DENY) == set(dispatch_module().RESTART_DENY_NAMESPACES)
 
 
 def one(path: Path, kind: str, name: str) -> dict:

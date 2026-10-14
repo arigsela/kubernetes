@@ -609,3 +609,70 @@ def test_ask_hk_reports_a_token_failure_before_sending(monkeypatch):
     rc = mod.main(["hello"], stdout=io.StringIO(), stderr=err,
                   transport=lambda *a: pytest.fail("must not send"))
     assert rc == 1 and "no browser" in err.getvalue()
+
+
+# --------------------------------------------- GetTask and ask-hk --task (§T.118, review 2026-10-14)
+
+def _bare_task(task_id="task-9", context="ctx-9"):
+    """What the gateway returns for GetTask (verified live): the task itself, not {"task": ...}."""
+    return {"id": task_id, "contextId": context, "artifacts": [], "history": [], "metadata": {},
+            "status": {"state": "TASK_STATE_INPUT_REQUIRED",
+                       "message": {"parts": [{"text": "approve?"}],
+                                   "metadata": {a2a.HITL_EXTENSION: {
+                                       "type": a2a.HITL_TOOL_APPROVAL_REQUEST, "id": "req-9",
+                                       "tools": [{"id": "call-9", "name": "k8s_delete_resource",
+                                                  "args": {"resource_type": "pod", "resource_name": "p",
+                                                           "namespace": "n"}}]}}}}}
+
+
+def test_get_task_request_uses_the_v1_name_and_id():
+    req = a2a.build_get_task_request("task-9", rpc_id="r")
+    assert req == {"jsonrpc": "2.0", "id": "r", "method": "GetTask", "params": {"id": "task-9"}}
+
+
+def test_get_task_wraps_the_bare_task_so_parse_result_reads_it():
+    t = Recorder({"jsonrpc": "2.0", "id": "r", "result": _bare_task()})
+    reply = a2a.parse_result(a2a.get_task("http://gw/agents/kagent/restarter", "task-9", transport=t))
+    assert t.calls[0]["body"]["method"] == "GetTask" and t.calls[0]["body"]["params"] == {"id": "task-9"}
+    assert reply.waiting and reply.task_id == "task-9" and reply.pending_calls[0]["id"] == "call-9"
+
+
+def test_get_task_reports_errors_and_non_tasks():
+    with pytest.raises(a2a.A2AError, match="invalid params"):
+        a2a.get_task("http://gw/a", "x", transport=Recorder({"jsonrpc": "2.0", "id": "r",
+                                                                "error": {"code": -32602, "message": "invalid params"}}))
+    with pytest.raises(a2a.A2AError, match="no task"):
+        a2a.get_task("http://gw/a", "x", transport=Recorder({"jsonrpc": "2.0", "id": "r", "result": {"id": "x"}}))
+
+
+def test_ask_hk_approves_a_pause_it_never_saw_when_given_the_task(state_dir):
+    """Finding 1: a dispatcher-opened restarter session has no local state on the laptop."""
+    done = {"jsonrpc": "2.0", "id": "r2", "result": {"task": {"id": "task-9", "contextId": "ctx-9",
+            "status": {"state": a2a.STATE_COMPLETED}, "artifacts": [{"parts": [{"text": "restart requested: n/p"}]}]}}}
+    t = Recorder({"jsonrpc": "2.0", "id": "r1", "result": _bare_task()}, done)
+    out, err = io.StringIO(), io.StringIO()
+    rc = ask_hk.main(["--agent", "kagent/restarter", "--no-token", "--context", "ctx-9", "--task", "task-9",
+                      "--approve"], stdout=out, stderr=err, transport=t)
+    assert rc == 0, err.getvalue()
+    assert t.calls[0]["body"]["method"] == "GetTask" and t.calls[0]["body"]["params"] == {"id": "task-9"}
+    msg = t.calls[1]["body"]["params"]["message"]
+    assert msg["taskId"] == "task-9" and msg["contextId"] == "ctx-9"
+    assert msg["metadata"][a2a.HITL_EXTENSION]["approvals"] == [{"id": "call-9", "approved": True}]
+    assert "k8s_delete_resource" in err.getvalue() and "restart requested" in out.getvalue()
+    assert ask_hk.load_pending("ctx-9") is None, "decided: the fetched state is cleared"
+
+
+def test_ask_hk_task_that_is_not_waiting_is_refused():
+    finished = dict(_bare_task()); finished["status"] = {"state": a2a.STATE_COMPLETED}
+    t = Recorder({"jsonrpc": "2.0", "id": "r1", "result": finished})
+    err = io.StringIO()
+    rc = ask_hk.main(["--no-token", "--context", "ctx-9", "--task", "task-9", "--reject", "no"],
+                     stdout=io.StringIO(), stderr=err, transport=t)
+    assert rc == 1 and "not waiting for an approval" in err.getvalue() and len(t.calls) == 1
+
+
+def test_ask_hk_without_a_task_still_needs_local_state():
+    err = io.StringIO()
+    rc = ask_hk.main(["--no-token", "--context", "ctx-unknown", "--approve"],
+                     stdout=io.StringIO(), stderr=err, transport=Recorder())
+    assert rc == 1 and "--task" in err.getvalue()
