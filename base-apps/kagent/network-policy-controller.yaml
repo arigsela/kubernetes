@@ -25,6 +25,8 @@ spec:
             matchLabels: {kubernetes.io/metadata.name: dispatcher}
         - namespaceSelector:
             matchLabels: {kubernetes.io/metadata.name: backstage}
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: slack-bridge}
         # ate-system: the Substrate runtime (atenet router/egress) carries the actors' own calls,
         # a sub-agent hand-off among them, to the controller.
         - namespaceSelector:

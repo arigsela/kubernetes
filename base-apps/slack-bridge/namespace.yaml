@@ -1,0 +1,9 @@
+# base-apps/slack-bridge/namespace.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: slack-bridge
+  labels:
+    app.kubernetes.io/part-of: agent-guardrails
+    istio.io/dataplane-mode: ambient   # in the mesh: its calls reach the controller through the waypoint (V91) and the dispatcher's decide port as its own principal (V98)

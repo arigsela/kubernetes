@@ -60,7 +60,7 @@ def test_network_policy_admits_only_grafana_and_a_labelled_replay_pod():
     assert np["spec"]["podSelector"] == {"matchLabels": {"app": "dispatcher"}}
     assert np["spec"]["policyTypes"] == ["Ingress"]
     rules = np["spec"]["ingress"]
-    assert len(rules) == 2, "the webhook rule and the approvals-page rule (§T.119)"
+    assert len(rules) == 3, "the webhook rule, the approvals-page rule (§T.119) and the decide rule (§T.120)"
     froms = rules[0]["from"]
     # Grafana's pod carries `app: grafana` (the chart's own label), not app.kubernetes.io/name;
     # the first policy used the wrong one and blocked Grafana (live, 2026-10-14).
@@ -116,12 +116,15 @@ def test_sidecar_is_oauth2_proxy_on_dex_with_a_localhost_upstream_and_an_emails_
     env = {e["name"]: e.get("value") for e in pod["containers"][0]["env"]}
     assert env["APPROVALS_PORT"] == "8081" and env["APPROVALS_URL"] == "https://dispatcher.arigsela.com/approvals"
     ports = [p["containerPort"] for p in pod["containers"][0]["ports"]]
-    assert ports == [8080], "8081 is never a container port: localhost only"
+    assert ports == [8080, 8082], "8081 is never a container port: localhost only; 8082 is the bridge's door (§T.120)"
 
 
-def test_service_exposes_the_webhook_and_the_sidecar_never_8081():
-    svc = _one("service.yaml", "Service")
-    assert sorted((p["name"], p["port"]) for p in svc["spec"]["ports"]) == [("http", 8080), ("web", 4180)]
+def test_service_exposes_the_webhook_and_the_sidecar_never_8081_or_8082():
+    svcs = {d["metadata"]["name"]: d for d in _docs("service.yaml") if d["kind"] == "Service"}
+    assert set(svcs) == {"dispatcher", "dispatcher-decide"}
+    assert sorted((p["name"], p["port"]) for p in svcs["dispatcher"]["spec"]["ports"]) == [("http", 8080), ("web", 4180)]
+    # The decide door (§T.120) has a Service of its own so the public route can never reach it.
+    assert [(p["name"], p["port"]) for p in svcs["dispatcher-decide"]["spec"]["ports"]] == [("decide", 8082)]
 
 
 def test_oauth2_secret_comes_from_vault_through_its_own_role():

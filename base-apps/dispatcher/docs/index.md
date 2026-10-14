@@ -16,6 +16,7 @@ sources:
   - base-apps/dispatcher/service.yaml
   - base-apps/dispatcher/code-configmap.yaml
   - base-apps/dispatcher/network-policy.yaml
+  - base-apps/dispatcher/authorization-policy.yaml
   - base-apps/dispatcher/httproute.yaml
   - base-apps/dispatcher/certificate.yaml
   - base-apps/dispatcher/secret-store.yaml
@@ -95,6 +96,14 @@ timeout, or "paused again" if the restarter asked for more) and a log line `even
 with `approved_by`. The list is in memory: a rollout empties it, and the Slack message's ask-hk
 fallback still works. A stale page (wrong nonce) is refused; the kagent UI cannot show these
 sessions (owned by the dispatcher's identity).
+
+**A second door, the Slack bridge (§T.120).** The same "Restart awaiting approval" message
+carries Approve / Reject buttons (the finding's `decision {ctx, nonce}`, rendered by n8n). The
+Slack bridge (`base-apps/slack-bridge/docs.md`) forwards the owner's click to
+`POST :8082/decide/<ctx>/approve|reject` (JSON `nonce`, `reason`, `approver`), which runs the
+same claimed `decide_pending` path with `approved_by: <email> (via slack)`. That port is reachable
+only from the bridge's pod (`network-policy.yaml`) and only as its principal
+(`authorization-policy.yaml`), through its own Service `dispatcher-decide` that no route names.
 
 ## Identity and record
 Sessions are owned by `system:serviceaccount:dispatcher:dispatcher` (the projected token in

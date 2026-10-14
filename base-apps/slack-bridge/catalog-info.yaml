@@ -1,0 +1,25 @@
+# base-apps/slack-bridge/catalog-info.yaml
+# Structured facts for the Slack bridge. Authoritative for owner, dependencies, namespace and
+# lifecycle; the markdown docs do not restate them.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: slack-bridge
+  namespace: slack-bridge
+  description: Talk to any kagent agent from Slack and decide pauses with buttons, as the owner only, under the bridge's own verified identity
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=slack-bridge'
+    backstage.io/kubernetes-namespace: slack-bridge
+    github.com/project-slug: arigsela/kubernetes
+  tags: [agents, slack, a2a]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-observability
+  dependsOn:
+    - component:kagent/kagent
+    - component:dispatcher/dispatcher
+    - component:n8n/n8n

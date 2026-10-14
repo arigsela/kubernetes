@@ -1,0 +1,1176 @@
+---
+# Slack bridge code (§T.120).
+#
+# !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
+# Sources:    scripts/slack_bridge.py
+#             scripts/kagent_a2a.py
+# Regenerate: ./scripts/gen-slack-bridge-configmap.py
+# CI fails if this file drifts from either source (tests/slack_bridge/test_gen_configmap.py).
+#
+# The Deployment (deployment.yaml) mounts this at /opt/slack-bridge and runs slack_bridge.py
+# with python:3.12-slim and no pip install: both files are standard-library only.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: slack-bridge-code
+  namespace: slack-bridge
+  labels:
+    app: slack-bridge
+data:
+  slack_bridge.py: |
+    """Slack bridge: talk to a kagent agent from Slack, decide pauses from Slack, as the owner only.
+
+    Design: docs/superpowers/specs/2026-10-14-slack-bridge-design.md (§T.120, §V.98).
+
+    One Socket Mode connection (an outbound websocket the bridge opens with the app-level token,
+    so nothing inbound crosses the IP allow-list), one replica, one owner. A mention or a DM is a
+    question to an agent over A2A (scripts/kagent_a2a.py, the HITL extension, the pod's projected
+    token); one Slack thread is one kagent session. A paused agent gets Approve / Reject buttons in
+    the thread; the dispatcher's "Restart awaiting approval" messages (posted by n8n with the same
+    Slack app) carry the same buttons, and a click on those is forwarded to the dispatcher's decide
+    port with the owner's email as the approver.
+
+    Stdlib only (the ConfigMap pattern of the dispatcher): the websocket client below is the
+    subset of RFC 6455 a client needs (handshake, masked frames, ping/pong, close).
+
+    Environment:
+        SLACK_BOT_TOKEN          xoxb-… (post, react, read the channels the app is in)
+        SLACK_APP_TOKEN          xapp-… (apps.connections.open only)
+        OWNER_SLACK_USER_ID      the ONE Slack user the bridge listens to (U…)
+        OWNER_EMAIL              what the dispatcher records as the approver
+        DEFAULT_AGENT            homelab-knowledge
+        AGENTS                   comma list of agent names a first word `name:` may pick
+        KAGENT_A2A_BASE          http://kagent-controller.kagent.svc.cluster.local:8083
+        KAGENT_TOKEN_FILE        /var/run/kagent/token (projected, audience kagent; "" = X-User-Id dev path)
+        DISPATCHER_DECIDE_BASE   http://dispatcher-decide.dispatcher.svc.cluster.local:8082
+        A2A_TIMEOUT              300 (seconds one send may block)
+        PORT                     8080 (health only: /healthz, /readyz)
+    """
+    from __future__ import annotations
+
+    import base64
+    import hashlib
+    import json
+    import os
+    import re
+    import secrets
+    import socket
+    import ssl
+    import struct
+    import sys
+    import threading
+    import time
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    from dataclasses import dataclass, field
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import kagent_a2a as a2a  # noqa: E402
+
+    SLACK_API = "https://slack.com/api"
+    TEXT_LIMIT = 3900            # Slack's hard limit is 4000 characters of text per message
+    OP_CONT, OP_TEXT, OP_BINARY, OP_CLOSE, OP_PING, OP_PONG = 0x0, 0x1, 0x2, 0x8, 0x9, 0xA
+    WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    MAX_BACKOFF = 60.0
+    SEEN_LIMIT = 512             # event ids remembered to drop Slack's redeliveries
+
+
+    def log_line(obj: dict) -> None:
+        print(json.dumps(obj, sort_keys=True), flush=True)
+
+
+    # ------------------------------------------------------------------ websocket (RFC 6455, client)
+
+    class WebSocketClosed(ConnectionError):
+        """The peer closed, the handshake failed, or the socket died."""
+
+
+    def _xor(data: bytes, mask: bytes) -> bytes:
+        if not data:
+            return b""
+        full = (mask * (len(data) // 4 + 1))[:len(data)]
+        return (int.from_bytes(data, "big") ^ int.from_bytes(full, "big")).to_bytes(len(data), "big")
+
+
+    class WebSocket:
+        """A websocket client over one socket. `recv()` returns whole messages and answers pings
+        itself; `send_text()` masks (a client MUST). Not a server, not for binary data."""
+
+        def __init__(self, sock: socket.socket, leftover: bytes = b""):
+            self.sock = sock
+            self._buf = leftover
+            self._send_lock = threading.Lock()
+
+        @classmethod
+        def connect(cls, url: str, *, timeout: float = 30.0, idle_timeout: float = 90.0,
+                    context: ssl.SSLContext | None = None) -> "WebSocket":
+            u = urllib.parse.urlsplit(url)
+            if u.scheme not in ("ws", "wss") or not u.hostname:
+                raise ValueError(f"not a websocket url: {url}")
+            secure = u.scheme == "wss"
+            port = u.port or (443 if secure else 80)
+            raw = socket.create_connection((u.hostname, port), timeout=timeout)
+            if secure:
+                raw = (context or ssl.create_default_context()).wrap_socket(raw, server_hostname=u.hostname)
+            key = base64.b64encode(secrets.token_bytes(16)).decode()
+            path = (u.path or "/") + (f"?{u.query}" if u.query else "")
+            host = u.hostname if port in (80, 443) else f"{u.hostname}:{port}"
+            raw.sendall((f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                         f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+            head = b""
+            while b"\r\n\r\n" not in head:
+                chunk = raw.recv(4096)
+                if not chunk:
+                    raise WebSocketClosed("handshake: connection closed")
+                head += chunk
+                if len(head) > 65536:
+                    raise WebSocketClosed("handshake: response too large")
+            head, rest = head.split(b"\r\n\r\n", 1)
+            lines = head.decode("latin-1").split("\r\n")
+            status = lines[0].split(" ", 2)
+            if len(status) < 2 or status[1] != "101":
+                raise WebSocketClosed(f"handshake: {lines[0][:120]}")
+            headers = {k.strip().lower(): v.strip() for k, _, v in (ln.partition(":") for ln in lines[1:])}
+            expect = base64.b64encode(hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
+            if headers.get("sec-websocket-accept") != expect:
+                raise WebSocketClosed("handshake: bad Sec-WebSocket-Accept")
+            raw.settimeout(idle_timeout)   # Slack pings every few seconds; silence this long = dead link
+            return cls(raw, rest)
+
+        def _read_exact(self, n: int) -> bytes:
+            while len(self._buf) < n:
+                try:
+                    chunk = self.sock.recv(65536)
+                except socket.timeout as err:
+                    raise WebSocketClosed("idle timeout") from err
+                if not chunk:
+                    raise WebSocketClosed("connection closed")
+                self._buf += chunk
+            out, self._buf = self._buf[:n], self._buf[n:]
+            return out
+
+        def recv(self) -> tuple[int, bytes]:
+            """The next complete message as (opcode, payload); pings are answered here."""
+            message, opcode = b"", None
+            while True:
+                b1, b2 = self._read_exact(2)
+                fin, op, masked, length = b1 & 0x80, b1 & 0x0F, b2 & 0x80, b2 & 0x7F
+                if length == 126:
+                    length = struct.unpack("!H", self._read_exact(2))[0]
+                elif length == 127:
+                    length = struct.unpack("!Q", self._read_exact(8))[0]
+                mask = self._read_exact(4) if masked else None
+                payload = self._read_exact(length)
+                if mask:
+                    payload = _xor(payload, mask)
+                if op == OP_PING:
+                    self._send_frame(OP_PONG, payload)
+                    continue
+                if op == OP_PONG:
+                    continue
+                if op == OP_CLOSE:
+                    try:
+                        self._send_frame(OP_CLOSE, payload[:2])
+                    except OSError:
+                        pass
+                    raise WebSocketClosed("close frame from peer")
+                if op == OP_CONT:
+                    message += payload
+                else:
+                    opcode, message = op, payload
+                if fin:
+                    return opcode, message
+
+        def _send_frame(self, opcode: int, payload: bytes) -> None:
+            mask = secrets.token_bytes(4)
+            n = len(payload)
+            head = bytes([0x80 | opcode])
+            if n < 126:
+                head += bytes([0x80 | n])
+            elif n < 65536:
+                head += bytes([0x80 | 126]) + struct.pack("!H", n)
+            else:
+                head += bytes([0x80 | 127]) + struct.pack("!Q", n)
+            with self._send_lock:
+                self.sock.sendall(head + mask + _xor(payload, mask))
+
+        def send_text(self, text: str) -> None:
+            self._send_frame(OP_TEXT, text.encode())
+
+        def close(self) -> None:
+            try:
+                self._send_frame(OP_CLOSE, struct.pack("!H", 1000))
+            except OSError:
+                pass
+            try:
+                self.sock.close()
+            except OSError:
+                pass
+
+
+    # ------------------------------------------------------------------ Slack Web API
+
+    class SlackError(RuntimeError):
+        pass
+
+
+    def http_post_json(url: str, payload: bytes, headers: dict, timeout: float) -> dict:
+        """POST and decode JSON; an HTTP error becomes a SlackError with the status."""
+        req = urllib.request.Request(url, data=payload, method="POST", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as err:
+            body = err.read(300).decode("utf-8", "replace").strip()
+            raise SlackError(f"HTTP {err.code} from {url}: {body or err.reason}") from err
+
+
+    class Slack:
+        """The five Web API calls the bridge makes. `post(url, payload, headers, timeout) -> dict`
+        is injectable (tests)."""
+
+        def __init__(self, bot_token: str, *, post=http_post_json, timeout: float = 15.0):
+            self.bot_token = bot_token
+            self.post = post
+            self.timeout = timeout
+
+        def call(self, method: str, **params) -> dict:
+            headers = {"Authorization": f"Bearer {self.bot_token}", "Content-Type": "application/json; charset=utf-8"}
+            body = self.post(f"{SLACK_API}/{method}", json.dumps(params).encode(), headers, self.timeout)
+            if not isinstance(body, dict) or not body.get("ok"):
+                raise SlackError(f"{method}: {body.get('error') if isinstance(body, dict) else body!r:.200}")
+            return body
+
+        def post_message(self, channel: str, text: str, *, thread_ts: str | None = None,
+                         blocks: list | None = None) -> dict:
+            params = {"channel": channel, "text": clip(text), "unfurl_links": False, "unfurl_media": False}
+            if thread_ts:
+                params["thread_ts"] = thread_ts
+            if blocks:
+                params["blocks"] = blocks
+            return self.call("chat.postMessage", **params)
+
+        def post_ephemeral(self, channel: str, user: str, text: str, *, thread_ts: str | None = None) -> dict:
+            params = {"channel": channel, "user": user, "text": clip(text)}
+            if thread_ts:
+                params["thread_ts"] = thread_ts
+            return self.call("chat.postEphemeral", **params)
+
+        def update_message(self, channel: str, ts: str, text: str, *, blocks: list | None = None) -> dict:
+            return self.call("chat.update", channel=channel, ts=ts, text=clip(text), blocks=blocks or [])
+
+        def react(self, channel: str, ts: str, name: str, *, add: bool = True) -> None:
+            """Best effort: a missing or duplicate reaction is not an error worth a thread message."""
+            try:
+                self.call("reactions.add" if add else "reactions.remove", channel=channel, timestamp=ts, name=name)
+            except SlackError as err:
+                if not any(tag in str(err) for tag in ("already_reacted", "no_reaction", "message_not_found")):
+                    log_line({"event": "slack-error", "method": "reactions", "error": str(err)[:200]})
+
+
+    def clip(text: str, limit: int = TEXT_LIMIT) -> str:
+        text = text or ""
+        return text if len(text) <= limit else text[:limit - 16].rstrip() + "\n… (truncated)"
+
+
+    def mrkdwn_escape(text: str) -> str:
+        return (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+    # ------------------------------------------------------------------ Socket Mode
+
+    class SocketMode:
+        """Open the socket, read envelopes, hand each to `on_envelope`, ack it, reconnect forever.
+
+        `open_url()` and `connect(url)` are injectable so the tests run a local plain-ws server."""
+
+        def __init__(self, app_token: str, on_envelope, *, post=http_post_json, connect=None,
+                     sleep=time.sleep, log=log_line, timeout: float = 15.0):
+            self.app_token = app_token
+            self.on_envelope = on_envelope
+            self.post = post
+            self.connect = connect or WebSocket.connect
+            self.sleep = sleep
+            self.log = log
+            self.timeout = timeout
+            self.ready = threading.Event()     # set on `hello`, cleared when the link drops
+
+        def open_url(self) -> str:
+            headers = {"Authorization": f"Bearer {self.app_token}", "Content-Type": "application/x-www-form-urlencoded"}
+            body = self.post(f"{SLACK_API}/apps.connections.open", b"", headers, self.timeout)
+            if not isinstance(body, dict) or not body.get("ok") or not body.get("url"):
+                raise SlackError(f"apps.connections.open: {body.get('error') if isinstance(body, dict) else body!r:.200}")
+            return body["url"]
+
+        def run(self, stop: threading.Event) -> None:
+            backoff = 1.0
+            while not stop.is_set():
+                ws = None
+                try:
+                    ws = self.connect(self.open_url())
+                    self.serve(ws, stop)
+                    backoff = 1.0            # a clean `disconnect`: reconnect at once
+                    continue
+                except (OSError, WebSocketClosed, SlackError, ValueError) as err:
+                    self.ready.clear()
+                    self.log({"event": "socket", "state": "down", "error": f"{type(err).__name__}: {str(err)[:200]}",
+                              "retry_in": backoff})
+                finally:
+                    if ws is not None:
+                        ws.close()
+                if stop.is_set():
+                    return
+                self.sleep(backoff)
+                backoff = min(backoff * 2, MAX_BACKOFF)
+
+        def serve(self, ws: WebSocket, stop: threading.Event) -> None:
+            """Until Slack says `disconnect` (returns) or the link dies (raises)."""
+            while not stop.is_set():
+                opcode, data = ws.recv()
+                if opcode != OP_TEXT:
+                    continue
+                try:
+                    msg = json.loads(data)
+                except ValueError:
+                    self.log({"event": "socket", "state": "bad-json", "bytes": len(data)})
+                    continue
+                kind = msg.get("type")
+                if kind == "hello":
+                    self.ready.set()
+                    self.log({"event": "socket", "state": "hello"})
+                elif kind == "disconnect":
+                    self.ready.clear()
+                    self.log({"event": "socket", "state": "disconnect", "reason": msg.get("reason")})
+                    return
+                elif msg.get("envelope_id"):
+                    # Queue the work first, ack second: a crash in between makes Slack redeliver
+                    # (duplicates are caught by the event id and the nonces), a crash after it
+                    # loses this one envelope. Never do the work before the ack: Slack retries
+                    # after 3 s and a slow agent would be asked twice.
+                    self.on_envelope(msg)
+                    ws.send_text(json.dumps({"envelope_id": msg["envelope_id"]}))
+
+
+    # ------------------------------------------------------------------ the bridge
+
+    @dataclass
+    class Config:
+        bot_token: str
+        app_token: str
+        owner_user_id: str
+        owner_email: str
+        default_agent: str = "homelab-knowledge"
+        agents: tuple = ("homelab-knowledge",)
+        a2a_base: str = a2a.IN_CLUSTER_BASE
+        token_file: str | None = "/var/run/kagent/token"
+        user: str = "slack-bridge"                      # X-User-Id, only without a token file (dev)
+        decide_base: str = "http://dispatcher-decide.dispatcher.svc.cluster.local:8082"
+        timeout: float = 300.0
+        port: int = 8080
+
+        @classmethod
+        def from_env(cls, env=os.environ) -> "Config":
+            agents = tuple(a.strip() for a in env.get("AGENTS", "homelab-knowledge").split(",") if a.strip())
+            default = env.get("DEFAULT_AGENT", "homelab-knowledge")
+            if default not in agents:
+                agents = (default, *agents)
+            missing = [k for k in ("SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "OWNER_SLACK_USER_ID", "OWNER_EMAIL") if not env.get(k)]
+            if missing:
+                raise ValueError(f"missing environment: {', '.join(missing)}")
+            return cls(
+                bot_token=env["SLACK_BOT_TOKEN"], app_token=env["SLACK_APP_TOKEN"],
+                owner_user_id=env["OWNER_SLACK_USER_ID"], owner_email=env["OWNER_EMAIL"],
+                default_agent=default, agents=agents,
+                a2a_base=env.get("KAGENT_A2A_BASE", a2a.IN_CLUSTER_BASE),
+                token_file=env.get("KAGENT_TOKEN_FILE", "/var/run/kagent/token") or None,
+                user=env.get("BRIDGE_USER", "slack-bridge"),
+                decide_base=env.get("DISPATCHER_DECIDE_BASE", "http://dispatcher-decide.dispatcher.svc.cluster.local:8082"),
+                timeout=float(env.get("A2A_TIMEOUT", "300")),
+                port=int(env.get("PORT", "8080")),
+            )
+
+
+    @dataclass
+    class Thread:
+        """One Slack thread = one agent and one kagent session."""
+        agent: str
+        context_id: str | None = None
+        task_id: str | None = None
+        question_id: str | None = None   # an ask_user_request the next reply answers
+        replied: bool = False            # the first reply carries the session line
+
+
+    @dataclass
+    class Pending:
+        """A pause in one of the bridge's OWN sessions, waiting for a button."""
+        ctx: str
+        task_id: str
+        agent: str
+        calls: list
+        nonce: str
+        channel: str
+        thread_ts: str
+
+
+    _AGENT_PREFIX = re.compile(r"^\s*([a-z0-9][a-z0-9-]*)\s*:\s*(.*)$", re.S)
+    _MENTION = re.compile(r"<@([A-Z0-9]+)(?:\|[^>]*)?>")
+    _VALUE = re.compile(r"^([ds]):([^:]+):([A-Za-z0-9_-]+)$")
+
+
+    def pick_agent(text: str, agents, default: str) -> tuple[str, str]:
+        """`name: question` picks `name` when it is an allowed agent; anything else is text."""
+        m = _AGENT_PREFIX.match(text or "")
+        if m and m.group(1) in agents:
+            return m.group(1), m.group(2).strip()
+        return default, (text or "").strip()
+
+
+    def strip_mention(text: str, bot_user_id: str | None) -> str:
+        if not bot_user_id:
+            return (text or "").strip()
+        return _MENTION.sub(lambda m: "" if m.group(1) == bot_user_id else m.group(0), text or "").strip()
+
+
+    def parse_value(value: str) -> tuple[str, str, str] | None:
+        """A button value: `d:<ctx>:<nonce>` (the dispatcher's) or `s:<ctx>:<nonce>` (ours)."""
+        m = _VALUE.match(value or "")
+        return (m.group(1), m.group(2), m.group(3)) if m else None
+
+
+    def decision_blocks(text: str, value: str) -> list:
+        return [{"type": "section", "text": {"type": "mrkdwn", "text": clip(text, 2900)}},
+                {"type": "actions", "block_id": "decision",
+                 "elements": [{"type": "button", "action_id": "approve", "style": "primary",
+                               "text": {"type": "plain_text", "text": "Approve"}, "value": value},
+                              {"type": "button", "action_id": "reject", "style": "danger",
+                               "text": {"type": "plain_text", "text": "Reject"}, "value": value}]}]
+
+
+    def decided_blocks(message: dict, line: str) -> list:
+        """The clicked message without its buttons, plus one line saying who decided."""
+        keep = [b for b in (message.get("blocks") or []) if b.get("type") != "actions"]
+        if not keep:
+            keep = [{"type": "section", "text": {"type": "mrkdwn", "text": clip(message.get("text") or "", 2900)}}]
+        return keep + [{"type": "context", "elements": [{"type": "mrkdwn", "text": line}]}]
+
+
+    def _is_timeout(err: BaseException) -> bool:
+        if isinstance(err, TimeoutError):
+            return True
+        return isinstance(err, urllib.error.URLError) and isinstance(getattr(err, "reason", None), TimeoutError)
+
+
+    class Bridge:
+        def __init__(self, config: Config, slack: Slack, *, bot_user_id: str | None = None,
+                     send=a2a.send_message, post=http_post_json, log=log_line):
+            self.config = config
+            self.slack = slack
+            self.bot_user_id = bot_user_id
+            self.send = send
+            self.post = post
+            self.log = log
+            self.threads: dict[tuple[str, str], Thread] = {}
+            self.pending: dict[str, Pending] = {}
+            self._seen: dict[str, float] = {}
+            self._lock = threading.Lock()
+
+        # ----------------------------------------------------------- envelopes
+
+        def handle_envelope(self, envelope: dict) -> None:
+            kind = envelope.get("type")
+            payload = envelope.get("payload") or {}
+            try:
+                if kind == "events_api":
+                    self.handle_event(payload.get("event") or {})
+                elif kind == "interactive":
+                    self.handle_action(payload)
+            except Exception as err:  # noqa: BLE001 - one bad envelope must not kill the worker
+                self.log({"event": "error", "kind": kind, "error": f"{type(err).__name__}: {str(err)[:300]}"})
+
+        def _seen_before(self, key: str) -> bool:
+            with self._lock:
+                if key in self._seen:
+                    return True
+                self._seen[key] = time.time()
+                if len(self._seen) > SEEN_LIMIT:
+                    for old in sorted(self._seen, key=self._seen.get)[:SEEN_LIMIT // 4]:
+                        del self._seen[old]
+                return False
+
+        def is_for_me(self, event: dict) -> bool:
+            """A DM, a mention, or a reply in a thread this bridge knows. Bot and edited messages,
+            and the `message` copy of a mention (both events fire), are not."""
+            if event.get("bot_id") or event.get("subtype"):
+                return False
+            kind = event.get("type")
+            if kind == "app_mention":
+                return True
+            if kind != "message":
+                return False
+            if event.get("channel_type") == "im":
+                return True
+            if self.bot_user_id and f"<@{self.bot_user_id}>" in (event.get("text") or ""):
+                return False                     # the app_mention event carries this one
+            thread_ts = event.get("thread_ts")
+            return bool(thread_ts) and (event.get("channel"), thread_ts) in self.threads
+
+        def handle_event(self, event: dict) -> None:
+            if not self.is_for_me(event):
+                return
+            channel, ts, user = event.get("channel"), event.get("ts"), event.get("user")
+            if not channel or not ts or self._seen_before(f"{channel}:{ts}"):
+                return
+            thread_ts = event.get("thread_ts") or ts
+            if user != self.config.owner_user_id:
+                self.log({"event": "refused", "user": user, "channel": channel})
+                self.slack.post_ephemeral(channel, user, "This bridge answers only its owner.", thread_ts=thread_ts)
+                return
+            text = strip_mention(event.get("text") or "", self.bot_user_id)
+            key = (channel, thread_ts)
+            with self._lock:
+                thread = self.threads.get(key)
+                if thread is None:
+                    agent, text = pick_agent(text, self.config.agents, self.config.default_agent)
+                    thread = self.threads[key] = Thread(agent=agent)
+                else:
+                    m = _AGENT_PREFIX.match(text)
+                    if m and m.group(1) == thread.agent:
+                        text = m.group(2).strip()
+            if not text:
+                self.slack.post_message(channel, "Say something after the mention, e.g. `k8s-reader: which pods restarted today?`",
+                                        thread_ts=thread_ts)
+                return
+            self.slack.react(channel, ts, "eyes")
+            metadata = task_id = None
+            if thread.question_id:
+                metadata, task_id = a2a.answer_metadata(thread.question_id, text), thread.task_id
+                thread.question_id = None
+            reply, error = self._send(thread.agent, text, context_id=thread.context_id, task_id=task_id, metadata=metadata)
+            self.slack.react(channel, ts, "eyes", add=False)
+            if reply is not None and reply.context_id:
+                thread.context_id = reply.context_id
+            self.log({"event": "ask", "user": user, "agent": thread.agent, "session": thread.context_id,
+                      "state": reply.state if reply else None, "error": error})
+            if error:
+                self.slack.react(channel, ts, "x")
+                self.slack.post_message(channel, self._error_text(thread, error), thread_ts=thread_ts)
+                return
+            self.slack.react(channel, ts, "white_check_mark" if reply.completed else "hourglass_flowing_sand")
+            self._render(thread, reply, channel, thread_ts)
+
+        def _send(self, agent: str, text: str, **kw) -> tuple[a2a.Reply | None, str | None]:
+            url = a2a.resolve_endpoint(self.config.a2a_base, f"kagent/{agent}")
+            try:
+                result = self.send(url, text, user=None if self.config.token_file else self.config.user,
+                                   token_file=self.config.token_file, timeout=self.config.timeout, **kw)
+                return a2a.parse_result(result), None
+            except Exception as err:  # noqa: BLE001 - every failure lands in the thread
+                if _is_timeout(err):
+                    return None, f"no answer after {self.config.timeout:.0f}s (the agent may still be running)"
+                return None, f"{type(err).__name__}: {str(err)[:400]}"
+
+        def _continue_line(self, thread: Thread) -> str:
+            return (f"_session {thread.context_id or '?'} · continue: scripts/ask-hk --agent kagent/{thread.agent} "
+                    f"--as-serviceaccount slack-bridge/slack-bridge --context {thread.context_id or '?'}_")
+
+        def _error_text(self, thread: Thread, error: str) -> str:
+            return f":x: `{thread.agent}` failed: {mrkdwn_escape(error)}\n{self._continue_line(thread)}"
+
+        def _render(self, thread: Thread, reply: a2a.Reply, channel: str, thread_ts: str) -> None:
+            """What a settled send looks like in the thread."""
+            footer = "" if thread.replied else "\n" + self._continue_line(thread)
+            thread.replied = True
+            if reply.completed:
+                self.slack.post_message(channel, (reply.answer or reply.status_text or "(no text)") + footer, thread_ts=thread_ts)
+                return
+            if reply.waiting and reply.pending_calls:
+                nonce = secrets.token_urlsafe(12)
+                with self._lock:
+                    self.pending[reply.context_id] = Pending(ctx=reply.context_id, task_id=reply.task_id, agent=thread.agent,
+                                                             calls=reply.pending_calls, nonce=nonce, channel=channel,
+                                                             thread_ts=thread_ts)
+                calls = "\n".join(f"{c['name']} {json.dumps(c['args'], sort_keys=True)}" for c in reply.pending_calls)
+                text = f":raised_hand: `{thread.agent}` wants to run:\n```{mrkdwn_escape(calls)}```"
+                self.slack.post_message(channel, text + footer, thread_ts=thread_ts,
+                                        blocks=decision_blocks(text + footer, f"s:{reply.context_id}:{nonce}"))
+                return
+            if reply.waiting and reply.pending_question:
+                thread.question_id, thread.task_id = (reply.hitl or {}).get("id"), reply.task_id
+                question = reply.status_text or reply.text or "(the agent asked something without text)"
+                self.slack.post_message(channel, f":question: `{thread.agent}` asks: {question}\n_reply in this thread to answer_" + footer,
+                                        thread_ts=thread_ts)
+                return
+            if reply.waiting:
+                self.slack.post_message(channel, f":hourglass: `{thread.agent}` paused without a request the bridge can "
+                                                 f"answer (state {reply.state}). {self._continue_line(thread)}", thread_ts=thread_ts)
+                return
+            self.slack.post_message(channel, f":x: `{thread.agent}` ended in {reply.state}: "
+                                             f"{mrkdwn_escape(reply.status_text or reply.text or '')[:1500]}" + footer, thread_ts=thread_ts)
+
+        # ----------------------------------------------------------- buttons
+
+        def handle_action(self, payload: dict) -> None:
+            if payload.get("type") != "block_actions":
+                return
+            user = (payload.get("user") or {}).get("id")
+            channel = (payload.get("channel") or {}).get("id")
+            message = payload.get("message") or {}
+            ts = message.get("ts")
+            actions = payload.get("actions") or []
+            if not (user and channel and ts and actions):
+                return
+            action = actions[0]
+            action_id, value = action.get("action_id"), action.get("value") or ""
+            thread_ts = message.get("thread_ts") or ts
+            if user != self.config.owner_user_id:
+                self.log({"event": "refused", "user": user, "channel": channel, "action": action_id})
+                self.slack.post_ephemeral(channel, user, "Only the owner decides here.", thread_ts=thread_ts)
+                return
+            if action_id not in ("approve", "reject") or self._seen_before(f"action:{ts}:{action_id}:{value}"):
+                return
+            approved = action_id == "approve"
+            parsed = parse_value(value)
+            if parsed is None:
+                self.slack.post_message(channel, "That button carries no decision the bridge understands.", thread_ts=thread_ts)
+                return
+            kind, ctx, nonce = parsed
+            reason = None if approved else "rejected in Slack"
+            if kind == "d":
+                text, state = self.decide_dispatcher(ctx, nonce, approved=approved, reason=reason)
+            else:
+                text, state = self.decide_own(ctx, nonce, approved=approved, reason=reason)
+            who = f"{'Approved' if approved else 'Rejected'} by {self.config.owner_email} via Slack"
+            try:
+                self.slack.update_message(channel, ts, (message.get("text") or "") + f"\n{who}",
+                                          blocks=decided_blocks(message, who))
+            except SlackError as err:
+                self.log({"event": "slack-error", "method": "chat.update", "error": str(err)[:200]})
+            self.slack.post_message(channel, text, thread_ts=thread_ts)
+            self.log({"event": "decision", "kind": kind, "session": ctx, "approved": approved,
+                      "approved_by": self.config.owner_email, "state": state})
+
+        def decide_dispatcher(self, ctx: str, nonce: str, *, approved: bool, reason: str | None) -> tuple[str, str]:
+            """Forward the click to the dispatcher's decide port (§T.120); it claims, sends and
+            posts the outcome itself. Returns (text for the thread, state for the log)."""
+            url = f"{self.config.decide_base.rstrip('/')}/decide/{urllib.parse.quote(ctx, safe='')}/{'approve' if approved else 'reject'}"
+            body = json.dumps({"nonce": nonce, "reason": reason, "approver": self.config.owner_email}).encode()
+            try:
+                out = self.post(url, body, {"Content-Type": "application/json"}, 30.0)
+            except SlackError as err:   # http_post_json raises SlackError on a non-2xx
+                msg = str(err)
+                if " 404 " in msg:
+                    return (":warning: the dispatcher no longer holds that restart (it restarted since). "
+                            "Use the ask-hk fallback in the message above.", "missing")
+                if " 409 " in msg:
+                    return ":warning: already decided.", "stale"
+                if " 403 " in msg:
+                    return f":x: the dispatcher refused the decision: {mrkdwn_escape(msg[:300])}", "refused"
+                return f":x: could not reach the dispatcher: {mrkdwn_escape(msg[:300])}", "error"
+            except OSError as err:
+                return f":x: could not reach the dispatcher: {mrkdwn_escape(str(err)[:300])}", "error"
+            text = out.get("text") if isinstance(out, dict) else None
+            return (f":white_check_mark: {mrkdwn_escape(text or 'decision sent')}", "sent")
+
+        def decide_own(self, ctx: str, nonce: str, *, approved: bool, reason: str | None) -> tuple[str, str]:
+            """Decide a pause in one of the bridge's own sessions: exactly the registered call ids
+            on the registered task, once (the nonce claims the item)."""
+            with self._lock:
+                item = self.pending.get(ctx)
+                if item is None:
+                    return ":warning: nothing pending for that session (decided already, or the bridge restarted).", "missing"
+                if not secrets.compare_digest(item.nonce, nonce):
+                    return ":warning: already decided.", "stale"
+                del self.pending[ctx]
+            thread = self.threads.get((item.channel, item.thread_ts)) or Thread(agent=item.agent, context_id=ctx, replied=True)
+            reply, error = self._send(item.agent, "approved" if approved else f"rejected: {reason or ''}".strip(),
+                                      context_id=ctx, task_id=item.task_id,
+                                      metadata=a2a.approval_metadata([c["id"] for c in item.calls], approved=approved, reason=reason))
+            if error:
+                if "may still be running" in error:
+                    return (f":hourglass: decision sent to `{item.agent}`, outcome unknown ({mrkdwn_escape(error)}). "
+                            f"{self._continue_line(thread)}", "unknown")
+                # Provably not delivered: put the item back so the SAME buttons work again.
+                with self._lock:
+                    self.pending.setdefault(ctx, item)
+                return f":x: decision not delivered: {mrkdwn_escape(error)}. Click again.", "error"
+            self._render(thread, reply, item.channel, item.thread_ts)
+            return (f"{'Approved' if approved else 'Rejected'}; `{item.agent}` answered above.", reply.state or "done")
+
+
+    # ------------------------------------------------------------------ health + main
+
+    def make_health_handler(ready: threading.Event):
+        class Handler(BaseHTTPRequestHandler):
+            server_version = "slack-bridge/1"
+
+            def do_GET(self):  # noqa: N802
+                if self.path == "/healthz":
+                    code = 200
+                elif self.path == "/readyz":
+                    code = 200 if ready.is_set() else 503
+                else:
+                    code = 404
+                body = json.dumps({"ok": code == 200}).encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, fmt, *args):
+                pass
+
+        return Handler
+
+
+    def serve_health(ready: threading.Event, port: int) -> ThreadingHTTPServer:
+        server = ThreadingHTTPServer(("0.0.0.0", port), make_health_handler(ready))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        return server
+
+
+    def main(argv=None) -> int:
+        try:
+            config = Config.from_env()
+        except ValueError as err:
+            log_line({"event": "fatal", "error": str(err)})
+            return 1
+        slack = Slack(config.bot_token)
+        try:
+            bot_user_id = slack.call("auth.test").get("user_id")
+        except SlackError as err:
+            log_line({"event": "fatal", "error": f"auth.test: {err}"})
+            return 1
+        bridge = Bridge(config, slack, bot_user_id=bot_user_id)
+
+        def on_envelope(envelope: dict) -> None:
+            threading.Thread(target=bridge.handle_envelope, args=(envelope,), daemon=True).start()
+
+        sm = SocketMode(config.app_token, on_envelope)
+        serve_health(sm.ready, config.port)
+        log_line({"event": "start", "bot_user_id": bot_user_id, "owner": config.owner_user_id,
+                  "agents": list(config.agents), "default_agent": config.default_agent,
+                  "a2a_base": config.a2a_base, "identity": "token" if config.token_file else config.user})
+        stop = threading.Event()
+        try:
+            sm.run(stop)
+        except KeyboardInterrupt:
+            stop.set()
+        return 0
+
+
+    if __name__ == "__main__":
+        raise SystemExit(main())
+  kagent_a2a.py: |
+    """Minimal A2A v1 JSON-RPC client for the kagent 1.0 controller (stdlib only).
+
+    Shared by scripts/ask-hk and scripts/capture-eval-answers.py.
+
+    kagent 1.0 has no per-agent Service. The controller serves every Agent's A2A
+    endpoint on its API listener (kagent-controller:8083):
+
+        POST <base>/agents/<namespace>/<name>                                  JSON-RPC
+        GET  <base>/agents/<namespace>/<name>/.well-known/agent-card.json      agent card
+
+    Sources (kagent v1.0.0-alpha11): docs/architecture/a2a-transports.md,
+    docs/architecture/a2a-gateway.md, go/core/internal/a2agateway/http.go. Wire
+    types come from the a2a-go v2.6.0 SDK the controller pins (a2a/core.go,
+    internal/jsonrpc/jsonrpc.go). This is A2A **v1**, not the 0.3 protocol kagent
+    0.10 spoke, and the differences break 0.3 clients:
+
+    - method `SendMessage` (was `message/send`); roles `ROLE_USER`/`ROLE_AGENT`;
+    - a part is `{"text": ...}` or `{"data": ...}` with no `kind` field;
+    - the result is wrapped: `{"task": {...}}` or `{"message": {...}}`;
+    - task states are `TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, ...
+
+    A send without a contextId creates a Session; the returned contextId IS the
+    Session id, and sending it back continues the conversation. Sessions are owned
+    by the verified identity (the Dex `email` for a human, system:serviceaccount:<ns>:<sa>
+    for an automation), so a follow-up must present the same identity. X-User-Id is honoured
+    only where no mesh sits in front of the controller (a port-forward). In the
+    controller's default `insecure` auth mode that header is the whole identity: a
+    missing header means `admin@kagent.dev` (go/core/internal/httpserver/auth/authn.go).
+
+    Every send requests kagent's human-in-the-loop extension
+    (HITL_EXTENSION, `A2A-Extensions` header + the message's `extensions` list).
+    Without it a gated tool call still pauses the task, but the pause carries no
+    request id, so nothing can answer it and it waits until cancelled
+    (docs: examples/a2a-agents, agents/human-in-the-loop). With it, a paused task's
+    status.message.metadata[HITL_EXTENSION] is a `tool_approval_request` (each
+    pending call has an `id`, `name`, `args`) or an `ask_user_request`, and the
+    reply is a message on the same taskId + contextId whose metadata carries a
+    `tool_approval_response` (`approvals`, one per call) or an `ask_user_response`.
+    The reply's `extensions` list must name the URI again or kagent ignores the
+    payload and resumes without a decision.
+
+    The unary send blocks until the task settles (completed, failed, or waiting for
+    input), and the gateway returns the stored task. One artifact per ADK event
+    (Go ADK `OutputArtifactPerEvent`): text parts are what the agent said, data
+    parts are tool calls and results. The answer is the text parts, as in the
+    kagent CLI (go/core/cli/internal/commands/session/invoke.go, sendResultText).
+    """
+    from __future__ import annotations
+
+    import json
+    import os
+    import subprocess
+    import time
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    import uuid
+    from dataclasses import dataclass
+    from pathlib import Path
+
+    # The kagent-mcp host routes /agents/kagent/ to the controller (httproute-mcp.yaml)
+    # behind the Gateway IP allow-list. In-cluster callers use the Service directly.
+    PUBLIC_BASE = "https://kagent-mcp.arigsela.com"
+    IN_CLUSTER_BASE = "http://kagent-controller.kagent.svc.cluster.local:8083"
+    DEFAULT_USER = "admin@kagent.dev"
+
+    # Callers as principals (docs/superpowers/specs/2026-10-13-callers-as-principals-and-eval-gate-design.md).
+    # The mesh verifies the bearer token and sets X-User-Id from its claim; a client that sends a
+    # token must not also name itself. Humans reuse kubectl's Dex login (kubelogin cache);
+    # automations present a projected service account token with this audience.
+    DEX_ISSUER = "https://dex.arigsela.com"
+    DEX_CLIENT_ID = "kubernetes"
+    TOKEN_AUDIENCE = "kagent"
+    A2A_VERSION = "1.0"
+    # kagent's HITL A2A extension (go/core/internal/a2a/hitl): tool approvals and ask_user.
+    HITL_EXTENSION = "https://kagent.dev/extensions/hitl/v1"
+    HITL_TOOL_APPROVAL_REQUEST = "tool_approval_request"
+    HITL_TOOL_APPROVAL_RESPONSE = "tool_approval_response"
+    HITL_ASK_USER_REQUEST = "ask_user_request"
+    HITL_ASK_USER_RESPONSE = "ask_user_response"
+    # Multi-step agents (docs walk + live reads) take minutes; the unary call is
+    # silent until the task settles. Nothing on the path times out first: Istio
+    # 1.30 sets no route timeout and disables the stream idle timeout.
+    DEFAULT_TIMEOUT = 900.0
+
+    STATE_COMPLETED = "TASK_STATE_COMPLETED"
+    FAILED_STATES = {"TASK_STATE_FAILED", "TASK_STATE_CANCELED", "TASK_STATE_REJECTED"}
+    WAITING_STATES = {"TASK_STATE_INPUT_REQUIRED", "TASK_STATE_AUTH_REQUIRED"}
+
+    # a2a-go maps ErrUnsupportedOperation to -32004. kagent returns it with this
+    # ErrorInfo reason only when the input was provably NOT dispatched (the session
+    # was busy pausing or suspending), so resending the identical request is safe.
+    # Every other error, including a transport error, must not be blindly retried:
+    # the input may already be running (docs/architecture/a2a-gateway.md).
+    CODE_UNSUPPORTED_OPERATION = -32004
+    REASON_SEND_NOT_ACCEPTED = "KAGENT_SEND_NOT_ACCEPTED"
+    RETRY_DEADLINE = 30.0
+
+
+    class A2AError(RuntimeError):
+        """A JSON-RPC error, an HTTP error, or a result this client cannot read."""
+
+        def __init__(self, message: str, *, code: int | None = None, data=None):
+            super().__init__(message)
+            self.code = code
+            self.data = data
+
+
+    @dataclass
+    class Reply:
+        """What a SendMessage returned, reduced to what callers print or score."""
+
+        kind: str                 # "task" or "message"
+        state: str | None         # TASK_STATE_* for a task, None for a direct message
+        context_id: str | None    # the Session id; pass it back to continue
+        task_id: str | None
+        text: str | None          # text parts of the artifacts (or the message)
+        status_text: str | None   # text parts of task.status.message
+        hitl: dict | None = None  # status.message.metadata[HITL_EXTENSION] of a waiting task
+
+        @property
+        def failed(self) -> bool:
+            return self.state in FAILED_STATES
+
+        @property
+        def waiting(self) -> bool:
+            return self.state in WAITING_STATES
+
+        @property
+        def completed(self) -> bool:
+            return self.kind == "message" or self.state == STATE_COMPLETED
+
+        @property
+        def pending_calls(self) -> list[dict]:
+            """The tool calls a waiting task wants approved: [{id, name, args}, ...].
+
+            Empty unless the task paused with a tool_approval_request. alpha11 lists
+            them under `tools` (go/core/internal/a2a/hitl); the docs say `calls`."""
+            if not self.hitl or self.hitl.get("type") != HITL_TOOL_APPROVAL_REQUEST:
+                return []
+            calls = self.hitl.get("tools")
+            if not isinstance(calls, list):
+                calls = self.hitl.get("calls")
+            return [{"id": c.get("id"), "name": c.get("name"), "args": c.get("args") or {}}
+                    for c in (calls or []) if isinstance(c, dict) and c.get("id")]
+
+        @property
+        def pending_question(self) -> bool:
+            """True when the task paused with an ask_user_request (the agent asked something)."""
+            return bool(self.hitl) and self.hitl.get("type") == HITL_ASK_USER_REQUEST
+
+        @property
+        def answer(self) -> str | None:
+            """The agent's answer: only a completed task (or a direct message) has one.
+
+            A failed, canceled or rejected task puts its error text in
+            status.message; that is a tooling failure, not an answer. A task that
+            is still working or waiting for input has not answered yet."""
+            if not self.completed:
+                return None
+            return self.text or self.status_text
+
+
+    def agent_path(agent: str) -> str:
+        """`namespace/name` -> `/agents/namespace/name`."""
+        ns, sep, name = agent.partition("/")
+        if not sep or not ns or not name or "/" in name:
+            raise ValueError(f"agent must be namespace/name, got {agent!r}")
+        return f"/agents/{urllib.parse.quote(ns, safe='')}/{urllib.parse.quote(name, safe='')}"
+
+
+    def resolve_endpoint(endpoint: str, agent: str) -> str:
+        """A bare origin gets /agents/<ns>/<name> appended; a URL with a path is used as-is.
+
+        So `--endpoint http://127.0.0.1:8083` (a port-forward) and a full agent URL
+        both work."""
+        parsed = urllib.parse.urlsplit(endpoint)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError(f"endpoint must be an absolute http(s) URL, got {endpoint!r}")
+        if parsed.path in ("", "/"):
+            return endpoint.rstrip("/") + agent_path(agent)
+        return endpoint
+
+
+    def build_send_request(text: str, *, context_id: str | None = None,
+                           task_id: str | None = None, metadata: dict | None = None,
+                           message_id: str | None = None, rpc_id: str | None = None) -> dict:
+        """A SendMessage. `task_id` + `metadata` make it a reply to a paused task."""
+        message = {
+            "messageId": message_id or str(uuid.uuid4()),
+            "role": "ROLE_USER",
+            "parts": [{"text": text}],
+            # Request HITL on every message: an approval pause raised during this
+            # turn is only answerable if the message that started the turn asked.
+            "extensions": [HITL_EXTENSION],
+        }
+        if context_id:
+            message["contextId"] = context_id
+        if task_id:
+            message["taskId"] = task_id
+        if metadata:
+            message["metadata"] = metadata
+        return {"jsonrpc": "2.0", "id": rpc_id or str(uuid.uuid4()),
+                "method": "SendMessage", "params": {"message": message}}
+
+
+    def build_get_task_request(task_id: str, rpc_id: str | None = None) -> dict:
+        """A GetTask: the stored task, with its status.message (and so a pending approval)."""
+        return {"jsonrpc": "2.0", "id": rpc_id or str(uuid.uuid4()),
+                "method": "GetTask", "params": {"id": task_id}}
+
+
+    def get_task(endpoint: str, task_id: str, *, user: str | None = DEFAULT_USER,
+                 token: str | None = None, token_file: str | None = None,
+                 timeout: float = 60.0, transport=None) -> dict:
+        """Fetch a task by id and return it in SendMessage's result shape ({"task": ...}),
+        so parse_result reads it. How a laptop learns what a session it never saw is waiting
+        on (the dispatcher's restarter sessions, §T.118). Verified live 2026-10-14: the gateway
+        answers GetTask {"id"} with the bare task; {"name": "tasks/<id>"} is invalid params."""
+        post = transport or http_post
+        payload = json.dumps(build_get_task_request(task_id)).encode()
+        headers = request_headers(user, token or (read_token_file(token_file) if token_file else None))
+        body = post(endpoint, payload, headers, timeout)
+        if not isinstance(body, dict):
+            raise A2AError(f"not a JSON-RPC response: {body!r:.200}")
+        error = body.get("error")
+        if error:
+            raise A2AError(f"A2A error {error.get('code') if isinstance(error, dict) else '?'}: "
+                           f"{error.get('message', error) if isinstance(error, dict) else error}")
+        result = body.get("result")
+        if not isinstance(result, dict) or "status" not in result:
+            raise A2AError("GetTask response has no task")
+        return {"task": result}
+
+
+    def approval_metadata(call_ids: list[str], *, approved: bool, reason: str | None = None) -> dict:
+        """message.metadata for a tool_approval_response deciding every listed call the same way.
+
+        kagent requires a decision for every call in the request; a partial reply
+        is a protocol error. `reason` (rejections only) is shown to the agent so it
+        can adapt instead of just failing."""
+        approvals = []
+        for cid in call_ids:
+            entry = {"id": cid, "approved": approved}
+            if not approved and reason:
+                entry["rejection_reason"] = reason
+            approvals.append(entry)
+        return {HITL_EXTENSION: {"type": HITL_TOOL_APPROVAL_RESPONSE, "approvals": approvals}}
+
+
+    def answer_metadata(request_id: str, answer: str) -> dict:
+        """message.metadata for an ask_user_response to the request with this id."""
+        return {HITL_EXTENSION: {"type": HITL_ASK_USER_RESPONSE, "id": request_id,
+                                 "answers": [{"answer": [answer]}]}}
+
+
+    def request_headers(user: str | None, token: str | None = None) -> dict:
+        headers = {"Content-Type": "application/json", "Accept": "application/json",
+                   # Not enforced by the alpha11 JSON-RPC handler, but the kagent CLI
+                   # and the a2a-go client always send it (go/core/internal/utils/a2a_version.go).
+                   "A2A-Version": A2A_VERSION,
+                   # The HITL extension is negotiated per request (a2a-go reads this header).
+                   "A2A-Extensions": HITL_EXTENSION}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"   # identity = the verified claim (mesh)
+        elif user:
+            headers["X-User-Id"] = user                     # the no-mesh dev path (port-forward)
+        return headers
+
+
+    def read_token_file(path: str) -> str:
+        return Path(path).read_text().strip()
+
+
+    def _run_kubectl(cmd: list[str], run) -> str:
+        r = run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"{' '.join(cmd[:3])} failed: {(r.stderr or r.stdout).strip()[:300]}")
+        return r.stdout
+
+
+    def kubelogin_token(run=subprocess.run) -> str:
+        """The Dex ID token kubectl caches (int128/kubelogin). The browser opens only when the
+        cached refresh token is gone. The ExecCredential's status.token is the ID token."""
+        out = _run_kubectl(["kubectl", "oidc-login", "get-token",
+                            f"--oidc-issuer-url={DEX_ISSUER}", f"--oidc-client-id={DEX_CLIENT_ID}",
+                            "--oidc-extra-scope=email", "--oidc-extra-scope=offline_access"], run)
+        return json.loads(out)["status"]["token"]
+
+
+    def serviceaccount_token(ref: str, run=subprocess.run) -> str:
+        """A 10-minute projected token for namespace/name with the kagent audience: an audited
+        TokenRequest, which is how the owner continues a session an automation owns."""
+        ns, _, name = ref.partition("/")
+        if not ns or not name or "/" in name:
+            raise ValueError(f"--as-serviceaccount wants namespace/name, got {ref!r}")
+        return _run_kubectl(["kubectl", "create", "token", name, "-n", ns,
+                             "--audience", TOKEN_AUDIENCE, "--duration", "10m"], run).strip()
+
+
+    def acquire_token(*, token: str | None = None, token_file: str | None = None,
+                      as_serviceaccount: str | None = None, env=os.environ, run=subprocess.run) -> str:
+        """Explicit token, then a file, then $KAGENT_TOKEN, $KAGENT_TOKEN_FILE, a service account
+        to impersonate, else the kubelogin cache."""
+        if token:
+            return token
+        if token_file:
+            return read_token_file(token_file)
+        if env.get("KAGENT_TOKEN"):
+            return env["KAGENT_TOKEN"]
+        if env.get("KAGENT_TOKEN_FILE"):
+            return read_token_file(env["KAGENT_TOKEN_FILE"])
+        if as_serviceaccount:
+            return serviceaccount_token(as_serviceaccount, run)
+        return kubelogin_token(run)
+
+
+    def http_post(url: str, payload: bytes, headers: dict, timeout: float) -> dict:
+        req = urllib.request.Request(url, data=payload, method="POST", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as err:
+            # JSON-RPC errors come back as HTTP 200. A non-2xx is the path, not the
+            # agent: 403 "RBAC: access denied" is the Gateway allow-list, 404 a
+            # missing route or Agent, 401 an auth mode other than insecure.
+            body = err.read(300).decode("utf-8", "replace").strip()
+            raise A2AError(f"HTTP {err.code} from {url}: {body or err.reason}") from err
+
+
+    def _send_not_accepted(error: dict) -> float | None:
+        """Seconds to wait before resending, or None if this error is not a proven rejection."""
+        if error.get("code") != CODE_UNSUPPORTED_OPERATION:
+            return None
+        data = error.get("data")
+        details = data if isinstance(data, list) else [data]
+        for detail in details:
+            meta = detail.get("metadata") if isinstance(detail, dict) else None
+            if isinstance(meta, dict) and meta.get("reason") == REASON_SEND_NOT_ACCEPTED:
+                try:
+                    return max(int(meta.get("retryAfterMs", 100)), 100) / 1000
+                except (TypeError, ValueError):
+                    return 0.1
+        return None
+
+
+    def send_message(endpoint: str, text: str, *, context_id: str | None = None,
+                     task_id: str | None = None, metadata: dict | None = None,
+                     user: str | None = DEFAULT_USER, token: str | None = None,
+                     token_file: str | None = None, timeout: float = DEFAULT_TIMEOUT,
+                     transport=None, sleep=time.sleep, clock=time.monotonic,
+                     retry_deadline: float = RETRY_DEADLINE) -> dict:
+        """POST one SendMessage and return the JSON-RPC `result` ({"task"|"message": ...}).
+
+        `task_id` + `metadata` (see approval_metadata / answer_metadata) answer a
+        paused task instead of starting a new turn.
+        `transport(url, payload_bytes, headers, timeout) -> dict` is injectable for tests.
+        A KAGENT_SEND_NOT_ACCEPTED rejection is retried with the byte-identical
+        request (same messageId) until `retry_deadline`; anything else raises."""
+        post = transport or http_post
+        payload = json.dumps(build_send_request(text, context_id=context_id, task_id=task_id,
+                                                metadata=metadata)).encode()
+        headers = request_headers(user, token or (read_token_file(token_file) if token_file else None))
+        give_up = clock() + retry_deadline
+        while True:
+            body = post(endpoint, payload, headers, timeout)
+            if not isinstance(body, dict):
+                raise A2AError(f"not a JSON-RPC response: {body!r:.200}")
+            error = body.get("error")
+            if not error:
+                result = body.get("result")
+                if not isinstance(result, dict):
+                    raise A2AError("JSON-RPC response has no result")
+                return result
+            if not isinstance(error, dict):
+                raise A2AError(f"A2A error: {error!r:.200}")
+            wait = _send_not_accepted(error)
+            if wait is None or clock() + wait > give_up:
+                raise A2AError(f"A2A error {error.get('code')}: {error.get('message', error)}",
+                               code=error.get("code"), data=error.get("data"))
+            sleep(wait)
+
+
+    def parts_text(parts) -> str | None:
+        """Join the text parts. Data parts (tool calls and results) are not the answer."""
+        texts = [p["text"] for p in (parts or [])
+                 if isinstance(p, dict) and isinstance(p.get("text"), str) and p["text"]]
+        return "\n".join(texts) if texts else None
+
+
+    def parse_result(result: dict) -> Reply:
+        """Reduce a SendMessage result to a Reply. Raises A2AError on an unknown shape."""
+        if isinstance(result.get("task"), dict):
+            task = result["task"]
+            status = task.get("status") or {}
+            texts = [t for t in (parts_text(a.get("parts")) for a in (task.get("artifacts") or [])
+                                 if isinstance(a, dict)) if t]
+            status_msg = status.get("message") or {}
+            hitl = (status_msg.get("metadata") or {}).get(HITL_EXTENSION)
+            return Reply(kind="task", state=status.get("state"), context_id=task.get("contextId"),
+                         task_id=task.get("id"), text="\n".join(texts) if texts else None,
+                         status_text=parts_text(status_msg.get("parts")),
+                         hitl=hitl if isinstance(hitl, dict) else None)
+        if isinstance(result.get("message"), dict):
+            msg = result["message"]
+            return Reply(kind="message", state=None, context_id=msg.get("contextId"),
+                         task_id=msg.get("taskId"), text=parts_text(msg.get("parts")),
+                         status_text=None)
+        raise A2AError(f"unrecognised SendMessage result (keys: {sorted(result)})")

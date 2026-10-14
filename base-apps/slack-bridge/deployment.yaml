@@ -1,0 +1,122 @@
+# base-apps/slack-bridge/deployment.yaml
+---
+# One replica, on purpose twice over: Socket Mode delivers each envelope to ONE connection
+# (a second replica would split the stream), and the thread→session map and the pending
+# buttons live in memory (a restart forgets them; the thread's first reply carries the
+# session id for ask-hk).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: slack-bridge
+  namespace: slack-bridge
+  labels:
+    app: slack-bridge
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: slack-bridge
+  template:
+    metadata:
+      labels:
+        app: slack-bridge
+      annotations:
+        # The pod reads the code ConfigMap once at start; Argo CD updates a ConfigMap in place
+        # and nothing restarts the pod, so this checksum changes the pod template instead.
+        # scripts/gen-slack-bridge-configmap.py writes it; tests/slack_bridge/test_manifests.py
+        # fails if it is stale.
+        checksum/code: "7629d947ae2aa9be5deab404d1d4be60862317099f8ede4fb80a1318ee6e7220"
+    spec:
+      serviceAccountName: slack-bridge
+      automountServiceAccountToken: false   # never talks to the API server; the projected token below is for kagent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: slack-bridge
+          # Renovate pins the digest on its next run (kubernetes manager, pinDigests for base-apps).
+          image: python:3.12-slim
+          command: ["python", "-u", "/opt/slack-bridge/slack_bridge.py"]
+          env:
+            # The ONE Slack user the bridge answers and the email the dispatcher records as
+            # the approver when a button is pressed (§V.98). Not secrets; in git on purpose.
+            - name: OWNER_SLACK_USER_ID
+              value: "U0CHANGEME"
+            - name: OWNER_EMAIL
+              value: "arigsela@gmail.com"
+            - name: DEFAULT_AGENT
+              value: homelab-knowledge
+            # The agents a first word `name:` may pick. Every one of them, including the two
+            # that can act: the owner chose approvals in Slack (design conversation 2026-10-14).
+            - name: AGENTS
+              value: "homelab-knowledge,k8s-reader,k8s-agent,istio-agent,implementer,restarter,build-orchestrator,skill-suggester"
+            - name: KAGENT_A2A_BASE
+              value: http://kagent-controller.kagent.svc.cluster.local:8083
+            - name: DISPATCHER_DECIDE_BASE
+              value: http://dispatcher-decide.dispatcher.svc.cluster.local:8082
+            - name: A2A_TIMEOUT
+              value: "300"
+            - name: PORT
+              value: "8080"
+            - name: SLACK_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: slack-bridge
+                  key: bot-token
+            - name: SLACK_APP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: slack-bridge
+                  key: app-token
+          ports:
+            - name: http
+              containerPort: 8080
+          # /readyz is 503 until Slack has said `hello` on the socket and again after the link
+          # drops; nothing routes to the pod, this is for `kubectl get pods` and the runbook.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: code
+              mountPath: /opt/slack-bridge
+              readOnly: true
+            - name: kagent-token
+              mountPath: /var/run/kagent
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: slack-bridge-code
+        # Projected token, audience kagent, rotated by the kubelet before it expires; the mesh
+        # verifies it and sets X-User-Id to this service account (V91, V92). Read on every
+        # send, never cached.
+        - name: kagent-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: kagent
+                  expirationSeconds: 3600
+                  path: token
