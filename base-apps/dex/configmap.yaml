@@ -114,6 +114,16 @@ data:
         redirectURIs:
           - https://jupyter.arigsela.com/oauth2/callback
 
+      # dispatcher, added 2026-10-14 (§T.119): the restart approvals page. CONFIDENTIAL with
+      # PKCE, the same oauth2-proxy sidecar shape as agent-audit and jupyter. The sidecar's
+      # authenticated-emails-file (k8s-secrets/dispatcher-web, never committed) is the
+      # allow-list; this client grants nothing by itself.
+      - id: dispatcher
+        name: Restart approvals
+        secretEnv: DISPATCHER_CLIENT_SECRET
+        redirectURIs:
+          - https://dispatcher.arigsela.com/oauth2/callback
+
     connectors:
       - type: github
         id: github

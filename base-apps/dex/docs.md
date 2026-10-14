@@ -63,9 +63,10 @@ installed by the Helm chart rather than by a manifest here.
 | kubectl (kubelogin) | public (PKCE) | none, by design | `ansible/roles/k3s_node/files/authn/authn-config.yaml` (API server) |
 | agent-audit-web (oauth2-proxy) | confidential + PKCE | `agent-audit-client-secret` from Vault | `base-apps/agent-audit-web/` |
 | Jupyter (oauth2-proxy sidecar) | confidential + PKCE | `jupyter-client-secret` from Vault | `base-apps/jupyter/` |
+| Restart approvals (oauth2-proxy sidecar on the dispatcher) | confidential + PKCE | `dispatcher-client-secret` from Vault | `base-apps/dispatcher/` |
 
-All five clients are `staticClients` in `configmap.yaml`: `vault`, `argocd`,
-`kubernetes`, `agent-audit`, `jupyter`.
+All six clients are `staticClients` in `configmap.yaml`: `vault`, `argocd`,
+`kubernetes`, `agent-audit`, `jupyter`, `dispatcher`.
 
 **Dex is a single point of failure for human login to every relying party**, and
 each handles that differently:
@@ -107,6 +108,7 @@ path `k8s-secrets`, key `dex`):
 | `vault-client-secret` | the shared secret Vault uses to authenticate to Dex |
 | `agent-audit-client-secret` | the shared secret agent-audit-web's oauth2-proxy uses (also in `k8s-secrets/agent-audit-web`; rotate both) |
 | `jupyter-client-secret` | the shared secret the jupyter pod's oauth2-proxy uses (also in `k8s-secrets/jupyter` as `oauth2-client-secret`; rotate both) |
+| `dispatcher-client-secret` | the shared secret the dispatcher's oauth2-proxy sidecar uses (also in `k8s-secrets/dispatcher-web` as `oauth2-client-secret`; `scripts/provision-dispatcher-web-vault.sh --rotate` writes both) |
 
 No secret value is committed to Git — only the `ExternalSecret` mapping.
 

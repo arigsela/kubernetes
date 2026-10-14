@@ -44,8 +44,10 @@ def test_deployment_runs_as_the_dispatcher_service_account_with_a_projected_toke
     assert mount["mountPath"] == "/var/run/kagent" and mount["readOnly"] is True
     env = {e["name"]: e.get("value") for e in pod["containers"][0]["env"]}
     assert "DISPATCH_USER" not in env
-    sa = _one("serviceaccount.yaml", "ServiceAccount")
-    assert sa["metadata"]["name"] == "dispatcher" and sa["metadata"]["namespace"] == "dispatcher"
+    sas = [d for d in yaml.safe_load_all((APP / "serviceaccount.yaml").read_text())
+           if d and d["kind"] == "ServiceAccount"]
+    sa = next(d for d in sas if d["metadata"]["name"] == "dispatcher")
+    assert sa["metadata"]["namespace"] == "dispatcher" and sa["automountServiceAccountToken"] is False
 
 
 def test_network_policy_admits_only_grafana_and_a_labelled_replay_pod():
@@ -58,7 +60,7 @@ def test_network_policy_admits_only_grafana_and_a_labelled_replay_pod():
     assert np["spec"]["podSelector"] == {"matchLabels": {"app": "dispatcher"}}
     assert np["spec"]["policyTypes"] == ["Ingress"]
     rules = np["spec"]["ingress"]
-    assert len(rules) == 1
+    assert len(rules) == 2, "the webhook rule and the approvals-page rule (§T.119)"
     froms = rules[0]["from"]
     # Grafana's pod carries `app: grafana` (the chart's own label), not app.kubernetes.io/name;
     # the first policy used the wrong one and blocked Grafana (live, 2026-10-14).
@@ -70,3 +72,98 @@ def test_network_policy_admits_only_grafana_and_a_labelled_replay_pod():
     # pod in this ambient namespace): ztunnel delivers it over HBONE on 15008 and the policy is
     # enforced before ztunnel unwraps it ("connection reset by peer" without it).
     assert rules[0]["ports"] == [{"port": 8080, "protocol": "TCP"}, {"port": 15008, "protocol": "TCP"}]
+
+
+# ------------------------------------------------ the approvals page (§T.119, §V.97)
+
+INGRESS = REPO / "base-apps/istio-ingress"
+DEX = REPO / "base-apps/dex"
+
+
+def _docs(file: str) -> list[dict]:
+    return [d for d in yaml.safe_load_all((APP / file).read_text()) if d]
+
+
+def test_network_policy_second_rule_admits_the_gateway_to_the_sidecar_only():
+    np = _one("network-policy.yaml", "NetworkPolicy")
+    rule = np["spec"]["ingress"][1]
+    assert rule["from"] == [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "istio-ingress"}}}]
+    # 4180 is the sidecar; 15008 is HBONE (the gateway is in the mesh). Never 8080, never 8081.
+    assert rule["ports"] == [{"port": 4180, "protocol": "TCP"}, {"port": 15008, "protocol": "TCP"}]
+
+
+def test_sidecar_is_oauth2_proxy_on_dex_with_a_localhost_upstream_and_an_emails_file():
+    pod = _one("deployment.yaml", "Deployment")["spec"]["template"]["spec"]
+    names = [c["name"] for c in pod["containers"]]
+    assert names == ["dispatcher", "oauth2-proxy"]
+    proxy = pod["containers"][1]
+    assert proxy["image"].startswith("quay.io/oauth2-proxy/oauth2-proxy:") and "@sha256:" in proxy["image"]
+    args = proxy["args"]
+    for flag in ("--http-address=0.0.0.0:4180", "--upstream=http://127.0.0.1:8081/", "--provider=oidc",
+                 "--oidc-issuer-url=https://dex.arigsela.com", "--client-id=dispatcher",
+                 "--client-secret-file=/etc/oauth2-proxy/secrets/client-secret",
+                 "--cookie-secret-file=/etc/oauth2-proxy/secrets/cookie-secret",
+                 "--authenticated-emails-file=/etc/oauth2-proxy/secrets/allowed-emails",
+                 "--redirect-url=https://dispatcher.arigsela.com/oauth2/callback",
+                 "--code-challenge-method=S256", "--cookie-name=_dispatcher", "--cookie-secure=true",
+                 "--cookie-samesite=lax"):
+        assert flag in args, flag
+    assert [p["containerPort"] for p in proxy["ports"]] == [4180]
+    mount = next(m for m in proxy["volumeMounts"] if m["name"] == "oauth2")
+    assert mount["mountPath"] == "/etc/oauth2-proxy/secrets" and mount["readOnly"] is True
+    vol = next(v for v in pod["volumes"] if v["name"] == "oauth2")
+    assert vol["secret"]["secretName"] == "dispatcher-web-oauth2"
+    env = {e["name"]: e.get("value") for e in pod["containers"][0]["env"]}
+    assert env["APPROVALS_PORT"] == "8081" and env["APPROVALS_URL"] == "https://dispatcher.arigsela.com/approvals"
+    ports = [p["containerPort"] for p in pod["containers"][0]["ports"]]
+    assert ports == [8080], "8081 is never a container port: localhost only"
+
+
+def test_service_exposes_the_webhook_and_the_sidecar_never_8081():
+    svc = _one("service.yaml", "Service")
+    assert sorted((p["name"], p["port"]) for p in svc["spec"]["ports"]) == [("http", 8080), ("web", 4180)]
+
+
+def test_oauth2_secret_comes_from_vault_through_its_own_role():
+    es = next(d for d in _docs("external-secret.yaml") if d["kind"] == "ExternalSecret")
+    assert es["spec"]["target"]["name"] == "dispatcher-web-oauth2"
+    assert es["spec"]["secretStoreRef"] == {"name": "vault-dispatcher-web", "kind": "SecretStore"}
+    assert {(d["secretKey"], d["remoteRef"]["key"], d["remoteRef"]["property"]) for d in es["spec"]["data"]} == {
+        ("client-secret", "dispatcher-web", "oauth2-client-secret"),
+        ("cookie-secret", "dispatcher-web", "oauth2-cookie-secret"),
+        ("allowed-emails", "dispatcher-web", "allowed-emails")}
+    store = _one("secret-store.yaml", "SecretStore")
+    auth = store["spec"]["provider"]["vault"]["auth"]["kubernetes"]
+    assert auth["role"] == "dispatcher-web" and auth["serviceAccountRef"] == {"name": "eso-dispatcher-web"}
+    sas = {d["metadata"]["name"] for d in _docs("serviceaccount.yaml") if d["kind"] == "ServiceAccount"}
+    assert sas == {"dispatcher", "eso-dispatcher-web"}
+
+
+def test_host_route_certificate_grant_listener_and_allow_list():
+    route = _one("httproute.yaml", "HTTPRoute")
+    assert route["spec"]["hostnames"] == ["dispatcher.arigsela.com"]
+    assert route["spec"]["parentRefs"][0]["sectionName"] == "https-dispatcher"
+    assert route["spec"]["rules"][0]["backendRefs"] == [{"name": "dispatcher", "port": 4180}]
+    cert = _one("certificate.yaml", "Certificate")
+    assert cert["spec"]["secretName"] == "dispatcher-web-tls" and cert["spec"]["dnsNames"] == ["dispatcher.arigsela.com"]
+    grant = _one("reference-grant.yaml", "ReferenceGrant")
+    assert grant["spec"]["to"][0]["name"] == "dispatcher-web-tls"
+    gw = next(d for d in yaml.safe_load_all((INGRESS / "gateway.yaml").read_text()) if d and d["kind"] == "Gateway")
+    listener = next(l for l in gw["spec"]["listeners"] if l["name"] == "https-dispatcher")
+    assert listener["hostname"] == "dispatcher.arigsela.com"
+    assert listener["tls"]["certificateRefs"] == [{"kind": "Secret", "name": "dispatcher-web-tls", "namespace": "dispatcher"}]
+    ap = next(d for d in yaml.safe_load_all((INGRESS / "authorizationpolicy.yaml").read_text())
+              if d and d["kind"] == "AuthorizationPolicy" and d["metadata"]["name"] == "gateway-allow")
+    hosts = [h for r in ap["spec"]["rules"] for t in r.get("to", []) for h in t["operation"].get("hosts", [])]
+    assert "dispatcher.arigsela.com" in hosts and "dispatcher.arigsela.com:*" in hosts
+
+
+def test_dex_has_the_dispatcher_client_and_its_secret():
+    cm = next(d for d in yaml.safe_load_all((DEX / "configmap.yaml").read_text()) if d and d["kind"] == "ConfigMap")
+    cfg = yaml.safe_load(cm["data"]["config.yaml"])
+    client = next(c for c in cfg["staticClients"] if c["id"] == "dispatcher")
+    assert client["secretEnv"] == "DISPATCHER_CLIENT_SECRET"
+    assert client["redirectURIs"] == ["https://dispatcher.arigsela.com/oauth2/callback"]
+    es = next(d for d in yaml.safe_load_all((DEX / "external-secret.yaml").read_text()) if d and d["kind"] == "ExternalSecret")
+    assert {"secretKey": "DISPATCHER_CLIENT_SECRET", "remoteRef": {"key": "dex", "property": "dispatcher-client-secret"}} \
+        in es["spec"]["data"]

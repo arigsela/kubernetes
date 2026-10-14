@@ -15,6 +15,13 @@ sources:
   - base-apps/dispatcher/deployment.yaml
   - base-apps/dispatcher/service.yaml
   - base-apps/dispatcher/code-configmap.yaml
+  - base-apps/dispatcher/network-policy.yaml
+  - base-apps/dispatcher/httproute.yaml
+  - base-apps/dispatcher/certificate.yaml
+  - base-apps/dispatcher/secret-store.yaml
+  - base-apps/dispatcher/external-secret.yaml
+  - scripts/provision-dispatcher-web-vault.sh
+  - docs/superpowers/specs/2026-10-14-restart-approvals-page-design.md
   - scripts/dispatch.py
   - scripts/gen-dispatcher-configmap.py
   - base-apps/logging/grafana-alerting.yaml
@@ -60,8 +67,8 @@ inconclusive`), the one line the dispatcher parses. A row may also carry `remedi
 listed verdict the dispatcher opens a SECOND new session with `restarter` (class admin, one
 gated `k8s_delete_resource`), within `limits.restarts_per_day` (2) and once per
 namespace/workload per 24 h, and posts a second finding carrying the pending call's exact
-arguments and the approve and reject commands (`--task <id>`, since the laptop never saw the
-pause) (§T.118, §V.96). Before any session opens the dispatcher refuses a deny-listed
+arguments and a link to the approvals page, with the ask-hk `--task <id>` command as the
+fallback (§T.118, §V.96, §T.119). Before any session opens the dispatcher refuses a deny-listed
 namespace or a malformed pod label (`skip-target`); after it, the approve command is printed
 only when the pending call is exactly one delete of the alert's pod ("MISMATCH" otherwise).
 The memory row remediates on `leak` and `rollout-pending`, the CPU row on `rollout-pending`
@@ -69,6 +76,22 @@ The memory row remediates on `leak` and `rollout-pending`, the CPU row on `rollo
 has no mechanical fix and `limit-too-low` is a pull request. One log line
 `event: remediate` says `remediate`, `skip-target`, `skip-restarts`, `skip-recurring` or
 `no-match`; `verdict: null` means the answer had no verdict line.
+
+## The approvals page
+`https://dispatcher.arigsela.com/approvals` (§T.119, §V.97) lists the restarter sessions this
+dispatcher opened and is waiting on, each with the exact pending call, the evidence session
+and Approve / Reject buttons. It is served by a second HTTP server inside the dispatcher bound
+to `127.0.0.1:8081`, reachable only through the `oauth2-proxy` sidecar in `deployment.yaml`
+(OIDC via Dex client `dispatcher`, PKCE, cookie `_dispatcher`) whose `allowed-emails` file
+from Vault (`k8s-secrets/dispatcher-web`, written by
+`scripts/provision-dispatcher-web-vault.sh`, never in git) is the access control; the edge IP
+allow-list is the first layer, `network-policy.yaml` admits only the Gateway to `4180`. A
+decision sends the `tool_approval_response` for exactly the registered call ids under the
+dispatcher's token (the one send that ever carries metadata, §V.88 amended), posts a third
+Slack finding ("Restart approved by <email>: …") and logs `event: decision` with
+`approved_by`. The list is in memory: a rollout empties it, and the Slack message's ask-hk
+fallback still works. A stale page (wrong nonce) is refused; the kagent UI cannot show these
+sessions (owned by the dispatcher's identity).
 
 ## Identity and record
 Sessions are owned by `system:serviceaccount:dispatcher:dispatcher` (the projected token in
