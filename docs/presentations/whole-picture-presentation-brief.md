@@ -27,8 +27,8 @@ Later on 2026-10-14 the other half of path 8 landed: the implementer ends every 
 a verdict, a leak (or a merged fix the pod has not picked up) opens a session with a third agent
 that holds exactly one gated pod delete, and the owner approves it on a login-protected approvals
 page that records who decided; screen 07's "approver" residual is closed for that path. The
-speaker notes (`whole-picture-speaker-notes.md`) were rewritten to this state; the deck's artwork
-still shows the 13 October scorecard until it is regenerated from this brief.
+speaker notes and the deck (panels 01 to 05 and 08 regenerated the same day from this brief;
+06 and 07 are recorded events and keep their 12 October artwork) describe this state.
 
 **Audience:** engineering leadership; first target is the company's AI pathfinders group. They
 are technical but not Kubernetes specialists. Vocabulary rule: name the mechanism in plain
