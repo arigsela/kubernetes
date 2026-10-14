@@ -18,6 +18,7 @@ question. ask-hk prints what it is waiting on and remembers it (per context, in
 $ASK_HK_STATE_DIR, default ~/.cache/ask-hk). Then:
 
     scripts/ask-hk --context <id> --approve              # run the pending call(s)
+    scripts/ask-hk --context <id> --task <task> --approve   # ... for a pause this laptop never saw
     scripts/ask-hk --context <id> --reject "not now"     # refuse them; the agent sees why
     scripts/ask-hk --context <id> "kagent"               # answer a question
 
@@ -123,6 +124,9 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None, transport=None) -> 
                         help="approve the tool call(s) the --context conversation is waiting on")
     decide.add_argument("--reject", metavar="REASON",
                         help="reject them; REASON is passed to the agent")
+    ap.add_argument("--task", metavar="ID",
+                    help="the paused task's id, when ask-hk did not see the pause (a dispatcher "
+                         "remediation message carries it): the pending request is fetched first")
     ap.add_argument("--agent", default=DEFAULT_AGENT, help="namespace/name (default: %(default)s)")
     ap.add_argument("--endpoint", default=a2a.PUBLIC_BASE,
                     help="gateway origin or full agent URL (default: %(default)s)")
@@ -168,10 +172,26 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None, transport=None) -> 
 
     pending = load_pending(args.context)
     text, task_id, metadata = None, None, None
+    if deciding and args.task and not (pending and pending.get("task_id") == args.task):
+        # A pause this laptop never saw (the dispatcher opened the session): fetch the task.
+        try:
+            fetched = a2a.parse_result(a2a.get_task(url, args.task, user=None if token else args.user,
+                                                    token=token, timeout=60.0, transport=transport))
+        except (a2a.A2AError, OSError, ValueError) as err:
+            print(f"ask-hk: cannot fetch task {args.task}: {err}", file=stderr)
+            return 1
+        pending = pending_from(fetched) if fetched.waiting else None
+        if not pending or pending["kind"] != "approval":
+            print(f"ask-hk: task {args.task} is not waiting for an approval "
+                  f"(state {fetched.state})", file=stderr)
+            return 1
+        print(f"ask-hk: {describe_pending(pending)}", file=stderr)
+        save_pending(args.context, pending)
     if deciding:
         if not pending or pending["kind"] != "approval":
             print("ask-hk: nothing is waiting for approval in this conversation "
-                  "(or ask-hk did not see the pause; decide it in the kagent UI)", file=stderr)
+                  "(ask-hk did not see the pause; pass --task ID from the message that "
+                  "announced it)", file=stderr)
             return 1
         approved = bool(args.approve)
         task_id = pending["task_id"]

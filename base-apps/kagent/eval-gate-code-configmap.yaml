@@ -556,6 +556,35 @@ data:
                 "method": "SendMessage", "params": {"message": message}}
 
 
+    def build_get_task_request(task_id: str, rpc_id: str | None = None) -> dict:
+        """A GetTask: the stored task, with its status.message (and so a pending approval)."""
+        return {"jsonrpc": "2.0", "id": rpc_id or str(uuid.uuid4()),
+                "method": "GetTask", "params": {"id": task_id}}
+
+
+    def get_task(endpoint: str, task_id: str, *, user: str | None = DEFAULT_USER,
+                 token: str | None = None, token_file: str | None = None,
+                 timeout: float = 60.0, transport=None) -> dict:
+        """Fetch a task by id and return it in SendMessage's result shape ({"task": ...}),
+        so parse_result reads it. How a laptop learns what a session it never saw is waiting
+        on (the dispatcher's restarter sessions, §T.118). Verified live 2026-10-14: the gateway
+        answers GetTask {"id"} with the bare task; {"name": "tasks/<id>"} is invalid params."""
+        post = transport or http_post
+        payload = json.dumps(build_get_task_request(task_id)).encode()
+        headers = request_headers(user, token or (read_token_file(token_file) if token_file else None))
+        body = post(endpoint, payload, headers, timeout)
+        if not isinstance(body, dict):
+            raise A2AError(f"not a JSON-RPC response: {body!r:.200}")
+        error = body.get("error")
+        if error:
+            raise A2AError(f"A2A error {error.get('code') if isinstance(error, dict) else '?'}: "
+                           f"{error.get('message', error) if isinstance(error, dict) else error}")
+        result = body.get("result")
+        if not isinstance(result, dict) or "status" not in result:
+            raise A2AError("GetTask response has no task")
+        return {"task": result}
+
+
     def approval_metadata(call_ids: list[str], *, approved: bool, reason: str | None = None) -> dict:
         """message.metadata for a tool_approval_response deciding every listed call the same way.
 

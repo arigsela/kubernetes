@@ -38,20 +38,27 @@ meant to pause: see the next section.
 A memory alert whose verdict was `leak` produces a second Slack message, "Restart awaiting
 approval", listing the pending `k8s_delete_resource` call with its exact arguments (resource
 type `pod`, name, namespace), the implementer session that holds the evidence, and two
-commands. Check the arguments name the alert's pod and nothing else, then run the approve
-command, or reject it with a reason:
+commands. The dispatcher prints the approve command only when the pending call is exactly
+one delete of the alert's pod; anything else is headed "MISMATCH" and carries a reject
+command only (one `--approve` would approve every pending call). Read the arguments, then:
 ```
-scripts/ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --approve
-scripts/ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --reject "<reason>"
+scripts/ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --task <task> --approve
+scripts/ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --task <task> --reject "<reason>"
 ```
+`--task` matters: this laptop never saw the pause (the dispatcher opened the session), so
+ask-hk fetches the pending request by task id first (A2A `GetTask`). The kagent UI cannot
+decide it: the session is owned by the dispatcher's service account, not the UI's identity.
 The pod's owner recreates it (for a StatefulSet with `OnDelete`, this is also how it picks up
 a new template). The dispatcher never answers (§V.88). There is no second restart for the
-same alert within 24 h ("Recurring leak" in the finding) and at most `restarts_per_day` (2) a
-day ("Restart cap reached"): a leak that recurs needs an upstream fix, not another restart.
-If the message says `no restart: <reason>`, the restarter refused (no owner, a deny-listed
-namespace, a target it was not given); nothing was deleted. `verdict: null` in the
-dispatcher log (`event: remediate`) means the implementer's answer had no verdict line: a
-prompt regression, see `tests/implementer`.
+same namespace/workload within 24 h ("Recurring leak" in the finding; a Deployment's
+replacement pod has a new name, so the key is the workload, not the alert) and at most
+`restarts_per_day` (2) a day ("Restart cap reached"): a leak that recurs needs an upstream
+fix, not another restart. "No restart requested: namespace … is never restarted" means the
+dispatcher refused the target before any session opened (its deny list is the restarter's).
+If the message says `no restart: <reason>`, the restarter itself refused (no owner, a
+deny-listed namespace, a target it was not given); nothing was deleted. `verdict: null` in
+the dispatcher log (`event: remediate`) means the implementer's answer had no verdict line:
+a prompt regression, see `tests/implementer`.
 
 ## Replay a signal by hand (also the acceptance test)
 From inside the cluster, post a synthetic payload for a real pod:

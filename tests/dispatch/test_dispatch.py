@@ -333,9 +333,9 @@ PROPOSE_TABLE = {
 }
 
 
-def mem_alert(fp="fp-1"):
+def mem_alert(fp="fp-1", pod="n8n-0", namespace="n8n"):
     return {"status": "firing", "fingerprint": fp,
-            "labels": {"alertname": "Container near memory limit", "namespace": "n8n", "pod": "n8n-0"}}
+            "labels": {"alertname": "Container near memory limit", "namespace": namespace, "pod": pod}}
 
 
 def make_propose(fake, count):
@@ -451,8 +451,9 @@ LEAK = "RSS grew 40Mi/h for 9h and the pod was OOMKilled twice.\nno pull request
 
 def approval_task(session="sess-r", args=None):
     """A restarter task paused on its gated delete (hitl tool_approval_request, alpha11 shape)."""
+    # The real argument key is `resource_name` (seen live 2026-10-14), not `name`.
     call = {"id": "call-1", "name": "k8s_delete_resource",
-            "args": args or {"resource_type": "pod", "name": "n8n-0", "namespace": "n8n"}}
+            "args": args or {"resource_type": "pod", "resource_name": "n8n-0", "namespace": "n8n"}}
     return {"task": {"id": "task-r", "contextId": session,
                      "status": {"state": "TASK_STATE_INPUT_REQUIRED",
                                 "message": {"parts": [{"text": "approve?"}],
@@ -547,12 +548,14 @@ def test_leak_verdict_opens_a_restarter_session_and_posts_the_pending_call():
     assert remediation["kind"] == "remediation" and remediation["agent"] == "restarter"
     assert remediation["session"] == "sess-r" and remediation["evidence_session"] == "sess-i"
     assert remediation["pending"] == [{"name": "k8s_delete_resource",
-                                       "args": {"resource_type": "pod", "name": "n8n-0", "namespace": "n8n"}}]
+                                       "args": {"resource_type": "pod", "resource_name": "n8n-0", "namespace": "n8n"}}]
     assert remediation["ui"] == "https://ui/agents/sess-r/chat"
     t = remediation["text"]
-    assert "awaiting approval" in t and "k8s_delete_resource" in t and '"name": "n8n-0"' in t
-    assert "--agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context sess-r --approve" in t
-    assert "--reject" in t and "sess-i" in t
+    assert "awaiting approval" in t and "k8s_delete_resource" in t and '"resource_name": "n8n-0"' in t
+    assert ("--agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context sess-r "
+            "--task task-r --approve") in t, "the laptop never saw the pause: --task lets ask-hk fetch it"
+    assert "--reject" in t and "sess-i" in t and "MISMATCH" not in t
+    assert "kagent UI cannot see" in t, "a dispatcher-owned session is not in the UI's identity"
     events = [(x["event"], x.get("decision")) for x in fake.logged]
     assert events == [("dispatch", "investigate"), ("remediate", "remediate"), ("finding", None), ("finding", None)]
     assert fake.logged[1]["verdict"] == "leak" and fake.logged[1]["rule"] == "mem"
@@ -579,8 +582,8 @@ def test_restart_cap_skips_and_says_so():
                completed_task(text=LEAK, session="s2"), approval_task("r2"),
                completed_task(text=LEAK, session="s3"))
     d = make_remediate(fake, clock=lambda: 0.0)
-    for fp in ("a", "b", "c"):
-        d.handle_grafana({"alerts": [mem_alert(fp)]})
+    for fp in ("a", "b", "c"):   # three different workloads: the per-day cap, not recurrence
+        d.handle_grafana({"alerts": [mem_alert(fp, pod=f"{fp}-7d4bq8xk2-zz9q1")]})
     assert len(fake.sent) == 5, "two restarts, the third investigation only"
     third = fake.posted[-1][1]
     assert third["verdict"] == "leak" and "Restart cap reached" in third["text"] and third["agent"] == "implementer"
@@ -623,7 +626,7 @@ def test_restarter_error_still_charges_the_budget():
                completed_task(text=LEAK, session="s3"))
     d = make_remediate(fake, clock=lambda: 0.0)
     for fp in ("a", "b", "c"):
-        d.handle_grafana({"alerts": [mem_alert(fp)]})
+        d.handle_grafana({"alerts": [mem_alert(fp, pod=f"{fp}-0")]})
     rem = fake.posted[1][1]
     assert rem["kind"] == "remediation" and rem["error"] == "boom" and rem["session"] is None
     assert len(fake.sent) == 5 and "Restart cap reached" in fake.posted[-1][1]["text"]
@@ -633,7 +636,8 @@ def test_restarter_timeout_posts_still_running():
     fake = Seq(completed_task(text=LEAK, session="s1"), TimeoutError("timed out"))
     make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
     rem = fake.posted[1][1]
-    assert rem["error"] is None and "still running" in rem["text"] and "kagent/restarter" in rem["text"]
+    assert rem["error"] is None and "still running" in rem["text"] and "session id is unknown" in rem["text"]
+    assert "--approve" not in rem["text"]
 
 
 def test_remediation_text_is_scrubbed():
@@ -641,3 +645,111 @@ def test_remediation_text_is_scrubbed():
                completed_task(text="no restart: saw password=hunter2 in the log", session="r1"))
     make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
     assert "hunter2" not in fake.posted[1][1]["text"]
+
+
+# ------------------------------------------------ review fix pass (2026-10-14, findings 2-5, 7, 9)
+
+def test_verdict_is_parsed_from_the_raw_answer_not_the_truncated_scrubbed_text():
+    long = "x" * (dp.ANSWER_LIMIT + 50) + "\nno pull request: leak\nverdict: leak"
+    fake = Seq(completed_task(text=long, session="s1"), approval_task("r1"))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    assert fake.posted[0][1]["verdict"] == "leak" and len(fake.sent) == 2
+    scrubbed = "the log ends with token:\nverdict: leak"      # the secret pattern spans the newline
+    fake = Seq(completed_task(text=scrubbed, session="s1"), approval_task("r1"))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    assert fake.posted[0][1]["verdict"] == "leak" and "verdict: leak" not in fake.posted[0][1]["text"]
+
+
+@pytest.mark.parametrize("line", ["`verdict: leak`", "**verdict: leak**", "'verdict: leak'",
+                                  "- verdict: leak", "verdict: leak.", "  Verdict: LEAK  "])
+def test_parse_verdict_tolerates_model_formatting(line):
+    assert dp.parse_verdict("evidence\n" + line) == "leak"
+
+
+def test_parse_verdict_still_rejects_prose_and_unknown_values():
+    assert dp.parse_verdict("the verdict: leak is in prose") is None
+    assert dp.parse_verdict("verdict: leak or not") is None
+    assert dp.parse_verdict("**verdict: probably**") is None
+
+
+@pytest.mark.parametrize("pod, key", [
+    ("homepage-9f48c7989-mj8tf", "n8n/homepage"),     # Deployment (hash + suffix)
+    ("dispatcher-699758b64b-5pcwt", "n8n/dispatcher"),
+    ("prometheus-0", "n8n/prometheus"),                # StatefulSet ordinal
+    ("atelet-gn9l7", "n8n/atelet"),                    # DaemonSet suffix
+    ("n8n-0", "n8n/n8n"),
+])
+def test_restart_key_is_the_workload_not_the_pod(pod, key):
+    assert dp.restart_key({"namespace": "n8n", "pod": pod}) == key
+
+
+def test_recurrence_survives_a_replacement_pod_and_a_second_container():
+    fake = Seq(completed_task(text=LEAK, session="s1"), approval_task("r1"),
+               completed_task(text=LEAK, session="s2"), completed_task(text=LEAK, session="s3"))
+    d = make_remediate(fake, clock=lambda: 0.0)
+    d.handle_grafana({"alerts": [mem_alert("fp-a", pod="web-7d4bq8xk2-aaaaa")]})
+    d.handle_grafana({"alerts": [mem_alert("fp-b", pod="web-7d4bq8xk2-bbbbb")]})    # replacement pod
+    d.handle_grafana({"alerts": [mem_alert("fp-c", pod="web-7d4bq8xk2-bbbbb")]})    # another container
+    assert [x["decision"] for x in fake.logged if x["event"] == "remediate"] == \
+        ["remediate", "skip-recurring", "skip-recurring"]
+
+
+@pytest.mark.parametrize("labels, why", [
+    ({"namespace": "vault", "pod": "vault-0"}, "never restarted"),
+    ({"namespace": "kagent", "pod": "kagent-controller-abc12"}, "never restarted"),
+    ({"namespace": "n8n", "pod": "Bad_Pod"}, "no valid namespace/pod"),
+    ({"namespace": "n8n"}, "no valid namespace/pod"),
+])
+def test_deny_listed_or_malformed_targets_never_open_a_restarter_session(labels, why):
+    fake = Seq(completed_task(text=LEAK, session="s1"))
+    alert = {"status": "firing", "fingerprint": "fp",
+             "labels": {"alertname": "Container near memory limit", **labels}}
+    d = make_remediate(fake, clock=lambda: 0.0)
+    d.handle_grafana({"alerts": [alert]})
+    assert len(fake.sent) == 1 and len(fake.posted) == 1
+    assert why in fake.posted[0][1]["text"]
+    assert [x["decision"] for x in fake.logged if x["event"] == "remediate"] == ["skip-target"]
+    assert d.restarts.admit("n8n/anything") is None, "a refused target is not charged"
+
+
+@pytest.mark.parametrize("args", [
+    {"resource_type": "pod", "resource_name": "other-0", "namespace": "n8n"},
+    {"resource_type": "pod", "resource_name": "n8n-0", "namespace": "vault"},
+    {"resource_type": "deployment", "resource_name": "n8n-0", "namespace": "n8n"},
+])
+def test_a_pending_call_that_is_not_the_alerts_pod_gets_a_reject_command_only(args):
+    fake = Seq(completed_task(text=LEAK, session="s1"), approval_task("r1", args=args))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    t = fake.posted[1][1]["text"]
+    assert "MISMATCH" in t and "--reject" in t and "--approve" not in t
+
+
+def test_two_pending_calls_get_a_reject_command_only():
+    task = approval_task("r1")
+    tools = task["task"]["status"]["message"]["metadata"][a2a.HITL_EXTENSION]["tools"]
+    tools.append({"id": "call-2", "name": "k8s_delete_resource",
+                  "args": {"resource_type": "pod", "resource_name": "n8n-1", "namespace": "n8n"}})
+    fake = Seq(completed_task(text=LEAK, session="s1"), task)
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    rem = fake.posted[1][1]
+    assert len(rem["pending"]) == 2 and "MISMATCH" in rem["text"] and "--approve" not in rem["text"]
+
+
+def test_restarter_ask_user_request_posts_paused_without_approve_command():
+    task = waiting_task("r1")
+    task["task"]["status"]["message"]["metadata"] = {a2a.HITL_EXTENSION: {
+        "type": a2a.HITL_ASK_USER_REQUEST, "id": "q-1", "question": "which pod?"}}
+    fake = Seq(completed_task(text=LEAK, session="s1"), task)
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    rem = fake.posted[1][1]
+    assert rem["pending"] == [] and "paused" in rem["text"] and "--approve" not in rem["text"]
+
+
+def test_a_broken_remediation_prompt_still_posts_a_finding_and_a_log_line():
+    table = json.loads(json.dumps(REMEDIATE_TABLE))
+    table["rules"][0]["remediate"]["prompt"] = "restart {} now"      # {} raises in format_map
+    fake = Seq(completed_task(text=LEAK, session="s1"))
+    make_remediate(fake, table=table).handle_grafana({"alerts": [mem_alert()]})
+    rem = fake.posted[1][1]
+    assert rem["kind"] == "remediation" and rem["error"].startswith("unexpected ")
+    assert [x["event"] for x in fake.logged][-1] == "finding" and fake.logged[-1]["kind"] == "remediation"

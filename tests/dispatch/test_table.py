@@ -3,6 +3,7 @@
 from pathlib import Path
 import json
 import re
+import string
 
 import pytest
 import yaml
@@ -145,14 +146,34 @@ def remediating_rows():
     return [r for r in load_table()["rules"] if r.get("remediate")]
 
 
-def template_bindings(name: str) -> tuple[set[str], set[str]]:
-    """(ungated tools, gated tools) of an AgentTemplate."""
-    doc = yaml.safe_load((TEMPLATES / f"{name}.yaml").read_text())
+def bindings_of(doc: dict) -> tuple[set[str], set[str]]:
+    """(ungated tools, gated tools) of an AgentTemplate document."""
     ungated, gated = set(), set()
     for binding in doc["spec"].get("tools") or []:
         mcp = binding.get("mcp") or {}
         (gated if mcp.get("requireApproval") else ungated).update(mcp.get("tools") or [])
     return ungated, gated
+
+
+def template_bindings(name: str) -> tuple[set[str], set[str]]:
+    return bindings_of(yaml.safe_load((TEMPLATES / f"{name}.yaml").read_text()))
+
+
+def remediate_agent_ok(doc: dict) -> bool:
+    """The amended §V.87 rule, as a predicate: used on the real templates and on a bad one."""
+    ungated, gated = bindings_of(doc)
+    read, mutating = tools_of("read"), tools_of("write") | tools_of("destructive")
+    return ungated <= read and bool(gated) and gated <= mutating
+
+
+def test_remediate_rule_rejects_an_ungated_write_tool_and_a_template_with_no_gate():
+    """Review Focus 5: the predicate must fail, not only pass on the repo's templates."""
+    def tpl(*bindings):
+        return {"spec": {"tools": [{"mcp": {"requireApproval": g, "tools": t}} for g, t in bindings]}}
+    assert remediate_agent_ok(tpl((False, ["k8s_get_resources"]), (True, ["k8s_delete_resource"])))
+    assert not remediate_agent_ok(tpl((False, ["k8s_patch_resource"]), (True, ["k8s_delete_resource"])))
+    assert not remediate_agent_ok(tpl((False, ["k8s_get_resources"])))
+    assert not remediate_agent_ok(tpl((False, ["k8s_get_resources"]), (True, ["k8s_get_pod_logs"])))
 
 
 def test_table_caps_restarts_per_day():
@@ -167,10 +188,11 @@ def test_remediate_agents_bind_reads_ungated_and_mutations_gated_only():
     read, mutating = tools_of("read"), tools_of("write") | tools_of("destructive")
     for row in rows:
         name = row["remediate"]["agent"]
-        ungated, gated = template_bindings(name)
+        doc = yaml.safe_load((TEMPLATES / f"{name}.yaml").read_text())
+        ungated, gated = bindings_of(doc)
         assert ungated <= read, f"{name}: ungated non-read tools {sorted(ungated - read)}"
         assert gated and gated <= mutating, f"{name}: gated tools must be write/destructive, got {sorted(gated)}"
-        assert template_class(name) in {"write", "admin"}, name
+        assert remediate_agent_ok(doc) and template_class(name) in {"write", "admin"}, name
 
 
 def test_remediate_agents_are_never_a_route():
@@ -186,7 +208,11 @@ def test_remediate_verdicts_and_placeholders_are_known():
         rem = row["remediate"]
         assert rem["on"] and set(rem["on"]) <= VERDICTS, row["id"]
         prompt = rem["prompt"] if isinstance(rem["prompt"], str) else " ".join(p.strip() for p in rem["prompt"])
-        names = {m.group(1) for m in re.finditer(r"\{([a-z_]+)(?:\[[^\]]+\])?\}", prompt)}
+        names = set()
+        for _lit, field, _spec, _conv in string.Formatter().parse(prompt):   # what format_map sees
+            if field is not None:
+                assert field != "", f"{row['id']}: an empty {{}} placeholder raises at runtime"
+                names.add(re.split(r"[.\[]", field, maxsplit=1)[0])
         assert names <= allowed, f"{row['id']}: unknown placeholders {sorted(names - allowed)}"
         assert "{labels[namespace]}/{labels[pod]}" in prompt and "{session}" in prompt, row["id"]
 

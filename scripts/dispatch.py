@@ -23,7 +23,10 @@ agent: <AgentTemplate>, prompt: ...}`. The implementer ends its answer with a li
 (`limits.restarts_per_day` per rolling day, once per alert fingerprint per day), the
 dispatcher opens a SECOND new session with that agent (the restarter: one gated pod delete)
 and posts a second finding carrying the pending call's arguments and the ask-hk command the
-owner approves or rejects it with. The dispatcher still never answers the approval.
+owner approves or rejects it with (`--task <id>`: the laptop fetches the pause it never saw).
+The approve command is printed only when the pending call is exactly one delete of the
+alert's pod; deny-listed namespaces are refused before any session opens; the once-a-day
+rule is keyed per namespace/workload. The dispatcher still never answers the approval.
 
 Environment (all have defaults for the cluster):
     DISPATCH_TABLE          /etc/dispatch/dispatch.json
@@ -57,7 +60,19 @@ ANSWER_LIMIT = 3000       # chars of the agent's answer forwarded to Slack
 SOURCES = {"grafana"}
 # The implementer's diagnosis, the last line of its resource-alert answer (its prompt pins it).
 VERDICTS = {"limit-too-low", "leak", "contention", "inconclusive"}
-VERDICT_RE = re.compile(r"^\s*verdict:\s*([a-z-]+)\s*$", re.IGNORECASE | re.MULTILINE)
+# Tolerates the decorations a model adds (`verdict: leak`, **verdict: leak**, '- verdict: leak.'):
+# a formatting drift must not silently switch remediation off (review 2026-10-14, finding 5).
+VERDICT_RE = re.compile(r"^\s*[-*`'\"]*\s*verdict:\s*([a-z-]+)[`'\"*.\s]*$", re.IGNORECASE | re.MULTILINE)
+# The dispatcher refuses to open a restarter session for these namespaces BEFORE the call, and
+# the restarter's prompt refuses them again (tests/dispatch/test_restarter.py pins both lists
+# equal). The prompt is the first fence, the human the second; this is the zeroth.
+RESTART_DENY_NAMESPACES = frozenset({
+    "kube-system", "kube-public", "kube-node-lease", "vault", "postgresql", "cnpg-system", "argo-cd",
+    "istio-system", "istio-ingress", "cert-manager", "external-secrets", "ate-system",
+    "podcertificate-controller-system", "kagent", "kmcp", "kmcp-system", "dispatcher",
+})
+DNS_LABEL_RE = re.compile(r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$")
+RESTART_TOOL = "k8s_delete_resource"
 
 # The answer goes to Slack verbatim, and a read-only agent can quote pod logs or a
 # resource's YAML. Best-effort scrub of the shapes a secret usually takes; the prompts
@@ -92,6 +107,40 @@ def parse_verdict(text: str | None) -> str | None:
         return None
     verdict = found[-1].lower()
     return verdict if verdict in VERDICTS else None
+
+
+def restart_key(labels: dict) -> str:
+    """What "the same leak" means for the once-a-day rule: namespace/workload, the pod name
+    with its replica suffix, ReplicaSet hash and StatefulSet ordinal stripped. The alert
+    fingerprint would not do: a Deployment's replacement pod has a new name, and two
+    containers in one pod would be two keys (review 2026-10-14, finding 3)."""
+    pod = str(labels.get("pod") or "?")
+    name = re.sub(r"-[a-z0-9]{5}$", "", pod)          # Deployment / DaemonSet pod suffix
+    name = re.sub(r"-[a-z0-9]{8,10}$", "", name)       # ReplicaSet pod-template-hash
+    name = re.sub(r"-\d+$", "", name)                  # StatefulSet ordinal
+    return f"{labels.get('namespace') or '?'}/{name}"
+
+
+def restart_target_problem(labels: dict) -> str | None:
+    """Why the dispatcher will not even ask for a restart of this alert's pod, or None."""
+    ns, pod = labels.get("namespace"), labels.get("pod")
+    if not isinstance(ns, str) or not DNS_LABEL_RE.match(ns) or not isinstance(pod, str) \
+            or not DNS_LABEL_RE.match(pod):
+        return "the alert names no valid namespace/pod"
+    if ns in RESTART_DENY_NAMESPACES:
+        return f"namespace {ns} is never restarted by the dispatcher"
+    return None
+
+
+def pending_restart_matches(calls: list[dict], labels: dict) -> bool:
+    """True only if the restarter paused on exactly one pod delete of the alert's pod. A
+    single --approve approves every pending call, so anything else (another pod, another
+    kind, two calls) gets a reject command, never an approve one (finding 4)."""
+    if len(calls) != 1 or calls[0].get("name") != RESTART_TOOL:
+        return False
+    args = calls[0].get("args") or {}
+    return (args.get("resource_type") == "pod" and args.get("resource_name") == labels.get("pod")
+            and args.get("namespace") == labels.get("namespace"))
 
 
 class TableError(ValueError):
@@ -408,8 +457,8 @@ class Dispatcher:
         state, ui, text and error from the reply. Returns the Reply, or None when the send
         failed or timed out (the finding says which). Never a context_id, task_id or metadata:
         every send is a fresh session and never an answer to a pause (V88)."""
-        url = a2a.resolve_endpoint(self.config.a2a_base, f"kagent/{agent}")
         try:
+            url = a2a.resolve_endpoint(self.config.a2a_base, f"kagent/{agent}")
             reply = a2a.parse_result(self.send(url, prompt,
                                                user=None if self.config.token_file else self.config.user,
                                                token_file=self.config.token_file,
@@ -458,7 +507,9 @@ class Dispatcher:
                    "verdict": None}
         reply = self._open_session(agent, render_prompt(rule, alert), finding)
         if reply is not None and reply.completed:
-            finding["verdict"] = parse_verdict(finding["text"])
+            # The RAW answer: the finding's text is truncated and scrubbed, and either can
+            # eat the last line (finding 2).
+            finding["verdict"] = parse_verdict(reply.answer)
         # The remediation decision is made, and said in the finding, BEFORE the finding is
         # posted: Slack shows the evidence first, then the pending call (§T.118).
         remediate = False
@@ -466,8 +517,12 @@ class Dispatcher:
         if rem:
             decision = "no-match"
             if finding["verdict"] in rem["on"]:
-                skipped = self.restarts.admit(alert.get("fingerprint") or finding["alertname"])
-                if skipped == "recurring":
+                problem = restart_target_problem(labels)
+                skipped = "target" if problem else self.restarts.admit(restart_key(labels))
+                if skipped == "target":
+                    decision = "skip-target"
+                    finding["text"] = (finding["text"] or "") + f"\nNo restart requested: {problem}."
+                elif skipped == "recurring":
                     decision = "skip-recurring"
                     finding["text"] = (finding["text"] or "") + ("\nRecurring leak: a restart was already "
                                                                  "requested for this alert in the last 24 h; "
@@ -497,23 +552,35 @@ class Dispatcher:
                    "labels": labels, "agent": agent, "session": None, "state": None, "text": None,
                    "ui": None, "error": None, "verdict": verdict, "evidence_session": evidence_session,
                    "pending": []}
-        prompt = render_text(rem["prompt"], alert, verdict=verdict or "?", session=evidence_session or "?")
-        reply = self._open_session(agent, prompt, finding)
-        if reply is not None and reply.waiting:
-            calls = reply.pending_calls
-            finding["pending"] = [{"name": c["name"], "args": c["args"]} for c in calls]
-            if calls:
-                ctx = reply.context_id or "?"
-                cmd = (f"scripts/ask-hk --agent kagent/{agent} --as-serviceaccount dispatcher/dispatcher "
-                       f"--context {ctx}")
-                lines = ["Restart awaiting approval. Pending call(s):"]
-                lines += [f"  {c['name']} {json.dumps(c['args'], sort_keys=True)}" for c in calls]
-                lines += [f"Evidence: {rule['route'].split(':', 1)[1]} session {evidence_session or '?'} "
-                          f"(verdict: {verdict}).",
-                          f"Approve: {cmd} --approve",
-                          f"Reject: {cmd} --reject \"<reason>\"",
-                          "Or decide in the kagent UI. The dispatcher never answers."]
-                finding["text"] = scrub("\n".join(lines))
+        try:
+            prompt = render_text(rem["prompt"], alert, verdict=verdict or "?", session=evidence_session or "?")
+            reply = self._open_session(agent, prompt, finding)
+            if reply is not None and reply.waiting:
+                calls = reply.pending_calls
+                finding["pending"] = [{"name": c["name"], "args": c["args"]} for c in calls]
+                if calls:
+                    # --task: the laptop never saw this pause; ask-hk fetches the request by id.
+                    cmd = (f"scripts/ask-hk --agent kagent/{agent} --as-serviceaccount dispatcher/dispatcher "
+                           f"--context {reply.context_id or '?'} --task {reply.task_id or '?'}")
+                    lines = [f"  {c['name']} {json.dumps(c['args'], sort_keys=True)}" for c in calls]
+                    lines.append(f"Evidence: {rule['route'].split(':', 1)[1]} session "
+                                 f"{evidence_session or '?'} (verdict: {verdict}).")
+                    if pending_restart_matches(calls, labels):
+                        lines.insert(0, "Restart awaiting approval. Pending call:")
+                        lines += [f"Approve: {cmd} --approve", f"Reject: {cmd} --reject \"<reason>\""]
+                    else:
+                        lines.insert(0, "MISMATCH: the pending call(s) are not one delete of the alert's pod "
+                                        f"{labels.get('namespace')}/{labels.get('pod')}. Reject:")
+                        lines.append(f"{cmd} --reject \"not the alert's pod\"")
+                    lines.append("The dispatcher never answers; the kagent UI cannot see this session "
+                                 "(it is owned by the dispatcher).")
+                    finding["text"] = scrub("\n".join(lines))
+            elif reply is None and finding["text"] and "still running" in finding["text"]:
+                finding["text"] = (f"The restarter is still running after {self.config.timeout:.0f}s and its "
+                                   "session id is unknown; if it pauses, nobody can approve it and nothing "
+                                   "is deleted. The restart was charged to today's budget.")
+        except Exception as err:  # noqa: BLE001 - a remediation must always produce a finding
+            finding["error"] = f"unexpected {type(err).__name__}: {scrub(str(err))[:400]}"
         self._post_finding(finding, rule, kind="remediation")
         return finding
 # ------------------------------------------------------------------ http

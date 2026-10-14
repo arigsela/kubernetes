@@ -26,7 +26,7 @@ spec:
         # pattern as Grafana's checksum/alerting). scripts/gen-dispatcher-configmap.py writes both;
         # tests/dispatch/test_manifests.py fails if either is stale.
         checksum/table: "aaaac7ccb2135a9175bc21d1db5f423d1cc3fa1c6a743e4d73531f3ef84d9dbb"
-        checksum/code: "51804b3c6bedfb4e97dee3172c912b4613d3ebbd787d25e3e17c490deb3a241a"
+        checksum/code: "9f2916a994d6d518caca6e64a87733f48ea8b61e0931cfc5f65d3540c4f5c536"
     spec:
       serviceAccountName: dispatcher
       automountServiceAccountToken: false   # never talks to the API server; the projected token below is for kagent
