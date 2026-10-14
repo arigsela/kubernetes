@@ -60,8 +60,13 @@ def test_network_policy_admits_only_grafana_and_a_labelled_replay_pod():
     rules = np["spec"]["ingress"]
     assert len(rules) == 1
     froms = rules[0]["from"]
+    # Grafana's pod carries `app: grafana` (the chart's own label), not app.kubernetes.io/name;
+    # the first policy used the wrong one and blocked Grafana (live, 2026-10-14).
     assert {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "logging"}},
-            "podSelector": {"matchLabels": {"app.kubernetes.io/name": "grafana"}}} in froms
+            "podSelector": {"matchLabels": {"app": "grafana"}}} in froms
     assert {"podSelector": {"matchLabels": {"dispatcher/replay": "true"}}} in froms
     assert len(froms) == 2
-    assert rules[0]["ports"] == [{"port": 8080, "protocol": "TCP"}]
+    # 8080 for Grafana (outside the mesh, plaintext); 15008 for an in-mesh source (the replay
+    # pod in this ambient namespace): ztunnel delivers it over HBONE on 15008 and the policy is
+    # enforced before ztunnel unwraps it ("connection reset by peer" without it).
+    assert rules[0]["ports"] == [{"port": 8080, "protocol": "TCP"}, {"port": 15008, "protocol": "TCP"}]
