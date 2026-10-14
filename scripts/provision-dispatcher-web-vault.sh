@@ -13,6 +13,10 @@
 #   scripts/provision-dispatcher-web-vault.sh --email you@example.com
 # Run it BEFORE merging base-apps/dispatcher/secret-store.yaml: a SecretStore whose Vault role
 # does not exist fails the whole dispatcher app sync.
+# After a rotation BOTH pods must restart to read the new values (Dex reads its env, the
+# sidecar its files, at start only): `kubectl rollout restart deploy/dex -n dex` and
+# `kubectl delete pod -n dispatcher -l app=dispatcher` once ESO has refreshed (≤1h, or annotate
+# the ExternalSecrets with force-sync). A dispatcher restart empties the pending list.
 set -euo pipefail
 MOUNT=k8s-secrets
 KEY=dispatcher-web
@@ -31,7 +35,11 @@ if ! vault token lookup >/dev/null 2>&1; then
   exit 2
 fi
 exists=0
-vault kv get -mount="$MOUNT" "$KEY" >/dev/null 2>&1 && exists=1
+if out=$(vault kv get -mount="$MOUNT" "$KEY" 2>&1); then
+  exists=1
+elif ! grep -qi "no value found\|not found" <<<"$out"; then
+  echo "cannot read $MOUNT/$KEY (not a 'not found'): $out" >&2; exit 2   # never rotate on a transient error
+fi
 if ((exists == 0)) && [[ -z "$email" ]]; then
   echo "--email is required the first time" >&2; exit 2
 fi
@@ -46,17 +54,19 @@ args=()
 if ((exists == 0 || rotate == 1 || rotate_cookie == 1)); then
   args+=("oauth2-cookie-secret=$(openssl rand -hex 16)")
 fi
+client_secret=""
 if ((exists == 0 || rotate == 1)); then
   client_secret=$(openssl rand -base64 32 | tr -d '\n')
   args+=("oauth2-client-secret=$client_secret")
-  # Dex's copy of the client secret (its ExternalSecret maps dex/dispatcher-client-secret).
-  vault kv patch -mount="$MOUNT" dex "dispatcher-client-secret=$client_secret" >/dev/null
 fi
 if ((exists)); then
   ((${#args[@]})) && vault kv patch -mount="$MOUNT" "$KEY" "${args[@]}" >/dev/null
 else
   vault kv put -mount="$MOUNT" "$KEY" "${args[@]}" >/dev/null
 fi
+# Dex's copy of the client secret, written AFTER ours so a failure never leaves the two apart
+# (its ExternalSecret maps dex/dispatcher-client-secret).
+[[ -n "$client_secret" ]] && vault kv patch -mount="$MOUNT" dex "dispatcher-client-secret=$client_secret" >/dev/null
 vault policy write dispatcher-web - <<POLICY
 path "$MOUNT/data/$KEY" { capabilities = ["read"] }
 POLICY

@@ -86,10 +86,13 @@ to `127.0.0.1:8081`, reachable only through the `oauth2-proxy` sidecar in `deplo
 from Vault (`k8s-secrets/dispatcher-web`, written by
 `scripts/provision-dispatcher-web-vault.sh`, never in git) is the access control; the edge IP
 allow-list is the first layer, `network-policy.yaml` admits only the Gateway to `4180`. A
-decision sends the `tool_approval_response` for exactly the registered call ids under the
-dispatcher's token (the one send that ever carries metadata, §V.88 amended), posts a third
-Slack finding ("Restart approved by <email>: …") and logs `event: decision` with
-`approved_by`. The list is in memory: a rollout empties it, and the Slack message's ask-hk
+decision claims the item atomically (two tabs or a double click can never both send), answers
+the browser at once (202: oauth2-proxy would give up on a 30 s upstream) and sends the
+`tool_approval_response` for exactly the registered call ids under the dispatcher's token in
+the background (the one send that ever carries metadata, §V.88 amended); the outcome is a
+third Slack finding ("Restart approved by <email>: …", or "sent, outcome unknown" after a
+timeout, or "paused again" if the restarter asked for more) and a log line `event: decision`
+with `approved_by`. The list is in memory: a rollout empties it, and the Slack message's ask-hk
 fallback still works. A stale page (wrong nonce) is refused; the kagent UI cannot show these
 sessions (owned by the dispatcher's identity).
 

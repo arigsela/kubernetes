@@ -344,6 +344,26 @@ class PendingRestarts:
         with self._lock:
             return self._items.pop(ctx, None)
 
+    def claim(self, ctx: str, nonce: str | None):
+        """Atomically take the item for a decision: the item, or "missing" | "stale". Two
+        decisions on one item (two tabs, a double click, a retry) can never both send."""
+        with self._lock:
+            item = self._items.get(ctx)
+            if item is None:
+                return "missing"
+            try:
+                ok = bool(nonce) and secrets.compare_digest(str(nonce), item["nonce"])
+            except TypeError:   # a non-ASCII nonce
+                ok = False
+            if not ok:
+                return "stale"
+            return self._items.pop(ctx)
+
+    def restore(self, item: dict) -> None:
+        """Put a claimed item back: only after a send that provably was NOT delivered."""
+        with self._lock:
+            self._items.setdefault(item["ctx"], item)
+
     def items(self) -> list[dict]:
         with self._lock:
             return sorted(self._items.values(), key=lambda i: i["created"])
@@ -617,7 +637,7 @@ class Dispatcher:
                     lines = [f"  {c['name']} {json.dumps(c['args'], sort_keys=True)}" for c in calls]
                     lines.append(f"Evidence: {rule['route'].split(':', 1)[1]} session "
                                  f"{evidence_session or '?'} (verdict: {verdict}).")
-                    if pending_restart_matches(calls, labels):
+                    if pending_restart_matches(calls, labels) and reply.context_id and reply.task_id:
                         self.pending.add({"ctx": reply.context_id, "task_id": reply.task_id, "agent": agent,
                                           "calls": calls, "labels": labels, "rule": rule["id"],
                                           "verdict": verdict, "evidence_session": evidence_session,
@@ -642,22 +662,37 @@ class Dispatcher:
         self._post_finding(finding, rule, kind="remediation")
         return finding
     def decide_pending(self, ctx: str, nonce: str, *, approved: bool, reason: str | None,
-                       approver: str) -> dict:
+                       approver: str, background: bool = False) -> dict:
         """Forward a human's decision on a registered pending restart (§T.119). The ONLY send
         that ever carries metadata (§V.88 amended): a tool_approval_response for exactly the
         registered call ids, on the registered task and context, under the dispatcher's token.
-        Returns {ok, status, text}; a failed send keeps the item pending."""
+        The item is CLAIMED atomically before the send (two decisions can never both send).
+        Returns {ok, status, text}. With background=True the send runs in a thread and the
+        caller gets 202 at once (oauth2-proxy gives up on a 30 s upstream; the restarter's
+        post-approval run can take minutes); the outcome then reaches Slack and the log."""
         if not approver or not approver.strip():
             return {"ok": False, "status": 403, "text": "no approver identity (X-Forwarded-Email)"}
-        item = self.pending.get(ctx)
-        if item is None:
+        item = self.pending.claim(ctx, nonce)
+        if item == "missing":
             return {"ok": False, "status": 404, "text": "nothing pending for that session"}
-        if not nonce or not secrets.compare_digest(str(nonce), item["nonce"]):
+        if item == "stale":
             return {"ok": False, "status": 409, "text": "stale page: reload and decide again"}
         approver = approver.strip()
+        if background:
+            threading.Thread(target=self._finish_decision, args=(item, approved, reason, approver),
+                             daemon=True).start()
+            labels = item["labels"]
+            return {"ok": True, "status": 202,
+                    "text": (f"Decision by {approver} sent for {labels.get('namespace')}/{labels.get('pod')} "
+                             f"({'approve' if approved else 'reject'}); the outcome lands in Slack and the log.")}
+        return self._finish_decision(item, approved, reason, approver)
+
+    def _finish_decision(self, item: dict, approved: bool, reason: str | None, approver: str) -> dict:
+        ctx = item["ctx"]
         finding = {"kind": "decision", "rule": item["rule"], "alertname": item["labels"].get("alertname") or "?",
                    "labels": item["labels"], "agent": item["agent"], "session": ctx, "state": None,
                    "text": None, "ui": None, "error": None, "approved": approved, "approved_by": approver}
+        who = f"approved by {approver}" if approved else f"rejected by {approver} ({reason or 'no reason'})"
         try:
             url = a2a.resolve_endpoint(self.config.a2a_base, f"kagent/{item['agent']}")
             reply = a2a.parse_result(self.send(
@@ -667,22 +702,44 @@ class Dispatcher:
                 user=None if self.config.token_file else self.config.user,
                 token_file=self.config.token_file, timeout=self.config.timeout))
         except Exception as err:  # noqa: BLE001 - the page must get an answer either way
+            if _is_timeout(err):
+                # Most likely DELIVERED and still running (the delete plus a model answer):
+                # never offer a second approval. The item stays claimed.
+                finding["state"] = "unknown"
+                finding["text"] = (f"Restart {who}: sent, outcome unknown (the restarter was still running after "
+                                   f"{self.config.timeout:.0f}s). Check session {ctx} with ask-hk --agent "
+                                   f"kagent/{item['agent']} --as-serviceaccount dispatcher/dispatcher --context {ctx}.")
+                self._post_finding(finding, {"id": item["rule"]}, kind="decision")
+                self.log({"event": "decision", "approved": approved, "approved_by": approver, "rule": item["rule"],
+                          "session": ctx, "state": "unknown", "error": None})
+                return {"ok": True, "status": 202, "text": finding["text"]}
+            self.pending.restore(item)   # provably not delivered: decide again later
             finding["error"] = scrub(str(err))[:400]
             finding["text"] = f"decision not delivered: {finding['error']}"
             self._post_finding(finding, {"id": item["rule"]}, kind="decision")
             self.log({"event": "decision", "approved": approved, "approved_by": approver, "rule": item["rule"],
                       "session": ctx, "state": None, "error": finding["error"]})
             return {"ok": False, "status": 502, "text": finding["text"]}
-        self.pending.remove(ctx)
         finding["state"] = reply.state
-        answer = scrub((reply.answer or reply.status_text or "")[:ANSWER_LIMIT]) if not reply.failed \
-            else f"task ended in {reply.state}"
-        who = f"approved by {approver}" if approved else f"rejected by {approver} ({reason or 'no reason'})"
-        finding["text"] = f"Restart {who}: {answer}".strip()
+        ok = True
+        if reply.completed:
+            answer = scrub((reply.answer or reply.status_text or "")[:ANSWER_LIMIT])
+            finding["text"] = f"Restart {who}: {answer}".strip()
+        elif reply.waiting:
+            # A second gated call after the decision: not registered, not approved, say so.
+            ok = False
+            calls = "; ".join(f"{c['name']} {json.dumps(c['args'], sort_keys=True)}" for c in reply.pending_calls) or "a question"
+            finding["text"] = scrub(f"Restart {who}: the restarter paused again on {calls}; nothing more was approved. "
+                                    f"Decide it with ask-hk --agent kagent/{item['agent']} --as-serviceaccount "
+                                    f"dispatcher/dispatcher --context {ctx} --task {item['task_id']} --approve | --reject REASON.")
+        else:
+            ok = False
+            finding["text"] = f"Restart {who}: the restarter task ended in {reply.state}: " \
+                              f"{scrub(reply.status_text or '')[:300]}"
         self._post_finding(finding, {"id": item["rule"]}, kind="decision")
         self.log({"event": "decision", "approved": approved, "approved_by": approver, "rule": item["rule"],
                   "session": ctx, "state": reply.state, "error": None})
-        return {"ok": True, "status": 200, "text": finding["text"]}
+        return {"ok": ok, "status": 200, "text": finding["text"]}
 # ------------------------------------------------------------------ http
 
 def make_handler(dispatcher: Dispatcher):
@@ -782,6 +839,8 @@ def make_approvals_handler(dispatcher: Dispatcher):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Frame-Options", "DENY")                    # no clickjacking of Approve
+            self.send_header("Content-Security-Policy", "frame-ancestors 'none'; default-src 'none'; style-src 'unsafe-inline'")
             self.end_headers()
             self.wfile.write(body)
 
@@ -807,11 +866,18 @@ def make_approvals_handler(dispatcher: Dispatcher):
                 self._page(404, "<p>not found</p>")
                 return
             ctx, verb = urllib.parse.unquote(m.group(1)), m.group(2)
-            length = int(self.headers.get("Content-Length") or 0)
-            form = urllib.parse.parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                if length < 0 or length > 65536:
+                    raise ValueError("bad length")
+                form = urllib.parse.parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
+            except ValueError:
+                self._render(400, "bad request", False)
+                return
             approver = self.headers.get("X-Forwarded-Email") or ""   # set by the oauth2-proxy sidecar only
             out = dispatcher.decide_pending(ctx, (form.get("nonce") or [""])[0], approved=verb == "approve",
-                                            reason=(form.get("reason") or [None])[0], approver=approver)
+                                            reason=(form.get("reason") or [None])[0], approver=approver,
+                                            background=dispatcher.run_async)
             self._render(out["status"], out["text"], out["ok"])
 
         def log_message(self, fmt, *args):
