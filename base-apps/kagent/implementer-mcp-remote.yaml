@@ -1,0 +1,17 @@
+# Registers the implementer tool server with kagent so AgentTemplates can bind its tools by
+# name (the kmcp MCPServer only deploys it). Same shape as agent-docs-mcp-remote.yaml.
+apiVersion: api.kagent.dev/v1alpha3
+kind: RemoteMCPServer
+metadata:
+  name: implementer
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: implementer
+spec:
+  description: GitHub MCP for the implementer agent (arigsela/kubernetes, branches and pull requests under its own App)
+  protocol: STREAMABLE_HTTP
+  url: http://implementer-mcp.kagent:3000/mcp
+  timeout: 30s
+  sseReadTimeout: 5m0s
+  terminateOnClose: true
