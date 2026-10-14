@@ -803,8 +803,15 @@ data:
                                                        message=message, message_ok=ok))
 
             def do_GET(self):  # noqa: N802
-                if self.path.split("?", 1)[0] in ("/approvals", "/approvals/"):
+                path = self.path.split("?", 1)[0]
+                if path in ("/approvals", "/approvals/"):
                     self._render()
+                elif path in ("", "/"):
+                    # The browser lands on the bare host after the Dex login, or from a bookmark.
+                    self.send_response(302)
+                    self.send_header("Location", "/approvals")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
                 else:
                     self._page(404, "<p>not found</p>")
 
