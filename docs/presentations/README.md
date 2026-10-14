@@ -66,12 +66,15 @@ level 3 in places, level 4 for one declared class), and the next pieces in depen
 Two recorded screens: one change through every layer in 23 minutes (the CLI-approvals PR,
 2026-10-12) and the audit's origin query. Same audience, anonymization and visual identity.
 The brief was written 2026-10-12 and rescored on 2026-10-13 after the dispatcher (path 1)
-and policy promotion (path 5) went live; the deck is the rescored version.
+and policy promotion (path 5) went live; the deck is the rescored version. On 2026-10-14 the
+brief and the speaker notes moved ahead of the artwork again (eight paths built, all five
+"next" nodes landed, a human-approved restart path): the notes say so at the top and name
+the panels whose pictures are stale, until the deck is regenerated from the brief.
 
 | file | what it is |
 |---|---|
 | `whole-picture-infographics.pdf` | The deck to present: eight 16:9 infographic panels (the whole picture; three ways work moves; governance surrounds the agent; eight paths, one honest scorecard; how much autonomy exists; one recorded change; the audit that changed the controls; close the loop, in order). Raster pages, no selectable text; the notes below carry the text. Panels 03, 06 and 07 keep their 2026-10-12 artwork and dated evidence. |
-| `whole-picture-speaker-notes.md` | Per-panel text alternative, what to say, qualifications and sources. Its precision corrections (the exact promotion predicate, not "every check green"; a `review:skip` label alone cannot promote; the first live run was an `owner` decision, not an observed auto merge) are the ones to keep in mind when presenting. |
+| `whole-picture-speaker-notes.md` | Per-panel text alternative, what to say, qualifications and sources, as of 2026-10-14. Its precision corrections (the exact promotion predicate, not "every check green"; a `review:skip` label alone cannot promote; an unattributed commit is refused; the human approving a restart is recorded beside, not inside, the runtime's record) are the ones to keep in mind when presenting. |
 | `whole-picture-presentation-brief.md` | The source brief: the full 14-screen version with the layer-by-layer mapping tables, the eight-path scorecard, the ladder, the "what next" track, data provenance and the "do not claim" list. The eight-panel deck is its permitted short cut (screens 03, 05, 07, 09, 10, 11, 13, plus 12). |
 
 ## Tech-stack talk — 2026-10-11
