@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Dispatcher approvals page — Vault provisioning for its oauth2-proxy sidecar (§T.119).
-# Idempotent; re-run with --rotate to regenerate both secrets.
+# Idempotent; re-run with --rotate to regenerate both secrets, --rotate-cookie for the cookie only.
 #   k8s-secrets/dispatcher-web   oauth2-client-secret, oauth2-cookie-secret (both generated HERE,
 #                                never printed), allowed-emails (the one address the page admits)
 #   k8s-secrets/dex              dispatcher-client-secret (the same client secret; Dex's side)
@@ -16,11 +16,12 @@
 set -euo pipefail
 MOUNT=k8s-secrets
 KEY=dispatcher-web
-email=""; rotate=0
+email=""; rotate=0; rotate_cookie=0
 while (($#)); do
   case "$1" in
     --email) email="$2"; shift 2 ;;
     --rotate) rotate=1; shift ;;
+    --rotate-cookie) rotate_cookie=1; shift ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -39,10 +40,15 @@ if [[ -n "$email" ]] && [[ "$email" != *@*.* ]]; then
 fi
 args=()
 [[ -n "$email" ]] && args+=("allowed-emails=$email")
+# oauth2-proxy reads --cookie-secret-file as RAW bytes and needs exactly 16, 24 or 32 of them
+# (AES key): 32 hex characters = 32 bytes. base64 of 32 bytes is 44 characters and is refused
+# ("cookie_secret from file must be 16, 24, or 32 bytes", seen 2026-10-14).
+if ((exists == 0 || rotate == 1 || rotate_cookie == 1)); then
+  args+=("oauth2-cookie-secret=$(openssl rand -hex 16)")
+fi
 if ((exists == 0 || rotate == 1)); then
   client_secret=$(openssl rand -base64 32 | tr -d '\n')
-  cookie_secret=$(openssl rand -base64 32 | tr -d '\n')   # 32 bytes: AES-256 cookie encryption
-  args+=("oauth2-client-secret=$client_secret" "oauth2-cookie-secret=$cookie_secret")
+  args+=("oauth2-client-secret=$client_secret")
   # Dex's copy of the client secret (its ExternalSecret maps dex/dispatcher-client-secret).
   vault kv patch -mount="$MOUNT" dex "dispatcher-client-secret=$client_secret" >/dev/null
 fi
@@ -59,4 +65,4 @@ vault write auth/kubernetes/role/dispatcher-web \
   bound_service_account_namespaces=dispatcher \
   policies=dispatcher-web ttl=1h >/dev/null
 present=$(vault kv get -mount="$MOUNT" -format=json "$KEY" 2>/dev/null | python3 -c 'import json,sys; print(",".join(sorted(json.load(sys.stdin)["data"]["data"])))' 2>/dev/null || echo none)
-echo "dispatcher-web: policy and role written; secrets $( ((exists == 0 || rotate == 1)) && echo generated || echo kept ); present now: $present"
+echo "dispatcher-web: policy and role written; secrets $( ((exists == 0 || rotate == 1)) && echo generated || { ((rotate_cookie)) && echo "cookie rotated" || echo kept; } ); present now: $present"
