@@ -168,6 +168,13 @@ The agent keeps answering from live cluster objects and says it can't read the r
   with the Secret (by hash, not by sync status), then `vault kv put` with only `github-token` to
   drop the stray property.
 
+### Symptom: the implementer says it cannot open a pull request (GitHub 401/404 from `implementer-mcp`)
+The App token is minted from the Secret `implementer-github-app` (Vault `implementer-github-app`).
+- **Check:** `kubectl -n kagent logs deploy/implementer-mcp --tail=50`: `401` = App ID or private key wrong; `404` = installation ID wrong or the App is not installed on the repo; a startup error naming a tool = a misspelt `--tools` entry. `kubectl -n kagent get remotemcpserver implementer -o jsonpath='{.status.discoveredTools[*].name}'` must list 12 tools.
+- **Fix (owner):** re-run `scripts/provision-implementer-vault.sh` with the right `--app-id`, `--installation-id` or a new `--key-file`, then `kubectl -n kagent annotate externalsecret implementer-github-app force-sync=$(date +%s) --overwrite` and `kubectl -n kagent rollout restart deploy/implementer-mcp`.
+- **A PR it opened cannot change `.github/workflows`**: by design (no Workflows permission); the agent reports it and opens nothing.
+- **`agent run failed: duplicate tool: "<name>"`** on the first turn: two bindings on the template repeat a tool name; the Go ADK refuses the agent. `tests/implementer/test_agent.py::test_no_tool_name_is_bound_twice` pins it.
+
 ### Symptom: web search fails (`homelab-knowledge` / `dungeon-crawler-carl-agent` say they cannot search, or `brave_web_search` errors)
 - **Check:** `kubectl -n kagent get externalsecret brave-search-mcp-api-key` (must be `SecretSynced`), then `kubectl -n kagent get pods -l app.kubernetes.io/name=brave-search-mcp` and its logs, then `kubectl -n kagent get remotemcpserver.api.kagent.dev brave-search -o yaml` for the discovered tools. A `SecretSyncedError` means the key is missing or wrong in Vault (`k8s-secrets/brave-search-mcp`, property `api-key`); the MCP server pod cannot start without it. A 401/403/429 in the pod logs is the Brave API: wrong key, or the Free plan's 2,000 queries/month used up (https://api-dashboard.search.brave.com/).
 - **Fix:** write or rotate the key with `BRAVE_API_KEY=... scripts/provision-brave-search-vault.sh` (it also recreates the Vault role and policy if they are missing), then force the ExternalSecret: `kubectl -n kagent annotate externalsecret brave-search-mcp-api-key force-sync=$(date +%s) --overwrite`. The pod starts on its own once the Secret exists. The agents keep answering without search in the meantime; they just say so.

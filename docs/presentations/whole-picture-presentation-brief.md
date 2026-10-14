@@ -20,6 +20,9 @@ instruction files) merge by policy too. Where this brief and the deck say "one d
 read "two declared classes, both trivial by construction"; the scorecard and ladder are unchanged.
 Later still on 2026-10-13, callers became principals (screen 07) and evaluation became a post-deploy
 gate (screen 06); the "needs a decision" column on screen 14 no longer includes caller identity.
+On 2026-10-14 items 4 and 5 landed: an in-cluster implementer opens pull requests under its own
+GitHub App (path 3 BUILT), and the two resource alerts become pull requests when the evidence
+says the limit is too low (path 8 BUILT); the footer on screen 09 reads "Eight built, none partial".
 
 **Audience:** engineering leadership; first target is the company's AI pathfinders group. They
 are technical but not Kubernetes specialists. Vocabulary rule: name the mechanism in plain
@@ -339,7 +342,7 @@ files, next to the manifests, reviewed by the same workflow. Nothing special was
 ## 09 — The eight core paths, scored
 
 **Message:** the model names eight paths that make up the development life cycle; the
-reference has six built and two partial; the last missing one, dispatch, was built on 2026-10-12.
+reference has all eight built; dispatch came on 2026-10-12, implement and remediate on 2026-10-14.
 
 **Headline:** *The eight core paths, scored*
 
@@ -352,19 +355,19 @@ remediate) sit at the ends of the bottom row, and the dispatch card carries a sm
 |---|---|---|---|---|
 | 1 | **Dispatch work** — route a signal to the right agent or human | hybrid | A declared table maps every alert title to a read-only agent investigation, a human, or nobody; CI refuses an alert with no row. Budgeted per hour, deduplicated per alert, and the dispatcher sends under its own identity and never answers an approval. The finding reaches chat with the session to continue by hand. A pull request still routes itself to triage. | BUILT (read-only) |
 | 2 | **Retrieve context** — assemble what the work needs | prob | The docs contract, the catalog, long-term memory, the ledger, the repository contract. The strongest path. | BUILT |
-| 3 | **Implement** — write and modify code | prob | A coding agent at the owner's desk writes most commits under the contract. No in-cluster agent writes code or opens a pull request; the runtime supports sandboxes, none is defined. | PARTIAL |
+| 3 | **Implement** — write and modify code | prob | A coding agent at the owner's desk writes most commits under the contract; in the cluster, the `implementer` agent edits a manifest on a branch and opens the pull request under its own GitHub App, through the same triage, checks and policy. The runtime's sandboxes still cannot reach GitHub, so the API is the workbench and CI is the sandbox. | BUILT (2026-10-14) |
 | 4 | **Validate change** — gate it | hybrid | 22 jobs: lint, schema, contracts, generated-file drift, admission and upgrade drills against a real cluster; the agent fixes failures when asked. | BUILT |
 | 5 | **Promote change** — merge, approve, release | hybrid | Triage labels and explains. A written policy, read from the main branch so a pull request cannot loosen it, merges one class with no human: dependency bumps that triage found nothing to read in, outside a deny list, every check green, by a dedicated identity that is not the author's. A human merges everything else, rebase-only. Infrastructure applies before merge. | BUILT (policy for one class, one human for the rest) |
 | 6 | **Deploy** — provision and roll out | det | The controller applies main, prunes drift, self-heals; per-app AWS resources are declared alongside. | BUILT |
 | 7 | **Observe** — know it is working | hybrid | Metrics, logs, traces, runtime security with fail-closed alerts; a read-only agent inspects live state when asked, and since the dispatcher, unprompted: an alert becomes an investigation and a finding in chat, secrets scrubbed. The audit's risk triage is a classifier. | BUILT |
-| 8 | **Remediate** — diagnose and fix production | prob | Two operator agents with every mutating tool behind approval, decided in the UI or from the command line. The diagnosis now arrives unprompted; the fix is still human-initiated. | PARTIAL |
+| 8 | **Remediate** — diagnose and fix production | prob | Two operator agents with every mutating tool behind approval; and since 2026-10-14 the dispatcher's resource alerts end in a pull request raising the limit when the evidence says it is too low (a leak stays a finding). The fix is proposed unprompted and merged by a human. | BUILT (2026-10-14) |
 
 **Standing caption:** The model's advice is to start with two paths, validate change and PR
 review, because they force the minimum infrastructure: identity, dispatch, execution,
 evaluation, observability. The reference started with exactly those two and now has all five;
 dispatch came last, and started read-only.
 
-**Footer right:** "Six built, two partial, none missing".
+**Footer right:** "Eight built, none partial" (until 2026-10-14: "Six built, two partial, none missing").
 
 **Speaker note:** The scoring is the point of the deck. A company's map will differ, but the
 exercise is the same: eight cards, three states, and the weakest card is where the next design
@@ -386,7 +389,7 @@ one line of evidence. The band for level 2 is filled orange (where the reference
 |---|---|---|---|
 | **1 · Human in the loop** | Assistance in the editor; the human does the work | Yes, and it is the smallest part | BUILT |
 | **2 · Human as validator** | Agents do the work; humans check it | The daily mode: the agent writes, triage and checks grade, the human merges. 79% of commits since July. | BUILT |
-| **3 · Human orchestrates** | Agents are directed in parallel; throughput is the measure | In places: the coding assistant runs sub-agents; an in-cluster orchestrator hands off to specialists; one plan became 26 merged pull requests in a day; on the platform, a dispatcher hands alerts to an agent unprompted. No agent orchestrates other agents across the platform. | PARTIAL |
+| **3 · Human orchestrates** | Agents are directed in parallel; throughput is the measure | In places: the coding assistant runs sub-agents; an in-cluster orchestrator hands off to specialists; one plan became 26 merged pull requests in a day; on the platform, a dispatcher hands alerts to an agent unprompted. No agent orchestrates other agents across the platform; an alert now becomes a pull request with no human in between, and a human merges it. | PARTIAL |
 | **4 · Human out of the loop** | No human trigger; a signal becomes a shipped change | Declined, with one declared exception: a dependency bump that triage found nothing to read in is merged and deployed by policy with no human. Every other mutation has a human trigger or a human gate; scheduled jobs are deterministic. | NOT YET, by choice (one class excepted) |
 
 **Standing caption:** The model says most organisations are between levels 1 and 2 and that
@@ -483,7 +486,7 @@ the reference drew is the order on screen 13: record first, then gate, then eval
 ## 13 — What gets built next, in what order
 
 **Message:** the map makes the next pieces obvious, and their order follows the
-dependencies, not the excitement; one of the five is already solid.
+dependencies, not the excitement; all five have landed, in that order.
 
 **Headline:** *What gets built next, in what order*
 
@@ -496,8 +499,8 @@ track, a small "what a new agent or path reuses" checklist panel.
 | 1 | **Evaluation as a gate** — score the knowledge agent against the corpus after every deploy that changed it; grow the corpus from real history | harness · evaluation (BUILT 2026-10-13, post-deploy) | Done as a post-sync gate (a status on the change, an alert on regression); pre-merge would need an in-cluster runner. Still thin: one agent, eight questions. |
 | 2 | **Callers as principals** — authenticate the gateway's callers, one identity per person and per automation, in front of the shared one | governance · identity (BUILT 2026-10-13) | Done in the mesh: a waypoint in front of the agent gateway verifies the person's SSO token or an automation's platform token and sets the identity; the runtime's own calls stay inside the platform. Still thin: the UI is one identity until it gets its own login. |
 | 3 | **A dispatcher** — a declared table from signal to recipient (an agent, a human, nobody), applied by a service | path 1 · dispatch (BUILT 2026-10-12) | Done, read-only as planned: an alert opens an agent *investigation*, never a change, and the policy-merged promotion class landed beside it (2026-10-13). Still to route: failing checks, issues, triage labels. |
-| 4 | **Implement inside the platform** — a sandbox template so an in-cluster agent can run checks and open a pull request under its own identity, through the same triage, checks and promotion policy | path 3 · implement (PARTIAL → BUILT) | Needs 2 (its own identity); 3 is in place to hand it work. The pull request path is unchanged; the only new thing is who opens it. |
-| 5 | **Remediate on signal** — the investigation's proposed fix becomes a pull request (via 4) or a gated operator call | path 8 (PARTIAL → BUILT) | Last, because it is the first path where an unprompted agent touches production, and it inherits every gate above. The observe half (path 7) is done. |
+| 4 | **Implement inside the platform** — an in-cluster agent that can change the repository and open a pull request under its own identity, through the same triage, checks and promotion policy | path 3 · implement (BUILT 2026-10-14) | Done without the sandbox: Substrate sandboxes have no egress, so the agent writes through the GitHub API under a fourth capability class, `propose` (branches and pull requests only, ungated; the merge is the gate). |
+| 5 | **Remediate on signal** — the investigation's proposed fix becomes a pull request (via 4) or a gated operator call | path 8 (BUILT 2026-10-14) | Done for the two resource alerts: the dispatcher routes them to the implementer, which opens the pull request when the evidence says the limit is too low and only reports otherwise. The leak case and the gated operator call are the next rows. |
 
 **Checklist panel — what a new agent or path reuses, unchanged:** the vault and its one-role-
 per-credential pattern · the edge and allow-list · the tool taxonomy and admission policy ·
