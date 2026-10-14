@@ -811,6 +811,7 @@ def test_remediate_registers_a_matching_pending_call_and_names_the_page():
     assert item["calls"] == [{"id": "call-1", "name": "k8s_delete_resource",
                               "args": {"resource_type": "pod", "resource_name": "n8n-0", "namespace": "n8n"}}]
     assert item["labels"]["pod"] == "n8n-0" and item["rule"] == "mem" and item["evidence_session"] == "sess-i"
+    assert item["evidence_text"].startswith("RSS grew 40Mi/h"), "the implementer's answer travels with the item"
     t = fake.posted[1][1]["text"]
     assert "https://approvals.test/approvals" in t
     assert "--task task-r --approve" in t, "the fallback survives a dispatcher restart"
@@ -894,12 +895,17 @@ def test_decision_answer_is_scrubbed():
 def test_render_escapes_everything():
     html = dp.render_approvals_page([{"ctx": "c<1>", "nonce": "n", "agent": "restarter", "created": 0.0,
                                       "task_id": "t", "verdict": "leak", "evidence_session": "e",
+                                      "evidence_text": "OOMKilled twice <script>x</script>",
                                       "labels": {"alertname": "A<b>", "namespace": "n", "pod": "p"},
                                       "calls": [{"name": "k8s_delete_resource", "args": {"x": "<y>"}}]}],
                                     ui_url="https://ui/agents/{session}/chat", clock=lambda: 90.0)
     assert "A<b>" not in html and "A&lt;b&gt;" in html and "&lt;y&gt;" in html and "<y>" not in html
     assert 'action="/approvals/c%3C1%3E/approve"' in html and 'name="nonce" value="n"' in html
-    assert "https://ui/agents/e/chat" in html and "1 min" in html
+    assert "1 min" in html
+    # The evidence is the implementer's answer, shown on the page (a dispatcher-owned session is
+    # invisible in the kagent UI, so no link there); the session id stays as text for ask-hk.
+    assert "<details>" in html and "OOMKilled twice &lt;script&gt;" in html and "<script>" not in html
+    assert "https://ui/agents/e/chat" not in html and ">e<" in html or "session e" in html
     assert "nothing pending" in dp.render_approvals_page([], ui_url="u").lower()
 
 
