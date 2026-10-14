@@ -1,0 +1,31 @@
+# base-apps/slack-bridge.yaml
+---
+# Slack bridge: a Socket Mode client that lets the owner talk to any kagent agent from Slack
+# (one thread = one session) and decide pauses with buttons, including the dispatcher's
+# restart approvals. Design: docs/superpowers/specs/2026-10-14-slack-bridge-design.md.
+# §T.120, §V.98.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: slack-bridge
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/slack-bridge
+    directory:
+      # The agent-docs contract: catalog-info.yaml and the generated mkdocs.yml are not manifests.
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: slack-bridge
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

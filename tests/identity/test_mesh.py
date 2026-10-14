@@ -133,7 +133,8 @@ def test_network_policy_limits_controller_ingress():
     assert np["spec"]["podSelector"]["matchLabels"] == {"app.kubernetes.io/name": "kagent", "app.kubernetes.io/component": "controller"}
     allowed = {p["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
                for rule in np["spec"]["ingress"] for p in rule["from"]}
-    assert allowed == {"istio-ingress", "istio-system", "kagent", "dispatcher", "backstage", "ate-system"}
+    assert allowed == {"istio-ingress", "istio-system", "kagent", "dispatcher", "backstage", "ate-system",
+                       "slack-bridge"}   # the Slack bridge's own principal (§T.120, §V.98)
 
 
 def test_waypoint_route_refuses_user_id_query():

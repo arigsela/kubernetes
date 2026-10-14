@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -1124,3 +1125,93 @@ def test_item_without_ids_is_not_registered():
 def test_post_on_the_webhook_port_never_decides(server):
     _, base = server
     assert _post(base + "/approvals/x/approve", b"nonce=1")[0] == 404
+
+
+# ------------------------------------------------- the Slack bridge's door (§T.120, §V.98)
+
+def test_a_registered_restart_carries_a_decision_for_the_slack_buttons():
+    d, fake = pending_after_leak()
+    finding = fake.posted[1][1]
+    item = d.pending.get("sess-r")
+    assert finding["decision"] == {"ctx": "sess-r", "nonce": item["nonce"], "agent": "restarter", "task": "task-r"}
+
+
+def test_a_mismatch_carries_no_decision():
+    fake = Seq(completed_task(text=LEAK, session="s1"),
+               approval_task("r1", args={"resource_type": "pod", "resource_name": "other-0", "namespace": "n8n"}))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    assert "decision" not in fake.posted[1][1]
+
+
+@pytest.fixture
+def decide():
+    d, fake = pending_after_leak()
+    srv = dp.serve_decide(d, port=0)
+    yield d, fake, f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+def _json_post(url, body: dict | None):
+    data = json.dumps(body).encode() if body is not None else b"not json"
+    req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status, json.loads(resp.read())
+    except urllib.error.HTTPError as err:
+        return err.code, json.loads(err.read())
+
+
+def test_decide_approve_runs_the_claimed_path_with_via_slack(decide):
+    d, fake, base = decide
+    fake.replies.append(completed_task(text="restart requested: n8n/n8n-0", session="sess-r"))
+    nonce = d.pending.get("sess-r")["nonce"]
+    status, body = _json_post(f"{base}/decide/sess-r/approve", {"nonce": nonce, "reason": None, "approver": "o@e.com"})
+    assert status == 202 and body["ok"] and "o@e.com (via slack)" in body["text"]
+    assert d.pending.get("sess-r") is None
+    deadline = time.time() + 5
+    while time.time() < deadline and len(fake.sent) < 3:
+        time.sleep(0.02)
+    approvals = fake.sent[-1]["metadata"][a2a.HITL_EXTENSION]["approvals"]
+    assert approvals == [{"id": "call-1", "approved": True}] and fake.sent[-1]["task_id"] == "task-r"
+    decision = [x for x in fake.logged if x["event"] == "decision"][-1]
+    assert decision["approved_by"] == "o@e.com (via slack)"
+
+
+def test_decide_reject_forwards_the_reason(decide):
+    d, fake, base = decide
+    fake.replies.append(completed_task(text="no restart: rejected", session="sess-r"))
+    nonce = d.pending.get("sess-r")["nonce"]
+    status, body = _json_post(f"{base}/decide/sess-r/reject", {"nonce": nonce, "reason": "rejected in Slack", "approver": "o@e.com"})
+    assert status == 202
+    deadline = time.time() + 5
+    while time.time() < deadline and len(fake.sent) < 3:
+        time.sleep(0.02)
+    approvals = fake.sent[-1]["metadata"][a2a.HITL_EXTENSION]["approvals"]
+    assert approvals == [{"id": "call-1", "approved": False, "rejection_reason": "rejected in Slack"}]
+
+
+def test_decide_refuses_without_an_approver_and_keeps_the_item(decide):
+    d, fake, base = decide
+    nonce = d.pending.get("sess-r")["nonce"]
+    status, body = _json_post(f"{base}/decide/sess-r/approve", {"nonce": nonce, "approver": ""})
+    assert status == 403 and d.pending.get("sess-r") is not None and len(fake.sent) == 2
+
+
+def test_decide_maps_stale_missing_and_bad_json(decide):
+    d, fake, base = decide
+    assert _json_post(f"{base}/decide/sess-r/approve", {"nonce": "wrong", "approver": "o@e.com"})[0] == 409
+    assert _json_post(f"{base}/decide/nope/approve", {"nonce": "x", "approver": "o@e.com"})[0] == 404
+    assert _json_post(f"{base}/decide/sess-r/approve", None)[0] == 400
+    assert _json_post(f"{base}/decide/sess-r/maybe", {"nonce": "x", "approver": "o@e.com"})[0] == 404
+    assert d.pending.get("sess-r") is not None and len(fake.sent) == 2
+
+
+def test_the_webhook_and_approvals_servers_do_not_serve_decide():
+    d, fake = pending_after_leak()
+    srv = dp.serve(d, port=0)
+    try:
+        status, _ = _json_post(f"http://127.0.0.1:{srv.server_address[1]}/decide/sess-r/approve",
+                               {"nonce": "x", "approver": "o@e.com"})
+        assert status == 404
+    finally:
+        srv.shutdown()

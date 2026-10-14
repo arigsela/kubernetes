@@ -32,6 +32,7 @@ only through the oauth2-proxy sidecar (Dex login, one-email allow-list), decides
 restart with the approver's email logged (§T.119, §V.88 amended, §V.97).
 
     APPROVALS_PORT          8081  (0 disables the approvals server)
+    DECIDE_PORT             8082  (the Slack bridge's decide door, §T.120; 0 disables it)
     APPROVALS_URL           https://dispatcher.arigsela.com/approvals (what Slack links to)
 
 Environment (all have defaults for the cluster):
@@ -423,6 +424,7 @@ class Config:
     github_repo: str = "arigsela/kubernetes"
     approvals_url: str = "https://dispatcher.arigsela.com/approvals"
     approvals_port: int = 8081                          # 127.0.0.1 only; 0 = no approvals server
+    decide_port: int = 8082                             # the Slack bridge's door (§T.120); 0 = none
 
     @classmethod
     def from_env(cls, env=os.environ) -> "Config":
@@ -437,6 +439,7 @@ class Config:
             github_repo=env.get("GITHUB_REPO", "arigsela/kubernetes"),
             approvals_url=env.get("APPROVALS_URL", "https://dispatcher.arigsela.com/approvals"),
             approvals_port=int(env.get("APPROVALS_PORT", "8081")),
+            decide_port=int(env.get("DECIDE_PORT", "8082")),
         )
 
 
@@ -638,10 +641,14 @@ class Dispatcher:
                     lines.append(f"Evidence: {rule['route'].split(':', 1)[1]} session "
                                  f"{evidence_session or '?'} (verdict: {verdict}).")
                     if pending_restart_matches(calls, labels) and reply.context_id and reply.task_id:
-                        self.pending.add({"ctx": reply.context_id, "task_id": reply.task_id, "agent": agent,
-                                          "calls": calls, "labels": labels, "rule": rule["id"],
-                                          "verdict": verdict, "evidence_session": evidence_session,
-                                          "evidence_text": evidence_text})
+                        nonce = self.pending.add({"ctx": reply.context_id, "task_id": reply.task_id, "agent": agent,
+                                                  "calls": calls, "labels": labels, "rule": rule["id"],
+                                                  "verdict": verdict, "evidence_session": evidence_session,
+                                                  "evidence_text": evidence_text})
+                        # The Slack bridge's buttons (§T.120): n8n renders Approve / Reject with
+                        # value d:<ctx>:<nonce>; a click comes back on the decide port below.
+                        finding["decision"] = {"ctx": reply.context_id, "nonce": nonce, "agent": agent,
+                                               "task": reply.task_id}
                         lines.insert(0, "Restart awaiting approval. Pending call:")
                         lines += [f"Decide at {self.config.approvals_url} (Dex login).",
                                   f"Fallback if the dispatcher restarted since: {cmd} --approve | "
@@ -894,6 +901,63 @@ def serve_approvals(dispatcher: Dispatcher, port: int) -> ThreadingHTTPServer:
     return server
 
 
+# ------------------------------------------------------------ the Slack bridge's door (§T.120)
+
+def make_decide_handler(dispatcher: Dispatcher):
+    """POST /decide/<ctx>/(approve|reject), JSON {nonce, reason, approver}: the same claimed
+    decision path as the approvals page, for the Slack bridge. Who may call it is settled
+    outside this code: the NetworkPolicy admits only the bridge pod on this port and the
+    AuthorizationPolicy only the bridge's principal (both namespaces are ambient)."""
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "dispatcher-decide/1"
+
+        def _reply(self, code: int, obj: dict) -> None:
+            body = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):  # noqa: N802
+            self._reply(404, {"ok": False, "text": "not found"})
+
+        def do_POST(self):  # noqa: N802
+            m = re.fullmatch(r"/decide/([^/]+)/(approve|reject)", self.path.split("?", 1)[0])
+            if not m:
+                self._reply(404, {"ok": False, "text": "not found"})
+                return
+            ctx, verb = urllib.parse.unquote(m.group(1)), m.group(2)
+            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                if not isinstance(payload, dict):
+                    raise ValueError("payload must be an object")
+            except ValueError as err:
+                self._reply(400, {"ok": False, "text": f"bad json: {err}"})
+                return
+            approver = str(payload.get("approver") or "").strip()
+            if not approver:
+                self._reply(403, {"ok": False, "text": "no approver"})
+                return
+            reason = payload.get("reason")
+            out = dispatcher.decide_pending(ctx, str(payload.get("nonce") or ""), approved=verb == "approve",
+                                            reason=str(reason) if reason else None,
+                                            approver=f"{approver} (via slack)", background=True)
+            self._reply(out["status"], {"ok": out["ok"], "text": out["text"]})
+
+        def log_message(self, fmt, *args):
+            log_line({"event": "http", "server": "decide", "path": self.path.split("?", 1)[0], "message": fmt % args})
+
+    return Handler
+
+
+def serve_decide(dispatcher: Dispatcher, port: int) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer(("0.0.0.0", port), make_decide_handler(dispatcher))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
 def main(argv=None) -> int:
     config = Config.from_env()
     try:
@@ -905,8 +969,10 @@ def main(argv=None) -> int:
     port = int(os.environ.get("PORT", "8080"))
     server = serve(dispatcher, port)
     approvals = serve_approvals(dispatcher, config.approvals_port) if config.approvals_port > 0 else None
+    decide = serve_decide(dispatcher, config.decide_port) if config.decide_port > 0 else None
     log_line({"event": "start", "port": port, "rules": len(table["rules"]),
               "a2a_base": config.a2a_base, "approvals_port": config.approvals_port if approvals else None,
+              "decide_port": config.decide_port if decide else None,
               "identity": "token" if config.token_file else config.user})
     try:
         while True:

@@ -26,7 +26,7 @@ spec:
         # pattern as Grafana's checksum/alerting). scripts/gen-dispatcher-configmap.py writes both;
         # tests/dispatch/test_manifests.py fails if either is stale.
         checksum/table: "52a2b5113c31e29e09670e419185c3121589650b451a1e637eb1bc5b702a80dc"
-        checksum/code: "ec794161fc88b88dad599f43c5986b01d30111d950f7c45ea9ffc50f97402db4"
+        checksum/code: "78096fcc9e5f9a36e3c11b9312a9d7826207a3e8f1a05caaa2756a5fc9b2c93d"
     spec:
       serviceAccountName: dispatcher
       automountServiceAccountToken: false   # never talks to the API server; the projected token below is for kagent
@@ -61,9 +61,16 @@ spec:
               value: "8081"
             - name: APPROVALS_URL
               value: https://dispatcher.arigsela.com/approvals
+            # The Slack bridge's decide door (§T.120): the same claimed decision path as the
+            # page, JSON, admitted only from the bridge (network-policy.yaml,
+            # authorization-policy.yaml).
+            - name: DECIDE_PORT
+              value: "8082"
           ports:
             - name: http
               containerPort: 8080
+            - name: decide
+              containerPort: 8082
           readinessProbe:
             httpGet:
               path: /readyz

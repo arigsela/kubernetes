@@ -24,3 +24,4 @@ agent-audit-web
 system-upgrade-controller
 substrate
 dispatcher
+slack-bridge

@@ -24,7 +24,7 @@ spec:
         # or add a workflow, recompute this — else the pod won't roll and the
         # change won't take effect. (Or just
         # `kubectl rollout restart deploy/n8n -n n8n`.)
-        checksum/workflows: "be52ee167070bed3"
+        checksum/workflows: "ddafb39eddd4a254"
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application

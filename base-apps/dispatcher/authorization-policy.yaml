@@ -1,0 +1,29 @@
+# base-apps/dispatcher/authorization-policy.yaml
+# Who may knock on the decide port (§T.120, §V.98). The namespace is ambient, so ztunnel
+# enforces this at L4 on the dispatcher pod: port 8082 only from the Slack bridge's principal.
+# ALLOW semantics: once a policy selects the workload, anything that matches no rule is
+# refused, so the second rule keeps every OTHER port as open as before this policy existed:
+# Grafana's webhook on 8080 arrives in plaintext from outside the mesh (no principal), the
+# gateway reaches the oauth2-proxy sidecar on 4180 over HBONE, and the approvals server on
+# 8081 is loopback (ztunnel never sees it). The NetworkPolicy is the L4 belt under this.
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: dispatcher-decide
+  namespace: dispatcher
+spec:
+  selector:
+    matchLabels:
+      app: dispatcher
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/slack-bridge/sa/slack-bridge"]
+      to:
+        - operation:
+            ports: ["8082"]
+    - to:
+        - operation:
+            notPorts: ["8082"]

@@ -18,3 +18,20 @@ spec:
     - name: web
       port: 4180
       targetPort: web
+---
+# The decide door (§T.120): a Service of its own so the public HTTPRoute (Service `dispatcher`)
+# can never reach 8082, even by a wrong backend edit. Only the Slack bridge resolves it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: dispatcher-decide
+  namespace: dispatcher
+  labels:
+    app: dispatcher
+spec:
+  selector:
+    app: dispatcher
+  ports:
+    - name: decide
+      port: 8082
+      targetPort: decide

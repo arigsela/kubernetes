@@ -71,6 +71,11 @@ deny-listed namespace, a target it was not given); nothing was deleted. `verdict
 the dispatcher log (`event: remediate`) means the implementer's answer had no verdict line:
 a prompt regression, see `tests/implementer`.
 
+Or press Approve / Reject on the Slack message itself: the Slack bridge forwards the click to
+this pod's decide port with your email (`base-apps/slack-bridge/runbook.md` when a button
+answers "could not reach the dispatcher"). Either door claims the item once; the other then
+says "already decided".
+
 ## Replay a signal by hand (also the acceptance test)
 From inside the cluster, post a synthetic payload for a real pod:
 ```
