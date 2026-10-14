@@ -370,3 +370,12 @@ def test_run_auto_docs_merges_and_the_comment_names_the_class():
     assert any(c[0] == "PUT" for c in fake.calls)
     comment = next(c for c in fake.calls if c[0] == "POST")
     assert "docs-only" in comment[2]["body"]
+
+
+def test_implementer_app_pr_is_never_auto():
+    """§V.95: an agent-authored PR has no promotion class, however green and however small."""
+    app_pr = pr(user={"login": "arigsela-implementer[bot]"}, labels=[{"name": "review:skip"}])
+    d = pm.decide(app_pr, files("docs/platform/promotion.md"), checks("success"), policy())
+    assert d.klass == "owner" and any("author" in r for r in d.reasons)
+    d = pm.decide(app_pr, files("base-apps/donetick/deployment.yaml"), checks("success"), policy())
+    assert d.klass == "owner"

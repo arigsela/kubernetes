@@ -22,6 +22,9 @@ sources:
     title: build-orchestrator AgentTemplate (sub-agent hand-off)
   - base-apps/kagent/agent-templates/skill-suggester.yaml
   - base-apps/kagent/agent-templates/dungeon-crawler-carl-agent.yaml
+  - id: implementer
+    resource: base-apps/kagent/agent-templates/implementer.yaml
+    title: implementer AgentTemplate (class propose; pull requests under its own GitHub App)
   - base-apps/kagent/agents/homelab-knowledge.yaml
   - base-apps/kagent/agents/k8s-reader.yaml
   - base-apps/kagent/agents/k8s-agent.yaml
@@ -29,6 +32,7 @@ sources:
   - base-apps/kagent/agents/build-orchestrator.yaml
   - base-apps/kagent/agents/skill-suggester.yaml
   - base-apps/kagent/agents/dungeon-crawler-carl-agent.yaml
+  - base-apps/kagent/agents/implementer.yaml
   - base-apps/kagent/harnesses/kagent-memory.yaml
   - base-apps/kagent/harnesses/kagent-stateless.yaml
   - base-apps/kagent/harnesses/kagent-chat.yaml
@@ -42,6 +46,11 @@ sources:
   - base-apps/kagent/brave-search-mcp.yaml
   - base-apps/kagent/brave-search-mcp-remote.yaml
   - base-apps/kagent/backstage-catalog-mcp.yaml
+  - base-apps/kagent/implementer-mcp.yaml
+  - base-apps/kagent/implementer-mcp-remote.yaml
+  - base-apps/kagent/implementer-mcp-secret-store.yaml
+  - base-apps/kagent/eso-implementer-mcp-serviceaccount.yaml
+  - base-apps/kagent/implementer-mcp-external-secret.yaml
   - base-apps/kagent/kagent-postgres-external-secret.yaml
   - base-apps/kagent/kagent-anthropic-external-secret.yaml
   - base-apps/kagent/kagent-anthropic-secret-store.yaml
@@ -147,10 +156,13 @@ group moves all five charts in one PR, and only after approval on the Dependency
 | `build-orchestrator` | `anthropic-claude-sonnet-5-5` | `kagent-memory` | admin | no tools of its own; sub-agents `k8s-agent` and `istio-agent` |
 | `skill-suggester` | `anthropic-claude-haiku-5-5` | `kagent-chat` | read | none (called by the Backstage wizard) |
 | `dungeon-crawler-carl-agent` | `anthropic-claude-haiku-5-5` | `kagent-chat` | read | `brave-search` (`brave_web_search`) for book facts it is unsure of |
+| `implementer` | `anthropic-claude-sonnet-5-5` | `kagent-stateless` | propose | `implementer` (7 read + the 5 propose tools, ungated: the merge is the gate), `agent-docs`, and the 8 read tools of `kagent-tool-server`. Opens PRs under GitHub App `arigsela-implementer`; called by a human (ask-hk) or the dispatcher (§T.116) |
 
 The class label lives on the AgentTemplate and is checked against the capability taxonomy
 (`base-apps/admission-policies/agent-capability-taxonomy.yaml`): a `read` template binds only
-read tools, and every write/destructive tool must sit in a binding with `requireApproval: true`.
+read tools, a `propose` template may also bind the five proposal tools (branches and pull
+requests on this repo) ungated, and every write/destructive tool must sit in a binding with
+`requireApproval: true`.
 **Approval is per binding in v1alpha3** (v1alpha2 had a per-tool list), which is why the admin
 agents bind `kagent-tool-server` twice. A binding must list its `tools`: an omitted or empty list
 would expose every tool the server has, including ones a later upgrade adds, and is denied.
@@ -225,6 +237,7 @@ In v1alpha3 an AgentTemplate MCP binding accepts only a same-namespace `RemoteMC
 | `brave-search` (`brave-search-mcp-remote.yaml`) | `http://brave-search-mcp.kagent:3000/mcp`, the official Brave Search MCP server that the kmcp `MCPServer` `brave-search-mcp` deploys (`docker.io/mcp/brave-search`, digest-pinned; key from Secret `brave-search-mcp-api-key`; only 2 of its 8 tools enabled). Web results are untrusted text, so it is bound to read-class agents only, never to the operator agents | `brave_web_search`, `brave_news_search` |
 | `backstage-catalog` (`backstage-catalog-mcp.yaml`) | Backstage's MCP actions endpoint, `http://backstage.backstage.svc.cluster.local/api/mcp-actions/v1/catalog`; the `Authorization` header comes from Secret `backstage-mcp-token` and is injected by Substrate's egress gateway | `get-catalog-entity` |
 | `kagent-tool-server` (chart) | `http://kagent-tools.kagent:8084/mcp`, the `kagent-tools` Deployment | read: `k8s_get_resources`, `k8s_get_resource_yaml`, `k8s_get_pod_logs`, `k8s_describe_resource`, `k8s_get_events`, `k8s_get_cluster_configuration`, `k8s_get_available_api_resources`, `k8s_check_service_connectivity`; the admin agents add the write/destructive tools in a gated binding |
+| `implementer` (`implementer-mcp-remote.yaml`) | `http://implementer-mcp.kagent:3000/mcp`, a second GitHub MCP server (`implementer-mcp.yaml`) under GitHub App auth (Secret `implementer-github-app`, Vault `implementer-github-app`), `--tools` naming 12 tools and no toolset; merge, review and delete tools are never loaded | the 7 read and 5 propose tools listed in `tests/implementer/conftest.py` |
 | `kagent-api` (chart) | the controller's own `/mcp` | none |
 
 The kmcp `MCPServer` only deploys a server and its Service; it registers no tools with agents.

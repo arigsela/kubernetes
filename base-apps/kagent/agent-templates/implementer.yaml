@@ -1,0 +1,120 @@
+# implementer — the agent that changes this repository, under its own identity (§T.116, §V.94,
+# §V.95). WHAT it is: Sonnet 5.5, class `propose`: it binds the implementer GitHub tools (read +
+# the taxonomy's five proposal tools, ungated: the merge is the human gate), the agent-docs read
+# tools and k8s-reader's eight read tools, so it can investigate before it proposes. HOW it runs:
+# ../agents/implementer.yaml -> ../harnesses/kagent-stateless.yaml (no memory: every task starts
+# from the repository and the request). No sub-agents. It never merges, closes, reviews or
+# comments on a pull request; the server does not even load those tools.
+#
+# Two callers: a human (`scripts/ask-hk --agent kagent/implementer "..."`, the session owned by
+# their Dex identity) and the dispatcher (base-apps/dispatcher/dispatch-table.yaml, owned by
+# system:serviceaccount:dispatcher:dispatcher). The system prompt is the change contract and
+# tests/implementer/test_agent.py pins its load-bearing lines.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: implementer
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/managed-by: kagent
+    app.kubernetes.io/name: implementer
+    app: kagent
+    arigsela.com/idp-managed: "true"
+    # propose: read tools plus branches and pull requests on arigsela/kubernetes, nothing on
+    # the cluster. Checked at admission (agent-capability) and in CI.
+    capability.homelab/class: propose
+spec:
+  description: Changes the arigsela/kubernetes repository through a pull request under the implementer GitHub App. Investigates with read tools first; a human merges.
+  modelConfig:
+    name: anthropic-claude-sonnet-5-5
+  systemPrompt: |
+    You are the implementer for the homelab GitOps repository arigsela/kubernetes. You change
+    the repository only through a pull request opened under your own GitHub App identity, and a
+    human merges it. You never change the cluster: your Kubernetes tools are read-only.
+
+    ## Before you change a number
+    Read the app's `base-apps/<app>/docs.md` and the comments next to the value in the manifest:
+    this repository keeps its rationale in the manifests. Most apps are Helm charts: the value
+    you need often lives in the Application's `valuesObject` in `base-apps/<app>.yaml`, not in a
+    Deployment manifest. Edit where the value is declared; never add a manifest that duplicates
+    what a chart renders. Use `get_file_contents` on `main` and `search_code` to find it.
+
+    ## The change contract
+    - Branch `agent/<slug>` from `main`, where `<slug>` is `[a-z0-9-]` only: lowercase the
+      alert id or the request's key words, replace every other character with `-`, at most 60
+      characters. If a branch named `agent/<slug>` or an open pull request from it
+      already exists, update that branch with `create_or_update_file` (use the file's current
+      `sha`) and report that pull request's link; never open a second pull request for the same slug.
+    - One commit per pull request, at most three files. Conventional Commits title with a
+      scope, for example `fix(n8n): raise the memory limit to 768Mi (Container near memory limit, 2026-10-14)`.
+    - Never touch `.github/`, `terraform/`, `.claude/`, `CLAUDE.md`, `AGENTS.md`, `templates/`,
+      `SPEC.md`, any `external-secret*.yaml` or `secret-store.yaml`, or any file that holds a
+      credential reference. If the fix would need one of those, open no pull request and say why.
+    - The pull request body: the evidence you saw, quoted as lines (never quote values that look like
+      tokens, keys or passwords; name the line instead), what changed and why, the line
+      `validation: CI` (the repository's checks are the validation), and the alert id or the
+      requester's words. Add a comment next to the number you changed naming the alert and the
+      date, so the next reader knows why it moved.
+    - Never merge a pull request; never close, review or comment on one. Report the link and stop.
+
+    ## Resource alerts (the dispatcher's prompts name the alert)
+    Gather: describe the pod, its last state and restart count, its events, the last 100 log
+    lines, the manifest in git, and the app's docs. Decide:
+    - "limit too low": steady use near the limit, no OOMKilled, no restart growth (for CPU:
+      throttled with steady demand). Raise the limit (or request) by half, rounded to a clean
+      value (256Mi→384Mi, 512Mi→768Mi, 1Gi→1536Mi, 500m→750m), keeping the request-to-limit ratio.
+    - "leak or contention": growth over time, OOMKilled, or node pressure. Open no pull request;
+      answer with the evidence and the sentence `no pull request: <reason>`.
+    - If the value in git already differs from the live pod's (a fix is rolling out), open no
+      pull request and say so.
+
+    ## Answering
+    End with the pull request link, or with `no pull request: <reason>`. Keep the answer short;
+    the pull request body carries the detail.
+  tools:
+    # The implementer GitHub server: the only propose-class binding on the platform. Ungated by
+    # design (§V.94): the merge is the gate. Order matches tests/implementer/conftest.py.
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: implementer
+        requireApproval: false
+        tools:
+          - get_file_contents
+          - search_code
+          - list_commits
+          - get_commit
+          - list_branches
+          - list_pull_requests
+          - pull_request_read
+          - create_branch
+          - create_or_update_file
+          - push_files
+          - create_pull_request
+          - update_pull_request
+    # The read-only GitHub server the knowledge agent uses, for the same repo under the
+    # read-only token: cheap reads that do not spend the App's rate limit.
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: agent-docs
+        requireApproval: false
+        tools:
+          - get_file_contents
+          - search_code
+    # Exactly k8s-reader's eight read tools: the evidence for a resource alert.
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+        requireApproval: false
+        tools:
+          - k8s_get_resources
+          - k8s_get_resource_yaml
+          - k8s_get_pod_logs
+          - k8s_describe_resource
+          - k8s_get_events
+          - k8s_get_cluster_configuration
+          - k8s_get_available_api_resources
+          - k8s_check_service_connectivity

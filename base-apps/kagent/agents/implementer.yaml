@@ -1,0 +1,34 @@
+# implementer — the "ask hk" agent.
+#
+# kagent 1.0 (api.kagent.dev/v1alpha3) splits an agent in three. This Agent only binds:
+#   WHAT  AgentTemplate implementer (../agent-templates/implementer.yaml): model, prompt, tools, and the
+#         capability.homelab/class label the admission policies check
+#   HOW   Harness kagent-memory (../harnesses/kagent-memory.yaml): runtime image, memory, Substrate
+# An Agent must reference both by name. An inline spec.template / spec.harness is denied at
+# admission (agent-capability-refs) and in CI: it would bypass the checks on AgentTemplates and
+# Harnesses.
+#
+# The Backstage annotations live here, on the object users chat with.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Agent
+metadata:
+  name: implementer
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/managed-by: kagent
+    app.kubernetes.io/name: implementer
+    app: kagent
+    arigsela.com/idp-managed: "true"
+  annotations:
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: kagent-agent
+    # The entity's Kubernetes tab: the Agent and its AgentTemplate both carry this label.
+    terasky.backstage.io/kubernetes-label-selector: app.kubernetes.io/name=implementer
+    backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/implementer.yaml
+    backstage.io/owner: group:default/platform-engineering
+spec:
+  templateRef:
+    name: implementer
+  harnessRef:
+    name: kagent-stateless
