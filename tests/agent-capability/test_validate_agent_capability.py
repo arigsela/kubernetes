@@ -354,7 +354,8 @@ def test_propose_is_ranked_between_read_and_write():
     assert "propose" not in vac.MUST_APPROVE
 
 
-def test_real_taxonomy_propose_list_is_exactly_the_five_pr_tools():
+def test_real_taxonomy_propose_list_is_exactly_the_four_pr_tools():
+    """update_pull_request is out (review I3, 2026-10-14): it can close or retarget any PR."""
     tools, _ = vac.load_taxonomy(REPO)
     assert {t for t, c in tools.items() if c == "propose"} == {
-        "create_branch", "create_or_update_file", "push_files", "create_pull_request", "update_pull_request"}
+        "create_branch", "create_or_update_file", "push_files", "create_pull_request"}
