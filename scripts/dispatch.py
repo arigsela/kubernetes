@@ -10,6 +10,8 @@ this service only ADDS investigations. For each alert: match the table
 (/etc/dispatch/dispatch.json, see base-apps/dispatcher/dispatch-table.yaml), check the
 budget, and for an `agent:<name>` route open a NEW A2A session as X-User-Id `dispatcher`
 with the rendered prompt, then post the finding to n8n's agent-findings webhook (→ Slack).
+A `proposes: true` row (its agent may open a pull request, §T.117) is skipped with
+`skip-open-prs` while the implementer has `limits.open_prs_max` pull requests open.
 
 Never forwards the alert to n8n, never answers an approval or a question (V88): if the
 agent pauses, the finding says so and points at the kagent UI. Logs one JSON line per
@@ -82,6 +84,12 @@ def load_table(text: str) -> dict:
     for key in ("investigations_per_hour", "repeat_after_hours"):
         if not isinstance(limits.get(key), int) or limits[key] < 0:
             raise TableError(f"limits.{key} must be a non-negative integer")
+    # The open-PR cap (§T.117): a `proposes: true` row is skipped while the implementer has this
+    # many pull requests open. Absent means 3, never unlimited.
+    limits.setdefault("open_prs_max", 3)
+    if not isinstance(limits["open_prs_max"], int) or limits["open_prs_max"] < 0:
+        raise TableError("limits.open_prs_max must be a non-negative integer")
+    table["limits"] = limits
     seen = set()
     for rule in table.get("rules") or []:
         rid = rule.get("id") or "?"
@@ -105,6 +113,10 @@ def load_table(text: str) -> dict:
             rule["prompt"] = prompt = " ".join(p.strip() for p in prompt)
         if route.startswith("agent:") and not str(prompt or "").strip():
             raise TableError(f"rule {rid}: an agent route needs a prompt")
+        if "proposes" in rule and not isinstance(rule["proposes"], bool):
+            raise TableError(f"rule {rid}: proposes must be true or false")
+        if rule.get("proposes") and route == "none":
+            raise TableError(f"rule {rid}: proposes needs an agent route")
         if not str(rule["why"]).strip():
             raise TableError(f"rule {rid}: why is required")
     table.setdefault("rules", [])
@@ -165,6 +177,43 @@ class Budget:
             self._starts.append(now)
             self._seen[fingerprint] = now
             return None
+# ------------------------------------------------------------- the open-PR cap
+
+def fetch_open_prs(repo: str, login: str, opener=urllib.request.urlopen, timeout: float = 10.0) -> list[dict]:
+    """Open PRs on the public repo authored by `login`, unauthenticated (60 requests/hour is
+    plenty at one call per five minutes)."""
+    req = urllib.request.Request(f"https://api.github.com/repos/{repo}/pulls?state=open&per_page=100",
+                                 headers={"Accept": "application/vnd.github+json", "User-Agent": "dispatcher/1"})
+    with opener(req, timeout=timeout) as resp:
+        items = json.loads(resp.read() or b"[]")
+    return [p for p in items if (p.get("user") or {}).get("login") == login]
+
+
+class OpenPRs:
+    """How many pull requests the implementer currently has open (§T.117, limits.open_prs_max).
+    Cached for `ttl` seconds; a failed count returns None and the caller routes anyway: a
+    read-only investigation never fails closed on a GitHub outage."""
+
+    def __init__(self, repo: str, login: str, *, fetch=None, clock=time.time, ttl: float = 300.0):
+        self.fetch = fetch or (lambda: fetch_open_prs(repo, login))
+        self.clock, self.ttl = clock, ttl
+        self._at, self._value = -1e18, 0
+        self.last_error: str | None = None
+        self._lock = threading.Lock()
+
+    def count(self) -> int | None:
+        with self._lock:
+            now = self.clock()
+            if now - self._at < self.ttl:
+                return self._value
+            try:
+                self._value, self._at, self.last_error = len(self.fetch()), now, None
+                return self._value
+            except (OSError, ValueError) as err:
+                self.last_error = str(err)[:200]
+                return None
+
+
 # ------------------------------------------------------------------ the service
 
 @dataclass
@@ -176,6 +225,8 @@ class Config:
     timeout: float
     ui_url: str
     token_file: str | None = "/var/run/kagent/token"   # projected SA token; "" = none (dev)
+    implementer_login: str = "arigsela-implementer[bot]"  # PR author login the open-PR cap counts
+    github_repo: str = "arigsela/kubernetes"
 
     @classmethod
     def from_env(cls, env=os.environ) -> "Config":
@@ -187,6 +238,8 @@ class Config:
             timeout=float(env.get("INVESTIGATION_TIMEOUT", "300")),
             ui_url=env.get("KAGENT_UI_SESSION_URL", "https://kagent.arigsela.com/agents/{session}/chat"),
             token_file=env.get("KAGENT_TOKEN_FILE", "/var/run/kagent/token") or None,
+            implementer_login=env.get("IMPLEMENTER_LOGIN", "arigsela-implementer[bot]"),
+            github_repo=env.get("GITHUB_REPO", "arigsela/kubernetes"),
         )
 
 
@@ -211,11 +264,13 @@ def post_json(url: str, obj: dict, timeout: float = 10.0) -> None:
 
 class Dispatcher:
     def __init__(self, table: dict, config: Config, *, budget: Budget | None = None,
-                 send=a2a.send_message, post=post_json, log=log_line, run_async: bool = True):
+                 send=a2a.send_message, post=post_json, log=log_line, run_async: bool = True,
+                 open_prs: OpenPRs | None = None):
         self.table = table
         self.config = config
         limits = table["limits"]
         self.budget = budget or Budget(limits["investigations_per_hour"], limits["repeat_after_hours"])
+        self.open_prs = open_prs or OpenPRs(config.github_repo, config.implementer_login)
         self.send, self.post, self.log, self.run_async = send, post, log, run_async
 
     # One decision per alert; investigations start here (in a thread when serving HTTP).
@@ -249,6 +304,13 @@ class Dispatcher:
             return {**base, "decision": "none"}
         if alert.get("status") != "firing":
             return {**base, "decision": "resolved"}
+        if rule.get("proposes"):
+            n = self.open_prs.count()
+            base["open_prs"] = n
+            if n is None:
+                self.log({"event": "open-prs", "error": self.open_prs.last_error, "rule": rule["id"]})
+            elif n >= self.table["limits"]["open_prs_max"]:
+                return {**base, "decision": "skip-open-prs"}
         skipped = self.budget.admit(fingerprint)
         if skipped:
             return {**base, "decision": f"skip-{skipped}"}

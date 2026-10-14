@@ -321,3 +321,97 @@ def test_investigation_sends_the_projected_token_not_a_user(tmp_path):
 def test_config_token_file_default_and_disable():
     assert dp.Config.from_env({}).token_file == "/var/run/kagent/token"
     assert dp.Config.from_env({"KAGENT_TOKEN_FILE": ""}).token_file is None
+
+
+# ---------------------------------------------------------------- open-PR cap (§T.117)
+
+PROPOSE_TABLE = {
+    "version": 1,
+    "limits": {"investigations_per_hour": 4, "repeat_after_hours": 6, "open_prs_max": 2},
+    "rules": [{"id": "mem", "source": "grafana", "match": {"alertname": "Container near memory limit"},
+               "route": "agent:implementer", "proposes": True, "prompt": "fix {labels[pod]}", "why": "w"}],
+}
+
+
+def mem_alert(fp="fp-1"):
+    return {"status": "firing", "fingerprint": fp,
+            "labels": {"alertname": "Container near memory limit", "namespace": "n8n", "pod": "n8n-0"}}
+
+
+def make_propose(fake, count):
+    cfg = dp.Config(table_path="/dev/null", a2a_base="http://a2a:8083", n8n_base="http://n8n:5678/webhook",
+                    user="dispatcher", timeout=5.0, ui_url="https://ui/agents/{session}/chat")
+    counter = dp.OpenPRs("arigsela/kubernetes", "arigsela-implementer[bot]", fetch=count, clock=lambda: 0.0)
+    return dp.Dispatcher(dp.load_table(json.dumps(PROPOSE_TABLE)), cfg, send=fake.send, post=fake.post,
+                         log=fake.log, run_async=False, open_prs=counter)
+
+
+def test_open_prs_max_defaults_to_three_and_proposes_is_validated():
+    t = dp.load_table(json.dumps({**PROPOSE_TABLE, "limits": {"investigations_per_hour": 1, "repeat_after_hours": 1}}))
+    assert t["limits"]["open_prs_max"] == 3
+    with pytest.raises(dp.TableError, match="proposes"):
+        bad = json.loads(json.dumps(PROPOSE_TABLE)); bad["rules"][0]["proposes"] = "yes"
+        dp.load_table(json.dumps(bad))
+
+
+def test_below_the_cap_a_proposing_rule_is_investigated():
+    fake = Fake(reply=completed_task(text="https://github.com/arigsela/kubernetes/pull/900"))
+    d = make_propose(fake, count=lambda: [{"n": 1}])
+    assert [x["decision"] for x in d.handle_grafana({"alerts": [mem_alert()]})] == ["investigate"]
+    assert len(fake.sent) == 1
+
+
+def test_at_the_cap_a_proposing_rule_is_skipped_with_a_reason():
+    fake = Fake(reply=completed_task())
+    d = make_propose(fake, count=lambda: [{"n": 1}, {"n": 2}])
+    decisions = d.handle_grafana({"alerts": [mem_alert()]})
+    assert [x["decision"] for x in decisions] == ["skip-open-prs"]
+    assert decisions[0]["open_prs"] == 2 and not fake.sent
+
+
+def test_open_prs_count_failure_routes_and_logs():
+    def boom():
+        raise OSError("rate limited")
+    fake = Fake(reply=completed_task())
+    d = make_propose(fake, count=boom)
+    decisions = d.handle_grafana({"alerts": [mem_alert()]})
+    assert [x["decision"] for x in decisions] == ["investigate"]
+    assert decisions[0]["open_prs"] is None
+    assert any(x.get("event") == "open-prs" and "rate limited" in x.get("error", "") for x in fake.logged)
+
+
+def test_non_proposing_rule_never_counts_prs():
+    calls = []
+    fake = Fake(reply=completed_task())
+    d = make(fake)
+    d.open_prs = dp.OpenPRs("r", "l", fetch=lambda: calls.append(1) or [], clock=lambda: 0.0)
+    d.handle_grafana({"alerts": [alert()]})
+    assert calls == []
+
+
+def test_open_prs_counter_caches_for_its_ttl():
+    calls = []
+    now = [0.0]
+    c = dp.OpenPRs("r", "l", fetch=lambda: calls.append(1) or [{"n": 1}], clock=lambda: now[0], ttl=300)
+    assert c.count() == 1 and c.count() == 1 and len(calls) == 1
+    now[0] = 301.0
+    assert c.count() == 1 and len(calls) == 2
+
+
+def test_open_prs_fetch_filters_by_author_login():
+    seen = {}
+    def opener(req, timeout):
+        seen["url"] = req.full_url
+        class R:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return json.dumps([{"user": {"login": "arigsela-implementer[bot]"}},
+                                               {"user": {"login": "arigsela"}}]).encode()
+        return R()
+    items = dp.fetch_open_prs("arigsela/kubernetes", "arigsela-implementer[bot]", opener=opener)
+    assert len(items) == 1 and "pulls?state=open&per_page=100" in seen["url"]
+
+
+def test_config_reads_implementer_login_and_repo():
+    c = dp.Config.from_env({})
+    assert c.implementer_login == "arigsela-implementer[bot]" and c.github_repo == "arigsela/kubernetes"

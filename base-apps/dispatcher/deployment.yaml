@@ -25,8 +25,8 @@ spec:
         # nothing restarts the pod, so these checksums change the pod template instead (the same
         # pattern as Grafana's checksum/alerting). scripts/gen-dispatcher-configmap.py writes both;
         # tests/dispatch/test_manifests.py fails if either is stale.
-        checksum/table: "969b2a22c84ffeb4eb9e074f260225131f088bf1384fa1b0d1d47a4b4ed3ea1d"
-        checksum/code: "dd31456d9ed224fcd70003a88c54ae181bbe3ccbcea95c2a05ce0dec9241490e"
+        checksum/table: "221f373d15e748a1d5fca6d3e40f2f920dd05bc41cca0774498d8411ae030b0a"
+        checksum/code: "b56d671197998376d431c3393d466f18390018b226a6b9e9efbde3e28fb35dee"
     spec:
       serviceAccountName: dispatcher
       automountServiceAccountToken: false   # never talks to the API server; the projected token below is for kagent
@@ -49,6 +49,10 @@ spec:
               value: http://n8n.n8n.svc.cluster.local:5678/webhook
             - name: INVESTIGATION_TIMEOUT
               value: "300"
+            # The implementer App's login as GitHub reports PR authors; the open-PR cap counts
+            # its open PRs on the public repo, unauthenticated (§T.117, limits.open_prs_max).
+            - name: IMPLEMENTER_LOGIN
+              value: "arigsela-implementer[bot]"
             - name: PORT
               value: "8080"
           ports:

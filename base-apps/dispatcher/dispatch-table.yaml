@@ -6,9 +6,11 @@
 # own integration (V86). This table only ADDS agent investigations. Rules are checked in
 # order; the first whose `match` keys all equal the alert's labels wins. `route` is `none`
 # or `agent:<AgentTemplate>`; agent routes need a `prompt`, and may only name templates whose
-# every tool is `read` in the capability taxonomy with no requireApproval binding (V87,
-# tests/dispatch/test_table.py). Every Grafana rule title must have a row: `none` with a
-# `why` is a decision, a missing row fails CI.
+# every tool is `read` or `propose` in the capability taxonomy with no requireApproval binding
+# (V87, tests/dispatch/test_table.py). A row whose agent may open a pull request carries
+# `"proposes": true` and is skipped (`skip-open-prs`) while the implementer has
+# `limits.open_prs_max` pull requests open. Every Grafana rule title must have a row: `none`
+# with a `why` is a decision, a missing row fails CI.
 #
 # Placeholders in prompts: {alertname} {status} {starts_at} {labels[<name>]} {annotations[<name>]};
 # a missing key renders as `?`. A prompt is a string, or a list of strings joined with spaces
@@ -26,35 +28,43 @@ data:
   dispatch.json: |
     {
       "version": 1,
-      "limits": {"investigations_per_hour": 4, "repeat_after_hours": 6},
+      "limits": {"investigations_per_hour": 4, "repeat_after_hours": 6, "open_prs_max": 3},
       "rules": [
         {
           "id": "pod-cpu-starved",
           "source": "grafana",
           "match": {"alertname": "Pod CPU starved"},
-          "route": "agent:k8s-reader",
+          "route": "agent:implementer",
+          "proposes": true,
           "prompt": [
             "Grafana alert '{alertname}' is firing for pod {labels[namespace]}/{labels[pod]}: {annotations[summary]}",
             "Investigate with your read-only tools: describe the pod, read its recent events and the last 100 log lines,",
-            "and say whether the pod's own CPU limit or node contention is the likely cause, quoting what you saw.",
-            "Do not propose running changes on the cluster; a fix is a pull request. Runbook hint: {annotations[runbook]}",
+            "find where its CPU request and limit are declared in git, and decide between 'limit too low'",
+            "(throttled with steady demand, no restarts) and 'contention' (node pressure, other pods).",
+            "Only for 'limit too low': open one pull request raising the CPU limit (and request, same ratio) by half,",
+            "rounded, with a comment naming this alert and today's date; branch agent/pod-cpu-starved-{labels[namespace]}-{labels[pod]}.",
+            "Otherwise answer with the evidence and 'no pull request: <reason>'. Runbook hint: {annotations[runbook]}",
             "Never quote values that look like tokens, keys or passwords, even from logs or YAML; name the line instead."
           ],
-          "why": "A starved pod needs describe + events + logs read before anyone can act; the read-only investigator does exactly that and nothing else."
+          "why": "The investigation usually ended in 'raise the limit'; that is one number in one file, which is what a pull request a human merges is for (ADP path 8, the first unprompted write)."
         },
         {
           "id": "container-near-memory-limit",
           "source": "grafana",
           "match": {"alertname": "Container near memory limit"},
-          "route": "agent:k8s-reader",
+          "route": "agent:implementer",
+          "proposes": true,
           "prompt": [
             "Grafana alert '{alertname}' is firing for {labels[namespace]}/{labels[pod]} container {labels[container]}: {annotations[summary]}",
             "Investigate with your read-only tools: describe the pod, check for OOMKilled in its last state and events,",
-            "read the last 100 log lines, and say whether this looks like a leak or a limit set too low, quoting what you saw.",
-            "Do not propose running changes on the cluster; a fix is a pull request. Runbook hint: {annotations[runbook]}",
+            "read the last 100 log lines, find where the container's memory limit is declared in git, and decide between",
+            "'limit too low' (steady use near the limit, no OOMKilled, no restart growth) and 'leak' (growth over time or OOMKilled).",
+            "Only for 'limit too low': open one pull request raising the memory limit (and request, same ratio) by half,",
+            "rounded, with a comment naming this alert and today's date; branch agent/container-near-memory-limit-{labels[namespace]}-{labels[pod]}.",
+            "Otherwise answer with the evidence and 'no pull request: <reason>'. Runbook hint: {annotations[runbook]}",
             "Never quote values that look like tokens, keys or passwords, even from logs or YAML; name the line instead."
           ],
-          "why": "Memory pressure has two causes with two fixes; the evidence (last state, events, logs) is readable without any write tool."
+          "why": "Memory pressure has two causes; only the 'limit too low' one is a number in a manifest, and that number becomes a pull request. A leak stays a finding."
         },
         {
           "id": "agent-ungated-tool",
