@@ -59,7 +59,9 @@ import kagent_a2a as a2a  # noqa: E402
 ANSWER_LIMIT = 3000       # chars of the agent's answer forwarded to Slack
 SOURCES = {"grafana"}
 # The implementer's diagnosis, the last line of its resource-alert answer (its prompt pins it).
-VERDICTS = {"limit-too-low", "leak", "contention", "inconclusive"}
+# `rollout-pending` (2026-10-14): the fix is merged but has not reached the live pod (an OnDelete
+# StatefulSet); a restart is what applies it, so the resource rows remediate on it too.
+VERDICTS = {"limit-too-low", "leak", "contention", "rollout-pending", "inconclusive"}
 # Tolerates the decorations a model adds (`verdict: leak`, **verdict: leak**, '- verdict: leak.'):
 # a formatting drift must not silently switch remediation off (review 2026-10-14, finding 5).
 VERDICT_RE = re.compile(r"^\s*[-*`'\"]*\s*verdict:\s*([a-z-]+)[`'\"*.\s]*$", re.IGNORECASE | re.MULTILINE)

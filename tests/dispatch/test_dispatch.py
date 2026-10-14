@@ -497,7 +497,7 @@ def test_parse_verdict_takes_the_last_line_and_rejects_unknown():
     assert dp.parse_verdict("the verdict: leak is in prose") is None
     assert dp.parse_verdict("verdict: maybe") is None
     assert dp.parse_verdict("") is None and dp.parse_verdict(None) is None
-    assert dp.VERDICTS == {"limit-too-low", "leak", "contention", "inconclusive"}
+    assert dp.VERDICTS == {"limit-too-low", "leak", "contention", "rollout-pending", "inconclusive"}
 
 
 @pytest.mark.parametrize("mutate, message", [
@@ -755,3 +755,26 @@ def test_a_broken_remediation_prompt_still_posts_a_finding_and_a_log_line():
     rem = fake.posted[1][1]
     assert rem["kind"] == "remediation" and rem["error"].startswith("unexpected ")
     assert [x["event"] for x in fake.logged][-1] == "finding" and fake.logged[-1]["kind"] == "remediation"
+
+
+# ----------------------------------------------- the fifth verdict: rollout-pending (2026-10-14)
+
+ROLLOUT = ("git already declares 4608Mi; the StatefulSet is OnDelete so the pod still runs 3Gi.\n"
+           "no pull request: already in git\nverdict: rollout-pending")
+
+
+def test_rollout_pending_verdict_opens_a_restarter_session_when_the_row_lists_it():
+    table = json.loads(json.dumps(REMEDIATE_TABLE))
+    table["rules"][0]["remediate"]["on"] = ["leak", "rollout-pending"]
+    fake = Seq(completed_task(text=ROLLOUT, session="s1"), approval_task("r1"))
+    make_remediate(fake, table=table).handle_grafana({"alerts": [mem_alert()]})
+    assert len(fake.sent) == 2 and fake.posted[0][1]["verdict"] == "rollout-pending"
+    assert "verdict rollout-pending" in fake.sent[1]["text"]
+    assert "awaiting approval" in fake.posted[1][1]["text"]
+
+
+def test_rollout_pending_is_a_no_match_when_the_row_lists_only_leak():
+    fake = Seq(completed_task(text=ROLLOUT, session="s1"))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    assert len(fake.sent) == 1
+    assert [x["decision"] for x in fake.logged if x["event"] == "remediate"] == ["no-match"]

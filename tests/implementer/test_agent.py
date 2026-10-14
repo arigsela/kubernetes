@@ -102,7 +102,9 @@ def test_prompt_derives_the_slug_from_the_workload_and_checks_open_prs():
 def test_prompt_ends_resource_answers_with_a_verdict_line():
     """The dispatcher parses only this line; the verdict is the diagnosis, not the action."""
     p = prompt()
-    for verdict in ("limit-too-low", "leak", "contention", "inconclusive"):
+    for verdict in ("limit-too-low", "leak", "contention", "rollout-pending", "inconclusive"):
         assert f"verdict: {verdict}" in p, verdict
     assert "last line of your answer" in p
     assert "no pull request: already in git" in p
+    # The fifth verdict (2026-10-14): a merged fix that has not reached the live pod (OnDelete)
+    assert "`verdict: rollout-pending`" in p and "OnDelete" in p

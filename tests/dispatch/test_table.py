@@ -139,7 +139,7 @@ def test_prompts_only_use_known_placeholders():
 
 # ------------------------------------------------------------ remediation (§T.118, §V.96)
 
-VERDICTS = {"limit-too-low", "leak", "contention", "inconclusive"}
+VERDICTS = {"limit-too-low", "leak", "contention", "rollout-pending", "inconclusive"}
 
 
 def remediating_rows():
@@ -217,10 +217,14 @@ def test_remediate_verdicts_and_placeholders_are_known():
         assert "{labels[namespace]}/{labels[pod]}" in prompt and "{session}" in prompt, row["id"]
 
 
-def test_memory_row_remediates_on_leak_only_and_both_resource_rows_ask_for_a_verdict():
+def test_resource_rows_remediate_on_leak_and_rollout_pending_never_on_contention():
+    """A restart clears a leak and applies a merged template to an OnDelete pod; contention
+    and limit-too-low are never a restart (the latter is a pull request)."""
     rows = {r["id"]: r for r in load_table()["rules"]}
-    assert rows["container-near-memory-limit"]["remediate"]["on"] == ["leak"]
-    assert rows["container-near-memory-limit"]["remediate"]["agent"] == "restarter"
-    assert "remediate" not in rows["pod-cpu-starved"], "contention has no mechanical fix"
+    assert rows["container-near-memory-limit"]["remediate"]["on"] == ["leak", "rollout-pending"]
+    assert rows["pod-cpu-starved"]["remediate"]["on"] == ["rollout-pending"]
     for rid in ("container-near-memory-limit", "pod-cpu-starved"):
-        assert "verdict:" in prompt_of(rows[rid]), rid
+        assert rows[rid]["remediate"]["agent"] == "restarter"
+        assert "contention" not in rows[rid]["remediate"]["on"]
+        assert "limit-too-low" not in rows[rid]["remediate"]["on"]
+        assert "verdict:" in prompt_of(rows[rid]) and "rollout-pending" in prompt_of(rows[rid]), rid

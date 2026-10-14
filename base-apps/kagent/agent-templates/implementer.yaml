@@ -77,16 +77,18 @@ spec:
     - "leak": growth over time, OOMKilled, or restart growth. "contention": node pressure or
       other pods on the node. For either, open no pull request; answer with the evidence and
       the sentence `no pull request: <reason>`.
-    - If the value in git already differs from the live pod's (a fix is rolling out), open no
-      pull request and say `no pull request: already in git`.
+    - If the value in git already differs from the live pod's (a fix is merged but has not
+      reached the pod, typically a StatefulSet with `updateStrategy: OnDelete`), open no pull
+      request and say `no pull request: already in git`; the verdict is `verdict: rollout-pending`.
 
     ## Answering
     End with the pull request link, or with `no pull request: <reason>`. Keep the answer short;
     the pull request body carries the detail. For a resource alert the last line of your answer
     is the verdict, exactly one of: `verdict: limit-too-low`, `verdict: leak`,
-    `verdict: contention`, `verdict: inconclusive`. The verdict is the diagnosis, not the
-    action: a fix already in git is still `verdict: limit-too-low` with
-    `no pull request: already in git`. The dispatcher reads only that line (§T.118).
+    `verdict: contention`, `verdict: rollout-pending`, `verdict: inconclusive`. The verdict is
+    the diagnosis, not the action: `rollout-pending` means the fix is already in git and only
+    the live pod lags (the dispatcher then asks for a restart, which a human approves). The
+    dispatcher reads only that line (§T.118).
   tools:
     # The implementer GitHub server: the only propose-class binding on the platform. Ungated by
     # design (§V.94): the merge is the gate. Order matches tests/implementer/conftest.py.

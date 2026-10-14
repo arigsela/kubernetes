@@ -55,8 +55,8 @@ alerts are routed. A row with `proposes: true` routes to the implementer and is 
 unauthenticated from the public repo every five minutes; a failed count is logged
 (`event: open-prs`) and the alert is routed anyway (§T.117). The two resource alerts are such
 rows: the finding ends in a pull request link, or `no pull request: <reason>`, and its last
-line is the verdict (`verdict: limit-too-low | leak | contention | inconclusive`), the one
-line the dispatcher parses. A row may also carry `remediate` (`on`, `agent`, `prompt`): on a
+line is the verdict (`verdict: limit-too-low | leak | contention | rollout-pending |
+inconclusive`), the one line the dispatcher parses. A row may also carry `remediate` (`on`, `agent`, `prompt`): on a
 listed verdict the dispatcher opens a SECOND new session with `restarter` (class admin, one
 gated `k8s_delete_resource`), within `limits.restarts_per_day` (2) and once per
 namespace/workload per 24 h, and posts a second finding carrying the pending call's exact
@@ -64,7 +64,9 @@ arguments and the approve and reject commands (`--task <id>`, since the laptop n
 pause) (§T.118, §V.96). Before any session opens the dispatcher refuses a deny-listed
 namespace or a malformed pod label (`skip-target`); after it, the approve command is printed
 only when the pending call is exactly one delete of the alert's pod ("MISMATCH" otherwise).
-The memory row remediates on `leak`; contention has no mechanical fix. One log line
+The memory row remediates on `leak` and `rollout-pending`, the CPU row on `rollout-pending`
+(a merged raise that an OnDelete pod has not picked up: the restart applies it); contention
+has no mechanical fix and `limit-too-low` is a pull request. One log line
 `event: remediate` says `remediate`, `skip-target`, `skip-restarts`, `skip-recurring` or
 `no-match`; `verdict: null` means the answer had no verdict line.
 
