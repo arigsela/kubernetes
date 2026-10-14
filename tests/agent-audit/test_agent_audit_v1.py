@@ -45,6 +45,11 @@ FIXTURE = json.loads((HERE / "fixtures" / "kagent-v1" / "events.json").read_text
 S = FIXTURE["scenarios"]
 TAXONOMY = REPO / "base-apps/admission-policies/agent-capability-taxonomy.yaml"
 GATED = aa.load_gated_tools(REPO, TAXONOMY)
+
+
+def test_propose_tools_are_not_gated_for_the_ungated_finding():
+    """§V.94: a propose tool (a branch or PR) needs no approval, so an ungated call is not a finding."""
+    assert "create_pull_request" not in GATED and "k8s_patch_resource" in GATED
 K8S_AGENT = "kagent__NS__k8s_agent"
 
 

@@ -1,0 +1,25 @@
+# rule 6b: propose template binds the admin k8s-agent template as a subagent.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: bad-propose-delegates-to-admin
+  namespace: kagent
+  labels:
+    capability.homelab/class: propose
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: agent-docs
+        requireApproval: false
+        tools:
+          - create_pull_request
+    - subAgent:
+        name: operator
+        description: fixture subagent
+        templateRef:
+          name: k8s-agent

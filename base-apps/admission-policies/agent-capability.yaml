@@ -14,17 +14,21 @@
 # DENY, at admission:
 #
 #   agent-capability             1. an AgentTemplate with no capability.homelab/class in
-#                                   {read, write, admin}
+#                                   {read, propose, write, admin}
 #                                2. an AgentTemplate binding a tool not in the taxonomy
 #                                   (FAIL-CLOSED)
-#                                3. a `read` template binding any write/destructive tool
+#                                3. a `read` template binding any propose/write/destructive
+#                                   tool; 3b. a `propose` template binding any
+#                                   write/destructive tool (propose = branches and pull
+#                                   requests only, ungated: the merge is the gate, §V.94)
 #                                4. a `write` template binding any destructive tool
 #                                5. a write/destructive tool in an MCP binding without
 #                                   requireApproval: true. Approval is per BINDING in 1.0, so
 #                                   an agent that needs both binds the server twice: read
 #                                   tools ungated, mutating tools gated.
 #   agent-capability-delegation  6. a `read` template with a subAgent whose template is
-#                                   `write` or `admin`
+#                                   `propose`, `write` or `admin`; 6b. a `propose` template
+#                                   with a subAgent whose template is `write` or `admin`
 #                                7. a `write` template with a subAgent whose template is `admin`
 #   agent-capability-refs        8. an Agent with an inline spec.template or spec.harness:
 #                                   every Agent must reference an AgentTemplate and a Harness,
@@ -87,20 +91,25 @@ spec:
   - name: mcp
     expression: object.spec.?tools.orValue([]).filter(t, has(t.mcp)).map(t, t.mcp)
   - name: classified
-    expression: '["k8s_get_resources", "k8s_get_pod_logs", "k8s_describe_resource", "k8s_get_events", "k8s_get_resource_yaml", "k8s_get_cluster_configuration", "k8s_get_available_api_resources", "k8s_check_service_connectivity", "k8s_generate_resource", "istio_proxy_status", "istio_proxy_config", "istio_version", "istio_analyze_cluster_configuration", "istio_ztunnel_config", "istio_waypoint_status", "istio_list_waypoints", "istio_remote_clusters", "istio_generate_manifest", "istio_generate_waypoint", "search_dashboards", "get_dashboard_by_uid", "get_dashboard_panel_queries", "query_prometheus", "query_loki_logs", "query_loki_stats", "list_prometheus_metric_names", "list_prometheus_metric_metadata", "list_prometheus_label_names", "list_prometheus_label_values", "list_loki_label_names", "list_loki_label_values", "list_datasources", "get_datasource", "list_alert_rules", "get_alert_rule_by_uid", "list_contact_points", "list_incidents", "get_incident", "list_teams", "list_oncall_users", "list_oncall_teams", "list_oncall_schedules", "get_oncall_shift", "get_current_oncall_users", "list_sift_investigations", "get_sift_investigation", "get_sift_analysis", "get_assertions", "find_slow_requests", "find_error_pattern_logs", "get_file_contents", "search_code", "get-catalog-entity", "brave_web_search", "brave_news_search", "k8s_patch_resource", "k8s_apply_manifest", "k8s_create_resource", "k8s_create_resource_from_url", "k8s_annotate_resource", "k8s_remove_annotation", "k8s_label_resource", "k8s_remove_label", "istio_apply_waypoint", "istio_install_istio", "update_dashboard", "create_incident", "add_activity_to_incident", "k8s_delete_resource", "k8s_execute_command", "istio_delete_waypoint"]'
+    expression: '["k8s_get_resources", "k8s_get_pod_logs", "k8s_describe_resource", "k8s_get_events", "k8s_get_resource_yaml", "k8s_get_cluster_configuration", "k8s_get_available_api_resources", "k8s_check_service_connectivity", "k8s_generate_resource", "istio_proxy_status", "istio_proxy_config", "istio_version", "istio_analyze_cluster_configuration", "istio_ztunnel_config", "istio_waypoint_status", "istio_list_waypoints", "istio_remote_clusters", "istio_generate_manifest", "istio_generate_waypoint", "search_dashboards", "get_dashboard_by_uid", "get_dashboard_panel_queries", "query_prometheus", "query_loki_logs", "query_loki_stats", "list_prometheus_metric_names", "list_prometheus_metric_metadata", "list_prometheus_label_names", "list_prometheus_label_values", "list_loki_label_names", "list_loki_label_values", "list_datasources", "get_datasource", "list_alert_rules", "get_alert_rule_by_uid", "list_contact_points", "list_incidents", "get_incident", "list_teams", "list_oncall_users", "list_oncall_teams", "list_oncall_schedules", "get_oncall_shift", "get_current_oncall_users", "list_sift_investigations", "get_sift_investigation", "get_sift_analysis", "get_assertions", "find_slow_requests", "find_error_pattern_logs", "get_file_contents", "search_code", "list_commits", "get_commit", "list_branches", "list_pull_requests", "pull_request_read", "get-catalog-entity", "brave_web_search", "brave_news_search", "create_branch", "create_or_update_file", "push_files", "create_pull_request", "update_pull_request", "k8s_patch_resource", "k8s_apply_manifest", "k8s_create_resource", "k8s_create_resource_from_url", "k8s_annotate_resource", "k8s_remove_annotation", "k8s_label_resource", "k8s_remove_label", "istio_apply_waypoint", "istio_install_istio", "update_dashboard", "create_incident", "add_activity_to_incident", "k8s_delete_resource", "k8s_execute_command", "istio_delete_waypoint"]'
+  - name: propose
+    expression: '["create_branch", "create_or_update_file", "push_files", "create_pull_request", "update_pull_request"]'
   - name: mutating
     expression: '["k8s_patch_resource", "k8s_apply_manifest", "k8s_create_resource", "k8s_create_resource_from_url", "k8s_annotate_resource", "k8s_remove_annotation", "k8s_label_resource", "k8s_remove_label", "istio_apply_waypoint", "istio_install_istio", "update_dashboard", "create_incident", "add_activity_to_incident", "k8s_delete_resource", "k8s_execute_command", "istio_delete_waypoint"]'
   - name: destructive
     expression: '["k8s_delete_resource", "k8s_execute_command", "istio_delete_waypoint"]'
   validations:
-  - expression: variables.cls in ['read', 'write', 'admin']
-    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' must declare a capability class: the label capability.homelab/class must be one of read, write, admin. There is no default."'
+  - expression: variables.cls in ['read', 'propose', 'write', 'admin']
+    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' must declare a capability class: the label capability.homelab/class must be one of read, propose, write, admin. There is no default."'
     reason: Forbidden
   - expression: variables.mcp.all(b, b.?tools.orValue([]).all(n, n in variables.classified))
     messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' binds tools that are not in the capability taxonomy. Classify them in base-apps/admission-policies/agent-capability-taxonomy.yaml first: unclassified tools are denied by design (fail-closed)."'
     reason: Forbidden
-  - expression: variables.cls != 'read' || variables.mcp.all(b, b.?tools.orValue([]).all(n, !(n in variables.mutating)))
-    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' is class read but binds mutating tools. A read agent may bind only read-classified tools."'
+  - expression: variables.cls != 'read' || variables.mcp.all(b, b.?tools.orValue([]).all(n, !(n in variables.mutating) && !(n in variables.propose)))
+    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' is class read but binds propose or mutating tools. A read agent may bind only read-classified tools."'
+    reason: Forbidden
+  - expression: variables.cls != 'propose' || variables.mcp.all(b, b.?tools.orValue([]).all(n, !(n in variables.mutating)))
+    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' is class propose but binds write or destructive tools. A propose agent may bind read and propose tools only."'
     reason: Forbidden
   - expression: variables.cls != 'write' || variables.mcp.all(b, b.?tools.orValue([]).all(n, !(n in variables.destructive)))
     messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' is class write but binds destructive tools. Only an admin agent may bind destructive tools."'
@@ -144,6 +153,7 @@ spec:
         operator: In
         values:
         - read
+        - propose
         - write
   variables:
   - name: mine
@@ -151,12 +161,15 @@ spec:
   - name: delegates
     expression: object.spec.?tools.orValue([]).filter(t, has(t.subAgent)).map(t, t.subAgent.?templateRef.?name.orValue(''))
   - name: theirs
-    expression: 'params.metadata.?labels[?''capability.homelab/class''].orValue(''admin'') in [''read'', ''write''] ? params.metadata.labels[''capability.homelab/class''] : ''admin'''
+    expression: 'params.metadata.?labels[?''capability.homelab/class''].orValue(''admin'') in [''read'', ''propose'', ''write''] ? params.metadata.labels[''capability.homelab/class''] : ''admin'''
   - name: delegatesToParam
     expression: params.metadata.name in variables.delegates
   validations:
   - expression: '!(variables.mine == ''read'' && variables.delegatesToParam) || variables.theirs == ''read'''
     messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' is class read but binds subagent template ''" + params.metadata.name + "'' (class " + variables.theirs + "). A subagent runs inside the parent and takes the conversation over, so this is a privilege escalation. Bind read tools directly instead (see homelab-knowledge)."'
+    reason: Forbidden
+  - expression: '!(variables.mine == ''propose'' && variables.delegatesToParam) || variables.theirs in [''read'', ''propose'']'
+    messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' is class propose but binds subagent template ''" + params.metadata.name + "'' (class " + variables.theirs + "). A subagent runs inside the parent, so this is a privilege escalation."'
     reason: Forbidden
   - expression: '!(variables.mine == ''write'' && variables.delegatesToParam) || variables.theirs != ''admin'''
     messageExpression: '"AgentTemplate ''" + object.metadata.name + "'' is class write but binds admin subagent template ''" + params.metadata.name + "''. A subagent runs inside the parent, so this is a privilege escalation."'

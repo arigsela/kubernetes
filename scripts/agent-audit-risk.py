@@ -15,8 +15,10 @@ and ran a shell command in vault-0 needs a person, even if every call was approv
 
 HOW IT DECIDES
 --------------
-1. Rules. A session with no write/destructive call, no argument the redactor fired
-   on, and no Secret read is `low`. No API call. Most sessions end here.
+1. Rules. A session with no write/destructive call, no propose call (a branch or pull
+   request opened by an agent, §V.94: nothing in the cluster changed, but an unprompted
+   proposal deserves a look), no argument the redactor fired on, and no Secret read is
+   `low`. No API call. Most sessions end here.
 2. Jev (TypeSafe System One, the same classifier pr-triage uses). One request per
    candidate session: a three-way `attention` choice plus four yes/no flags, with
    calibrated probabilities and a confidence. Thresholds below.
@@ -105,7 +107,7 @@ def load_gated_tools(path: Path) -> dict[str, str]:
     cm = next(d for d in yaml.safe_load_all(path.read_text())
               if d and d.get("kind") == "ConfigMap")
     out: dict[str, str] = {}
-    for cls in ("read", "write", "destructive"):
+    for cls in ("read", "propose", "write", "destructive"):
         for name in json.loads(cm["data"][cls]):
             out[name] = cls
     return out
@@ -140,6 +142,10 @@ def is_candidate(calls: list[dict], classes: dict[str, str]) -> list[str]:
         cls = classes.get(c["tool"], "unknown")
         if cls in ("write", "destructive"):
             reasons.append(f"gated:{c['tool']}")
+        elif cls == "propose":
+            # A branch or pull request opened by an agent (§V.94): nothing in the cluster
+            # changed, but an unprompted proposal deserves a look.
+            reasons.append(f"propose:{c['tool']}")
         values = list(_strings(c["args"]))
         if any(REDACTED in v for v in values) and "redacted-arg" not in reasons:
             reasons.append("redacted-arg")
@@ -155,7 +161,7 @@ def is_candidate(calls: list[dict], classes: dict[str, str]) -> list[str]:
 
 def build_state(calls: list[dict], classes: dict[str, str], *, argument_free: bool = False) -> dict:
     """The JSON Jev sees for one session. Redacted args only; never responses."""
-    counts = {"read": 0, "write": 0, "destructive": 0, "unknown": 0, "approvals": 0}
+    counts = {"read": 0, "propose": 0, "write": 0, "destructive": 0, "unknown": 0, "approvals": 0}
     items: list[dict] = []
     approval_seen = False
     for c in calls:

@@ -7,7 +7,10 @@ Capability lives on the AgentTemplate, and so does its class label. Invariants, 
 against the manifests in git:
 
   1. Declared class     every AgentTemplate carries capability.homelab/class in
-                        {read, write, admin}. No default; missing is an error.
+                        {read, propose, write, admin}. No default; missing is an error.
+                        `propose` (2026-10-14) binds read tools and the taxonomy's five
+                        proposal tools (branches and pull requests), ungated: the merge
+                        is the human gate (§V.94).
   2. Tools within class every bound tool is classified in the taxonomy, and its
                         classification is permitted by the template's class. A tool
                         absent from the taxonomy is an error (FAIL-CLOSED).
@@ -43,14 +46,16 @@ import yaml
 
 CLASS_LABEL = "capability.homelab/class"
 
-# read < write < admin
-CLASS_RANK = {"read": 0, "write": 1, "admin": 2}
+# read < propose < write < admin
+CLASS_RANK = {"read": 0, "propose": 1, "write": 2, "admin": 3}
 
-# What each class may bind.
+# What each class may bind. `propose` (branches and pull requests only, §V.94) is bindable
+# without approval; it is the one class between read and write.
 CLASS_MAY_BIND = {
     "read": {"read"},
-    "write": {"read", "write"},
-    "admin": {"read", "write", "destructive"},
+    "propose": {"read", "propose"},
+    "write": {"read", "propose", "write"},
+    "admin": {"read", "propose", "write", "destructive"},
 }
 
 # Classifications that must sit in a requireApproval: true binding wherever bound.
@@ -92,7 +97,7 @@ def load_taxonomy(repo_root: Path) -> tuple[dict[str, str], list[str]]:
     data = cm.get("data") or {}
 
     tool_class: dict[str, str] = {}
-    for classification in ("read", "write", "destructive"):
+    for classification in ("read", "propose", "write", "destructive"):
         raw = data.get(classification)
         if not raw:
             raise SystemExit(f"taxonomy missing '{classification}' key")
@@ -174,7 +179,7 @@ def check_declared_class(templates) -> list[str]:
         elif cls not in CLASS_RANK:
             errors.append(
                 f"{_name(doc)}: invalid {CLASS_LABEL}={cls!r} ({path}). "
-                f"Must be one of: read, write, admin."
+                f"Must be one of: read, propose, write, admin."
             )
     return errors
 

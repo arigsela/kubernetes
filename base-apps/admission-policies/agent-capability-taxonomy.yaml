@@ -16,12 +16,16 @@
 # schema) would deny ALL AgentTemplate writes, wedging the kagent app. Inlining makes the
 # artifact we test byte-for-byte the artifact that ships. See the generator.
 #
-# Three classifications, ordered read < write < destructive:
+# Four classifications, ordered read < propose < write < destructive:
 #
 #   read         observes state; cannot change anything. Tools that RENDER a
 #                manifest but do not apply it (k8s_generate_resource,
 #                istio_generate_manifest, istio_generate_waypoint) are `read` —
 #                they return YAML to the caller.
+#   propose      changes a PROPOSAL surface only: a branch or a pull request on
+#                arigsela/kubernetes, never a cluster, an account or a merge. May be
+#                bound without requireApproval; the merge is the human gate (§V.94).
+#                A `read` template may not bind it; `propose`, `write` and `admin` may.
 #   write        mutates state. May only be bound in an MCP binding with
 #                requireApproval: true (kagent 1.0 gates per binding, not per tool).
 #   destructive  removes state, or is an arbitrary-code escape hatch whose blast
@@ -44,7 +48,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: agent-guardrails
 data:
-  # ---------------------------------------------------------------- read (55)
+  # ---------------------------------------------------------------- read (60)
   read: |
     [
       "k8s_get_resources",
@@ -102,12 +106,29 @@ data:
 
       "get_file_contents",
       "search_code",
+      "list_commits",
+      "get_commit",
+      "list_branches",
+      "list_pull_requests",
+      "pull_request_read",
       "get-catalog-entity",
 
       "brave_web_search",
       "brave_news_search"
     ]
 
+  # ------------------------------------------------------------- propose (5)
+  # Branches and pull requests on arigsela/kubernetes, through the implementer GitHub MCP
+  # server (base-apps/kagent/implementer-mcp.yaml). Nothing here touches a cluster or merges
+  # anything: merge_pull_request, delete_file and the review tools are never loaded there.
+  propose: |
+    [
+      "create_branch",
+      "create_or_update_file",
+      "push_files",
+      "create_pull_request",
+      "update_pull_request"
+    ]
   # --------------------------------------------------------------- write (13)
   # Every tool here MUST be in a requireApproval: true binding wherever it is bound.
   # The four k8s label/annotation mutators matter more than they look: Argo CD

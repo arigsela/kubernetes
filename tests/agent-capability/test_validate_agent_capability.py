@@ -23,7 +23,8 @@ REPO = Path(__file__).resolve().parents[2]
 GO_ADK = "ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha11@sha256:" + "0" * 64
 
 TAXONOMY = {
-    "read": ["k8s_get_resources", "get_file_contents"],
+    "read": ["k8s_get_resources", "get_file_contents", "list_pull_requests"],
+    "propose": ["create_pull_request", "push_files"],
     "write": ["k8s_patch_resource"],
     "destructive": ["k8s_delete_resource", "k8s_execute_command"],
     "runtime-images": ["ghcr.io/kagent-dev/kagent/golang-adk"],
@@ -299,3 +300,61 @@ def test_real_harnesses_share_one_pinned_runtime_image():
     images = {(d["spec"].get("workload") or {}).get("image") for _, d in harnesses}
     assert len(images) == 1, images
     assert "@sha256:" in images.pop()
+
+
+# ------------------------------------------- class propose (branches and PRs only)
+
+def test_read_template_binding_propose_tool_is_error(tmp_path):
+    assert run(tmp_path, [
+        template("reader", "read", tools=["k8s_get_resources", "create_pull_request"], approval=False),
+    ]) == 1
+
+
+def test_propose_template_binding_write_tool_is_error(tmp_path):
+    assert run(tmp_path, [
+        template("proposer", "propose", tools=["k8s_get_resources"], approval=False,
+                 gated=["k8s_patch_resource"]),
+    ]) == 1
+
+
+def test_propose_template_binds_propose_tools_ungated(tmp_path):
+    assert run(tmp_path, [
+        template("proposer", "propose",
+                 tools=["k8s_get_resources", "create_pull_request", "push_files"], approval=False),
+    ]) == 0
+
+
+def test_write_template_may_bind_propose_tools_ungated(tmp_path):
+    assert run(tmp_path, [
+        template("operator", "write", tools=["create_pull_request"], approval=False,
+                 gated=["k8s_patch_resource"]),
+    ]) == 0
+
+
+def test_propose_template_with_admin_subagent_is_error(tmp_path):
+    assert run(tmp_path, [
+        template("proposer", "propose", tools=["create_pull_request"], approval=False,
+                 subagents=["operator"]),
+        template("operator", "admin", tools=["k8s_get_resources"], approval=False,
+                 gated=["k8s_delete_resource"]),
+    ]) == 1
+
+
+def test_read_template_with_propose_subagent_is_error(tmp_path):
+    assert run(tmp_path, [
+        template("reader", "read", tools=["k8s_get_resources"], approval=False,
+                 subagents=["proposer"]),
+        template("proposer", "propose", tools=["create_pull_request"], approval=False),
+    ]) == 1
+
+
+def test_propose_is_ranked_between_read_and_write():
+    assert vac.CLASS_RANK["read"] < vac.CLASS_RANK["propose"] < vac.CLASS_RANK["write"] < vac.CLASS_RANK["admin"]
+    assert vac.CLASS_MAY_BIND["propose"] == {"read", "propose"}
+    assert "propose" not in vac.MUST_APPROVE
+
+
+def test_real_taxonomy_propose_list_is_exactly_the_five_pr_tools():
+    tools, _ = vac.load_taxonomy(REPO)
+    assert {t for t, c in tools.items() if c == "propose"} == {
+        "create_branch", "create_or_update_file", "push_files", "create_pull_request", "update_pull_request"}

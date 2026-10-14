@@ -1,0 +1,21 @@
+# rule 3b: a propose template binds a write tool, gated or not.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: bad-propose-binds-write
+  namespace: kagent
+  labels:
+    capability.homelab/class: propose
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: kagent-tool-server
+        requireApproval: true
+        tools:
+          - get_file_contents
+          - k8s_patch_resource
