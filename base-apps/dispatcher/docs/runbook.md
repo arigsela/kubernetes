@@ -31,7 +31,27 @@ sources:
 ## The agent paused instead of answering
 The finding says "paused". The dispatcher never answers (§V.88): open the session in the UI
 and decide there. If a read-only agent pauses, something bound a gated tool to it;
-`tests/dispatch/test_table.py` would have failed, so check what changed.
+`tests/dispatch/test_table.py` would have failed, so check what changed. The `restarter` is
+meant to pause: see the next section.
+
+## A restart is waiting for approval
+A memory alert whose verdict was `leak` produces a second Slack message, "Restart awaiting
+approval", listing the pending `k8s_delete_resource` call with its exact arguments (resource
+type `pod`, name, namespace), the implementer session that holds the evidence, and two
+commands. Check the arguments name the alert's pod and nothing else, then run the approve
+command, or reject it with a reason:
+```
+scripts/ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --approve
+scripts/ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --reject "<reason>"
+```
+The pod's owner recreates it (for a StatefulSet with `OnDelete`, this is also how it picks up
+a new template). The dispatcher never answers (§V.88). There is no second restart for the
+same alert within 24 h ("Recurring leak" in the finding) and at most `restarts_per_day` (2) a
+day ("Restart cap reached"): a leak that recurs needs an upstream fix, not another restart.
+If the message says `no restart: <reason>`, the restarter refused (no owner, a deny-listed
+namespace, a target it was not given); nothing was deleted. `verdict: null` in the
+dispatcher log (`event: remediate`) means the implementer's answer had no verdict line: a
+prompt regression, see `tests/implementer`.
 
 ## Replay a signal by hand (also the acceptance test)
 From inside the cluster, post a synthetic payload for a real pod:

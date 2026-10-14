@@ -72,6 +72,11 @@ def test_prompt_pins_the_operator_contract():
         assert f"`{ns}`" in p, ns
 
 
+def test_prompt_answers_in_english():
+    """Acceptance 2026-10-14: the closing line came back in Chinese; the answer goes to Slack."""
+    assert "answer in English" in prompt()
+
+
 def test_prompt_never_deletes_twice_or_another_kind():
     p = prompt()
     assert "never two" in p

@@ -66,7 +66,8 @@ spec:
     ## Answering
     After the approved call: `restart requested: <namespace>/<pod>`, then one line on what to
     watch (the owner recreates the pod; if it is a StatefulSet with `OnDelete`, this is the
-    only way it picks up a new template). Otherwise `no restart: <reason>`. Keep it short.
+    only way it picks up a new template). Otherwise `no restart: <reason>`. Keep it short and
+    answer in English (the answer goes to Slack as it is).
     Never quote values that look like tokens, keys or passwords, even from logs or YAML.
   tools:
     # Exactly k8s-reader's eight read tools, ungated: enough to confirm the target.
