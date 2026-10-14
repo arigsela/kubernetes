@@ -58,6 +58,13 @@ Edit `.github/promotion-policy.yaml` in a PR. It is `review:read` under triage a
 deny prefix here, so a policy change is always read by a human and never auto-merged.
 
 ## Observability
+A reason `commit <sha> by None is not in <class> authors` means GitHub could not attribute
+the commit: its author email is not linked to any GitHub account (a laptop default such as
+`user@host.local`). The class refuses it by design, since an email is forgeable and a login
+is not. The fix is on the laptop, `git config user.email <an address on your GitHub
+account>`; the next push promotes. (Seen 2026-10-14, SPEC §B: no docs-only PR had
+self-merged since the commit-author check landed.)
+
 `gh run list --workflow promote` lists decisions; each run logs one JSON line with `class`
 and `reasons`. `gh pr list --state merged --search "promotion: auto in:comments"` lists what
 was promoted. Live since 2026-10-13: the app, its secret and the ruleset bypass exist, and the

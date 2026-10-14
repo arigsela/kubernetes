@@ -54,14 +54,26 @@ alerts are routed. A row with `proposes: true` routes to the implementer and is 
 (`skip-open-prs`) while that agent has `open_prs_max` pull requests open, counted
 unauthenticated from the public repo every five minutes; a failed count is logged
 (`event: open-prs`) and the alert is routed anyway (§T.117). The two resource alerts are such
-rows: the finding ends in a pull request link, or `no pull request: <reason>`.
+rows: the finding ends in a pull request link, or `no pull request: <reason>`, and its last
+line is the verdict (`verdict: limit-too-low | leak | contention | inconclusive`), the one
+line the dispatcher parses. A row may also carry `remediate` (`on`, `agent`, `prompt`): on a
+listed verdict the dispatcher opens a SECOND new session with `restarter` (class admin, one
+gated `k8s_delete_resource`), within `limits.restarts_per_day` (2) and once per alert
+fingerprint per 24 h, and posts a second finding carrying the pending call's exact arguments
+and the approve and reject commands (§T.118, §V.96). The memory row remediates on `leak`;
+contention has no mechanical fix. One log line `event: remediate` says `remediate`,
+`skip-restarts`, `skip-recurring` or `no-match`; `verdict: null` means the answer had no
+verdict line.
 
 ## Identity and record
 Sessions are owned by `system:serviceaccount:dispatcher:dispatcher` (the projected token in
 `deployment.yaml`, audience `kagent`, read on every send; `serviceaccount.yaml`); the daily
 audit attributes their tool calls; `scripts/ask-hk --as-serviceaccount dispatcher/dispatcher
 --agent kagent/<agent> --context <id>` continues one by hand (an audited TokenRequest, no
-shared secret).
+shared secret). A pending restart is decided the same way (`--agent kagent/restarter … --approve`
+or `--reject REASON`) or in the kagent UI; the audit records the approval under the
+dispatcher's identity, not the approver's (a known residual, §V.96). The dispatcher itself
+never answers a pause (§V.88).
 
 ## Observability
 One JSON line per decision (`event: dispatch`, `decision` ∈ investigate / none / resolved /

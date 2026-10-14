@@ -65,6 +65,13 @@ log lines, the manifest in git, the app's docs. Then:
   `no pull request: <reason>`.
 - the value in git already differs from the live pod (a fix is rolling out): no PR, says so.
 
+The last line of the answer is the verdict, `verdict: limit-too-low | leak | contention |
+inconclusive`, the one line the dispatcher parses (the verdict is the diagnosis, not the
+action: a fix already in git is still `limit-too-low`). Since later on 2026-10-14 a `leak`
+verdict on the memory alert makes the dispatcher open a `restarter` session, one gated pod
+delete that waits for your approval; the pending call and the approve command reach Slack
+(§T.118, `base-apps/dispatcher/runbook.md`, "A restart is waiting for approval").
+
 First real run: a replayed "Container near memory limit" for `logging/prometheus-0` became
 PR #817 (one file, the evidence quoted, the in-place-resize caveat from the manifest's own
 comment repeated, `review:skim`, promotion → `owner`).
@@ -98,8 +105,8 @@ comment repeated, `review:skim`, promotion → `owner`).
 ## What it is not (yet)
 - No Substrate sandbox: sandboxes have no network egress at kagent alpha11, so the GitHub API is
   the workbench and CI is the validation. The contract would not change if a sandbox arrived.
-- No gated operator call for the leak case (a rollout restart through `k8s-agent` with
-  approval): the next dispatch row.
+- The leak case ends in a gated restart (the `restarter` agent, 2026-10-14), not a code fix:
+  a recurring leak is a finding again and needs an upstream change. Contention stays a finding.
 - No CI feedback loop inside the turn: the agent does not wait for checks or fix up a PR.
 - No evaluation corpus for this agent: a prompt regression shows in its next PR, which you read.
 - One kind of change from alerts (a resource number in one manifest). Anything else arrives
