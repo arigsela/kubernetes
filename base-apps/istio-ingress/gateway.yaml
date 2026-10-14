@@ -245,6 +245,19 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    - name: https-dispatcher
+      protocol: HTTPS
+      port: 443
+      hostname: dispatcher.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: dispatcher-web-tls
+            namespace: dispatcher
+      allowedRoutes:
+        namespaces:
+          from: All
     - name: https-homepage
       protocol: HTTPS
       port: 443

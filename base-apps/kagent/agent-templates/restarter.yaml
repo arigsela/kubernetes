@@ -6,10 +6,12 @@
 #
 # One caller: the dispatcher (base-apps/dispatcher/dispatch-table.yaml, `remediate` on a row),
 # after the implementer's verdict was `leak`. It opens a new session that pauses on the delete;
-# the pending call's exact arguments reach Slack, and the owner approves or rejects it with
-# `scripts/ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id>
-# --task <task> --approve | --reject REASON` (`--task`: the laptop fetches the pause it never saw;
-# the kagent UI cannot see a dispatcher-owned session). The dispatcher never answers (§V.88).
+# the pending call's exact arguments reach Slack, and the owner approves or rejects it on the
+# approvals page https://dispatcher.arigsela.com/approvals (Dex login, §T.119), or with the
+# fallback `scripts/ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher
+# --context <id> --task <task> --approve | --reject REASON` (`--task`: the laptop fetches the
+# pause it never saw; the kagent UI cannot see a dispatcher-owned session). The dispatcher only
+# forwards the human's decision, logged with their email (§V.88).
 # The dispatcher also refuses the same namespace deny list BEFORE opening a session, and prints
 # the approve command only when the pending call is exactly one delete of the alert's pod.
 # A human may also call it directly (`scripts/ask-hk --agent kagent/restarter "..."`).

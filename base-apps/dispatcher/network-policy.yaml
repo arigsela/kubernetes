@@ -39,3 +39,14 @@ spec:
         # over HBONE on 15008; NetworkPolicy is enforced before ztunnel unwraps it.
         - port: 15008
           protocol: TCP
+    # The approvals page (§T.119): the ingress Gateway reaches the oauth2-proxy sidecar (4180)
+    # over HBONE (15008). Never 8080 from the gateway, never 8081 from anywhere (localhost).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - port: 4180
+          protocol: TCP
+        - port: 15008
+          protocol: TCP

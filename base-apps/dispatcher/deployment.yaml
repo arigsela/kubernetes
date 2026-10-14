@@ -55,6 +55,12 @@ spec:
               value: "arigsela-implementer[bot]"
             - name: PORT
               value: "8080"
+            # The approvals page (§T.119): a second server on 127.0.0.1:8081, reachable only
+            # through the oauth2-proxy sidecar below. Slack links to APPROVALS_URL.
+            - name: APPROVALS_PORT
+              value: "8081"
+            - name: APPROVALS_URL
+              value: https://dispatcher.arigsela.com/approvals
           ports:
             - name: http
               containerPort: 8080
@@ -90,7 +96,64 @@ spec:
             - name: kagent-token
               mountPath: /var/run/kagent
               readOnly: true
+        # The only way to the approvals page (§V.97): OIDC via Dex, PKCE, and ONE email from
+        # Vault as the allow-list (Dex admits any GitHub account). Same image and flags as
+        # agent-audit-web. It sets X-Forwarded-Email on what it forwards; the approvals server
+        # trusts that header because nothing else can reach 127.0.0.1:8081.
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916
+          args:
+            - --http-address=0.0.0.0:4180
+            - --upstream=http://127.0.0.1:8081/
+            - --provider=oidc
+            - --provider-display-name=GitHub (via Dex)
+            - --oidc-issuer-url=https://dex.arigsela.com
+            - --client-id=dispatcher
+            - --client-secret-file=/etc/oauth2-proxy/secrets/client-secret
+            - --cookie-secret-file=/etc/oauth2-proxy/secrets/cookie-secret
+            - --code-challenge-method=S256
+            - --scope=openid email profile
+            - --redirect-url=https://dispatcher.arigsela.com/oauth2/callback
+            - --authenticated-emails-file=/etc/oauth2-proxy/secrets/allowed-emails
+            - --cookie-name=_dispatcher
+            - --cookie-secure=true
+            - --cookie-samesite=lax
+            - --cookie-expire=8h
+            - --skip-provider-button=true
+            - --silence-ping-logging=true
+          ports:
+            - containerPort: 4180
+              name: web
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 4180
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: oauth2
+              mountPath: /etc/oauth2-proxy/secrets
+              readOnly: true
       volumes:
+        - name: oauth2
+          secret:
+            secretName: dispatcher-web-oauth2
         - name: code
           configMap:
             name: dispatcher-code

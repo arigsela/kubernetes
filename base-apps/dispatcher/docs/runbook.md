@@ -44,14 +44,22 @@ second Slack message, "Restart awaiting approval", listing the pending `k8s_dele
 type `pod`, name, namespace), the implementer session that holds the evidence, and two
 commands. The dispatcher prints the approve command only when the pending call is exactly
 one delete of the alert's pod; anything else is headed "MISMATCH" and carries a reject
-command only (one `--approve` would approve every pending call). Read the arguments, then:
+command only (one `--approve` would approve every pending call). Read the arguments, then
+open `https://dispatcher.arigsela.com/approvals` (Dex login, your email only), check the pending
+call shown there, and click Approve, or Reject with a reason. A third Slack message reports
+"Restart approved by <you>: restart requested: …" (or the rejection). If the page shows
+"Nothing pending" although Slack announced a restart, the dispatcher restarted since (the list
+is in memory): use the fallback command from the Slack message:
 ```
 scripts/ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --task <task> --approve
 scripts/ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --task <task> --reject "<reason>"
 ```
-`--task` matters: this laptop never saw the pause (the dispatcher opened the session), so
-ask-hk fetches the pending request by task id first (A2A `GetTask`). The kagent UI cannot
-decide it: the session is owned by the dispatcher's service account, not the UI's identity.
+`--task` matters there: this laptop never saw the pause, so ask-hk fetches the pending request
+by task id first (A2A `GetTask`). The kagent UI cannot decide it either way: the session is
+owned by the dispatcher's service account, not the UI's identity. "Stale page" on the approvals
+page means the item changed under you: reload and decide again. A page that fails to load at
+all: see `base-apps/agent-audit-web/runbook.md`, the same sidecar (Dex, certificate, Vault
+secret `dispatcher-web-oauth2`).
 The pod's owner recreates it (for a StatefulSet with `OnDelete`, this is also how it picks up
 a new template). The dispatcher never answers (§V.88). There is no second restart for the
 same namespace/workload within 24 h ("Recurring leak" in the finding; a Deployment's

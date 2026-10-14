@@ -1,0 +1,17 @@
+# base-apps/dispatcher/reference-grant.yaml
+---
+# Lets the Gateway in istio-ingress read this namespace's TLS Secret (listener https-dispatcher).
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: gateway-to-dispatcher-web-tls
+  namespace: dispatcher
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: istio-ingress
+  to:
+    - group: ""
+      kind: Secret
+      name: dispatcher-web-tls

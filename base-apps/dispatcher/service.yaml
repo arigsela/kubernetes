@@ -14,3 +14,7 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+    # The approvals page's sidecar (§T.119); 8081 is never exposed (localhost only).
+    - name: web
+      port: 4180
+      targetPort: web
