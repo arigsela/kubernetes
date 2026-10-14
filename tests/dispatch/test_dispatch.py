@@ -957,6 +957,22 @@ def test_post_without_the_email_header_is_403_and_wrong_nonce_409(approvals):
     assert d.pending.get("sess-r") is not None and len(fake.sent) == 2
 
 
+def test_root_redirects_to_the_approvals_page(approvals):
+    """After the Dex login oauth2-proxy sends the browser to the path it first asked for; a
+    visit to the bare host must not end on 'not found' (seen 2026-10-14)."""
+    _, _, base = approvals
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *a, **k):
+            return None
+    opener = urllib.request.build_opener(NoRedirect)
+    with pytest.raises(urllib.error.HTTPError) as err:
+        opener.open(base + "/", timeout=5)
+    assert err.value.code == 302 and err.value.headers["Location"] == "/approvals"
+    with pytest.raises(urllib.error.HTTPError) as err:
+        opener.open(base + "/other", timeout=5)
+    assert err.value.code == 404
+
+
 def test_webhook_server_never_serves_approvals(server):
     _, base = server
     with pytest.raises(urllib.error.HTTPError) as err:
