@@ -38,8 +38,9 @@ the laptop never saw). If a read-only agent pauses, something bound a gated tool
 meant to pause: see the next section.
 
 ## A restart is waiting for approval
-A memory alert whose verdict was `leak` produces a second Slack message, "Restart awaiting
-approval", listing the pending `k8s_delete_resource` call with its exact arguments (resource
+A resource alert whose verdict was `leak` (memory) or `rollout-pending` (either: the raise is
+merged but the pod, usually an OnDelete StatefulSet, still runs the old values) produces a
+second Slack message, "Restart awaiting approval", listing the pending `k8s_delete_resource` call with its exact arguments (resource
 type `pod`, name, namespace), the implementer session that holds the evidence, and two
 commands. The dispatcher prints the approve command only when the pending call is exactly
 one delete of the alert's pod; anything else is headed "MISMATCH" and carries a reject

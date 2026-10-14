@@ -66,11 +66,12 @@ log lines, the manifest in git, the app's docs. Then:
 - the value in git already differs from the live pod (a fix is rolling out): no PR, says so.
 
 The last line of the answer is the verdict, `verdict: limit-too-low | leak | contention |
-inconclusive`, the one line the dispatcher parses (the verdict is the diagnosis, not the
-action: a fix already in git is still `limit-too-low`). Since later on 2026-10-14 a `leak`
-verdict on the memory alert makes the dispatcher open a `restarter` session, one gated pod
-delete that waits for your approval; the pending call and the approve command reach Slack
-(§T.118, `base-apps/dispatcher/runbook.md`, "A restart is waiting for approval").
+rollout-pending | inconclusive`, the one line the dispatcher parses. `rollout-pending` means
+the fix is already in git and only the live pod lags (an OnDelete StatefulSet). Since later on
+2026-10-14 a `leak` or `rollout-pending` verdict makes the dispatcher open a `restarter`
+session, one gated pod delete that waits for your approval; the pending call and the approve
+command reach Slack (§T.118, `base-apps/dispatcher/runbook.md`, "A restart is waiting for
+approval").
 
 First real run: a replayed "Container near memory limit" for `logging/prometheus-0` became
 PR #817 (one file, the evidence quoted, the in-place-resize caveat from the manifest's own

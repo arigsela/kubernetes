@@ -14,7 +14,7 @@
 #
 # A row may also carry `remediate` (§T.118, §V.96): `{"on": [<verdict>...], "agent": <template>,
 # "prompt": ...}`. The implementer ends its answer with `verdict: limit-too-low | leak |
-# contention | inconclusive`; when the verdict is in `on`, and `limits.restarts_per_day` and the
+# contention | rollout-pending | inconclusive`; when the verdict is in `on`, and `limits.restarts_per_day` and the
 # once-per-alert-per-day rule admit it, the dispatcher opens a SECOND session with that agent
 # (`restarter`: one gated pod delete) and Slack gets the pending call and the ask-hk command to
 # approve or reject it. `remediate.agent` is the one place a template with a gated binding may
@@ -57,8 +57,19 @@ data:
             "where <workload> is the pod's owner workload (Deployment, StatefulSet or DaemonSet name), never the pod name.",
             "Otherwise answer with the evidence and 'no pull request: <reason>'. Runbook hint: {annotations[runbook]}",
             "Never quote values that look like tokens, keys or passwords, even from logs or YAML; name the line instead.",
-            "The last line of your answer is the verdict: 'verdict: limit-too-low', 'verdict: contention' or 'verdict: inconclusive'."
+            "The last line of your answer is the verdict: 'verdict: limit-too-low', 'verdict: contention',",
+            "'verdict: rollout-pending' (the raise is already in git but the live pod lags) or 'verdict: inconclusive'."
           ],
+          "remediate": {
+            "on": ["rollout-pending"],
+            "agent": "restarter",
+            "prompt": [
+              "Restart exactly one pod: {labels[namespace]}/{labels[pod]}. The implementer's verdict was {verdict}",
+              "(session {session}, Grafana alert '{alertname}'): the CPU change is merged but has not reached the live pod.",
+              "Confirm the pod exists and has a Deployment, StatefulSet or DaemonSet owner, then delete that pod once;",
+              "its owner recreates it from the current template. Delete nothing else."
+            ]
+          },
           "why": "The investigation usually ended in 'raise the limit'; that is one number in one file, which is what a pull request a human merges is for (ADP path 8, the first unprompted write)."
         },
         {
@@ -78,18 +89,20 @@ data:
             "where <workload> is the pod's owner workload (Deployment, StatefulSet or DaemonSet name), never the pod name.",
             "Otherwise answer with the evidence and 'no pull request: <reason>'. Runbook hint: {annotations[runbook]}",
             "Never quote values that look like tokens, keys or passwords, even from logs or YAML; name the line instead.",
-            "The last line of your answer is the verdict: 'verdict: limit-too-low', 'verdict: leak' or 'verdict: inconclusive'."
+            "The last line of your answer is the verdict: 'verdict: limit-too-low', 'verdict: leak',",
+            "'verdict: rollout-pending' (the raise is already in git but the live pod lags) or 'verdict: inconclusive'."
           ],
           "remediate": {
-            "on": ["leak"],
+            "on": ["leak", "rollout-pending"],
             "agent": "restarter",
             "prompt": [
-              "Restart exactly one pod: {labels[namespace]}/{labels[pod]}. The implementer diagnosed a memory leak",
-              "(verdict {verdict}) in session {session} for Grafana alert '{alertname}'. Confirm the pod exists and has a",
-              "Deployment, StatefulSet or DaemonSet owner, then delete that pod once; its owner recreates it. Delete nothing else."
+              "Restart exactly one pod: {labels[namespace]}/{labels[pod]}. The implementer's verdict was {verdict}",
+              "(session {session}, Grafana alert '{alertname}'): leak = a restart clears it; rollout-pending = the raised",
+              "limit is merged but the live pod lags. Confirm the pod exists and has a Deployment, StatefulSet or DaemonSet",
+              "owner, then delete that pod once; its owner recreates it from the current template. Delete nothing else."
             ]
           },
-          "why": "Only 'limit too low' is a manifest number and becomes a pull request. A leak is a restart the owner approves (the pending delete reaches Slack); a second that day stays a finding."
+          "why": "Only 'limit too low' is a manifest number and becomes a pull request. A leak, or a merged raise the pod has not picked up, is a restart the owner approves; one a day per workload."
         },
         {
           "id": "agent-ungated-tool",
