@@ -23,6 +23,12 @@ gate (screen 06); the "needs a decision" column on screen 14 no longer includes 
 On 2026-10-14 items 4 and 5 landed: an in-cluster implementer opens pull requests under its own
 GitHub App (path 3 BUILT), and the two resource alerts become pull requests when the evidence
 says the limit is too low (path 8 BUILT); the footer on screen 09 reads "Eight built, none partial".
+Later on 2026-10-14 the other half of path 8 landed: the implementer ends every resource answer with
+a verdict, a leak (or a merged fix the pod has not picked up) opens a session with a third agent
+that holds exactly one gated pod delete, and the owner approves it on a login-protected approvals
+page that records who decided; screen 07's "approver" residual is closed for that path. The
+speaker notes (`whole-picture-speaker-notes.md`) were rewritten to this state; the deck's artwork
+still shows the 13 October scorecard until it is regenerated from this brief.
 
 **Audience:** engineering leadership; first target is the company's AI pathfinders group. They
 are technical but not Kubernetes specialists. Vocabulary rule: name the mechanism in plain
@@ -277,7 +283,9 @@ number; it is more convincing than "we have evals".
    inside the agent. Since 2026-10-13 every caller is a principal too: the mesh verifies a token
    (the person's single sign-on, or a short-lived platform token for an automation) in front of
    the agent gateway and writes the verified identity into the request; the record, memory and
-   session ownership key on it. Remaining: the UI is one identity until it gets its own login.
+   session ownership key on it. Since 2026-10-14 a restart an agent proposes is approved on a
+   login-protected page that records the approver's identity. Remaining: the UI is one identity
+   until it gets its own login; the runtime's own approval record still names the automation.
    — evidence line: `one Vault role per credential; 0 API keys on clients; 2 token issuers, 0
    self-declared identities`
 2. **Security** — BUILT. The capability classes above; admission refuses an unsafe agent
@@ -357,7 +365,7 @@ remediate) sit at the ends of the bottom row, and the dispatch card carries a sm
 | 2 | **Retrieve context** — assemble what the work needs | prob | The docs contract, the catalog, long-term memory, the ledger, the repository contract. The strongest path. | BUILT |
 | 3 | **Implement** — write and modify code | prob | A coding agent at the owner's desk writes most commits under the contract; in the cluster, the `implementer` agent edits a manifest on a branch and opens the pull request under its own GitHub App, through the same triage, checks and policy. The runtime's sandboxes still cannot reach GitHub, so the API is the workbench and CI is the sandbox. | BUILT (2026-10-14) |
 | 4 | **Validate change** — gate it | hybrid | 22 jobs: lint, schema, contracts, generated-file drift, admission and upgrade drills against a real cluster; the agent fixes failures when asked. | BUILT |
-| 5 | **Promote change** — merge, approve, release | hybrid | Triage labels and explains. A written policy, read from the main branch so a pull request cannot loosen it, merges one class with no human: dependency bumps that triage found nothing to read in, outside a deny list, every check green, by a dedicated identity that is not the author's. A human merges everything else, rebase-only. Infrastructure applies before merge. | BUILT (policy for one class, one human for the rest) |
+| 5 | **Promote change** — merge, approve, release | hybrid | Triage labels and explains. A written policy, read from the main branch so a pull request cannot loosen it, merges two declared classes with no human: dependency bumps that triage found nothing to read in, and the owner's docs-only changes, both outside a deny list, every check green and every commit by the class's own author, by a dedicated identity that is not the author's. A human merges everything else, rebase-only; an in-cluster agent's pull request always waits for a human. Infrastructure applies before merge. | BUILT (policy for two trivial classes, one human for the rest) |
 | 6 | **Deploy** — provision and roll out | det | The controller applies main, prunes drift, self-heals; per-app AWS resources are declared alongside. | BUILT |
 | 7 | **Observe** — know it is working | hybrid | Metrics, logs, traces, runtime security with fail-closed alerts; a read-only agent inspects live state when asked, and since the dispatcher, unprompted: an alert becomes an investigation and a finding in chat, secrets scrubbed. The audit's risk triage is a classifier. | BUILT |
 | 8 | **Remediate** — diagnose and fix production | prob | Two operator agents with every mutating tool behind approval; and since 2026-10-14 the dispatcher's resource alerts end in a pull request raising the limit when the evidence says it is too low, or, for a leak, in a restart held for the owner's approval: a third agent with one gated pod delete, whose pending call and approve command reach Slack (the second leak in a day is a finding again; contention stays a finding). The fix is proposed unprompted and merged, or approved, by a human. | BUILT (2026-10-14) |
@@ -389,8 +397,8 @@ one line of evidence. The band for level 2 is filled orange (where the reference
 |---|---|---|---|
 | **1 · Human in the loop** | Assistance in the editor; the human does the work | Yes, and it is the smallest part | BUILT |
 | **2 · Human as validator** | Agents do the work; humans check it | The daily mode: the agent writes, triage and checks grade, the human merges. 79% of commits since July. | BUILT |
-| **3 · Human orchestrates** | Agents are directed in parallel; throughput is the measure | In places: the coding assistant runs sub-agents; an in-cluster orchestrator hands off to specialists; one plan became 26 merged pull requests in a day; on the platform, a dispatcher hands alerts to an agent unprompted. No agent orchestrates other agents across the platform; an alert now becomes a pull request with no human in between, and a human merges it. | PARTIAL |
-| **4 · Human out of the loop** | No human trigger; a signal becomes a shipped change | Declined, with one declared exception: a dependency bump that triage found nothing to read in is merged and deployed by policy with no human. Every other mutation has a human trigger or a human gate; scheduled jobs are deterministic. | NOT YET, by choice (one class excepted) |
+| **3 · Human orchestrates** | Agents are directed in parallel; throughput is the measure | In places: the coding assistant runs sub-agents; an in-cluster orchestrator hands off to specialists; one plan became 26 merged pull requests in a day; on the platform, a dispatcher hands alerts to an agent unprompted. No agent orchestrates other agents across the platform; an alert now becomes a pull request, or a restart held for approval, with no human in between, and a human merges or approves it. | PARTIAL |
+| **4 · Human out of the loop** | No human trigger; a signal becomes a shipped change | Declined, with two declared exceptions: a dependency bump that triage found nothing to read in, and the owner's own docs-only change, are merged and deployed by policy with no human. Every other mutation has a human trigger or a human gate (an agent-proposed restart is approved by a named person); scheduled jobs are deterministic. | NOT YET, by choice (two trivial classes excepted) |
 
 **Standing caption:** The model says most organisations are between levels 1 and 2 and that
 level 2 is unreachable without a platform. The reference is a one-person demonstration that
@@ -500,7 +508,7 @@ track, a small "what a new agent or path reuses" checklist panel.
 | 2 | **Callers as principals** — authenticate the gateway's callers, one identity per person and per automation, in front of the shared one | governance · identity (BUILT 2026-10-13) | Done in the mesh: a waypoint in front of the agent gateway verifies the person's SSO token or an automation's platform token and sets the identity; the runtime's own calls stay inside the platform. Still thin: the UI is one identity until it gets its own login. |
 | 3 | **A dispatcher** — a declared table from signal to recipient (an agent, a human, nobody), applied by a service | path 1 · dispatch (BUILT 2026-10-12) | Done, read-only as planned: an alert opens an agent *investigation*, never a change, and the policy-merged promotion class landed beside it (2026-10-13). Still to route: failing checks, issues, triage labels. |
 | 4 | **Implement inside the platform** — an in-cluster agent that can change the repository and open a pull request under its own identity, through the same triage, checks and promotion policy | path 3 · implement (BUILT 2026-10-14) | Done without the sandbox: Substrate sandboxes have no egress, so the agent writes through the GitHub API under a fourth capability class, `propose` (branches and pull requests only, ungated; the merge is the gate). |
-| 5 | **Remediate on signal** — the investigation's proposed fix becomes a pull request (via 4) or a gated operator call | path 8 (BUILT 2026-10-14) | Done for the two resource alerts: the dispatcher routes them to the implementer, which opens the pull request when the evidence says the limit is too low; a leak verdict opens a restarter session instead, one gated pod delete the owner approves from Slack (both the same day). Contention stays a finding; a recurring leak is a finding again. |
+| 5 | **Remediate on signal** — the investigation's proposed fix becomes a pull request (via 4) or a gated operator call | path 8 (BUILT 2026-10-14) | Done for the two resource alerts: the dispatcher routes them to the implementer, which opens the pull request when the evidence says the limit is too low; a leak verdict, or a merged fix the pod has not picked up, opens a restarter session instead, one gated pod delete the owner approves on a login-protected page that records who decided (Slack carries the link and the fallback). Contention stays a finding; a recurring leak is a finding again. |
 
 **Checklist panel — what a new agent or path reuses, unchanged:** the vault and its one-role-
 per-credential pattern · the edge and allow-list · the tool taxonomy and admission policy ·
