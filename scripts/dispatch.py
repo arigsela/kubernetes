@@ -42,7 +42,6 @@ Environment (all have defaults for the cluster):
                             sets the identity from it; empty = X-User-Id DISPATCH_USER, dev only)
     DISPATCH_USER           dispatcher (only without a token file)
     INVESTIGATION_TIMEOUT   300   (seconds the A2A send may block)
-    KAGENT_UI_SESSION_URL   https://kagent.arigsela.com/agents/{session}/chat
     PORT                    8080
 """
 from __future__ import annotations
@@ -399,7 +398,6 @@ class Config:
     n8n_base: str
     user: str
     timeout: float
-    ui_url: str
     token_file: str | None = "/var/run/kagent/token"   # projected SA token; "" = none (dev)
     implementer_login: str = "arigsela-implementer[bot]"  # PR author login the open-PR cap counts
     github_repo: str = "arigsela/kubernetes"
@@ -414,7 +412,6 @@ class Config:
             n8n_base=env.get("N8N_WEBHOOK_BASE", "http://n8n.n8n.svc.cluster.local:5678/webhook"),
             user=env.get("DISPATCH_USER", "dispatcher"),
             timeout=float(env.get("INVESTIGATION_TIMEOUT", "300")),
-            ui_url=env.get("KAGENT_UI_SESSION_URL", "https://kagent.arigsela.com/agents/{session}/chat"),
             token_file=env.get("KAGENT_TOKEN_FILE", "/var/run/kagent/token") or None,
             implementer_login=env.get("IMPLEMENTER_LOGIN", "arigsela-implementer[bot]"),
             github_repo=env.get("GITHUB_REPO", "arigsela/kubernetes"),
@@ -525,8 +522,8 @@ class Dispatcher:
             finding["error"] = f"unexpected {type(err).__name__}: {scrub(str(err))[:400]}"
             return None
         finding["session"], finding["state"] = reply.context_id, reply.state
-        if reply.context_id:
-            finding["ui"] = self.config.ui_url.format(session=reply.context_id)
+        # finding["ui"] stays None: a dispatcher-owned session cannot be opened in the kagent
+        # UI, so the "Session:" link n8n used to append was dead (2026-10-14).
         if reply.completed:
             finding["text"] = scrub((reply.answer or "")[:ANSWER_LIMIT])
         elif reply.waiting:
@@ -561,6 +558,9 @@ class Dispatcher:
             # The RAW answer: the finding's text is truncated and scrubbed, and either can
             # eat the last line (finding 2).
             finding["verdict"] = parse_verdict(reply.answer)
+            # The session id and how to continue it, in text: the UI link was dead (2026-10-14).
+            finding["text"] += (f"\nSession {reply.context_id or '?'} (continue: scripts/ask-hk --agent kagent/{agent} "
+                                f"--as-serviceaccount dispatcher/dispatcher --context {reply.context_id or '?'})")
         # The remediation decision is made, and said in the finding, BEFORE the finding is
         # posted: Slack shows the evidence first, then the pending call (§T.118).
         remediate = False
@@ -742,7 +742,7 @@ approval as the dispatcher, with your email recorded. The list is in memory: a d
 empties it (use the ask-hk fallback from the Slack message).</small></p></body></html>"""
 
 
-def render_approvals_page(items: list[dict], *, ui_url: str, message: str | None = None,
+def render_approvals_page(items: list[dict], *, message: str | None = None,
                           message_ok: bool = True, clock=time.time) -> str:
     e = html.escape
     parts = []
@@ -786,8 +786,7 @@ def make_approvals_handler(dispatcher: Dispatcher):
             self.wfile.write(body)
 
         def _render(self, code=200, message=None, ok=True):
-            self._page(code, render_approvals_page(dispatcher.pending.items(), ui_url=dispatcher.config.ui_url,
-                                                   message=message, message_ok=ok))
+            self._page(code, render_approvals_page(dispatcher.pending.items(), message=message, message_ok=ok))
 
         def do_GET(self):  # noqa: N802
             path = self.path.split("?", 1)[0]
