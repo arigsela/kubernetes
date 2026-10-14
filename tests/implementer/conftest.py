@@ -9,8 +9,10 @@ import yaml
 IMPLEMENTER_READ_TOOLS = ["get_file_contents", "search_code", "list_commits", "get_commit",
                           "list_branches", "list_pull_requests", "pull_request_read"]
 IMPLEMENTER_PROPOSE_TOOLS = ["create_branch", "create_or_update_file", "push_files",
-                             "create_pull_request", "update_pull_request"]
-NEVER_LOADED = ["merge_pull_request", "update_pull_request_branch", "pull_request_review_write",
+                             "create_pull_request"]
+# update_pull_request can close or retarget any PR (state, base): the contract forbids both and
+# the flow never needs it (an existing branch is updated with create_or_update_file).
+NEVER_LOADED = ["merge_pull_request", "update_pull_request", "update_pull_request_branch", "pull_request_review_write",
                 "add_comment_to_pending_review", "delete_file", "create_repository",
                 "delete_repository", "fork_repository", "create_pull_request_with_copilot"]
 # Tool names the github-mcp-server v1.14.0 README lists for the repos and pull_requests

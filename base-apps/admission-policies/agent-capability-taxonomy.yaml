@@ -32,7 +32,7 @@
 #                radius is not bounded by its name (k8s_execute_command). Must
 #                be in a requireApproval: true binding, and only an `admin` agent may bind it.
 #
-# FAIL-CLOSED: a tool bound by an AgentTemplate but absent from all three lists is
+# FAIL-CLOSED: a tool bound by an AgentTemplate but absent from all four lists is
 # DENIED. This is deliberate. A chart upgrade that introduces new tools cannot
 # silently widen any agent's capability — the new tools must be triaged and
 # classified here first. If a sync fails with "tool not in taxonomy", that is
@@ -117,17 +117,17 @@ data:
       "brave_news_search"
     ]
 
-  # ------------------------------------------------------------- propose (5)
+  # ------------------------------------------------------------- propose (4)
   # Branches and pull requests on arigsela/kubernetes, through the implementer GitHub MCP
   # server (base-apps/kagent/implementer-mcp.yaml). Nothing here touches a cluster or merges
-  # anything: merge_pull_request, delete_file and the review tools are never loaded there.
+  # anything: merge_pull_request, update_pull_request (close/retarget), delete_file and the
+  # review tools are never loaded there.
   propose: |
     [
       "create_branch",
       "create_or_update_file",
       "push_files",
-      "create_pull_request",
-      "update_pull_request"
+      "create_pull_request"
     ]
   # --------------------------------------------------------------- write (13)
   # Every tool here MUST be in a requireApproval: true binding wherever it is bound.
