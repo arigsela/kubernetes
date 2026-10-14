@@ -16,9 +16,9 @@ spec:
       kind: Service
       name: kagent-controller
   rules:
-    # The path match is the API server's default for a queryParams-only match; it is spelled
-    # out so Argo CD's diff of this rule is empty (the defaults it ignores are listed on the
-    # Application, this one is not).
+    # Both rules spell out the `path: /` match the API server would default (a rule with no
+    # path, or no matches at all, gets it); otherwise Argo CD's diff is never empty, since the
+    # Application's ignoreDifferences list covers the other HTTPRoute defaults but not this one.
     - matches:
         - path:
             type: PathPrefix
@@ -30,6 +30,10 @@ spec:
       backendRefs:
         - name: refused
           port: 1
-    - backendRefs:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
         - name: kagent-controller
           port: 8083
