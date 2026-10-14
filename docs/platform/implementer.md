@@ -74,7 +74,9 @@ comment repeated, `review:skim`, promotion → `owner`).
   The session is owned by your Dex identity; the answer is the PR link. First acceptance: PR #818.
 - **Continue a session:** `scripts/ask-hk --agent kagent/implementer --context <id> "..."`.
 - **Replay an alert** (the acceptance test in `base-apps/dispatcher/runbook.md`): the curl pod
-  must carry `--labels=dispatcher/replay=true` or the NetworkPolicy resets it.
+  must carry `--labels=dispatcher/replay=true` and wait about 15 s before posting (k3s adds a
+  new pod's IP to the policy's allow set a few seconds after start), or the NetworkPolicy
+  resets it.
 - **Find its PRs:** `gh pr list --author "app/arigsela-implementer"`. They wait for you.
 - **Read its runs:** `kubectl -n dispatcher logs deploy/dispatcher` (`event: dispatch` with
   `open_prs`, `event: finding` with the session id); the daily agent audit records every tool
