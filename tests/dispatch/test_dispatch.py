@@ -431,3 +431,213 @@ def test_open_prs_count_survives_a_mid_body_disconnect_and_caches_the_failure():
     assert c.count() is None and len(calls) == 1, "a failed count is cached for the ttl"
     now[0] = 301.0
     assert c.count() is None and len(calls) == 2
+
+
+# ---------------------------------------------------------- remediation (§T.118, §V.96)
+
+REMEDIATE_TABLE = {
+    "version": 1,
+    "limits": {"investigations_per_hour": 4, "repeat_after_hours": 6, "open_prs_max": 2, "restarts_per_day": 2},
+    "rules": [{"id": "mem", "source": "grafana", "match": {"alertname": "Container near memory limit"},
+               "route": "agent:implementer", "proposes": True, "prompt": "fix {labels[pod]}",
+               "remediate": {"on": ["leak"], "agent": "restarter",
+                             "prompt": ["Restart {labels[namespace]}/{labels[pod]}:",
+                                        "verdict {verdict} in session {session} for '{alertname}'"]},
+               "why": "w"}],
+}
+
+LEAK = "RSS grew 40Mi/h for 9h and the pod was OOMKilled twice.\nno pull request: leak\nverdict: leak"
+
+
+def approval_task(session="sess-r", args=None):
+    """A restarter task paused on its gated delete (hitl tool_approval_request, alpha11 shape)."""
+    call = {"id": "call-1", "name": "k8s_delete_resource",
+            "args": args or {"resource_type": "pod", "name": "n8n-0", "namespace": "n8n"}}
+    return {"task": {"id": "task-r", "contextId": session,
+                     "status": {"state": "TASK_STATE_INPUT_REQUIRED",
+                                "message": {"parts": [{"text": "approve?"}],
+                                            "metadata": {a2a.HITL_EXTENSION: {
+                                                "type": a2a.HITL_TOOL_APPROVAL_REQUEST, "tools": [call]}}}}}}
+
+
+class Seq(Fake):
+    """A fake agent that answers each send from a list (replies or exceptions), in order."""
+
+    def __init__(self, *replies):
+        super().__init__()
+        self.replies = list(replies)
+
+    def send(self, url, text, **kw):
+        self.sent.append({"url": url, "text": text, **kw})
+        r = self.replies.pop(0)
+        if isinstance(r, BaseException):
+            raise r
+        return r
+
+
+def make_remediate(fake, table=REMEDIATE_TABLE, clock=None):
+    cfg = dp.Config(table_path="/dev/null", a2a_base="http://a2a:8083", n8n_base="http://n8n:5678/webhook",
+                    user="dispatcher", timeout=5.0, ui_url="https://ui/agents/{session}/chat")
+    counter = dp.OpenPRs("arigsela/kubernetes", "arigsela-implementer[bot]", fetch=lambda: [], clock=lambda: 0.0)
+    kw = {}
+    if clock is not None:   # both budgets on the same fake clock
+        kw["restarts"] = dp.RestartBudget(table["limits"].get("restarts_per_day", 2), clock=clock)
+        kw["budget"] = dp.Budget(table["limits"]["investigations_per_hour"], table["limits"]["repeat_after_hours"],
+                                 clock=clock)
+    return dp.Dispatcher(dp.load_table(json.dumps(table)), cfg, send=fake.send, post=fake.post,
+                         log=fake.log, run_async=False, open_prs=counter, **kw)
+
+
+def test_parse_verdict_takes_the_last_line_and_rejects_unknown():
+    assert dp.parse_verdict("evidence\nverdict: leak\nmore\nVerdict: Limit-Too-Low \n") == "limit-too-low"
+    assert dp.parse_verdict("verdict: leak") == "leak"
+    assert dp.parse_verdict("the verdict: leak is in prose") is None
+    assert dp.parse_verdict("verdict: maybe") is None
+    assert dp.parse_verdict("") is None and dp.parse_verdict(None) is None
+    assert dp.VERDICTS == {"limit-too-low", "leak", "contention", "inconclusive"}
+
+
+@pytest.mark.parametrize("mutate, message", [
+    (lambda t: t["rules"][0]["remediate"].update(on=["restart"]), "remediate.on"),
+    (lambda t: t["rules"][0]["remediate"].update(on=[]), "remediate.on"),
+    (lambda t: t["rules"][0]["remediate"].pop("prompt"), "remediate.prompt"),
+    (lambda t: t["rules"][0]["remediate"].pop("agent"), "remediate.agent"),
+    (lambda t: t["rules"][0].update(route="none", remediate=t["rules"][0]["remediate"]), "agent route"),
+    (lambda t: t["limits"].update(restarts_per_day=-1), "restarts_per_day"),
+    (lambda t: t["rules"][0].update(remediate="restarter"), "remediate must be an object"),
+])
+def test_load_table_validates_remediate_and_restarts_per_day(mutate, message):
+    t = json.loads(json.dumps(REMEDIATE_TABLE))
+    mutate(t)
+    with pytest.raises(dp.TableError, match=message):
+        dp.load_table(json.dumps(t))
+
+
+def test_load_table_accepts_remediate_and_defaults_the_restart_cap():
+    t = json.loads(json.dumps(REMEDIATE_TABLE))
+    del t["limits"]["restarts_per_day"]
+    loaded = dp.load_table(json.dumps(t))
+    assert loaded["limits"]["restarts_per_day"] == 2
+    assert loaded["rules"][0]["remediate"]["prompt"].startswith("Restart {labels[namespace]}")   # list joined
+
+
+def test_restart_budget_caps_per_day_and_marks_recurrence():
+    now = [0.0]
+    b = dp.RestartBudget(2, clock=lambda: now[0])
+    assert b.admit("a") is None
+    assert b.admit("a") == "recurring"
+    assert b.admit("b") is None
+    assert b.admit("c") == "restarts"
+    now[0] += 24 * 3600 + 1
+    assert b.admit("a") is None
+
+
+def test_leak_verdict_opens_a_restarter_session_and_posts_the_pending_call():
+    fake = Seq(completed_task(text=LEAK, session="sess-i"), approval_task())
+    d = make_remediate(fake)
+    assert [x["decision"] for x in d.handle_grafana({"alerts": [mem_alert()]})] == ["investigate"]
+    assert len(fake.sent) == 2
+    first, second = fake.sent
+    assert second["url"] == "http://a2a:8083/agents/kagent/restarter"
+    assert second["text"] == "Restart n8n/n8n-0: verdict leak in session sess-i for 'Container near memory limit'"
+    for s in (first, second):   # new sessions, never an approval (V88)
+        assert s.get("context_id") is None and s.get("task_id") is None and s.get("metadata") is None
+    (_, finding), (_, remediation) = fake.posted
+    assert finding["verdict"] == "leak" and finding["agent"] == "implementer"
+    assert remediation["kind"] == "remediation" and remediation["agent"] == "restarter"
+    assert remediation["session"] == "sess-r" and remediation["evidence_session"] == "sess-i"
+    assert remediation["pending"] == [{"name": "k8s_delete_resource",
+                                       "args": {"resource_type": "pod", "name": "n8n-0", "namespace": "n8n"}}]
+    assert remediation["ui"] == "https://ui/agents/sess-r/chat"
+    t = remediation["text"]
+    assert "awaiting approval" in t and "k8s_delete_resource" in t and '"name": "n8n-0"' in t
+    assert "--agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context sess-r --approve" in t
+    assert "--reject" in t and "sess-i" in t
+    events = [(x["event"], x.get("decision")) for x in fake.logged]
+    assert events == [("dispatch", "investigate"), ("remediate", "remediate"), ("finding", None), ("finding", None)]
+    assert fake.logged[1]["verdict"] == "leak" and fake.logged[1]["rule"] == "mem"
+    assert fake.logged[3]["kind"] == "remediation" and fake.logged[3]["session"] == "sess-r"
+    assert all("text" not in x for x in fake.logged)
+
+
+def test_limit_too_low_verdict_sends_once_and_logs_no_match():
+    fake = Seq(completed_task(text="https://github.com/arigsela/kubernetes/pull/9\nverdict: limit-too-low"))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    assert len(fake.sent) == 1 and len(fake.posted) == 1
+    assert fake.posted[0][1]["verdict"] == "limit-too-low"
+    assert [x.get("decision") for x in fake.logged if x["event"] == "remediate"] == ["no-match"]
+
+
+def test_missing_verdict_is_null_and_never_remediates():
+    fake = Seq(completed_task(text="no pull request: leak"))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    assert len(fake.sent) == 1 and fake.posted[0][1]["verdict"] is None
+
+
+def test_restart_cap_skips_and_says_so():
+    fake = Seq(completed_task(text=LEAK, session="s1"), approval_task("r1"),
+               completed_task(text=LEAK, session="s2"), approval_task("r2"),
+               completed_task(text=LEAK, session="s3"))
+    d = make_remediate(fake, clock=lambda: 0.0)
+    for fp in ("a", "b", "c"):
+        d.handle_grafana({"alerts": [mem_alert(fp)]})
+    assert len(fake.sent) == 5, "two restarts, the third investigation only"
+    third = fake.posted[-1][1]
+    assert third["verdict"] == "leak" and "Restart cap reached" in third["text"] and third["agent"] == "implementer"
+    assert [x["decision"] for x in fake.logged if x["event"] == "remediate"] == ["remediate", "remediate", "skip-restarts"]
+
+
+def test_recurring_leak_skips_and_says_so():
+    now = [0.0]
+    fake = Seq(completed_task(text=LEAK, session="s1"), approval_task("r1"),
+               completed_task(text=LEAK, session="s2"))
+    d = make_remediate(fake, clock=lambda: now[0])
+    d.handle_grafana({"alerts": [mem_alert("same")]})
+    now[0] += 7 * 3600          # past repeat_after_hours, inside the 24 h recurrence window
+    d.handle_grafana({"alerts": [mem_alert("same")]})
+    assert len(fake.sent) == 3
+    assert "Recurring leak" in fake.posted[-1][1]["text"]
+    assert [x["decision"] for x in fake.logged if x["event"] == "remediate"] == ["remediate", "skip-recurring"]
+
+
+def test_restarter_refusal_posts_its_answer_not_an_approve_command():
+    fake = Seq(completed_task(text=LEAK, session="s1"),
+               completed_task(text="no restart: the pod has no owner", session="r1"))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    rem = fake.posted[1][1]
+    assert rem["kind"] == "remediation" and rem["pending"] == []
+    assert rem["text"] == "no restart: the pod has no owner" and "--approve" not in rem["text"]
+    assert rem["state"] == a2a.STATE_COMPLETED
+
+
+def test_restarter_question_posts_paused_without_approve_command():
+    fake = Seq(completed_task(text=LEAK, session="s1"), waiting_task("r1"))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    rem = fake.posted[1][1]
+    assert rem["pending"] == [] and "paused" in rem["text"] and "--approve" not in rem["text"]
+
+
+def test_restarter_error_still_charges_the_budget():
+    fake = Seq(completed_task(text=LEAK, session="s1"), a2a.A2AError("boom"),
+               completed_task(text=LEAK, session="s2"), approval_task("r2"),
+               completed_task(text=LEAK, session="s3"))
+    d = make_remediate(fake, clock=lambda: 0.0)
+    for fp in ("a", "b", "c"):
+        d.handle_grafana({"alerts": [mem_alert(fp)]})
+    rem = fake.posted[1][1]
+    assert rem["kind"] == "remediation" and rem["error"] == "boom" and rem["session"] is None
+    assert len(fake.sent) == 5 and "Restart cap reached" in fake.posted[-1][1]["text"]
+
+
+def test_restarter_timeout_posts_still_running():
+    fake = Seq(completed_task(text=LEAK, session="s1"), TimeoutError("timed out"))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    rem = fake.posted[1][1]
+    assert rem["error"] is None and "still running" in rem["text"] and "kagent/restarter" in rem["text"]
+
+
+def test_remediation_text_is_scrubbed():
+    fake = Seq(completed_task(text=LEAK, session="s1"),
+               completed_task(text="no restart: saw password=hunter2 in the log", session="r1"))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    assert "hunter2" not in fake.posted[1][1]["text"]
