@@ -47,6 +47,12 @@ The app is a bypass actor on the `main` ruleset in pull-request mode: it can mer
 the one required approval and cannot push to `main`. It is not Renovate's app: author and
 promoter are different principals, and the merge commit's committer shows it.
 
+A class admits a PR only when its author **and every commit on the branch** are by a class
+author (committer either the same or GitHub's `web-flow`). A branch is writable by anyone with
+Contents write on the repo, including the in-cluster implementer App (class `propose`), so
+without that check a commit pushed onto an open Renovate or owner branch would ride that
+branch's class into an unread merge (§V.95). Commits not fetched means `owner`.
+
 ## Changing the policy
 Edit `.github/promotion-policy.yaml` in a PR. It is `review:read` under triage and under a
 deny prefix here, so a policy change is always read by a human and never auto-merged.

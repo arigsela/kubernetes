@@ -76,6 +76,19 @@ def files(*names, patch=IMAGE_BUMP):
             for n in names]
 
 
+def commits_of(pr_obj, *logins, committer=None):
+    """The PR's commits as /pulls/{n}/commits returns them: by the PR author unless told otherwise."""
+    logins = logins or ((pr_obj.get("user") or {}).get("login"),)
+    return [{"sha": f"c{i}{'0' * 6}", "author": {"login": login},
+             "committer": {"login": committer or login}} for i, login in enumerate(logins)]
+
+
+def decide(pr_obj, files_list, runs, policy_obj, statuses=None, commits=None):
+    """pm.decide with the PR's own commits unless a test supplies others (§V.95)."""
+    return pm.decide(pr_obj, files_list, runs, policy_obj, statuses,
+                     commits_of(pr_obj) if commits is None else commits)
+
+
 def checks(*conclusions, pending=0):
     runs = [{"name": f"job-{i}", "status": "completed", "conclusion": c} for i, c in enumerate(conclusions)]
     runs += [{"name": f"pending-{i}", "status": "in_progress", "conclusion": None} for i in range(pending)]
@@ -83,25 +96,25 @@ def checks(*conclusions, pending=0):
 
 
 def test_renovate_skip_green_is_auto():
-    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success", "skipped"), policy())
+    d = decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success", "skipped"), policy())
     assert d.klass == "auto" and d.reasons == [] and d.head_sha == "abc123"
 
 
 def test_deny_prefix_wins_over_skip_label():
-    d = pm.decide(pr(), files("base-apps/vault/statefulsets.yaml"), checks("success"), policy())
+    d = decide(pr(), files("base-apps/vault/statefulsets.yaml"), checks("success"), policy())
     assert d.klass == "owner" and any("deny" in r for r in d.reasons)
-    d = pm.decide(pr(), files("terraform/roots/asela-cluster/ecr.tf"), checks("success"), policy())
+    d = decide(pr(), files("terraform/roots/asela-cluster/ecr.tf"), checks("success"), policy())
     assert d.klass == "owner"
 
 
 def test_pending_check_is_owner_not_auto():
-    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success", pending=1), policy())
+    d = decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success", pending=1), policy())
     assert d.klass == "owner" and "checks pending" in d.reasons
 
 
 def test_failed_or_absent_checks_are_owner():
-    assert pm.decide(pr(), files("x.md"), checks("success", "failure"), policy()).klass == "owner"
-    assert pm.decide(pr(), files("x.md"), [], policy()).klass == "owner"
+    assert decide(pr(), files("x.md"), checks("success", "failure"), policy()).klass == "owner"
+    assert decide(pr(), files("x.md"), [], policy()).klass == "owner"
 
 
 @pytest.mark.parametrize("over, reason", [
@@ -113,12 +126,12 @@ def test_failed_or_absent_checks_are_owner():
     ({"head": {"sha": "abc123", "repo": {"full_name": "someone/fork"}}}, "fork"),
 ])
 def test_each_condition_is_a_reason(over, reason):
-    d = pm.decide(pr(**over), files("x.md"), checks("success"), policy())
+    d = decide(pr(**over), files("x.md"), checks("success"), policy())
     assert d.klass == "owner" and any(reason in r for r in d.reasons), d.reasons
 
 
 def test_too_many_files_is_owner():
-    d = pm.decide(pr(), files("a.md", "b.md", "c.md"), checks("success"), policy())
+    d = decide(pr(), files("a.md", "b.md", "c.md"), checks("success"), policy())
     assert d.klass == "owner" and any("files" in r for r in d.reasons)
 # ---------------------------------------------------------------- github + run
 
@@ -135,11 +148,12 @@ class FakeGitHub:
         return status, (payload if isinstance(payload, bytes) else json.dumps(payload).encode())
 
 
-def answers_for(pr_obj, files_list, runs, policy_text=None, statuses=None):
+def answers_for(pr_obj, files_list, runs, policy_text=None, statuses=None, commits=None):
     policy_text = POLICY_FILE.read_text() if policy_text is None else policy_text
     n = pr_obj["number"]
     return {
         ("GET", f"/repos/arigsela/kubernetes/pulls/{n}"): (200, pr_obj),
+        ("GET", f"/repos/arigsela/kubernetes/pulls/{n}/commits?per_page=100"): (200, commits_of(pr_obj) if commits is None else commits),
         ("GET", f"/repos/arigsela/kubernetes/pulls/{n}/files?per_page=100"): (200, files_list),
         ("GET", f"/repos/arigsela/kubernetes/commits/{pr_obj['head']['sha']}/check-runs?per_page=100"): (200, {"check_runs": runs}),
         ("GET", f"/repos/arigsela/kubernetes/contents/.github/promotion-policy.yaml?ref={pr_obj['base']['ref']}"): (200, policy_text.encode()),
@@ -221,16 +235,16 @@ def statuses(**contexts):
 
 
 def test_pending_commit_status_is_owner():
-    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
+    d = decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
                   statuses=statuses(**{"renovate/stability-days": "pending"}))
     assert d.klass == "owner" and any("renovate/stability-days" in r and "pending" in r for r in d.reasons)
 
 
 def test_failed_commit_status_is_owner_and_success_statuses_pass():
-    ok = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
+    ok = decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
                    statuses=statuses(**{"renovate/stability-days": "success", "atlantis/plan": "success"}))
     assert ok.klass == "auto"
-    bad = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
+    bad = decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
                     statuses=statuses(**{"atlantis/plan": "failure"}))
     assert bad.klass == "owner" and any("atlantis/plan" in r for r in bad.reasons)
 
@@ -247,20 +261,20 @@ def test_auto_requires_a_deterministic_skip_shaped_diff_not_just_the_label():
     """review:skip can come from the classifier too; auto additionally re-derives always_skip:
     every file is docs, or its patch changes only image:/tag: value lines, <= 4 lines in total."""
     replicas = "@@ -5,1 +5,1 @@\n-  replicas: 1\n+  replicas: 2"
-    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml", patch=replicas), checks("success"), policy())
+    d = decide(pr(), files("base-apps/donetick/deployment.yaml", patch=replicas), checks("success"), policy())
     assert d.klass == "owner" and any("not an image-tag bump" in r for r in d.reasons)
     five = "@@ -1,5 +1,5 @@\n" + "\n".join(f"-  tag: v{i}\n+  tag: v{i+1}" for i in range(3))   # 6 changed lines
-    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml", patch=five), checks("success"), policy())
+    d = decide(pr(), files("base-apps/donetick/deployment.yaml", patch=five), checks("success"), policy())
     assert d.klass == "owner" and any("6 changed lines" in r for r in d.reasons)
     nopatch = [{"filename": "base-apps/donetick/deployment.yaml"}]
-    d = pm.decide(pr(), nopatch, checks("success"), policy())
+    d = decide(pr(), nopatch, checks("success"), policy())
     assert d.klass == "owner"
-    docs_only = pm.decide(pr(), files("docs/x.md", "README.md"), checks("success"), policy())
+    docs_only = decide(pr(), files("docs/x.md", "README.md"), checks("success"), policy())
     assert docs_only.klass == "auto"
 
 
 def test_renovate_config_is_deny_listed():
-    d = pm.decide(pr(), files("renovate.json5", patch="@@ -1 +1 @@\n-a\n+b"), checks("success"), policy())
+    d = decide(pr(), files("renovate.json5", patch="@@ -1 +1 @@\n-a\n+b"), checks("success"), policy())
     assert d.klass == "owner" and any("deny prefix" in r for r in d.reasons)
 
 
@@ -320,45 +334,45 @@ def test_load_policy_requires_every_class_to_deny_the_workflows_dir():
 
 
 def test_owner_docs_only_skip_green_is_auto():
-    d = pm.decide(owner_pr(), files("README.md", "docs/platform/promotion.md", "index.md"),
+    d = decide(owner_pr(), files("README.md", "docs/platform/promotion.md", "index.md"),
                   checks("success", "skipped"), policy())
     assert d.klass == "auto" and d.reasons == [] and d.rule == "docs-only"
 
 
 def test_renovate_bump_still_reports_its_rule():
-    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy())
+    d = decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy())
     assert d.klass == "auto" and d.rule == "renovate-bump"
 
 
 @pytest.mark.parametrize("name", ["CLAUDE.md", "AGENTS.md", ".github/README.md", ".claude/skills/x.md"])
 def test_owner_docs_class_never_merges_the_instruction_files(name):
-    d = pm.decide(owner_pr(), files(name), checks("success"), policy())
+    d = decide(owner_pr(), files(name), checks("success"), policy())
     assert d.klass == "owner" and any("deny" in r for r in d.reasons), d.reasons
 
 
 def test_owner_docs_class_rejects_a_non_docs_file():
-    d = pm.decide(owner_pr(), files("README.md", "base-apps/donetick/deployment.yaml"),
+    d = decide(owner_pr(), files("README.md", "base-apps/donetick/deployment.yaml"),
                   checks("success"), policy())
     assert d.klass == "owner" and any("not docs" in r for r in d.reasons), d.reasons
 
 
 def test_owner_docs_class_has_its_own_file_limit():
     many = files(*[f"docs/n{i}.md" for i in range(11)])
-    d = pm.decide(owner_pr(), many, checks("success"), policy())
+    d = decide(owner_pr(), many, checks("success"), policy())
     assert d.klass == "owner" and any("files" in r for r in d.reasons)
     ten = files(*[f"docs/n{i}.md" for i in range(10)])
-    assert pm.decide(owner_pr(), ten, checks("success"), policy()).klass == "auto"
+    assert decide(owner_pr(), ten, checks("success"), policy()).klass == "auto"
 
 
 def test_owner_docs_class_needs_the_skip_label_and_green_checks():
-    d = pm.decide(owner_pr(labels=[{"name": "review:skim"}]), files("README.md"), checks("success"), policy())
+    d = decide(owner_pr(labels=[{"name": "review:skim"}]), files("README.md"), checks("success"), policy())
     assert d.klass == "owner" and any("label" in r for r in d.reasons)
-    d = pm.decide(owner_pr(), files("README.md"), checks("success", "failure"), policy())
+    d = decide(owner_pr(), files("README.md"), checks("success", "failure"), policy())
     assert d.klass == "owner"
 
 
 def test_third_party_author_is_owner_and_both_classes_say_why():
-    d = pm.decide(pr(user={"login": "someone"}), files("README.md"), checks("success"), policy())
+    d = decide(pr(user={"login": "someone"}), files("README.md"), checks("success"), policy())
     assert d.klass == "owner"
     assert any(r.startswith("renovate-bump:") and "author" in r for r in d.reasons), d.reasons
     assert any(r.startswith("docs-only:") and "author" in r for r in d.reasons), d.reasons
@@ -375,7 +389,52 @@ def test_run_auto_docs_merges_and_the_comment_names_the_class():
 def test_implementer_app_pr_is_never_auto():
     """§V.95: an agent-authored PR has no promotion class, however green and however small."""
     app_pr = pr(user={"login": "arigsela-implementer[bot]"}, labels=[{"name": "review:skip"}])
-    d = pm.decide(app_pr, files("docs/platform/promotion.md"), checks("success"), policy())
+    d = decide(app_pr, files("docs/platform/promotion.md"), checks("success"), policy())
     assert d.klass == "owner" and any("author" in r for r in d.reasons)
-    d = pm.decide(app_pr, files("base-apps/donetick/deployment.yaml"), checks("success"), policy())
+    d = decide(app_pr, files("base-apps/donetick/deployment.yaml"), checks("success"), policy())
     assert d.klass == "owner"
+
+
+# ------------------------------------------------- commit authors, not just the PR author (§V.95)
+
+def test_renovate_pr_with_a_commit_by_another_identity_is_owner():
+    """A propose-class agent pushing onto an open Renovate branch must not ride its class."""
+    p = pr()
+    d = decide(p, files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
+               commits=commits_of(p, "arigsela-renovate[bot]", "arigsela-implementer[bot]"))
+    assert d.klass == "owner" and any("commit c1" in r and "arigsela-implementer[bot]" in r for r in d.reasons)
+
+
+def test_owner_docs_pr_with_a_foreign_commit_is_owner():
+    p = owner_pr()
+    d = decide(p, files("README.md"), checks("success"), policy(),
+               commits=commits_of(p, "arigsela", "arigsela-implementer[bot]"))
+    assert d.klass == "owner"
+
+
+def test_commits_not_fetched_is_owner():
+    d = pm.decide(pr(), files("base-apps/donetick/deployment.yaml"), checks("success"), policy(), None, None)
+    assert d.klass == "owner" and any("commit" in r for r in d.reasons)
+
+
+def test_web_flow_committer_is_accepted_for_the_authors_own_commit():
+    p = pr()
+    d = decide(p, files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
+               commits=commits_of(p, "arigsela-renovate[bot]", committer="web-flow"))
+    assert d.klass == "auto"
+
+
+def test_foreign_committer_is_owner():
+    p = pr()
+    d = decide(p, files("base-apps/donetick/deployment.yaml"), checks("success"), policy(),
+               commits=commits_of(p, "arigsela-renovate[bot]", committer="arigsela-implementer[bot]"))
+    assert d.klass == "owner"
+
+
+def test_run_fetches_the_commits_and_refuses_a_foreign_one():
+    p = pr()
+    fake = FakeGitHub(answers_for(p, files("base-apps/donetick/deployment.yaml"), checks("success"),
+                                  commits=commits_of(p, "arigsela-renovate[bot]", "arigsela-implementer[bot]")))
+    assert pm.run("arigsela/kubernetes", 760, "tok", transport=fake) == 0
+    assert any("/pulls/760/commits?per_page=100" in c[1] for c in fake.calls)
+    assert not [c for c in fake.calls if c[0] == "PUT"], "must not merge"

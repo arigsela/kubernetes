@@ -169,12 +169,37 @@ def docs_only(files: list[dict]) -> list[str]:
 SHAPES = {"renovate-bump": skip_shaped, "docs-only": docs_only}
 
 
-def _class_reasons(rule: str, section: dict, pr: dict, files: list[dict]) -> list[str]:
+# GitHub records itself as the committer of commits made through its API or web UI.
+WEB_COMMITTER = "web-flow"
+
+
+def _commit_reasons(rule: str, section: dict, commits: list[dict] | None) -> list[str]:
+    """Every commit on the branch is by a class author (§V.95). The PR author alone is not
+    enough: a branch is writable by anyone with Contents write (the implementer App, a
+    propose-class agent), and a commit pushed onto an open Renovate or owner branch would
+    otherwise ride that branch's class into an unread merge. None = not fetched = owner."""
+    if commits is None:
+        return ["commit authors not fetched"]
+    reasons = []
+    for c in commits:
+        sha = (c.get("sha") or "?")[:7]
+        author = (c.get("author") or {}).get("login")
+        committer = (c.get("committer") or {}).get("login")
+        if author not in section["authors"]:
+            reasons.append(f"commit {sha} by {author!r} is not in {rule} authors")
+        elif committer not in section["authors"] and committer != WEB_COMMITTER:
+            reasons.append(f"commit {sha} committed by {committer!r} is not in {rule} authors")
+    return reasons
+
+
+def _class_reasons(rule: str, section: dict, pr: dict, files: list[dict],
+                   commits: list[dict] | None) -> list[str]:
     """The conditions one class adds on top of the common ones."""
     reasons: list[str] = []
     author = (pr.get("user") or {}).get("login")
     if author not in section["authors"]:
         reasons.append(f"author {author!r} is not in {rule} authors")
+    reasons += _commit_reasons(rule, section, commits)
     labels = {lab.get("name") for lab in (pr.get("labels") or [])}
     for need in section["require_labels"]:
         if need not in labels:
@@ -191,7 +216,7 @@ def _class_reasons(rule: str, section: dict, pr: dict, files: list[dict]) -> lis
 
 
 def decide(pr: dict, files: list[dict], check_runs: list[dict], policy: dict,
-           statuses: list[dict] | None = None) -> Decision:
+           statuses: list[dict] | None = None, commits: list[dict] | None = None) -> Decision:
     """`auto` when every common condition holds and at least one class admits the PR;
     otherwise `owner` with every failed condition listed, per class."""
     reasons: list[str] = []
@@ -222,7 +247,7 @@ def decide(pr: dict, files: list[dict], check_runs: list[dict], policy: dict,
         if state != "success":
             reasons.append(f"status {status.get('context')} is {state or 'unknown'}"
                            + (" (pending)" if state == "pending" else ""))
-    per_class = {rule: _class_reasons(rule, policy[section], pr, files)
+    per_class = {rule: _class_reasons(rule, policy[section], pr, files, commits)
                  for section, rule in CLASS_SECTIONS.items() if section in policy}
     admitted = next((rule for rule, why in per_class.items() if not why), None)
     if not reasons and admitted:
@@ -328,7 +353,8 @@ def run(repo: str, number: int, token: str, *, dry_run: bool = False, transport=
     files = gh.get(f"/repos/{repo}/pulls/{number}/files?per_page=100")
     runs = gh.get(f"/repos/{repo}/commits/{head_sha}/check-runs?per_page=100").get("check_runs") or []
     statuses = gh.get(f"/repos/{repo}/commits/{head_sha}/status").get("statuses") or []
-    decision = decide(pr, files, runs, policy, statuses)
+    commits = gh.get(f"/repos/{repo}/pulls/{number}/commits?per_page=100")
+    decision = decide(pr, files, runs, policy, statuses, commits)
     log({"event": "promotion", "pr": number, "class": decision.klass, "rule": decision.rule,
          "reasons": decision.reasons, "head": head_sha, "policy_at": base_ref, "dry_run": dry_run})
     if decision.klass != "auto" or dry_run:
