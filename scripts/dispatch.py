@@ -26,7 +26,13 @@ and posts a second finding carrying the pending call's arguments and the ask-hk 
 owner approves or rejects it with (`--task <id>`: the laptop fetches the pause it never saw).
 The approve command is printed only when the pending call is exactly one delete of the
 alert's pod; deny-listed namespaces are refused before any session opens; the once-a-day
-rule is keyed per namespace/workload. The dispatcher still never answers the approval.
+rule is keyed per namespace/workload. The dispatcher never decides the approval itself. The one answer it ever sends is the
+human's: `GET/POST /approvals` on a SECOND server bound to 127.0.0.1:APPROVALS_PORT, reached
+only through the oauth2-proxy sidecar (Dex login, one-email allow-list), decides a pending
+restart with the approver's email logged (§T.119, §V.88 amended, §V.97).
+
+    APPROVALS_PORT          8081  (0 disables the approvals server)
+    APPROVALS_URL           https://dispatcher.arigsela.com/approvals (what Slack links to)
 
 Environment (all have defaults for the cluster):
     DISPATCH_TABLE          /etc/dispatch/dispatch.json
@@ -41,13 +47,16 @@ Environment (all have defaults for the cluster):
 """
 from __future__ import annotations
 
+import html
 import json
 import os
 import re
+import secrets
 import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -309,6 +318,36 @@ class RestartBudget:
             self._starts.append(now)
             self._seen[fingerprint] = now
             return None
+
+
+class PendingRestarts:
+    """The restarter sessions this dispatcher opened that are waiting for a human (§T.119).
+    Keyed by context id; each item carries the task id and the exact call ids the human
+    decides, plus a per-item nonce the approvals page must echo (a stale page cannot decide a
+    newer item). In memory: a rollout forgets, and the Slack message keeps the ask-hk fallback."""
+
+    def __init__(self, clock=time.time):
+        self.clock = clock
+        self._items: dict[str, dict] = {}
+        self._lock = threading.Lock()
+
+    def add(self, item: dict) -> str:
+        nonce = secrets.token_urlsafe(16)
+        with self._lock:
+            self._items[item["ctx"]] = {**item, "nonce": nonce, "created": self.clock()}
+        return nonce
+
+    def get(self, ctx: str) -> dict | None:
+        with self._lock:
+            return self._items.get(ctx)
+
+    def remove(self, ctx: str) -> dict | None:
+        with self._lock:
+            return self._items.pop(ctx, None)
+
+    def items(self) -> list[dict]:
+        with self._lock:
+            return sorted(self._items.values(), key=lambda i: i["created"])
 # ------------------------------------------------------------- the open-PR cap
 
 def fetch_open_prs(repo: str, login: str, opener=urllib.request.urlopen, timeout: float = 10.0) -> list[dict]:
@@ -364,6 +403,8 @@ class Config:
     token_file: str | None = "/var/run/kagent/token"   # projected SA token; "" = none (dev)
     implementer_login: str = "arigsela-implementer[bot]"  # PR author login the open-PR cap counts
     github_repo: str = "arigsela/kubernetes"
+    approvals_url: str = "https://dispatcher.arigsela.com/approvals"
+    approvals_port: int = 8081                          # 127.0.0.1 only; 0 = no approvals server
 
     @classmethod
     def from_env(cls, env=os.environ) -> "Config":
@@ -377,6 +418,8 @@ class Config:
             token_file=env.get("KAGENT_TOKEN_FILE", "/var/run/kagent/token") or None,
             implementer_login=env.get("IMPLEMENTER_LOGIN", "arigsela-implementer[bot]"),
             github_repo=env.get("GITHUB_REPO", "arigsela/kubernetes"),
+            approvals_url=env.get("APPROVALS_URL", "https://dispatcher.arigsela.com/approvals"),
+            approvals_port=int(env.get("APPROVALS_PORT", "8081")),
         )
 
 
@@ -408,6 +451,7 @@ class Dispatcher:
         limits = table["limits"]
         self.budget = budget or Budget(limits["investigations_per_hour"], limits["repeat_after_hours"])
         self.restarts = restarts or RestartBudget(limits["restarts_per_day"])
+        self.pending = PendingRestarts()
         self.open_prs = open_prs or OpenPRs(config.github_repo, config.implementer_login)
         self.send, self.post, self.log, self.run_async = send, post, log, run_async
 
@@ -573,8 +617,13 @@ class Dispatcher:
                     lines.append(f"Evidence: {rule['route'].split(':', 1)[1]} session "
                                  f"{evidence_session or '?'} (verdict: {verdict}).")
                     if pending_restart_matches(calls, labels):
+                        self.pending.add({"ctx": reply.context_id, "task_id": reply.task_id, "agent": agent,
+                                          "calls": calls, "labels": labels, "rule": rule["id"],
+                                          "verdict": verdict, "evidence_session": evidence_session})
                         lines.insert(0, "Restart awaiting approval. Pending call:")
-                        lines += [f"Approve: {cmd} --approve", f"Reject: {cmd} --reject \"<reason>\""]
+                        lines += [f"Decide at {self.config.approvals_url} (Dex login).",
+                                  f"Fallback if the dispatcher restarted since: {cmd} --approve | "
+                                  "--reject \"<reason>\""]
                     else:
                         lines.insert(0, "MISMATCH: the pending call(s) are not one delete of the alert's pod "
                                         f"{labels.get('namespace')}/{labels.get('pod')}. Reject:")
@@ -590,6 +639,48 @@ class Dispatcher:
             finding["error"] = f"unexpected {type(err).__name__}: {scrub(str(err))[:400]}"
         self._post_finding(finding, rule, kind="remediation")
         return finding
+    def decide_pending(self, ctx: str, nonce: str, *, approved: bool, reason: str | None,
+                       approver: str) -> dict:
+        """Forward a human's decision on a registered pending restart (§T.119). The ONLY send
+        that ever carries metadata (§V.88 amended): a tool_approval_response for exactly the
+        registered call ids, on the registered task and context, under the dispatcher's token.
+        Returns {ok, status, text}; a failed send keeps the item pending."""
+        if not approver or not approver.strip():
+            return {"ok": False, "status": 403, "text": "no approver identity (X-Forwarded-Email)"}
+        item = self.pending.get(ctx)
+        if item is None:
+            return {"ok": False, "status": 404, "text": "nothing pending for that session"}
+        if not nonce or not secrets.compare_digest(str(nonce), item["nonce"]):
+            return {"ok": False, "status": 409, "text": "stale page: reload and decide again"}
+        approver = approver.strip()
+        finding = {"kind": "decision", "rule": item["rule"], "alertname": item["labels"].get("alertname") or "?",
+                   "labels": item["labels"], "agent": item["agent"], "session": ctx, "state": None,
+                   "text": None, "ui": None, "error": None, "approved": approved, "approved_by": approver}
+        try:
+            url = a2a.resolve_endpoint(self.config.a2a_base, f"kagent/{item['agent']}")
+            reply = a2a.parse_result(self.send(
+                url, "approved" if approved else f"rejected: {reason or ''}".strip(),
+                context_id=ctx, task_id=item["task_id"],
+                metadata=a2a.approval_metadata([c["id"] for c in item["calls"]], approved=approved, reason=reason),
+                user=None if self.config.token_file else self.config.user,
+                token_file=self.config.token_file, timeout=self.config.timeout))
+        except Exception as err:  # noqa: BLE001 - the page must get an answer either way
+            finding["error"] = scrub(str(err))[:400]
+            finding["text"] = f"decision not delivered: {finding['error']}"
+            self._post_finding(finding, {"id": item["rule"]}, kind="decision")
+            self.log({"event": "decision", "approved": approved, "approved_by": approver, "rule": item["rule"],
+                      "session": ctx, "state": None, "error": finding["error"]})
+            return {"ok": False, "status": 502, "text": finding["text"]}
+        self.pending.remove(ctx)
+        finding["state"] = reply.state
+        answer = scrub((reply.answer or reply.status_text or "")[:ANSWER_LIMIT]) if not reply.failed \
+            else f"task ended in {reply.state}"
+        who = f"approved by {approver}" if approved else f"rejected by {approver} ({reason or 'no reason'})"
+        finding["text"] = f"Restart {who}: {answer}".strip()
+        self._post_finding(finding, {"id": item["rule"]}, kind="decision")
+        self.log({"event": "decision", "approved": approved, "approved_by": approver, "rule": item["rule"],
+                  "session": ctx, "state": reply.state, "error": None})
+        return {"ok": True, "status": 200, "text": finding["text"]}
 # ------------------------------------------------------------------ http
 
 def make_handler(dispatcher: Dispatcher):
@@ -637,6 +728,93 @@ def serve(dispatcher: Dispatcher, port: int) -> ThreadingHTTPServer:
     return server
 
 
+# ------------------------------------------------------------ the approvals page
+
+_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>Restart approvals</title>
+<style>body{font:15px/1.4 system-ui,sans-serif;max-width:60rem;margin:2rem auto;padding:0 1rem}
+.item{border:1px solid #999;border-radius:6px;padding:1rem;margin:1rem 0}pre{background:#eee;padding:.5rem;overflow:auto}
+form{display:inline-block;margin-right:1rem}button{padding:.4rem .9rem}.ok{color:#060}.err{color:#900}</style>
+</head><body><h1>Restart approvals</h1>{message}{body}
+<p><small>Each item is a restarter session the dispatcher opened; approving sends the pending call's
+approval as the dispatcher, with your email recorded. The list is in memory: a dispatcher restart
+empties it (use the ask-hk fallback from the Slack message).</small></p></body></html>"""
+
+
+def render_approvals_page(items: list[dict], *, ui_url: str, message: str | None = None,
+                          message_ok: bool = True, clock=time.time) -> str:
+    e = html.escape
+    parts = []
+    for it in items:
+        labels = it.get("labels") or {}
+        age = max(0, int((clock() - it.get("created", clock())) // 60))
+        calls = "\n".join(f"{c.get('name')} {json.dumps(c.get('args') or {}, sort_keys=True)}" for c in it["calls"])
+        action = "/approvals/" + urllib.parse.quote(it["ctx"], safe="") + "/"
+        evidence = ui_url.format(session=it.get("evidence_session") or "?")
+        parts.append(
+            f'<div class="item"><h2>{e(labels.get("alertname") or "?")}: '
+            f'{e(labels.get("namespace") or "?")}/{e(labels.get("pod") or "?")}</h2>'
+            f'<p>verdict <b>{e(str(it.get("verdict")))}</b>, agent <code>{e(it["agent"])}</code>, '
+            f'{age} min ago. Evidence: <a href="{e(evidence)}">{e(it.get("evidence_session") or "?")}</a></p>'
+            f'<pre>{e(calls)}</pre>'
+            f'<form method="post" action="{e(action)}approve"><input type="hidden" name="nonce" value="{e(it["nonce"])}">'
+            f'<button>Approve: delete this pod</button></form>'
+            f'<form method="post" action="{e(action)}reject"><input type="hidden" name="nonce" value="{e(it["nonce"])}">'
+            f'<input name="reason" placeholder="reason" required> <button>Reject</button></form></div>')
+    body = "".join(parts) or "<p>Nothing pending.</p>"
+    msg = f'<p class="{"ok" if message_ok else "err"}">{e(message)}</p>' if message else ""
+    return _PAGE.replace("{message}", msg).replace("{body}", body)
+
+
+def make_approvals_handler(dispatcher: Dispatcher):
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "dispatcher-approvals/1"
+
+        def _page(self, code: int, html_text: str) -> None:
+            body = html_text.encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _render(self, code=200, message=None, ok=True):
+            self._page(code, render_approvals_page(dispatcher.pending.items(), ui_url=dispatcher.config.ui_url,
+                                                   message=message, message_ok=ok))
+
+        def do_GET(self):  # noqa: N802
+            if self.path.split("?", 1)[0] in ("/approvals", "/approvals/"):
+                self._render()
+            else:
+                self._page(404, "<p>not found</p>")
+
+        def do_POST(self):  # noqa: N802
+            m = re.fullmatch(r"/approvals/([^/]+)/(approve|reject)", self.path.split("?", 1)[0])
+            if not m:
+                self._page(404, "<p>not found</p>")
+                return
+            ctx, verb = urllib.parse.unquote(m.group(1)), m.group(2)
+            length = int(self.headers.get("Content-Length") or 0)
+            form = urllib.parse.parse_qs(self.rfile.read(length).decode("utf-8", "replace"))
+            approver = self.headers.get("X-Forwarded-Email") or ""   # set by the oauth2-proxy sidecar only
+            out = dispatcher.decide_pending(ctx, (form.get("nonce") or [""])[0], approved=verb == "approve",
+                                            reason=(form.get("reason") or [None])[0], approver=approver)
+            self._render(out["status"], out["text"], out["ok"])
+
+        def log_message(self, fmt, *args):
+            log_line({"event": "http", "server": "approvals", "path": self.path.split("?", 1)[0],
+                      "message": fmt % args})
+
+    return Handler
+
+
+def serve_approvals(dispatcher: Dispatcher, port: int) -> ThreadingHTTPServer:
+    """127.0.0.1 only: the oauth2-proxy sidecar is the only client (§V.97)."""
+    server = ThreadingHTTPServer(("127.0.0.1", port), make_approvals_handler(dispatcher))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
 def main(argv=None) -> int:
     config = Config.from_env()
     try:
@@ -647,8 +825,9 @@ def main(argv=None) -> int:
     dispatcher = Dispatcher(table, config)
     port = int(os.environ.get("PORT", "8080"))
     server = serve(dispatcher, port)
+    approvals = serve_approvals(dispatcher, config.approvals_port) if config.approvals_port > 0 else None
     log_line({"event": "start", "port": port, "rules": len(table["rules"]),
-              "a2a_base": config.a2a_base,
+              "a2a_base": config.a2a_base, "approvals_port": config.approvals_port if approvals else None,
               "identity": "token" if config.token_file else config.user})
     try:
         while True:

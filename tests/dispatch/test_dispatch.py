@@ -480,7 +480,8 @@ class Seq(Fake):
 
 def make_remediate(fake, table=REMEDIATE_TABLE, clock=None):
     cfg = dp.Config(table_path="/dev/null", a2a_base="http://a2a:8083", n8n_base="http://n8n:5678/webhook",
-                    user="dispatcher", timeout=5.0, ui_url="https://ui/agents/{session}/chat")
+                    user="dispatcher", timeout=5.0, ui_url="https://ui/agents/{session}/chat",
+                    approvals_url="https://approvals.test/approvals")
     counter = dp.OpenPRs("arigsela/kubernetes", "arigsela-implementer[bot]", fetch=lambda: [], clock=lambda: 0.0)
     kw = {}
     if clock is not None:   # both budgets on the same fake clock
@@ -778,3 +779,193 @@ def test_rollout_pending_is_a_no_match_when_the_row_lists_only_leak():
     make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
     assert len(fake.sent) == 1
     assert [x["decision"] for x in fake.logged if x["event"] == "remediate"] == ["no-match"]
+
+
+# ------------------------------------------------- the approvals page (§T.119, §V.88, §V.97)
+
+import urllib.parse
+
+
+def pending_after_leak(fake=None, clock=None):
+    """A dispatcher that has registered one pending restart (n8n/n8n-0, session sess-r, task task-r)."""
+    fake = fake or Seq(completed_task(text=LEAK, session="sess-i"), approval_task())
+    d = make_remediate(fake, clock=clock)
+    d.handle_grafana({"alerts": [mem_alert()]})
+    return d, fake
+
+
+def test_registry_add_get_remove_and_nonce():
+    reg = dp.PendingRestarts(clock=lambda: 100.0)
+    nonce = reg.add({"ctx": "c1", "task_id": "t1", "agent": "restarter", "calls": [{"id": "x"}]})
+    item = reg.get("c1")
+    assert item["nonce"] == nonce and len(nonce) >= 16 and item["created"] == 100.0
+    assert [i["ctx"] for i in reg.items()] == ["c1"]
+    assert reg.remove("c1") is item and reg.get("c1") is None and reg.items() == []
+    assert reg.add({"ctx": "c1", "task_id": "t2"}) != nonce, "a fresh nonce per registration"
+
+
+def test_remediate_registers_a_matching_pending_call_and_names_the_page():
+    d, fake = pending_after_leak()
+    item = d.pending.get("sess-r")
+    assert item["task_id"] == "task-r" and item["agent"] == "restarter"
+    assert item["calls"] == [{"id": "call-1", "name": "k8s_delete_resource",
+                              "args": {"resource_type": "pod", "resource_name": "n8n-0", "namespace": "n8n"}}]
+    assert item["labels"]["pod"] == "n8n-0" and item["rule"] == "mem" and item["evidence_session"] == "sess-i"
+    t = fake.posted[1][1]["text"]
+    assert "https://approvals.test/approvals" in t
+    assert "--task task-r --approve" in t, "the fallback survives a dispatcher restart"
+
+
+def test_remediate_does_not_register_a_mismatch():
+    fake = Seq(completed_task(text=LEAK, session="s1"),
+               approval_task("r1", args={"resource_type": "pod", "resource_name": "other-0", "namespace": "n8n"}))
+    d = make_remediate(fake)
+    d.handle_grafana({"alerts": [mem_alert()]})
+    assert d.pending.items() == []
+
+
+def test_approve_sends_the_registered_ids_on_the_task_and_posts_the_decision():
+    d, fake = pending_after_leak()
+    nonce = d.pending.get("sess-r")["nonce"]
+    fake.replies.append(completed_task(text="restart requested: n8n/n8n-0", session="sess-r"))
+    out = d.decide_pending("sess-r", nonce, approved=True, reason=None, approver="owner@example.com")
+    assert out["ok"] and out["status"] == 200 and "restart requested" in out["text"]
+    sent = fake.sent[-1]
+    assert sent["url"].endswith("/agents/kagent/restarter")
+    assert sent["context_id"] == "sess-r" and sent["task_id"] == "task-r"
+    assert sent["metadata"] == {a2a.HITL_EXTENSION: {"type": a2a.HITL_TOOL_APPROVAL_RESPONSE,
+                                                      "approvals": [{"id": "call-1", "approved": True}]}}
+    assert sent["token_file"] == "/var/run/kagent/token" and sent["user"] is None
+    assert d.pending.get("sess-r") is None
+    _, decision = fake.posted[-1]
+    assert decision["kind"] == "decision" and decision["agent"] == "restarter" and decision["session"] == "sess-r"
+    assert decision["text"].startswith("Restart approved by owner@example.com: restart requested")
+    assert decision["approved_by"] == "owner@example.com" and decision["labels"]["pod"] == "n8n-0"
+    log = [x for x in fake.logged if x["event"] == "decision"][-1]
+    assert log == {"event": "decision", "approved": True, "approved_by": "owner@example.com", "rule": "mem",
+                   "session": "sess-r", "state": a2a.STATE_COMPLETED, "error": None}
+    # V88: every other send in the whole run carried no metadata
+    assert all(s.get("metadata") is None for s in fake.sent[:-1])
+
+
+def test_reject_carries_the_reason_and_the_restarter_stops():
+    d, fake = pending_after_leak()
+    nonce = d.pending.get("sess-r")["nonce"]
+    fake.replies.append(completed_task(text="no restart: rejected", session="sess-r"))
+    out = d.decide_pending("sess-r", nonce, approved=False, reason="not now", approver="owner@example.com")
+    assert out["ok"]
+    approvals = fake.sent[-1]["metadata"][a2a.HITL_EXTENSION]["approvals"]
+    assert approvals == [{"id": "call-1", "approved": False, "rejection_reason": "not now"}]
+    assert fake.posted[-1][1]["text"].startswith("Restart rejected by owner@example.com (not now)")
+    assert d.pending.get("sess-r") is None
+
+
+@pytest.mark.parametrize("ctx, nonce, approver, status", [
+    ("nope", "x", "owner@example.com", 404),
+    ("sess-r", "wrong", "owner@example.com", 409),
+    ("sess-r", None, "", 403),
+])
+def test_bad_decisions_change_nothing(ctx, nonce, approver, status):
+    d, fake = pending_after_leak()
+    good = d.pending.get("sess-r")["nonce"]
+    out = d.decide_pending(ctx, good if nonce is None else nonce, approved=True, reason=None, approver=approver)
+    assert not out["ok"] and out["status"] == status
+    assert d.pending.get("sess-r") is not None and len(fake.sent) == 2 and len(fake.posted) == 2
+
+
+def test_a_failed_decision_send_keeps_the_item_pending_and_says_so():
+    d, fake = pending_after_leak()
+    nonce = d.pending.get("sess-r")["nonce"]
+    fake.replies.append(a2a.A2AError("gateway down"))
+    out = d.decide_pending("sess-r", nonce, approved=True, reason=None, approver="owner@example.com")
+    assert not out["ok"] and out["status"] == 502 and "gateway down" in out["text"]
+    assert d.pending.get("sess-r") is not None
+    assert fake.posted[-1][1]["kind"] == "decision" and fake.posted[-1][1]["error"]
+
+
+def test_decision_answer_is_scrubbed():
+    d, fake = pending_after_leak()
+    nonce = d.pending.get("sess-r")["nonce"]
+    fake.replies.append(completed_task(text="restart requested; saw token: abcdefghijkl", session="sess-r"))
+    out = d.decide_pending("sess-r", nonce, approved=True, reason=None, approver="o@e.com")
+    assert "abcdefghijkl" not in out["text"] and "abcdefghijkl" not in fake.posted[-1][1]["text"]
+
+
+def test_render_escapes_everything():
+    html = dp.render_approvals_page([{"ctx": "c<1>", "nonce": "n", "agent": "restarter", "created": 0.0,
+                                      "task_id": "t", "verdict": "leak", "evidence_session": "e",
+                                      "labels": {"alertname": "A<b>", "namespace": "n", "pod": "p"},
+                                      "calls": [{"name": "k8s_delete_resource", "args": {"x": "<y>"}}]}],
+                                    ui_url="https://ui/agents/{session}/chat", clock=lambda: 90.0)
+    assert "A<b>" not in html and "A&lt;b&gt;" in html and "&lt;y&gt;" in html and "<y>" not in html
+    assert 'action="/approvals/c%3C1%3E/approve"' in html and 'name="nonce" value="n"' in html
+    assert "https://ui/agents/e/chat" in html and "1 min" in html
+    assert "nothing pending" in dp.render_approvals_page([], ui_url="u").lower()
+
+
+@pytest.fixture
+def approvals():
+    d, fake = pending_after_leak()
+    srv = dp.serve_approvals(d, port=0)
+    yield d, fake, f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+def _form(url, fields: dict, email: str | None):
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    if email is not None:
+        headers["X-Forwarded-Email"] = email
+    req = urllib.request.Request(url, data=urllib.parse.urlencode(fields).encode(), method="POST", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status, resp.read().decode()
+    except urllib.error.HTTPError as err:
+        return err.code, err.read().decode()
+
+
+def test_approvals_server_binds_localhost_only(approvals):
+    _, _, base = approvals
+    assert base.startswith("http://127.0.0.1:")
+
+
+def test_get_lists_the_pending_item_with_its_nonce(approvals):
+    d, _, base = approvals
+    with urllib.request.urlopen(base + "/approvals", timeout=5) as resp:
+        html = resp.read().decode()
+        assert resp.status == 200 and resp.headers["Content-Type"].startswith("text/html")
+    assert "n8n/n8n-0" in html and "k8s_delete_resource" in html
+    assert d.pending.get("sess-r")["nonce"] in html
+
+
+def test_post_approve_with_the_sidecar_header_decides(approvals):
+    d, fake, base = approvals
+    fake.replies.append(completed_task(text="restart requested: n8n/n8n-0", session="sess-r"))
+    status, html = _form(f"{base}/approvals/sess-r/approve", {"nonce": d.pending.get("sess-r")["nonce"]},
+                         "owner@example.com")
+    assert status == 200 and "approved by owner@example.com" in html
+    assert d.pending.get("sess-r") is None
+    with urllib.request.urlopen(base + "/approvals", timeout=5) as resp:
+        assert "nothing pending" in resp.read().decode().lower()
+
+
+def test_post_without_the_email_header_is_403_and_wrong_nonce_409(approvals):
+    d, fake, base = approvals
+    nonce = d.pending.get("sess-r")["nonce"]
+    assert _form(f"{base}/approvals/sess-r/approve", {"nonce": nonce}, None)[0] == 403
+    assert _form(f"{base}/approvals/sess-r/reject", {"nonce": "stale", "reason": "x"}, "o@e.com")[0] == 409
+    assert _form(f"{base}/approvals/sess-r/other", {"nonce": nonce}, "o@e.com")[0] == 404
+    assert d.pending.get("sess-r") is not None and len(fake.sent) == 2
+
+
+def test_webhook_server_never_serves_approvals(server):
+    _, base = server
+    with pytest.raises(urllib.error.HTTPError) as err:
+        urllib.request.urlopen(base + "/approvals", timeout=5)
+    assert err.value.code == 404
+
+
+def test_config_reads_the_approvals_settings():
+    cfg = dp.Config.from_env({})
+    assert cfg.approvals_url == "https://dispatcher.arigsela.com/approvals" and cfg.approvals_port == 8081
+    cfg = dp.Config.from_env({"APPROVALS_URL": "https://x/approvals", "APPROVALS_PORT": "0"})
+    assert cfg.approvals_url == "https://x/approvals" and cfg.approvals_port == 0
