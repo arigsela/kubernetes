@@ -588,10 +588,11 @@ class Dispatcher:
                       "decision": decision})
         self._post_finding(finding, rule)
         if remediate:
-            self.remediate(alert, rule, finding["verdict"], finding["session"])
+            self.remediate(alert, rule, finding["verdict"], finding["session"], finding["text"])
         return finding
 
-    def remediate(self, alert: dict, rule: dict, verdict: str, evidence_session: str | None) -> dict:
+    def remediate(self, alert: dict, rule: dict, verdict: str, evidence_session: str | None,
+                  evidence_text: str | None = None) -> dict:
         """The gated operator call (§T.118, §V.96): a NEW session with the row's
         `remediate.agent` (the restarter), which pauses on its gated delete. The second
         finding carries the pending call's exact arguments and the ask-hk command that
@@ -619,7 +620,8 @@ class Dispatcher:
                     if pending_restart_matches(calls, labels):
                         self.pending.add({"ctx": reply.context_id, "task_id": reply.task_id, "agent": agent,
                                           "calls": calls, "labels": labels, "rule": rule["id"],
-                                          "verdict": verdict, "evidence_session": evidence_session})
+                                          "verdict": verdict, "evidence_session": evidence_session,
+                                          "evidence_text": evidence_text})
                         lines.insert(0, "Restart awaiting approval. Pending call:")
                         lines += [f"Decide at {self.config.approvals_url} (Dex login).",
                                   f"Fallback if the dispatcher restarted since: {cmd} --approve | "
@@ -749,13 +751,18 @@ def render_approvals_page(items: list[dict], *, ui_url: str, message: str | None
         age = max(0, int((clock() - it.get("created", clock())) // 60))
         calls = "\n".join(f"{c.get('name')} {json.dumps(c.get('args') or {}, sort_keys=True)}" for c in it["calls"])
         action = "/approvals/" + urllib.parse.quote(it["ctx"], safe="") + "/"
-        evidence = ui_url.format(session=it.get("evidence_session") or "?")
+        # The evidence is the implementer's answer, carried with the item: a dispatcher-owned
+        # session cannot be opened in the kagent UI, so a link there would be dead. The session
+        # id stays as text for the ask-hk fallback (--as-serviceaccount dispatcher/dispatcher).
         parts.append(
             f'<div class="item"><h2>{e(labels.get("alertname") or "?")}: '
             f'{e(labels.get("namespace") or "?")}/{e(labels.get("pod") or "?")}</h2>'
             f'<p>verdict <b>{e(str(it.get("verdict")))}</b>, agent <code>{e(it["agent"])}</code>, '
-            f'{age} min ago. Evidence: <a href="{e(evidence)}">{e(it.get("evidence_session") or "?")}</a></p>'
-            f'<pre>{e(calls)}</pre>'
+            f'{age} min ago; evidence session <code>{e(it.get("evidence_session") or "?")}</code>, '
+            f'restarter session <code>{e(it["ctx"])}</code>, task <code>{e(it.get("task_id") or "?")}</code></p>'
+            f'<details><summary>Evidence: the implementer\'s answer</summary>'
+            f'<pre>{e(it.get("evidence_text") or "(no answer text)")}</pre></details>'
+            f'<p>Pending call:</p><pre>{e(calls)}</pre>'
             f'<form method="post" action="{e(action)}approve"><input type="hidden" name="nonce" value="{e(it["nonce"])}">'
             f'<button>Approve: delete this pod</button></form>'
             f'<form method="post" action="{e(action)}reject"><input type="hidden" name="nonce" value="{e(it["nonce"])}">'
