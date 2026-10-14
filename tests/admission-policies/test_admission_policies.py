@@ -58,7 +58,7 @@ def test_real_kagent_manifests_are_all_there():
             if d:
                 kinds.setdefault(d["kind"], set()).add(d["metadata"]["name"])
     want = {"homelab-knowledge", "k8s-reader", "k8s-agent", "istio-agent", "build-orchestrator",
-            "skill-suggester", "dungeon-crawler-carl-agent", "implementer"}
+            "skill-suggester", "dungeon-crawler-carl-agent", "implementer", "restarter"}
     assert kinds.get("Agent") == want, kinds.get("Agent")
     assert kinds.get("AgentTemplate") == want, kinds.get("AgentTemplate")
     assert kinds.get("Harness"), "no Harness found"
