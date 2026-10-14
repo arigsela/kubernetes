@@ -55,17 +55,21 @@ NATIVE_HEADER = """\
 # DENY, at admission:
 #
 #   agent-capability             1. an AgentTemplate with no capability.homelab/class in
-#                                   {read, write, admin}
+#                                   {read, propose, write, admin}
 #                                2. an AgentTemplate binding a tool not in the taxonomy
 #                                   (FAIL-CLOSED)
-#                                3. a `read` template binding any write/destructive tool
+#                                3. a `read` template binding any propose/write/destructive
+#                                   tool; 3b. a `propose` template binding any
+#                                   write/destructive tool (propose = branches and pull
+#                                   requests only, ungated: the merge is the gate, §V.94)
 #                                4. a `write` template binding any destructive tool
 #                                5. a write/destructive tool in an MCP binding without
 #                                   requireApproval: true. Approval is per BINDING in 1.0, so
 #                                   an agent that needs both binds the server twice: read
 #                                   tools ungated, mutating tools gated.
 #   agent-capability-delegation  6. a `read` template with a subAgent whose template is
-#                                   `write` or `admin`
+#                                   `propose`, `write` or `admin`; 6b. a `propose` template
+#                                   with a subAgent whose template is `write` or `admin`
 #                                7. a `write` template with a subAgent whose template is `admin`
 #   agent-capability-refs        8. an Agent with an inline spec.template or spec.harness:
 #                                   every Agent must reference an AgentTemplate and a Harness,
@@ -151,9 +155,9 @@ def _policy(name: str, resource: str, variables: list[dict], validations: list[d
             "kind": "ValidatingAdmissionPolicy", "metadata": metadata, "spec": spec}
 
 
-def build_native(read: list[str], write: list[str], destructive: list[str],
+def build_native(read: list[str], propose: list[str], write: list[str], destructive: list[str],
                  runtime_images: list[str]) -> list[dict]:
-    classified = read + write + destructive
+    classified = read + propose + write + destructive
     mutating = write + destructive
     tpl = "\"AgentTemplate '\" + object.metadata.name + \"' "
     cls_var = {"name": "cls",
@@ -169,20 +173,25 @@ def build_native(read: list[str], write: list[str], destructive: list[str],
             {"name": "mcp",
              "expression": "object.spec.?tools.orValue([]).filter(t, has(t.mcp)).map(t, t.mcp)"},
             {"name": "classified", "expression": _cel_list(classified)},
+            {"name": "propose", "expression": _cel_list(propose)},
             {"name": "mutating", "expression": _cel_list(mutating)},
             {"name": "destructive", "expression": _cel_list(destructive)},
         ],
         validations=[
-            _deny("variables.cls in ['read', 'write', 'admin']",
+            _deny("variables.cls in ['read', 'propose', 'write', 'admin']",
                   tpl + "must declare a capability class: the label capability.homelab/class "
-                  "must be one of read, write, admin. There is no default.\""),
+                  "must be one of read, propose, write, admin. There is no default.\""),
             _deny(names.format(cond="n in variables.classified"),
                   tpl + "binds tools that are not in the capability taxonomy. Classify them in "
                   "base-apps/admission-policies/agent-capability-taxonomy.yaml first: "
                   "unclassified tools are denied by design (fail-closed).\""),
-            _deny("variables.cls != 'read' || " + names.format(cond="!(n in variables.mutating)"),
-                  tpl + "is class read but binds mutating tools. A read agent may bind only "
-                  "read-classified tools.\""),
+            _deny("variables.cls != 'read' || "
+                  + names.format(cond="!(n in variables.mutating) && !(n in variables.propose)"),
+                  tpl + "is class read but binds propose or mutating tools. A read agent may bind "
+                  "only read-classified tools.\""),
+            _deny("variables.cls != 'propose' || " + names.format(cond="!(n in variables.mutating)"),
+                  tpl + "is class propose but binds write or destructive tools. A propose agent "
+                  "may bind read and propose tools only.\""),
             _deny("variables.cls != 'write' || " + names.format(cond="!(n in variables.destructive)"),
                   tpl + "is class write but binds destructive tools. Only an admin agent may "
                   "bind destructive tools.\""),
@@ -198,9 +207,9 @@ def build_native(read: list[str], write: list[str], destructive: list[str],
         "agent-capability-delegation", "agenttemplates",
         reporting=False,
         param_kind={"apiVersion": f"{GROUP}/{VERSION}", "kind": "AgentTemplate"},
-        # Only read and write templates are constrained; admin may bind any subagent.
+        # Only read, propose and write templates are constrained; admin may bind any subagent.
         object_selector={"matchExpressions": [
-            {"key": CLASS_LABEL, "operator": "In", "values": ["read", "write"]}]},
+            {"key": CLASS_LABEL, "operator": "In", "values": ["read", "propose", "write"]}]},
         variables=[
             {"name": "mine",
              "expression": f"object.metadata.?labels[?'{CLASS_LABEL}'].orValue('')"},
@@ -210,7 +219,7 @@ def build_native(read: list[str], write: list[str], destructive: list[str],
             # A missing or unrecognised class on the subagent template is treated as admin.
             {"name": "theirs",
              "expression": f"params.metadata.?labels[?'{CLASS_LABEL}'].orValue('admin') in "
-                           f"['read', 'write'] ? params.metadata.labels['{CLASS_LABEL}'] : 'admin'"},
+                           f"['read', 'propose', 'write'] ? params.metadata.labels['{CLASS_LABEL}'] : 'admin'"},
             {"name": "delegatesToParam",
              "expression": "params.metadata.name in variables.delegates"},
         ],
@@ -220,6 +229,11 @@ def build_native(read: list[str], write: list[str], destructive: list[str],
                   "\"' (class \" + variables.theirs + \"). A subagent runs inside the parent and "
                   "takes the conversation over, so this is a privilege escalation. Bind read "
                   "tools directly instead (see homelab-knowledge).\""),
+            _deny("!(variables.mine == 'propose' && variables.delegatesToParam) || "
+                  "variables.theirs in ['read', 'propose']",
+                  tpl + "is class propose but binds subagent template '\" + params.metadata.name + "
+                  "\"' (class \" + variables.theirs + \"). A subagent runs inside the parent, so this "
+                  "is a privilege escalation.\""),
             _deny("!(variables.mine == 'write' && variables.delegatesToParam) || variables.theirs != 'admin'",
                   tpl + "is class write but binds admin subagent template '\" + "
                   "params.metadata.name + \"'. A subagent runs inside the parent, so this is a "
@@ -278,20 +292,20 @@ def build_native(read: list[str], write: list[str], destructive: list[str],
 
 
 def render_native(repo: Path) -> str:
-    read, write, destructive, runtime_images = load_taxonomy(repo)
+    read, propose, write, destructive, runtime_images = load_taxonomy(repo)
     return NATIVE_HEADER + yaml.safe_dump_all(
-        build_native(read, write, destructive, runtime_images),
+        build_native(read, propose, write, destructive, runtime_images),
         sort_keys=False, width=10_000, default_flow_style=False,
     )
 
 
-def load_taxonomy(repo: Path) -> tuple[list[str], list[str], list[str], list[str]]:
+def load_taxonomy(repo: Path) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
     cm = next(
         d for d in yaml.safe_load_all((repo / TAXONOMY).read_text())
         if d and d.get("kind") == "ConfigMap"
     )
     out = []
-    for key in ("read", "write", "destructive", "runtime-images"):
+    for key in ("read", "propose", "write", "destructive", "runtime-images"):
         out.append(json.loads(cm["data"][key]))
     return tuple(out)  # type: ignore[return-value]
 

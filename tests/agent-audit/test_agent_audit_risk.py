@@ -96,7 +96,7 @@ def test_state_shape_and_approval_marker(classes):
     s = ar.build_state(calls, classes)
     assert s["agent"] == "kagent__NS__k8s_agent" and s["session"] == "s1"
     assert s["started"] == "2026-10-01T10:00:00+00:00" and s["ended"] == "2026-10-01T10:00:02+00:00"
-    assert s["counts"] == {"read": 1, "write": 1, "destructive": 0, "unknown": 0, "approvals": 1}
+    assert s["counts"] == {"read": 1, "propose": 0, "write": 1, "destructive": 0, "unknown": 0, "approvals": 1}
     assert [c["tool"] for c in s["calls"]] == ["k8s_get_resources", "k8s_patch_resource"]
     assert s["calls"][0]["approval_requested_before"] is False
     assert s["calls"][1]["approval_requested_before"] is True
@@ -301,3 +301,19 @@ def test_mid_body_disconnect_is_a_jev_error():
 
     with pytest.raises(ar.JevError):
         ar.ask_jev({}, api_key="k", transport=transport)
+
+
+# ------------------------------------------------------------- propose (§V.94)
+
+def test_load_gated_tools_reads_the_propose_class():
+    cls = ar.load_gated_tools(TAXONOMY)
+    assert cls["create_pull_request"] == "propose"
+
+
+def test_propose_call_is_a_candidate_with_its_own_reason(classes):
+    assert ar.is_candidate([_call("create_pull_request", {"title": "fix"})], classes) == ["propose:create_pull_request"]
+
+
+def test_state_counts_propose_calls(classes):
+    state = ar.build_state([_call("create_pull_request", {"title": "fix"})], classes)
+    assert state["counts"]["propose"] == 1 and state["counts"]["unknown"] == 0
