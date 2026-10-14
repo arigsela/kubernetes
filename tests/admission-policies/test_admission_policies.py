@@ -50,7 +50,7 @@ def test_real_kagent_manifests_update_without_warnings(cluster, path):
 
 
 def test_real_kagent_manifests_are_all_there():
-    """The harness must exercise the real agents, not a subset: seven Agents and their seven
+    """The harness must exercise the real agents, not a subset: eight Agents and their eight
     AgentTemplates. A glob that silently found nothing would make the test above vacuous."""
     kinds = {}
     for p in real_kagent_files():
@@ -58,7 +58,7 @@ def test_real_kagent_manifests_are_all_there():
             if d:
                 kinds.setdefault(d["kind"], set()).add(d["metadata"]["name"])
     want = {"homelab-knowledge", "k8s-reader", "k8s-agent", "istio-agent", "build-orchestrator",
-            "skill-suggester", "dungeon-crawler-carl-agent"}
+            "skill-suggester", "dungeon-crawler-carl-agent", "implementer"}
     assert kinds.get("Agent") == want, kinds.get("Agent")
     assert kinds.get("AgentTemplate") == want, kinds.get("AgentTemplate")
     assert kinds.get("Harness"), "no Harness found"
