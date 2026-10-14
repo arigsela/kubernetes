@@ -16,8 +16,14 @@ spec:
       kind: Service
       name: kagent-controller
   rules:
+    # The path match is the API server's default for a queryParams-only match; it is spelled
+    # out so Argo CD's diff of this rule is empty (the defaults it ignores are listed on the
+    # Application, this one is not).
     - matches:
-        - queryParams:
+        - path:
+            type: PathPrefix
+            value: /
+          queryParams:
             - type: RegularExpression
               name: user_id
               value: ".*"
