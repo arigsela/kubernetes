@@ -23,7 +23,7 @@ sources:
    `skip-budget` / `skip-repeat` means the limits held; `resolved` means the notification was
    the all-clear.
 2. Did the investigation finish? `grep '"event": "finding"'`: `error` names an A2A failure
-   or a post failure; `session` is the kagent session to open in the UI
+   or a post failure; `session` is the kagent session (continue it with `scripts/ask-hk --agent kagent/<agent> --as-serviceaccount dispatcher/dispatcher --context <id>`; the kagent UI cannot open a dispatcher-owned session)
    (`https://kagent.arigsela.com/agents/<session>/chat`).
 3. Is Grafana delivering at all? Grafana → Alerting → Contact points → `n8n` → the second
    integration's last delivery. A 404 there means the Service or the pod is gone.

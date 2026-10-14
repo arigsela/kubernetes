@@ -133,7 +133,7 @@ def make(fake, table=TABLE, per_hour=2):
     t = json.loads(json.dumps(table))
     t["limits"]["investigations_per_hour"] = per_hour
     cfg = dp.Config(table_path="/dev/null", a2a_base="http://a2a:8083", n8n_base="http://n8n:5678/webhook",
-                    user="dispatcher", timeout=5.0, ui_url="https://ui/agents/{session}/chat")
+                    user="dispatcher", timeout=5.0)
     return dp.Dispatcher(dp.load_table(json.dumps(t)), cfg, send=fake.send, post=fake.post,
                          log=fake.log, run_async=False)
 
@@ -151,7 +151,10 @@ def test_firing_matched_alert_is_investigated_as_dispatcher_in_a_new_session():
     url, finding = fake.posted[0]
     assert url == "http://n8n:5678/webhook/agent-findings"
     assert finding["session"] == "sess-1" and finding["agent"] == "k8s-reader"
-    assert finding["ui"] == "https://ui/agents/sess-1/chat"
+    # No kagent-UI link: a dispatcher-owned session cannot be opened there (dead links in
+    # Slack since the dispatcher went live). The session id and the continuation command instead.
+    assert finding["ui"] is None
+    assert "--agent kagent/k8s-reader --as-serviceaccount dispatcher/dispatcher --context sess-1" in finding["text"]
     assert finding["text"].startswith("The pod is throttled")
     assert finding["error"] is None
     events = [x["event"] for x in fake.logged]
@@ -191,7 +194,7 @@ def test_waiting_reply_posts_paused_finding_without_answering():
     assert "paused" in finding["text"] and "kagent UI" not in finding["text"]
     assert "--as-serviceaccount dispatcher/dispatcher --context sess-2" in finding["text"]
     assert '"<answer>"' in finding["text"] and "--approve" not in finding["text"]   # a question, not a call
-    assert finding["ui"] == "https://ui/agents/sess-2/chat"
+    assert finding["ui"] is None
     assert len(fake.sent) == 1, "the dispatcher never answers a paused task"
 
 
@@ -293,7 +296,7 @@ def test_secret_looking_values_are_scrubbed_before_posting():
     for leaked in ("abc.def-123", "AKIAIOSFODNN7EXAMPLE", "hunter2", "github_pat_11AAAA", "sk-ant-api03-xyz"):
         assert leaked not in finding["text"], leaked
     assert finding["text"].count("[redacted]") == 5
-    assert finding["text"].endswith("the pod is fine.")
+    assert "the pod is fine.\nSession sess-1" in finding["text"]
 
 
 def test_scrub_leaves_ordinary_text_alone():
@@ -313,7 +316,7 @@ def test_investigation_sends_the_projected_token_not_a_user(tmp_path):
                          "artifacts": [{"parts": [{"text": "looked"}]}]}}
 
     cfg = dp.Config(table_path="x", a2a_base="http://a", n8n_base="http://n", user="dispatcher",
-                    timeout=5, ui_url="u/{session}", token_file=str(f))
+                    timeout=5, token_file=str(f))
     d = dp.Dispatcher(dp.load_table(json.dumps(TABLE)), cfg, send=send, post=lambda *a, **k: None,
                       log=lambda o: None, run_async=False)
     d.handle_grafana({"alerts": [alert()]})
@@ -342,7 +345,7 @@ def mem_alert(fp="fp-1", pod="n8n-0", namespace="n8n"):
 
 def make_propose(fake, count):
     cfg = dp.Config(table_path="/dev/null", a2a_base="http://a2a:8083", n8n_base="http://n8n:5678/webhook",
-                    user="dispatcher", timeout=5.0, ui_url="https://ui/agents/{session}/chat")
+                    user="dispatcher", timeout=5.0)
     counter = dp.OpenPRs("arigsela/kubernetes", "arigsela-implementer[bot]", fetch=count, clock=lambda: 0.0)
     return dp.Dispatcher(dp.load_table(json.dumps(PROPOSE_TABLE)), cfg, send=fake.send, post=fake.post,
                          log=fake.log, run_async=False, open_prs=counter)
@@ -480,7 +483,7 @@ class Seq(Fake):
 
 def make_remediate(fake, table=REMEDIATE_TABLE, clock=None):
     cfg = dp.Config(table_path="/dev/null", a2a_base="http://a2a:8083", n8n_base="http://n8n:5678/webhook",
-                    user="dispatcher", timeout=5.0, ui_url="https://ui/agents/{session}/chat",
+                    user="dispatcher", timeout=5.0,
                     approvals_url="https://approvals.test/approvals")
     counter = dp.OpenPRs("arigsela/kubernetes", "arigsela-implementer[bot]", fetch=lambda: [], clock=lambda: 0.0)
     kw = {}
@@ -552,7 +555,7 @@ def test_leak_verdict_opens_a_restarter_session_and_posts_the_pending_call():
     assert remediation["session"] == "sess-r" and remediation["evidence_session"] == "sess-i"
     assert remediation["pending"] == [{"name": "k8s_delete_resource",
                                        "args": {"resource_type": "pod", "resource_name": "n8n-0", "namespace": "n8n"}}]
-    assert remediation["ui"] == "https://ui/agents/sess-r/chat"
+    assert remediation["ui"] is None
     t = remediation["text"]
     assert "awaiting approval" in t and "k8s_delete_resource" in t and '"resource_name": "n8n-0"' in t
     assert ("--agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context sess-r "
@@ -898,15 +901,15 @@ def test_render_escapes_everything():
                                       "evidence_text": "OOMKilled twice <script>x</script>",
                                       "labels": {"alertname": "A<b>", "namespace": "n", "pod": "p"},
                                       "calls": [{"name": "k8s_delete_resource", "args": {"x": "<y>"}}]}],
-                                    ui_url="https://ui/agents/{session}/chat", clock=lambda: 90.0)
+                                    clock=lambda: 90.0)
     assert "A<b>" not in html and "A&lt;b&gt;" in html and "&lt;y&gt;" in html and "<y>" not in html
     assert 'action="/approvals/c%3C1%3E/approve"' in html and 'name="nonce" value="n"' in html
     assert "1 min" in html
     # The evidence is the implementer's answer, shown on the page (a dispatcher-owned session is
     # invisible in the kagent UI, so no link there); the session id stays as text for ask-hk.
     assert "<details>" in html and "OOMKilled twice &lt;script&gt;" in html and "<script>" not in html
-    assert "https://ui/agents/e/chat" not in html and ">e<" in html or "session e" in html
-    assert "nothing pending" in dp.render_approvals_page([], ui_url="u").lower()
+    assert "kagent.arigsela.com" not in html and ">e<" in html
+    assert "nothing pending" in dp.render_approvals_page([]).lower()
 
 
 @pytest.fixture
