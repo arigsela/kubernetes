@@ -33,11 +33,18 @@ def test_class_model_and_harness():
 def test_bindings_are_the_contract_and_no_subagents():
     b = bindings()
     assert b[("implementer", False)] == IMPLEMENTER_READ_TOOLS + IMPLEMENTER_PROPOSE_TOOLS
-    assert b[("agent-docs", False)] == ["get_file_contents", "search_code"]
     assert b[("kagent-tool-server", False)] == K8S_READ
-    assert set(b) == {("implementer", False), ("agent-docs", False), ("kagent-tool-server", False)}
+    assert set(b) == {("implementer", False), ("kagent-tool-server", False)}
     assert not [x for x in template()["spec"]["tools"] if "subAgent" in x]
     assert not any(n in sum(b.values(), []) for n in NEVER_LOADED)
+
+
+def test_no_tool_name_is_bound_twice():
+    """The Go ADK refuses an agent whose bindings repeat a tool name ("duplicate tool:
+    get_file_contents", acceptance 2026-10-14), so the read-only agent-docs server is not bound
+    beside the implementer server that has the same read tools."""
+    names = sum(bindings().values(), [])
+    assert len(names) == len(set(names)), sorted(n for n in names if names.count(n) > 1)
 
 
 def test_prompt_pins_the_deny_list_and_the_file_cap():

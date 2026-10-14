@@ -1,7 +1,7 @@
 # implementer — the agent that changes this repository, under its own identity (§T.116, §V.94,
 # §V.95). WHAT it is: Sonnet 5.5, class `propose`: it binds the implementer GitHub tools (read +
-# the taxonomy's five proposal tools, ungated: the merge is the human gate), the agent-docs read
-# tools and k8s-reader's eight read tools, so it can investigate before it proposes. HOW it runs:
+# the taxonomy's five proposal tools, ungated: the merge is the human gate) and k8s-reader's
+# eight read tools, so it can investigate before it proposes. HOW it runs:
 # ../agents/implementer.yaml -> ../harnesses/kagent-stateless.yaml (no memory: every task starts
 # from the repository and the request). No sub-agents. It never merges, closes, reviews or
 # comments on a pull request; the server does not even load those tools.
@@ -93,16 +93,9 @@ spec:
           - push_files
           - create_pull_request
           - update_pull_request
-    # The read-only GitHub server the knowledge agent uses, for the same repo under the
-    # read-only token: cheap reads that do not spend the App's rate limit.
-    - mcp:
-        server:
-          kind: RemoteMCPServer
-          name: agent-docs
-        requireApproval: false
-        tools:
-          - get_file_contents
-          - search_code
+    # NOT the agent-docs server as well: its get_file_contents/search_code have the same names
+    # as the implementer server's, and the Go ADK refuses an agent whose bindings repeat a tool
+    # name ("duplicate tool", acceptance 2026-10-14). The implementer server reads the same repo.
     # Exactly k8s-reader's eight read tools: the evidence for a resource alert.
     - mcp:
         server:

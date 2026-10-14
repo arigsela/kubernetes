@@ -156,7 +156,7 @@ group moves all five charts in one PR, and only after approval on the Dependency
 | `build-orchestrator` | `anthropic-claude-sonnet-5-5` | `kagent-memory` | admin | no tools of its own; sub-agents `k8s-agent` and `istio-agent` |
 | `skill-suggester` | `anthropic-claude-haiku-5-5` | `kagent-chat` | read | none (called by the Backstage wizard) |
 | `dungeon-crawler-carl-agent` | `anthropic-claude-haiku-5-5` | `kagent-chat` | read | `brave-search` (`brave_web_search`) for book facts it is unsure of |
-| `implementer` | `anthropic-claude-sonnet-5-5` | `kagent-stateless` | propose | `implementer` (7 read + the 5 propose tools, ungated: the merge is the gate), `agent-docs`, and the 8 read tools of `kagent-tool-server`. Opens PRs under GitHub App `arigsela-implementer`; called by a human (ask-hk) or the dispatcher (§T.116) |
+| `implementer` | `anthropic-claude-sonnet-5-5` | `kagent-stateless` | propose | `implementer` (7 read + the 5 propose tools, ungated: the merge is the gate) and the 8 read tools of `kagent-tool-server` (not `agent-docs` too: a tool name bound twice is refused by the runtime). Opens PRs under GitHub App `arigsela-implementer`; called by a human (ask-hk) or the dispatcher (§T.116) |
 
 The class label lives on the AgentTemplate and is checked against the capability taxonomy
 (`base-apps/admission-policies/agent-capability-taxonomy.yaml`): a `read` template binds only
