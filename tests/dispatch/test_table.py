@@ -1,5 +1,5 @@
 # tests/dispatch/test_table.py
-"""The dispatch table is complete over the Grafana rules and routes only to read-only agents (V87)."""
+"""The dispatch table is complete over the Grafana rules and routes only to read-or-propose agents (V87)."""
 from pathlib import Path
 import json
 
@@ -26,9 +26,14 @@ def alert_titles() -> set[str]:
     return {r["title"] for g in rules["groups"] for r in g["rules"]}
 
 
-def read_tools() -> set[str]:
+def tools_of(cls: str) -> set[str]:
     cm = yaml.safe_load(TAXONOMY.read_text())
-    return set(json.loads(cm["data"]["read"]))
+    return set(json.loads(cm["data"][cls]))
+
+
+def template_class(name: str) -> str:
+    doc = yaml.safe_load((TEMPLATES / f"{name}.yaml").read_text())
+    return doc["metadata"]["labels"]["capability.homelab/class"]
 
 
 def prompt_of(row: dict) -> str:
@@ -73,8 +78,9 @@ def test_every_row_has_an_id_a_reason_and_a_known_route():
             assert prompt_of(row).strip(), f"{row['id']}: an agent route needs a prompt"
 
 
-def test_agent_routes_are_read_only_templates():
-    read = read_tools()
+def test_agent_routes_are_read_or_propose_templates_with_no_gate():
+    """§V.87 (amended 2026-10-14): read or propose tools only, never a requireApproval binding."""
+    allowed = tools_of("read") | tools_of("propose")
     for row in load_table()["rules"]:
         if not row["route"].startswith("agent:"):
             continue
@@ -82,8 +88,31 @@ def test_agent_routes_are_read_only_templates():
         assert (TEMPLATES / f"{name}.yaml").exists(), f"{row['id']}: no AgentTemplate {name}"
         tools, gated = template_tools(name)
         assert tools, f"{name} binds no tools; nothing to investigate with"
-        assert tools <= read, f"{name} binds non-read tools: {sorted(tools - read)}"
+        assert tools <= allowed, f"{name} binds write/destructive tools: {sorted(tools - allowed)}"
         assert not gated, f"{name} has a requireApproval binding; the dispatcher never answers approvals"
+
+
+def test_proposes_flag_matches_the_template_class():
+    """A row that can end in a pull request says so, and only those rows are capped."""
+    for row in load_table()["rules"]:
+        if not row["route"].startswith("agent:"):
+            assert not row.get("proposes"), row["id"]
+            continue
+        name = row["route"].split(":", 1)[1]
+        assert bool(row.get("proposes")) == (template_class(name) == "propose"), row["id"]
+
+
+def test_table_caps_open_prs():
+    assert load_table()["limits"]["open_prs_max"] >= 1
+
+
+def test_resource_alerts_route_to_the_implementer():
+    rows = {r["match"]["alertname"]: r for r in load_table()["rules"] if r["source"] == "grafana"}
+    for title in ("Container near memory limit", "Pod CPU starved"):
+        row = rows[title]
+        assert row["route"] == "agent:implementer" and row["proposes"] is True
+        p = prompt_of(row)
+        assert "limit too low" in p and "no pull request" in p and "{labels[pod]}" in p
 
 
 def test_prompts_only_use_known_placeholders():

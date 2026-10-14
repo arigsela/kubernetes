@@ -35,17 +35,23 @@ verifies it: the session is owned by `system:serviceaccount:dispatcher:dispatche
 ## What it is not
 - Not in the human path. Grafana's contact point `n8n` has two integrations: n8n (→ Slack,
   unchanged) and this service. If the dispatcher is down, Slack is unaffected (§V.86).
-- Not an operator. It may only route to agents whose every tool is `read` in the capability
-  taxonomy with no `requireApproval` binding; `tests/dispatch/test_table.py` enforces it
-  (§V.87). It never answers an approval or a question (§V.88).
+- Not an operator. It may only route to agents whose every tool is `read` or `propose` in the
+  capability taxonomy with no `requireApproval` binding (§V.87, amended 2026-10-14: a `propose`
+  agent can open a pull request, never touch the cluster); `tests/dispatch/test_table.py`
+  enforces it. It never answers an approval or a question (§V.88).
 - Not a second source of truth for Slack: n8n holds the Slack token; this service holds no
   credential at all.
 
 ## The table
 `dispatch-table.yaml` is a ConfigMap whose `dispatch.json` key is the table: `limits`
-(`investigations_per_hour`, `repeat_after_hours`) and ordered `rules` (`id`, `source`, `match`
-on alert labels, `route`, `prompt` for agent routes, `why`). Every Grafana rule title must
-have a row; `none` with a `why` is a decision. Only `firing` alerts are routed.
+(`investigations_per_hour`, `repeat_after_hours`, `open_prs_max`) and ordered `rules` (`id`,
+`source`, `match` on alert labels, `route`, `prompt` for agent routes, `proposes`, `why`).
+Every Grafana rule title must have a row; `none` with a `why` is a decision. Only `firing`
+alerts are routed. A row with `proposes: true` routes to the implementer and is skipped
+(`skip-open-prs`) while that agent has `open_prs_max` pull requests open, counted
+unauthenticated from the public repo every five minutes; a failed count is logged
+(`event: open-prs`) and the alert is routed anyway (§T.117). The two resource alerts are such
+rows: the finding ends in a pull request link, or `no pull request: <reason>`.
 
 ## Identity and record
 Sessions are owned by `system:serviceaccount:dispatcher:dispatcher` (the projected token in
@@ -56,5 +62,5 @@ shared secret).
 
 ## Observability
 One JSON line per decision (`event: dispatch`, `decision` ∈ investigate / none / resolved /
-unmatched / skip-budget / skip-repeat) and per finding (`event: finding`, with the session id,
+unmatched / skip-budget / skip-repeat / skip-open-prs) and per finding (`event: finding`, with the session id,
 never the answer text). Loki: `{namespace="dispatcher"} | json | event="dispatch"`.
