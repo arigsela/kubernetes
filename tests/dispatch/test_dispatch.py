@@ -188,7 +188,9 @@ def test_waiting_reply_posts_paused_finding_without_answering():
     make(fake).handle_grafana({"alerts": [alert()]})
     _, finding = fake.posted[0]
     assert finding["state"] == "TASK_STATE_INPUT_REQUIRED"
-    assert "paused" in finding["text"]
+    assert "paused" in finding["text"] and "kagent UI" not in finding["text"]
+    assert "--as-serviceaccount dispatcher/dispatcher --context sess-2" in finding["text"]
+    assert '"<answer>"' in finding["text"] and "--approve" not in finding["text"]   # a question, not a call
     assert finding["ui"] == "https://ui/agents/sess-2/chat"
     assert len(fake.sent) == 1, "the dispatcher never answers a paused task"
 

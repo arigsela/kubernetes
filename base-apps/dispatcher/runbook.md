@@ -29,8 +29,11 @@ sources:
    integration's last delivery. A 404 there means the Service or the pod is gone.
 
 ## The agent paused instead of answering
-The finding says "paused". The dispatcher never answers (§V.88): open the session in the UI
-and decide there. If a read-only agent pauses, something bound a gated tool to it;
+The finding says "paused" and names the command. The dispatcher never answers (§V.88), and
+the kagent UI cannot see a dispatcher-owned session: continue it as the dispatcher's
+identity, `scripts/ask-hk --agent kagent/<agent> --as-serviceaccount dispatcher/dispatcher
+--context <id>` (an answer), or `… --task <task> --approve | --reject REASON` (an approval
+the laptop never saw). If a read-only agent pauses, something bound a gated tool to it;
 `tests/dispatch/test_table.py` would have failed, so check what changed. The `restarter` is
 meant to pause: see the next section.
 

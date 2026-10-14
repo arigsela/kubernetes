@@ -484,8 +484,13 @@ class Dispatcher:
         if reply.completed:
             finding["text"] = scrub((reply.answer or "")[:ANSWER_LIMIT])
         elif reply.waiting:
-            finding["text"] = ("The agent paused for input (an approval or a question). "
-                               "The dispatcher never answers; continue it in the kagent UI.")
+            # The UI cannot see a dispatcher-owned session: the owner continues it as the
+            # dispatcher's identity, with --task for an approval the laptop never saw.
+            how = (f"--task {reply.task_id or '?'} --approve | --reject REASON" if reply.pending_calls
+                   else '"<answer>"')
+            finding["text"] = ("The agent paused for input (an approval or a question). The dispatcher "
+                               f"never answers; continue it with scripts/ask-hk --agent kagent/{agent} "
+                               f"--as-serviceaccount dispatcher/dispatcher --context {reply.context_id or '?'} {how}.")
         else:
             finding["error"] = f"task ended in {reply.state}: {scrub(reply.status_text or '')[:300]}"
         return reply
