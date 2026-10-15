@@ -246,6 +246,11 @@ In v1alpha3 an AgentTemplate MCP binding accepts only a same-namespace `RemoteMC
 | `kagent-api` (chart) | the controller's own `/mcp` | none |
 
 The kmcp `MCPServer` only deploys a server and its Service; it registers no tools with agents.
+An agent initializes every `RemoteMCPServer` its template binds at the start of each run and
+fails the run if one does not answer (`agent run failed: … failed to init MCP session … Service
+Unavailable`). A tool server that is restarting therefore fails every agent bound to it, not only
+the calls that would have used it: `brave-search-mcp` OOM-killed mid-initialize took a
+`homelab-knowledge` review down with it on 2026-10-15 (runbook, "an agent run fails at start").
 `catalog.query-catalog-entities` is deliberately not bound (its input schema broke the 0.10 ADK
 converter; re-test and classify it before adding it).
 

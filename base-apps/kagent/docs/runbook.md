@@ -179,6 +179,19 @@ The App token is minted from the Secret `implementer-github-app` (Vault `impleme
 - **Check:** `kubectl -n kagent get externalsecret brave-search-mcp-api-key` (must be `SecretSynced`), then `kubectl -n kagent get pods -l app.kubernetes.io/name=brave-search-mcp` and its logs, then `kubectl -n kagent get remotemcpserver.api.kagent.dev brave-search -o yaml` for the discovered tools. A `SecretSyncedError` means the key is missing or wrong in Vault (`k8s-secrets/brave-search-mcp`, property `api-key`); the MCP server pod cannot start without it. A 401/403/429 in the pod logs is the Brave API: wrong key, or the Free plan's 2,000 queries/month used up (https://api-dashboard.search.brave.com/).
 - **Fix:** write or rotate the key with `BRAVE_API_KEY=... scripts/provision-brave-search-vault.sh` (it also recreates the Vault role and policy if they are missing), then force the ExternalSecret: `kubectl -n kagent annotate externalsecret brave-search-mcp-api-key force-sync=$(date +%s) --overwrite`. The pod starts on its own once the Secret exists. The agents keep answering without search in the meantime; they just say so.
 
+### Symptom: an agent run fails at start with `failed to init MCP session … Service Unavailable`
+- **Check:** one of the tool servers the agent's template binds was down at that second. The
+  message does not name it: `kubectl -n kagent get pods` and look for a recent restart
+  (`brave-search-mcp`, `agent-docs-mcp`, `implementer-mcp`, `kagent-tools`), then
+  `kubectl -n kagent get pod <pod> -o jsonpath='{.status.containerStatuses[0].lastState}'`
+  for the reason (`OOMKilled` on brave-search-mcp, 2026-10-15). Every agent bound to that
+  server fails the same way until it is back.
+- **Fix:** nothing for the run itself; ask again once the pod is `Running` (about a minute).
+  For a repeat OOM, the pod's memory history in Prometheus (`container_memory_working_set_bytes`,
+  namespace `kagent`) tells sizing from a leak: steps at moments of use are sizing, a steady
+  climb is a leak. Sizing is the limit in the `MCPServer` manifest (and `NODE_OPTIONS` for a
+  node server); a leak is an image bump.
+
 ### Symptom: a `RemoteMCPServer` isn't accepted, or an agent says it lacks a tool
 - **Check:** `kubectl -n kagent get remotemcpservers` (`ACCEPTED`) and
   `kubectl -n kagent describe remotemcpserver <name>` (`status.discoveredTools`). For `agent-docs`,
