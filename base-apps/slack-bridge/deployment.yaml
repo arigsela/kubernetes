@@ -45,7 +45,7 @@ spec:
             # The ONE Slack user the bridge answers and the email the dispatcher records as
             # the approver when a button is pressed (§V.98). Not secrets; in git on purpose.
             - name: OWNER_SLACK_USER_ID
-              value: "U0CHANGEME"
+              value: "U09M73ZPE77"
             - name: OWNER_EMAIL
               value: "arigsela@gmail.com"
             - name: DEFAULT_AGENT
