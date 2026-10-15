@@ -27,7 +27,7 @@ spec:
         # and nothing restarts the pod, so this checksum changes the pod template instead.
         # scripts/gen-slack-bridge-configmap.py writes it; tests/slack_bridge/test_manifests.py
         # fails if it is stale.
-        checksum/code: "7629d947ae2aa9be5deab404d1d4be60862317099f8ede4fb80a1318ee6e7220"
+        checksum/code: "1a2ee785c222ec52685b8b939896482c2a923ff86acc6bed0463057d8546cbea"
     spec:
       serviceAccountName: slack-bridge
       automountServiceAccountToken: false   # never talks to the API server; the projected token below is for kagent
@@ -48,6 +48,10 @@ spec:
               value: "U09M73ZPE77"
             - name: OWNER_EMAIL
               value: "arigsela@gmail.com"
+            # The zone the owner speaks in. The first message of every session tells the agent,
+            # so "the alert last night at 11pm" is a time it can look up; unset = nothing said.
+            - name: OWNER_TIMEZONE
+              value: "America/New_York"
             - name: DEFAULT_AGENT
               value: homelab-knowledge
             # The agents a first word `name:` may pick. Every one of them, including the two

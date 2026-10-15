@@ -5,8 +5,10 @@ Design: docs/superpowers/specs/2026-10-14-slack-bridge-design.md (§T.120, §V.9
 One Socket Mode connection (an outbound websocket the bridge opens with the app-level token,
 so nothing inbound crosses the IP allow-list), one replica, one owner. A mention or a DM is a
 question to an agent over A2A (scripts/kagent_a2a.py, the HITL extension, the pod's projected
-token); one Slack thread is one kagent session. A paused agent gets Approve / Reject buttons in
-the thread; the dispatcher's "Restart awaiting approval" messages (posted by n8n with the same
+token); one Slack thread is one kagent session. A mention under a message the bridge did not
+post (an n8n alert, say) hands the agent that message as context, since the agent cannot read
+Slack; the first message of every session also tells it the owner's time zone, so "last night
+at 11pm" means something. A paused agent gets Approve / Reject buttons in the thread; the dispatcher's "Restart awaiting approval" messages (posted by n8n with the same
 Slack app) carry the same buttons, and a click on those is forwarded to the dispatcher's decide
 port with the owner's email as the approver.
 
@@ -18,6 +20,7 @@ Environment:
     SLACK_APP_TOKEN          xapp-… (apps.connections.open only)
     OWNER_SLACK_USER_ID      the ONE Slack user the bridge listens to (U…)
     OWNER_EMAIL              what the dispatcher records as the approver
+    OWNER_TIMEZONE           IANA zone the owner speaks in (America/New_York); unset = nothing said
     DEFAULT_AGENT            homelab-knowledge
     AGENTS                   comma list of agent names a first word `name:` may pick
     KAGENT_A2A_BASE          http://kagent-controller.kagent.svc.cluster.local:8083
@@ -29,6 +32,7 @@ Environment:
 from __future__ import annotations
 
 import base64
+import datetime
 import hashlib
 import json
 import os
@@ -43,6 +47,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zoneinfo
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -217,9 +222,16 @@ class Slack:
         self.post = post
         self.timeout = timeout
 
-    def call(self, method: str, **params) -> dict:
-        headers = {"Authorization": f"Bearer {self.bot_token}", "Content-Type": "application/json; charset=utf-8"}
-        body = self.post(f"{SLACK_API}/{method}", json.dumps(params).encode(), headers, self.timeout)
+    def call(self, method: str, *, form: bool = False, **params) -> dict:
+        """Write methods take JSON; read methods (conversations.*) take a form body."""
+        headers = {"Authorization": f"Bearer {self.bot_token}"}
+        if form:
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+            payload = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None}).encode()
+        else:
+            headers["Content-Type"] = "application/json; charset=utf-8"
+            payload = json.dumps(params).encode()
+        body = self.post(f"{SLACK_API}/{method}", payload, headers, self.timeout)
         if not isinstance(body, dict) or not body.get("ok"):
             raise SlackError(f"{method}: {body.get('error') if isinstance(body, dict) else body!r:.200}")
         return body
@@ -241,6 +253,14 @@ class Slack:
 
     def update_message(self, channel: str, ts: str, text: str, *, blocks: list | None = None) -> dict:
         return self.call("chat.update", channel=channel, ts=ts, text=clip(text), blocks=blocks or [])
+
+    def parent_message(self, channel: str, thread_ts: str) -> dict:
+        """The message a thread hangs off (conversations.replies lists it first)."""
+        body = self.call("conversations.replies", form=True, channel=channel, ts=thread_ts, limit=1)
+        messages = body.get("messages") or []
+        if not messages or messages[0].get("ts") != thread_ts:
+            raise SlackError("conversations.replies: no parent in the answer")
+        return messages[0]
 
     def react(self, channel: str, ts: str, name: str, *, add: bool = True) -> None:
         """Best effort: a missing or duplicate reaction is not an error worth a thread message."""
@@ -342,6 +362,7 @@ class Config:
     app_token: str
     owner_user_id: str
     owner_email: str
+    owner_timezone: str | None = None
     default_agent: str = "homelab-knowledge"
     agents: tuple = ("homelab-knowledge",)
     a2a_base: str = a2a.IN_CLUSTER_BASE
@@ -363,6 +384,7 @@ class Config:
         return cls(
             bot_token=env["SLACK_BOT_TOKEN"], app_token=env["SLACK_APP_TOKEN"],
             owner_user_id=env["OWNER_SLACK_USER_ID"], owner_email=env["OWNER_EMAIL"],
+            owner_timezone=env.get("OWNER_TIMEZONE") or None,
             default_agent=default, agents=agents,
             a2a_base=env.get("KAGENT_A2A_BASE", a2a.IN_CLUSTER_BASE),
             token_file=env.get("KAGENT_TOKEN_FILE", "/var/run/kagent/token") or None,
@@ -437,6 +459,49 @@ def decided_blocks(message: dict, line: str) -> list:
     return keep + [{"type": "context", "elements": [{"type": "mrkdwn", "text": line}]}]
 
 
+def message_text(message: dict) -> str:
+    """A message's text, or its section blocks' text when the text is empty (Block Kit posts)."""
+    text = (message.get("text") or "").strip()
+    if text:
+        return text
+    parts = []
+    for block in message.get("blocks") or []:
+        t = block.get("text")
+        if isinstance(t, dict) and t.get("text"):
+            parts.append(t["text"].strip())
+    return "\n".join(p for p in parts if p)
+
+
+def message_author(message: dict) -> str:
+    profile = message.get("bot_profile") or {}
+    if profile.get("name"):
+        return profile["name"]
+    if message.get("username"):
+        return message["username"]
+    return f"<@{message['user']}>" if message.get("user") else "someone"
+
+
+def when(ts: str | float | None, zone: datetime.tzinfo) -> str:
+    try:
+        return datetime.datetime.fromtimestamp(float(ts), zone).strftime("%Y-%m-%d %H:%M %Z")
+    except (TypeError, ValueError, OverflowError):
+        return "an unknown time"
+
+
+def with_context(question: str, parent: dict | None, zone: datetime.tzinfo, zone_name: str | None,
+                 zone_note: str = "", now: float | None = None) -> str:
+    """The first message of a session: the question, then what the agent cannot see for itself."""
+    lines = [question]
+    body = message_text(parent) if parent else ""
+    if body:
+        lines += ["", f"Context from Slack: this was asked in the thread of a message posted "
+                      f"{when(parent.get('ts'), zone)} by {message_author(parent)}:", '"""', clip(body, 3000), '"""']
+    if zone_name:
+        lines += ["", f"The owner's local time zone is {zone_name}{zone_note}; "
+                      f"now it is {when(now if now is not None else time.time(), zone)}."]
+    return "\n".join(lines)
+
+
 def _is_timeout(err: BaseException) -> bool:
     if isinstance(err, TimeoutError):
         return True
@@ -456,6 +521,14 @@ class Bridge:
         self.pending: dict[str, Pending] = {}
         self._seen: dict[str, float] = {}
         self._lock = threading.Lock()
+        self._zone: datetime.tzinfo = datetime.timezone.utc
+        self._zone_note = ""
+        if config.owner_timezone:
+            try:
+                self._zone = zoneinfo.ZoneInfo(config.owner_timezone)
+            except (zoneinfo.ZoneInfoNotFoundError, ValueError) as err:
+                self._zone_note = " (not installed here, so times are given in UTC)"
+                self.log({"event": "timezone", "zone": config.owner_timezone, "error": str(err)[:200]})
 
     # ----------------------------------------------------------- envelopes
 
@@ -512,7 +585,8 @@ class Bridge:
         key = (channel, thread_ts)
         with self._lock:
             thread = self.threads.get(key)
-            if thread is None:
+            fresh = thread is None
+            if fresh:
                 agent, text = pick_agent(text, self.config.agents, self.config.default_agent)
                 thread = self.threads[key] = Thread(agent=agent)
             else:
@@ -523,6 +597,11 @@ class Bridge:
             self.slack.post_message(channel, "Say something after the mention, e.g. `k8s-reader: which pods restarted today?`",
                                     thread_ts=thread_ts)
             return
+        if fresh:
+            # A new session: the agent cannot read Slack, so the message this thread hangs off
+            # (when the bridge did not start the thread) and the owner's time zone go with it.
+            parent = self._parent(channel, thread_ts) if thread_ts != ts else None
+            text = with_context(text, parent, self._zone, self.config.owner_timezone, self._zone_note)
         self.slack.react(channel, ts, "eyes")
         metadata = task_id = None
         if thread.question_id:
@@ -540,6 +619,13 @@ class Bridge:
             return
         self.slack.react(channel, ts, "white_check_mark" if reply.completed else "hourglass_flowing_sand")
         self._render(thread, reply, channel, thread_ts)
+
+    def _parent(self, channel: str, thread_ts: str) -> dict | None:
+        try:
+            return self.slack.parent_message(channel, thread_ts)
+        except (SlackError, OSError, ValueError) as err:   # a private channel, a gone message: no context
+            self.log({"event": "slack-error", "method": "conversations.replies", "error": str(err)[:200]})
+            return None
 
     def _send(self, agent: str, text: str, **kw) -> tuple[a2a.Reply | None, str | None]:
         url = a2a.resolve_endpoint(self.config.a2a_base, f"kagent/{agent}")
