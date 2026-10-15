@@ -111,6 +111,18 @@ module "argocd" {
     # notifications-vault.sh, atlantis apply (the Helm-owned Secret goes away), merge
     # (ESO creates it). Between apply and merge the controller logs a missing token
     # and sends nothing; nothing else is affected.
+    #
+    # oncePer is the OPERATION's revision (operationState.syncResult.revision, the
+    # upstream catalog's key), never app.status.sync.revision: the latter is the HEAD
+    # every app was compared against, so it moves on every commit for every app and
+    # the first apply (2026-10-15) fired "synced" for ~40 untouched apps on one
+    # commit (eight reached the channel). The success trigger also ignores an
+    # operation that finished more than an hour ago: when the keys change (an edit
+    # here, a controller starting with a fresh state annotation) old successes stay
+    # quiet instead of replaying. With a
+    # oncePer key a failed delivery is marked sent and never retried (the engine's
+    # rule), so a Slack outage loses that revision's message; the Argo CD UI is the
+    # record, this channel is the nudge.
     notifications = {
       secret = {
         create = false
@@ -121,11 +133,11 @@ module "argocd" {
       templates = {
         "template.app-sync-succeeded"  = <<-EOT
           message: |
-            :white_check_mark: Argo CD synced *{{.app.metadata.name}}* to `{{.app.status.sync.revision | trunc 7}}` ({{.app.status.health.status}}). {{.context.argocdUrl}}/applications/{{.app.metadata.name}}
+            :white_check_mark: Argo CD synced *{{.app.metadata.name}}* to `{{.app.status.operationState.syncResult.revision | trunc 7}}` ({{.app.status.health.status}}). {{.context.argocdUrl}}/applications/{{.app.metadata.name}}
         EOT
         "template.app-sync-failed"     = <<-EOT
           message: |
-            :x: Argo CD sync of *{{.app.metadata.name}}* ended {{.app.status.operationState.phase}} at `{{.app.status.sync.revision | trunc 7}}`: {{.app.status.operationState.message}}
+            :x: Argo CD sync of *{{.app.metadata.name}}* ended {{.app.status.operationState.phase}} at `{{.app.status.operationState.syncResult.revision | trunc 7}}`: {{.app.status.operationState.message}}
             {{.context.argocdUrl}}/applications/{{.app.metadata.name}}
         EOT
         "template.app-health-degraded" = <<-EOT
@@ -136,19 +148,20 @@ module "argocd" {
       }
       triggers = {
         "trigger.on-sync-succeeded"  = <<-EOT
-          - description: A sync operation finished successfully, once per revision.
-            oncePer: app.status.sync.revision
-            when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded']
+          - description: A sync operation finished successfully in the last hour, once per synced revision.
+            oncePer: app.status.operationState?.syncResult?.revision
+            when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded'] and time.Parse(app.status.operationState.finishedAt).Add(1 * time.Hour).After(time.Now())
             send: [app-sync-succeeded]
         EOT
         "trigger.on-sync-failed"     = <<-EOT
-          - description: A sync operation failed or errored.
+          - description: A sync operation failed or errored, once per revision it tried.
+            oncePer: app.status.operationState?.syncResult?.revision
             when: app.status.operationState != nil and app.status.operationState.phase in ['Error', 'Failed']
             send: [app-sync-failed]
         EOT
         "trigger.on-health-degraded" = <<-EOT
-          - description: The app's health is Degraded, once per revision.
-            oncePer: app.status.sync.revision
+          - description: The app's health is Degraded, once per synced revision.
+            oncePer: app.status.operationState?.syncResult?.revision
             when: app.status.health.status == 'Degraded'
             send: [app-health-degraded]
         EOT
