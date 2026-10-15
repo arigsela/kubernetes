@@ -99,6 +99,69 @@ module "argocd" {
       }
     }
 
+    # Notifications to Slack (2026-10-15). The notifications controller already ran
+    # (the chart enables it) with nothing configured. Three triggers, one default
+    # subscription to #oncall-alerts, text-only messages so the Slack bridge
+    # (base-apps/slack-bridge) can hand the message to an agent as context when the
+    # owner mentions the bot in its thread. Same Slack app as n8n and the bridge; the
+    # bot token comes from Vault on its own path (k8s-secrets/argo-cd, property
+    # slack-bot-token) through base-apps/argo-cd/external-secret.yaml, so
+    # secret.create is off: the chart stops rendering argocd-notifications-secret and
+    # ESO owns a Secret of that name. Order: run scripts/provision-argocd-
+    # notifications-vault.sh, atlantis apply (the Helm-owned Secret goes away), merge
+    # (ESO creates it). Between apply and merge the controller logs a missing token
+    # and sends nothing; nothing else is affected.
+    notifications = {
+      secret = {
+        create = false
+      }
+      notifiers = {
+        "service.slack" = "token: $slack-token\n"
+      }
+      templates = {
+        "template.app-sync-succeeded"  = <<-EOT
+          message: |
+            :white_check_mark: Argo CD synced *{{.app.metadata.name}}* to `{{.app.status.sync.revision | trunc 7}}` ({{.app.status.health.status}}). {{.context.argocdUrl}}/applications/{{.app.metadata.name}}
+        EOT
+        "template.app-sync-failed"     = <<-EOT
+          message: |
+            :x: Argo CD sync of *{{.app.metadata.name}}* ended {{.app.status.operationState.phase}} at `{{.app.status.sync.revision | trunc 7}}`: {{.app.status.operationState.message}}
+            {{.context.argocdUrl}}/applications/{{.app.metadata.name}}
+        EOT
+        "template.app-health-degraded" = <<-EOT
+          message: |
+            :warning: Argo CD app *{{.app.metadata.name}}* is Degraded at `{{.app.status.sync.revision | trunc 7}}` (sync {{.app.status.sync.status}}).{{range $i, $c := .app.status.conditions}} {{$c.type}}: {{$c.message}}{{end}}
+            {{.context.argocdUrl}}/applications/{{.app.metadata.name}}
+        EOT
+      }
+      triggers = {
+        "trigger.on-sync-succeeded"  = <<-EOT
+          - description: A sync operation finished successfully, once per revision.
+            oncePer: app.status.sync.revision
+            when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded']
+            send: [app-sync-succeeded]
+        EOT
+        "trigger.on-sync-failed"     = <<-EOT
+          - description: A sync operation failed or errored.
+            when: app.status.operationState != nil and app.status.operationState.phase in ['Error', 'Failed']
+            send: [app-sync-failed]
+        EOT
+        "trigger.on-health-degraded" = <<-EOT
+          - description: The app's health is Degraded, once per revision.
+            oncePer: app.status.sync.revision
+            when: app.status.health.status == 'Degraded'
+            send: [app-health-degraded]
+        EOT
+      }
+      # Every Application, no per-app annotation to forget.
+      subscriptions = [
+        {
+          recipients = ["slack:oncall-alerts"]
+          triggers   = ["on-sync-succeeded", "on-sync-failed", "on-health-degraded"]
+        }
+      ]
+    }
+
     # Bundled Dex, DISABLED 2026-08-12. Argo CD now authenticates against the
     # standalone Dex in base-apps/dex (the one that already fronts GitHub for
     # Vault), so the chart's own Dex has nothing left to do - it had in fact
