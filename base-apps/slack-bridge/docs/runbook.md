@@ -29,8 +29,10 @@ sources:
    that the bot is in the channel. A scope change needs the app reinstalled.
 4. Did the agent fail? The `ask` line's `error`: `HTTP 403 … RBAC` = the bridge's principal is
    not admitted (`base-apps/kagent/authorization-policy.yaml` rule 2 and
-   `network-policy-controller.yaml`); `no answer after 300s` = the agent is slow or stuck,
-   continue the session with the ask-hk command in the thread.
+   `network-policy-controller.yaml`); `no answer after 900s` = the agent outlived
+   `A2A_TIMEOUT`; the run goes on server-side, so reply in the thread (the session is kept)
+   or use the ask-hk command the error message carries. The "still working" note after two
+   minutes is normal for an investigation.
 5. Did the agent review the wrong alert? Mention the bot *in the alert's thread*: the alert text
    goes to the agent as context. A top-level mention carries only your words and the time zone,
    and the agent guesses from live Grafana state.

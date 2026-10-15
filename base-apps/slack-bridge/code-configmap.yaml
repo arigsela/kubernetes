@@ -25,7 +25,12 @@ data:
     One Socket Mode connection (an outbound websocket the bridge opens with the app-level token,
     so nothing inbound crosses the IP allow-list), one replica, one owner. A mention or a DM is a
     question to an agent over A2A (scripts/kagent_a2a.py, the HITL extension, the pod's projected
-    token); one Slack thread is one kagent session. A mention under a message the bridge did not
+    token); one Slack thread is one kagent session. The send is a SendStreamingMessage: the first
+    event (about a second in) carries the session and task ids, so a long run has a handle in the
+    thread before it ends ("still working" after two minutes, the session line on a timeout), and
+    the answer is the stored task (GetTask) once the stream says it settled or drops. Verified
+    2026-10-15: kagent ignores `configuration.blocking=false` and refuses a client-chosen
+    contextId; streaming through the gateway is what works. A mention under a message the bridge did not
     post (an n8n alert, say) hands the agent that message as context, since the agent cannot read
     Slack; the first message of every session also tells it the owner's time zone, so "last night
     at 11pm" means something. A paused agent gets Approve / Reject buttons in the thread; the dispatcher's "Restart awaiting approval" messages (posted by n8n with the same
@@ -46,7 +51,7 @@ data:
         KAGENT_A2A_BASE          http://kagent-controller.kagent.svc.cluster.local:8083
         KAGENT_TOKEN_FILE        /var/run/kagent/token (projected, audience kagent; "" = X-User-Id dev path)
         DISPATCHER_DECIDE_BASE   http://dispatcher-decide.dispatcher.svc.cluster.local:8082
-        A2A_TIMEOUT              300 (seconds one send may block)
+        A2A_TIMEOUT              900 (seconds one ask may take, stream + polling; ask-hk's default)
         PORT                     8080 (health only: /healthz, /readyz)
     """
     from __future__ import annotations
@@ -81,6 +86,9 @@ data:
     WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
     MAX_BACKOFF = 60.0
     SEEN_LIMIT = 512             # event ids remembered to drop Slack's redeliveries
+    PROGRESS_AFTER = 120.0       # seconds before the thread hears "still working"
+    POLL_EVERY = 15.0            # GetTask cadence once the stream is gone
+    TERMINAL_STATES = {a2a.STATE_COMPLETED} | a2a.FAILED_STATES | a2a.WAITING_STATES
 
 
     def log_line(obj: dict) -> None:
@@ -291,6 +299,46 @@ data:
                     log_line({"event": "slack-error", "method": "reactions", "error": str(err)[:200]})
 
 
+    def sse_events(lines):
+        """JSON objects from a text/event-stream: `data:` lines joined per event, comments and
+        blank lines skipped, a non-JSON event dropped."""
+        buf = []
+        for raw in lines:
+            line = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+            line = line.rstrip("\r\n")
+            if not line:
+                if buf:
+                    try:
+                        yield json.loads("\n".join(buf))
+                    except ValueError:
+                        pass
+                    buf = []
+                continue
+            if line.startswith("data:"):
+                buf.append(line[5:].strip())
+        if buf:
+            try:
+                yield json.loads("\n".join(buf))
+            except ValueError:
+                pass
+
+
+    def open_stream(url: str, payload: bytes, headers: dict, timeout: float):
+        """POST and iterate the response as SSE events (a JSON body, an error page, is one event).
+        `timeout` is per read: a silent stream longer than that raises, and the caller polls."""
+        req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+        try:
+            resp = urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as err:
+            body = err.read(300).decode("utf-8", "replace").strip()
+            raise a2a.A2AError(f"HTTP {err.code} from {url}: {body}") from None
+        with resp:
+            if "text/event-stream" not in (resp.headers.get("Content-Type") or ""):
+                yield json.loads(resp.read().decode("utf-8", "replace") or "{}")
+                return
+            yield from sse_events(resp)
+
+
     def clip(text: str, limit: int = TEXT_LIMIT) -> str:
         text = text or ""
         return text if len(text) <= limit else text[:limit - 16].rstrip() + "\n… (truncated)"
@@ -389,7 +437,7 @@ data:
         token_file: str | None = "/var/run/kagent/token"
         user: str = "slack-bridge"                      # X-User-Id, only without a token file (dev)
         decide_base: str = "http://dispatcher-decide.dispatcher.svc.cluster.local:8082"
-        timeout: float = 300.0
+        timeout: float = 900.0
         port: int = 8080
 
         @classmethod
@@ -410,7 +458,7 @@ data:
                 token_file=env.get("KAGENT_TOKEN_FILE", "/var/run/kagent/token") or None,
                 user=env.get("BRIDGE_USER", "slack-bridge"),
                 decide_base=env.get("DISPATCHER_DECIDE_BASE", "http://dispatcher-decide.dispatcher.svc.cluster.local:8082"),
-                timeout=float(env.get("A2A_TIMEOUT", "300")),
+                timeout=float(env.get("A2A_TIMEOUT", "900")),
                 port=int(env.get("PORT", "8080")),
             )
 
@@ -530,13 +578,18 @@ data:
 
     class Bridge:
         def __init__(self, config: Config, slack: Slack, *, bot_user_id: str | None = None,
-                     send=a2a.send_message, post=http_post_json, log=log_line):
+                     stream=open_stream, get_task=a2a.get_task, post=http_post_json, log=log_line,
+                     sleep=time.sleep, clock=time.monotonic, timer=threading.Timer):
             self.config = config
             self.slack = slack
             self.bot_user_id = bot_user_id
-            self.send = send
+            self.stream = stream          # (url, payload, headers, timeout) -> iterator of JSON-RPC events
+            self.get_task = get_task
             self.post = post
             self.log = log
+            self.sleep = sleep
+            self.clock = clock
+            self.timer = timer
             self.threads: dict[tuple[str, str], Thread] = {}
             self.pending: dict[str, Pending] = {}
             self._seen: dict[str, float] = {}
@@ -627,7 +680,29 @@ data:
             if thread.question_id:
                 metadata, task_id = a2a.answer_metadata(thread.question_id, text), thread.task_id
                 thread.question_id = None
-            reply, error = self._send(thread.agent, text, context_id=thread.context_id, task_id=task_id, metadata=metadata)
+            done = threading.Event()
+
+            def ids_known(ctx: str, tid: str) -> None:
+                with self._lock:
+                    thread.context_id, thread.task_id = ctx, tid
+
+            def still_working() -> None:
+                if done.is_set():
+                    return
+                with self._lock:
+                    line = "" if thread.replied else "\n" + self._continue_line(thread)
+                    thread.replied = True
+                self.slack.post_message(channel, f":hourglass_flowing_sand: `{thread.agent}` is still working after "
+                                                 f"{PROGRESS_AFTER / 60:.0f} min; the answer lands here." + line, thread_ts=thread_ts)
+            progress = self.timer(PROGRESS_AFTER, still_working)
+            progress.daemon = True
+            progress.start()
+            try:
+                reply, error = self._send(thread.agent, text, context_id=thread.context_id, task_id=task_id,
+                                          metadata=metadata, on_ids=ids_known)
+            finally:
+                done.set()
+                progress.cancel()
             self.slack.react(channel, ts, "eyes", add=False)
             if reply is not None and reply.context_id:
                 thread.context_id = reply.context_id
@@ -635,6 +710,8 @@ data:
                       "state": reply.state if reply else None, "error": error})
             if error:
                 self.slack.react(channel, ts, "x")
+                with self._lock:
+                    thread.replied = True       # the error text carries the session line
                 self.slack.post_message(channel, self._error_text(thread, error), thread_ts=thread_ts)
                 return
             self.slack.react(channel, ts, "white_check_mark" if reply.completed else "hourglass_flowing_sand")
@@ -647,16 +724,67 @@ data:
                 self.log({"event": "slack-error", "method": "conversations.replies", "error": str(err)[:200]})
                 return None
 
-        def _send(self, agent: str, text: str, **kw) -> tuple[a2a.Reply | None, str | None]:
+        def _describe(self, err: BaseException) -> str:
+            if _is_timeout(err):
+                return f"no answer after {self.config.timeout:.0f}s (the agent may still be running)"
+            return f"{type(err).__name__}: {str(err)[:400]}"
+
+        def _send(self, agent: str, text: str, *, context_id: str | None = None, task_id: str | None = None,
+                  metadata: dict | None = None, on_ids=lambda ctx, tid: None) -> tuple[a2a.Reply | None, str | None]:
+            """One turn: stream until the task settles (or the stream drops), then read the stored
+            task. `on_ids(ctx, task)` fires at the first event, about a second in."""
             url = a2a.resolve_endpoint(self.config.a2a_base, f"kagent/{agent}")
+            request = a2a.build_send_request(text, context_id=context_id, task_id=task_id, metadata=metadata)
+            request["method"] = "SendStreamingMessage"
+            token = a2a.read_token_file(self.config.token_file) if self.config.token_file else None
+            user = None if token else self.config.user
+            headers = a2a.request_headers(user, token)
+            headers["Accept"] = "text/event-stream"
+            deadline = self.clock() + self.config.timeout
+            ids = final = None
             try:
-                result = self.send(url, text, user=None if self.config.token_file else self.config.user,
-                                   token_file=self.config.token_file, timeout=self.config.timeout, **kw)
-                return a2a.parse_result(result), None
-            except Exception as err:  # noqa: BLE001 - every failure lands in the thread
-                if _is_timeout(err):
-                    return None, f"no answer after {self.config.timeout:.0f}s (the agent may still be running)"
-                return None, f"{type(err).__name__}: {str(err)[:400]}"
+                for event in self.stream(url, json.dumps(request).encode(), headers, self.config.timeout):
+                    error = event.get("error") if isinstance(event, dict) else None
+                    if error:
+                        raise a2a.A2AError(f"A2A error {error.get('code')}: {error.get('message', error)}"
+                                           if isinstance(error, dict) else f"A2A error: {error!r:.200}")
+                    result = (event.get("result") if isinstance(event, dict) else None) or {}
+                    if isinstance(result.get("message"), dict):
+                        final = result            # a direct answer, no task
+                        break
+                    kind = next((k for k in ("task", "statusUpdate", "artifactUpdate") if isinstance(result.get(k), dict)), None)
+                    if kind is None:
+                        continue
+                    inner = result[kind]
+                    tid, ctx = inner.get("id") if kind == "task" else inner.get("taskId"), inner.get("contextId")
+                    if ids is None and tid and ctx:
+                        ids = (ctx, tid)
+                        on_ids(ctx, tid)
+                    state = (inner.get("status") or {}).get("state")
+                    if state in TERMINAL_STATES and (kind == "task" or inner.get("final")):
+                        break
+                    if self.clock() > deadline:
+                        break
+            except Exception as err:  # noqa: BLE001 - a broken stream is survivable once the ids are known
+                if ids is None:
+                    return None, self._describe(err)
+                self.log({"event": "stream", "agent": agent, "session": ids[0], "error": f"{type(err).__name__}: {str(err)[:300]}"})
+            if final is not None:
+                return a2a.parse_result(final), None
+            if ids is None:
+                return None, "the stream ended without a task"
+            # The stored task is the answer (artifacts, a pending request); the stream only said when.
+            while True:
+                try:
+                    reply = a2a.parse_result(self.get_task(url, ids[1], user=user, token=token, timeout=60.0))
+                except Exception as err:  # noqa: BLE001
+                    return None, self._describe(err)
+                if reply.kind == "message" or reply.state in TERMINAL_STATES:
+                    return reply, None
+                if self.clock() > deadline:
+                    return None, (f"no answer after {self.config.timeout:.0f}s (the agent may still be running: "
+                                  "the run continues on kagent, and a reply in this thread continues the session)")
+                self.sleep(POLL_EVERY)
 
         def _continue_line(self, thread: Thread) -> str:
             return (f"_session {thread.context_id or '?'} · continue: scripts/ask-hk --agent kagent/{thread.agent} "

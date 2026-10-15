@@ -43,17 +43,57 @@ def asked(question: str, session: str = "sess-1", task: str = "task-1", req: str
                     "metadata": {a2a.HITL_EXTENSION: {"type": "ask_user_request", "id": req}}}}}}
 
 
+def submitted(task: dict) -> dict:
+    """The first stream event: the task with its ids and no answer yet."""
+    return {"result": {"task": {"id": task["id"], "contextId": task["contextId"], "status": {"state": "TASK_STATE_SUBMITTED"}}}}
+
+
+def working(task: dict) -> dict:
+    return {"result": {"statusUpdate": {"taskId": task["id"], "contextId": task["contextId"], "status": {"state": "TASK_STATE_WORKING"}}}}
+
+
 class FakeAgent:
+    """One reply per send. A reply is the final SendMessage result ({"task": …} or {"message": …}),
+    an exception (raised before any event), or a list of stream events / exceptions to replay
+    verbatim (an exception mid-list breaks the stream). `tasks` answers GetTask by id."""
+
     def __init__(self, *replies):
         self.replies = list(replies)
         self.sent = []
+        self.fetched = []
+        self.tasks: dict[str, list] = {}   # task id -> successive GetTask results
 
-    def send(self, url, text, **kw):
-        self.sent.append({"url": url, "text": text, **kw})
+    def stream(self, url, payload, headers, timeout):
+        req = json.loads(payload)
+        msg = req["params"]["message"]
+        self.sent.append({"url": url, "text": msg["parts"][0]["text"], "context_id": msg.get("contextId"),
+                          "task_id": msg.get("taskId"), "metadata": msg.get("metadata"), "user": headers.get("X-User-Id"),
+                          "auth": headers.get("Authorization"), "method": req["method"], "accept": headers.get("Accept"),
+                          "timeout": timeout})
         r = self.replies.pop(0)
         if isinstance(r, BaseException):
             raise r
-        return r
+        if isinstance(r, list) or hasattr(r, "__next__"):
+            for ev in r:
+                if isinstance(ev, BaseException):
+                    raise ev
+                yield ev
+            return
+        task = r.get("task")
+        if task is None:
+            yield {"result": r}
+            return
+        self.tasks.setdefault(task["id"], []).append(r)
+        yield submitted(task)
+        yield working(task)
+        yield {"result": r}
+
+    def get_task(self, url, task_id, **kw):
+        self.fetched.append(task_id)
+        results = self.tasks.get(task_id)
+        if not results:
+            raise a2a.A2AError("A2A error -32001: task not found")
+        return results.pop(0) if len(results) > 1 else results[0]
 
 
 class FakeSlackAPI:
@@ -102,8 +142,28 @@ def make(agent: FakeAgent, dispatcher: FakeDispatcher | None = None, **cfg):
     logs = []
     disp = dispatcher or FakeDispatcher()
     bridge = sb.Bridge(config, sb.Slack("xoxb", post=api.post), bot_user_id=BOT,
-                       send=agent.send, post=disp.post, log=logs.append)
+                       stream=agent.stream, get_task=agent.get_task, post=disp.post, log=logs.append,
+                       sleep=lambda s: None, timer=FakeTimer)
     return bridge, api, logs, disp
+
+
+class FakeTimer:
+    """threading.Timer that fires when the test says so."""
+    armed: list = []
+
+    def __init__(self, delay, fn):
+        self.delay, self.fn, self.cancelled = delay, fn, False
+        FakeTimer.armed.append(self)
+
+    def start(self):
+        pass
+
+    def cancel(self):
+        self.cancelled = True
+
+    def fire(self):
+        if not self.cancelled:
+            self.fn()
 
 
 def dm(text, user=OWNER, ts="1.1", thread_ts=None, channel="D1"):
@@ -197,7 +257,8 @@ def test_dm_asks_the_default_agent_with_the_hitl_extension_and_posts_the_answer_
     s = agent.sent[0]
     assert s["url"] == "http://a2a:8083/agents/kagent/homelab-knowledge"
     assert s["text"] == "what is the answer?" and s["context_id"] is None and s["metadata"] is None
-    assert s["user"] == "slack-bridge" and s["token_file"] is None
+    assert s["user"] == "slack-bridge" and s["auth"] is None
+    assert s["method"] == "SendStreamingMessage" and s["accept"] == "text/event-stream"
     msgs = api.of("chat.postMessage")
     assert len(msgs) == 1 and msgs[0]["thread_ts"] == "1.1" and msgs[0]["channel"] == "D1"
     assert msgs[0]["text"].startswith("42\n_session sess-a")
@@ -524,3 +585,96 @@ def test_config_reads_the_owner_timezone():
     assert sb.Config.from_env(env).owner_timezone == "Europe/Madrid"
     del env["OWNER_TIMEZONE"]
     assert sb.Config.from_env(env).owner_timezone is None
+
+
+# ---------------------------------------------------------------- streaming
+
+def test_the_ids_are_known_from_the_first_event_and_a_dropped_stream_falls_back_to_get_task():
+    final = completed("late answer", session="sess-s", task="task-s")
+    agent = FakeAgent([submitted(final["task"]), working(final["task"]), ConnectionError("stream reset")])
+    agent.tasks["task-s"] = [final]
+    bridge, api, logs, _ = make(agent)
+    bridge.handle_event(dm("slow one", ts="20.1"))
+    assert agent.fetched == ["task-s"], "the authoritative task, fetched after the stream broke"
+    assert bridge.threads[("D1", "20.1")].context_id == "sess-s"
+    assert api.of("chat.postMessage")[0]["text"].startswith("late answer\n_session sess-s")
+    assert any(x["event"] == "stream" and "stream reset" in x["error"] for x in logs)
+    assert logs[-1]["session"] == "sess-s" and logs[-1]["error"] is None
+
+
+def test_a_timeout_after_the_ids_keeps_the_session_in_the_thread():
+    """The agent outlives A2A_TIMEOUT: the thread still gets the session id, and a later reply
+    continues it (the run goes on server-side)."""
+    task = {"id": "task-l", "contextId": "sess-l"}
+    still = {"task": {"id": "task-l", "contextId": "sess-l", "status": {"state": "TASK_STATE_WORKING"}}}
+    agent = FakeAgent([submitted(task), TimeoutError()], completed("second", session="sess-l", task="task-l2"))
+    agent.tasks["task-l"] = [still, still, still]
+    bridge, api, logs, _ = make(agent)
+    ticks = iter([0.0, 0.0, 1.0, 2.0, 6.0, 7.0, 8.0, 9.0, 100.0, 101.0])
+    bridge.clock = lambda: next(ticks)
+    bridge.handle_event(mention("deep dive", ts="21.1"))
+    msgs = api.of("chat.postMessage")
+    assert msgs[0]["text"].startswith(":x:") and "no answer after 5s" in msgs[0]["text"]
+    assert "the run continues" in msgs[0]["text"] and "--context sess-l" in msgs[0]["text"]
+    assert len(agent.fetched) >= 2, "polled GetTask until the deadline"
+    assert [p["name"] for m, p in api.calls if m == "reactions.add"][-1] == "x"
+    assert logs[-1]["session"] == "sess-l" and "no answer" in logs[-1]["error"]
+    bridge.handle_event({"type": "message", "channel": "C1", "user": OWNER, "text": "and?", "ts": "21.2", "thread_ts": "21.1"})
+    assert agent.sent[1]["context_id"] == "sess-l", "the thread kept the session"
+    assert "_session" not in api.of("chat.postMessage")[1]["text"], "the error already carried the line"
+
+
+def test_a_long_run_posts_one_still_working_note_with_the_session_line_and_the_answer_then_has_no_footer():
+    final = completed("done", session="sess-p", task="task-p")
+    FakeTimer.armed.clear()
+
+    def events():
+        yield submitted(final["task"])
+        FakeTimer.armed[-1].fire()          # two minutes pass while the agent works
+        yield {"result": final}
+    agent = FakeAgent(events())
+    agent.tasks["task-p"] = [final]
+    bridge, api, _, _ = make(agent)
+    bridge.handle_event(dm("long", ts="22.1"))
+    msgs = api.of("chat.postMessage")
+    assert len(msgs) == 2
+    assert msgs[0]["text"].startswith(":hourglass_flowing_sand:") and "still working" in msgs[0]["text"]
+    assert "_session sess-p" in msgs[0]["text"] and msgs[0]["thread_ts"] == "22.1"
+    assert msgs[1]["text"] == "done", "the note already carried the session line"
+    assert FakeTimer.armed[-1].cancelled
+    FakeTimer.armed[-1].fire()
+    assert len(api.of("chat.postMessage")) == 2, "a cancelled timer posts nothing"
+
+
+def test_a_quick_answer_never_posts_the_note():
+    FakeTimer.armed.clear()
+    agent = FakeAgent(completed("fast"))
+    bridge, api, _, _ = make(agent)
+    bridge.handle_event(dm("quick", ts="23.1"))
+    assert FakeTimer.armed[-1].cancelled and len(api.of("chat.postMessage")) == 1
+
+
+def test_a_direct_message_result_is_an_answer_without_a_task():
+    agent = FakeAgent({"message": {"messageId": "m1", "contextId": "sess-m", "role": "ROLE_AGENT", "parts": [{"text": "plain"}]}})
+    bridge, api, _, _ = make(agent)
+    bridge.handle_event(dm("hey", ts="24.1"))
+    assert agent.fetched == [] and api.of("chat.postMessage")[0]["text"].startswith("plain\n_session sess-m")
+
+
+def test_a_stream_error_event_is_the_agents_error():
+    agent = FakeAgent([{"error": {"code": -31403, "message": "permission denied"}}])
+    bridge, api, _, _ = make(agent)
+    bridge.handle_event(dm("hey", ts="25.1"))
+    assert "permission denied" in api.of("chat.postMessage")[0]["text"]
+
+
+def test_a_stream_that_ends_without_ids_is_an_error():
+    agent = FakeAgent([])
+    bridge, api, _, _ = make(agent)
+    bridge.handle_event(dm("hey", ts="26.1"))
+    assert "without a task" in api.of("chat.postMessage")[0]["text"]
+
+
+def test_sse_events_parses_data_lines_and_skips_comments_and_blanks():
+    raw = [b": keepalive\n", b"\n", b"data: {\"a\": 1}\n", b"\n", b"event: x\n", b"data: {\"b\":\n", b"data: 2}\n", b"\n", b"data: not json\n", b"\n"]
+    assert list(sb.sse_events(iter(raw))) == [{"a": 1}, {"b": 2}]
