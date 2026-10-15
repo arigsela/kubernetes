@@ -53,6 +53,17 @@ time the agent can look up. Later replies in the thread are sent bare: the sessi
 context. A parent the bot cannot read (a private channel, a deleted message) is logged
 (`slack-error`, `conversations.replies`) and the question goes without it.
 
+## Long runs
+A send is a `SendStreamingMessage`. The first event, about a second in, carries the session
+and task ids, so the thread has a handle before the agent finishes: after two minutes the
+bridge posts "still working" with the session line, and if the whole ask passes `A2A_TIMEOUT`
+(900 s, ask-hk's default) the error message carries the session id too, the run goes on
+server-side, and a reply in the thread continues it. The answer itself is the stored task
+(`GetTask`) once the stream says it settled; a stream that drops mid-run is logged (`stream`)
+and the task is polled every 15 s until the deadline. Verified 2026-10-15: kagent ignores
+`configuration.blocking=false` (the unary call blocks to completion) and refuses a
+client-chosen contextId (permission denied), so streaming is the only way to learn the ids early.
+
 ## Who may talk
 One Slack user id, `OWNER_SLACK_USER_ID` in `deployment.yaml`. Anyone else who mentions, DMs
 or clicks gets an ephemeral "not for you" and nothing is sent anywhere (§V.98). The bridge is
@@ -110,7 +121,8 @@ a reinstall of the app, not a pod restart.
 ## Observability
 One JSON line per event on stdout (Loki): `socket` (hello, disconnect, down), `ask` (user,
 agent, session, state, error), `decision` (kind, session, approved, approved_by, state),
-`refused` (user), `error`. `/readyz` is 503 while the socket is down.
+`refused` (user), `stream` (the stream dropped after the ids were known; the task is polled),
+`error`. `/readyz` is 503 while the socket is down.
 
 ## Limits
 In-memory state: a restart forgets the thread→session map (a reply in an old thread starts a

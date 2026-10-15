@@ -27,7 +27,7 @@ spec:
         # and nothing restarts the pod, so this checksum changes the pod template instead.
         # scripts/gen-slack-bridge-configmap.py writes it; tests/slack_bridge/test_manifests.py
         # fails if it is stale.
-        checksum/code: "1a2ee785c222ec52685b8b939896482c2a923ff86acc6bed0463057d8546cbea"
+        checksum/code: "e64ead5417b73af7f58455fda7065fce79994c1ba5993d45088ee16d76c7c026"
     spec:
       serviceAccountName: slack-bridge
       automountServiceAccountToken: false   # never talks to the API server; the projected token below is for kagent
@@ -62,8 +62,10 @@ spec:
               value: http://kagent-controller.kagent.svc.cluster.local:8083
             - name: DISPATCHER_DECIDE_BASE
               value: http://dispatcher-decide.dispatcher.svc.cluster.local:8082
+            # ask-hk's default. A deep investigation outlived 300s on 2026-10-15; the stream
+            # gives the thread the session id in the first second either way.
             - name: A2A_TIMEOUT
-              value: "300"
+              value: "900"
             - name: PORT
               value: "8080"
             - name: SLACK_BOT_TOKEN
