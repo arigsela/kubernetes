@@ -47,10 +47,3 @@ resource "aws_budgets_budget" "monthly" {
     subscriber_email_addresses = local.budget_alert_emails
   }
 }
-
-# One-time import of the hand-made budget. A no-op once it is in state; remove
-# it in a later PR, as ecr.tf did.
-import {
-  to = aws_budgets_budget.monthly
-  id = "852893458518:monthly-budget"
-}
