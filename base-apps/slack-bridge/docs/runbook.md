@@ -31,6 +31,9 @@ sources:
    not admitted (`base-apps/kagent/authorization-policy.yaml` rule 2 and
    `network-policy-controller.yaml`); `no answer after 300s` = the agent is slow or stuck,
    continue the session with the ask-hk command in the thread.
+5. Did the agent review the wrong alert? Mention the bot *in the alert's thread*: the alert text
+   goes to the agent as context. A top-level mention carries only your words and the time zone,
+   and the agent guesses from live Grafana state.
 
 ## A button does nothing, or says "already decided" / "no longer holds"
 - "no longer holds that restart": the dispatcher restarted since it posted (its pending list is

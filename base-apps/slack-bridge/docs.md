@@ -43,6 +43,16 @@ The first word picks the agent: `k8s-reader: which pods restarted today?` Any na
 Deployment's `AGENTS` list works; anything else is text for `DEFAULT_AGENT`
 (`homelab-knowledge`). The agent is fixed for the thread.
 
+The agent cannot read Slack, so the first message of a session carries what it would otherwise
+miss. A mention under a message the bridge did not post (an n8n alert in `#oncall-alerts`, say)
+fetches that message (`conversations.replies`, the parent only) and appends it after the
+question as "Context from Slack: … posted <when> by <who>", so "review this alert" in an alert's
+thread is about that alert. The same first message states the owner's time zone
+(`OWNER_TIMEZONE`, `America/New_York`) and the current time in it, so "last night at 11pm" is a
+time the agent can look up. Later replies in the thread are sent bare: the session has the
+context. A parent the bot cannot read (a private channel, a deleted message) is logged
+(`slack-error`, `conversations.replies`) and the question goes without it.
+
 ## Who may talk
 One Slack user id, `OWNER_SLACK_USER_ID` in `deployment.yaml`. Anyone else who mentions, DMs
 or clicks gets an ephemeral "not for you" and nothing is sent anywhere (§V.98). The bridge is

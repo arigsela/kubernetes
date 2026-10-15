@@ -5,6 +5,7 @@ from pathlib import Path
 import importlib.util
 import json
 import sys
+import urllib.parse
 
 import pytest
 
@@ -56,15 +57,26 @@ class FakeAgent:
 
 
 class FakeSlackAPI:
-    """Records every Web API call; answers ok."""
+    """Records every Web API call; answers ok. `parents` answers conversations.replies."""
 
     def __init__(self):
         self.calls = []
+        self.parents: dict[tuple[str, str], dict | Exception] = {}   # (channel, ts) -> parent message
 
     def post(self, url, payload, headers, timeout):
         method = url.rsplit("/", 1)[1]
-        params = json.loads(payload)
+        if headers["Content-Type"].startswith("application/json"):
+            params = json.loads(payload)
+        else:
+            params = {k: v[0] for k, v in urllib.parse.parse_qs(payload.decode()).items()}
         self.calls.append((method, params))
+        if method == "conversations.replies":
+            parent = self.parents.get((params["channel"], params["ts"]))
+            if isinstance(parent, Exception):
+                raise parent
+            if parent is None:
+                return {"ok": False, "error": "thread_not_found"}
+            return {"ok": True, "messages": [parent]}
         return {"ok": True, "ts": f"ts-{len(self.calls)}", "channel": params.get("channel")}
 
     def of(self, method):
@@ -428,3 +440,87 @@ def test_health_endpoints_follow_the_socket():
         assert urllib.request.urlopen(base + "/readyz", timeout=5).status == 200
     finally:
         srv.shutdown()
+
+
+# ---------------------------------------------------------------- thread context
+
+ALERT = "Grafana: [RESOLVED] Falco detected a sensitive-file read (Agent Guardrails security warning)"
+PARENT_TS = "1792030920.000100"     # 2026-10-15 02:22 UTC, 2026-10-14 22:22 EDT; a thread's ts IS its parent's
+
+
+def test_a_mention_in_a_thread_the_bridge_does_not_know_carries_the_parent_message_as_context():
+    """Mention the bot under an n8n alert: the agent gets the alert text, once, with the question first."""
+    agent = FakeAgent(completed("it was Falco", session="sess-t"), completed("more", session="sess-t"))
+    bridge, api, logs, _ = make(agent)
+    api.parents[("C1", PARENT_TS)] = {"ts": PARENT_TS, "text": ALERT, "bot_id": "B1",
+                                      "bot_profile": {"name": "OnCall Agent v2"}}
+    bridge.handle_event(mention("review this alert", ts="7.1", thread_ts=PARENT_TS))
+    sent = agent.sent[0]["text"]
+    assert sent.startswith("review this alert\n")
+    assert ALERT in sent and "OnCall Agent v2" in sent
+    assert "2026-10-15 02:22 UTC" in sent, "the parent's time, in UTC when no zone is configured"
+    fetches = api.of("conversations.replies")
+    assert fetches == [{"channel": "C1", "ts": PARENT_TS, "limit": "1"}], "form-encoded, the parent only"
+    # the follow-up in the same thread is the bare text: the session already has the context
+    bridge.handle_event({"type": "message", "channel": "C1", "user": OWNER, "text": "and why?", "ts": "7.2", "thread_ts": PARENT_TS})
+    assert agent.sent[1]["text"] == "and why?" and len(api.of("conversations.replies")) == 1
+    assert api.of("chat.postMessage")[0]["text"].startswith("it was Falco\n_session sess-t")
+
+
+def test_a_mention_that_starts_its_own_thread_fetches_nothing():
+    agent = FakeAgent(completed("ok"))
+    bridge, api, _, _ = make(agent)
+    bridge.handle_event(mention("k8s-reader: pods?", ts="8.1"))
+    assert api.of("conversations.replies") == [] and agent.sent[0]["text"] == "pods?"
+
+
+def test_a_parent_the_bridge_cannot_read_is_logged_and_the_question_still_goes():
+    agent = FakeAgent(completed("ok"))
+    bridge, api, logs, _ = make(agent)
+    bridge.handle_event(mention("review this", ts="9.1", thread_ts="9.0"))   # no parent registered → thread_not_found
+    assert agent.sent[0]["text"] == "review this"
+    assert any(x.get("event") == "slack-error" and x.get("method") == "conversations.replies" for x in logs)
+    assert api.of("chat.postMessage")[0]["text"].startswith("ok\n")
+
+
+def test_a_parent_without_text_uses_its_section_blocks_and_an_empty_one_adds_nothing():
+    agent = FakeAgent(completed("a"), completed("b"))
+    bridge, api, _, _ = make(agent)
+    api.parents[("C1", "10.0")] = {"ts": "10.0", "user": "U0WNER",
+                                   "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": "from a block"}},
+                                              {"type": "actions"}]}
+    api.parents[("C1", "11.0")] = {"ts": "11.0", "user": "U0WNER", "text": "   "}
+    bridge.handle_event(mention("q1", ts="10.1", thread_ts="10.0"))
+    bridge.handle_event(mention("q2", ts="11.1", thread_ts="11.0"))
+    assert "from a block" in agent.sent[0]["text"] and "<@U0WNER>" in agent.sent[0]["text"]
+    assert agent.sent[1]["text"] == "q2"
+
+
+def test_the_owner_timezone_is_told_to_the_agent_on_the_first_message_of_a_thread_only():
+    agent = FakeAgent(completed("a", session="s"), completed("b", session="s"))
+    bridge, api, _, _ = make(agent, owner_timezone="America/New_York")
+    api.parents[("C1", PARENT_TS)] = {"ts": PARENT_TS, "text": ALERT, "user": "UX"}
+    bridge.handle_event(mention("when was this?", ts="12.1", thread_ts=PARENT_TS))
+    first = agent.sent[0]["text"]
+    assert "2026-10-14 22:22 EDT" in first, "the parent's time in the owner's zone"
+    assert "America/New_York" in first and "owner's local time" in first
+    bridge.handle_event(dm("hello", ts="13.1"))
+    assert agent.sent[1]["text"].startswith("hello\n") and "America/New_York" in agent.sent[1]["text"]
+    bridge.handle_event({"type": "message", "channel": "C1", "user": OWNER, "text": "more", "ts": "12.2", "thread_ts": PARENT_TS})
+    assert agent.sent[2]["text"] == "more"
+
+
+def test_an_unknown_timezone_falls_back_to_utc_and_says_so():
+    agent = FakeAgent(completed("a"))
+    bridge, api, logs, _ = make(agent, owner_timezone="Mars/Olympus_Mons")
+    bridge.handle_event(dm("hi", ts="14.1"))
+    assert "UTC" in agent.sent[0]["text"] and "Mars/Olympus_Mons" in agent.sent[0]["text"]
+    assert any(x.get("event") == "timezone" for x in logs)
+
+
+def test_config_reads_the_owner_timezone():
+    env = {"SLACK_BOT_TOKEN": "xoxb", "SLACK_APP_TOKEN": "xapp", "OWNER_SLACK_USER_ID": "U1", "OWNER_EMAIL": "o@e",
+           "OWNER_TIMEZONE": "Europe/Madrid"}
+    assert sb.Config.from_env(env).owner_timezone == "Europe/Madrid"
+    del env["OWNER_TIMEZONE"]
+    assert sb.Config.from_env(env).owner_timezone is None

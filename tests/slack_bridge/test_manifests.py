@@ -43,6 +43,7 @@ def test_the_pod_is_the_bridge_principal_with_a_projected_token_and_no_api_token
     assert env["SLACK_APP_TOKEN"]["valueFrom"]["secretKeyRef"] == {"name": "slack-bridge", "key": "app-token"}
     assert "KAGENT_TOKEN_FILE" not in env, "the projected token is the identity; never the dev X-User-Id path"
     assert env["DISPATCHER_DECIDE_BASE"]["value"].startswith("http://dispatcher-decide.dispatcher.svc.cluster.local:8082")
+    assert env["OWNER_TIMEZONE"]["value"] == "America/New_York", "the owner's zone: 'last night at 11pm' must mean something"
     sa = one(APP / "serviceaccount.yaml", "ServiceAccount", "slack-bridge")
     assert sa["metadata"]["namespace"] == "slack-bridge" and sa["automountServiceAccountToken"] is False
     assert one(APP / "deployment.yaml", "Deployment")["spec"]["replicas"] == 1, "Socket Mode: one connection"
