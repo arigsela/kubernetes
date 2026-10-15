@@ -43,7 +43,8 @@ spec:
     resources:
       requests:
         cpu: 50m
-        memory: 96Mi
+        # Raised from 96Mi on 2026-10-15 (Agent session scored high risk alert): idle use is ~110Mi, so 96Mi under-reported the pod to the scheduler.
+        memory: 128Mi
       limits:
         cpu: 300m
         # 384Mi was OOM-killed five times in three days at the moment an agent used the
