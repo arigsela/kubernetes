@@ -30,6 +30,13 @@ spec:
     env:
       BRAVE_MCP_ENABLED_TOOLS: "brave_web_search brave_news_search"
       BRAVE_MCP_LOG_LEVEL: warning
+      # The adapter keeps one node child per MCP session alive (~90Mi idle) and a session that
+      # searches grows that child by hundreds of Mi at once; the pod's working set is flat for
+      # days between such steps (Prometheus, 2026-10-12..15), so this is sizing, not a leak.
+      # Cap each child's heap below the pod limit so a runaway session dies alone instead of
+      # OOM-killing the pod mid-initialize, which fails every agent bound to brave-search
+      # (homelab-knowledge's run on 2026-10-15 14:36 UTC).
+      NODE_OPTIONS: "--max-old-space-size=320"
     # Injects BRAVE_API_KEY from the K8s Secret (brave-search-mcp-external-secret.yaml).
     secretRefs:
       - name: brave-search-mcp-api-key
@@ -39,7 +46,9 @@ spec:
         memory: 96Mi
       limits:
         cpu: 300m
-        memory: 384Mi
+        # 384Mi was OOM-killed five times in three days at the moment an agent used the
+        # server: adapter + idle child ~110Mi, plus one busy child up to the heap cap above.
+        memory: 768Mi
     nodeSelector:
       node.kubernetes.io/workload: infrastructure
     tolerations:
