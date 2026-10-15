@@ -678,3 +678,41 @@ def test_a_stream_that_ends_without_ids_is_an_error():
 def test_sse_events_parses_data_lines_and_skips_comments_and_blanks():
     raw = [b": keepalive\n", b"\n", b"data: {\"a\": 1}\n", b"\n", b"event: x\n", b"data: {\"b\":\n", b"data: 2}\n", b"\n", b"data: not json\n", b"\n"]
     assert list(sb.sse_events(iter(raw))) == [{"a": 1}, {"b": 2}]
+
+
+# ---------------------------------------------------------------- long answers, failed runs
+
+def test_split_text_keeps_paragraphs_then_lines_then_cuts_hard():
+    assert sb.split_text("short", 100) == ["short"]
+    paras = "\n\n".join(["a" * 60, "b" * 60, "c" * 60])
+    assert sb.split_text(paras, 130) == ["a" * 60 + "\n\n" + "b" * 60, "c" * 60]
+    lines = "\n".join(["x" * 50, "y" * 50, "z" * 50])
+    assert sb.split_text(lines, 105) == ["x" * 50 + "\n" + "y" * 50, "z" * 50]
+    chunks = sb.split_text("q" * 250, 100)
+    assert [len(c) for c in chunks] == [100, 100, 50] and "".join(chunks) == "q" * 250
+    assert all(len(c) <= 100 for c in sb.split_text("w" * 99 + "\n\n" + "v" * 150, 100))
+
+
+def test_a_long_answer_is_posted_in_order_in_parts_with_the_session_line_last():
+    answer = "\n\n".join(f"paragraph {i} " + "words " * 150 for i in range(8))   # ~6.5k chars
+    agent = FakeAgent(completed(answer, session="sess-long"))
+    bridge, api, _, _ = make(agent)
+    bridge.handle_event(dm("tell me everything", ts="30.1"))
+    msgs = api.of("chat.postMessage")
+    assert len(msgs) >= 2 and all(len(m["text"]) <= sb.TEXT_LIMIT for m in msgs)
+    assert all(m["thread_ts"] == "30.1" for m in msgs)
+    assert "(truncated)" not in "".join(m["text"] for m in msgs)
+    assert msgs[0]["text"].startswith("_part 1/") and msgs[0]["text"].split("\n", 1)[1].startswith("paragraph 0")
+    assert "_session sess-long" in msgs[-1]["text"] and "_session" not in msgs[0]["text"]
+    body = "".join(m["text"].split("\n", 1)[1] for m in msgs)
+    assert body.replace("\n", "") .startswith(answer.replace("\n", "")[:200])
+
+
+def test_a_failed_task_gets_the_x_reaction():
+    failed = {"task": {"id": "t", "contextId": "s", "status": {"state": "TASK_STATE_FAILED",
+                                                                "message": {"parts": [{"text": "agent run failed: MCP init 503"}]}}}}
+    agent = FakeAgent(failed)
+    bridge, api, _, _ = make(agent)
+    bridge.handle_event(dm("go", ts="31.1"))
+    assert [p["name"] for m, p in api.calls if m == "reactions.add"][-1] == "x"
+    assert api.of("chat.postMessage")[0]["text"].startswith(":x:")

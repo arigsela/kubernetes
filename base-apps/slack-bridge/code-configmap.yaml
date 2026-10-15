@@ -273,6 +273,15 @@ data:
                 params["blocks"] = blocks
             return self.call("chat.postMessage", **params)
 
+        def post_long(self, channel: str, text: str, *, thread_ts: str | None = None) -> dict:
+            """A text of any length, as consecutive messages (numbered when more than one)."""
+            parts = split_text(text, TEXT_LIMIT - 24)
+            last: dict = {}
+            for i, part in enumerate(parts, 1):
+                head = f"_part {i}/{len(parts)}_\n" if len(parts) > 1 else ""
+                last = self.post_message(channel, head + part, thread_ts=thread_ts)
+            return last
+
         def post_ephemeral(self, channel: str, user: str, text: str, *, thread_ts: str | None = None) -> dict:
             params = {"channel": channel, "user": user, "text": clip(text)}
             if thread_ts:
@@ -337,6 +346,41 @@ data:
                 yield json.loads(resp.read().decode("utf-8", "replace") or "{}")
                 return
             yield from sse_events(resp)
+
+
+    def _pack(pieces: list[str], sep: str, limit: int) -> list[str]:
+        """Join pieces with `sep` while the result stays within `limit`; each piece already fits."""
+        out, cur = [], ""
+        for piece in pieces:
+            cand = piece if not cur else cur + sep + piece
+            if len(cand) <= limit:
+                cur = cand
+            else:
+                if cur:
+                    out.append(cur)
+                cur = piece
+        if cur:
+            out.append(cur)
+        return out
+
+
+    def split_text(text: str, limit: int = TEXT_LIMIT) -> list[str]:
+        """Pieces of at most `limit` characters: paragraphs kept together while they fit, a
+        paragraph too long split by lines, a line too long cut hard. Nothing is dropped
+        (clip() is for the texts that may not grow)."""
+        text = text or ""
+        if len(text) <= limit:
+            return [text]
+        paragraphs: list[str] = []
+        for para in text.split("\n\n"):
+            if len(para) <= limit:
+                paragraphs.append(para)
+                continue
+            lines: list[str] = []
+            for line in para.split("\n"):
+                lines.extend([line] if len(line) <= limit else [line[i:i + limit] for i in range(0, len(line), limit)])
+            paragraphs.extend(_pack(lines, "\n", limit))
+        return _pack(paragraphs, "\n\n", limit)
 
 
     def clip(text: str, limit: int = TEXT_LIMIT) -> str:
@@ -714,7 +758,7 @@ data:
                     thread.replied = True       # the error text carries the session line
                 self.slack.post_message(channel, self._error_text(thread, error), thread_ts=thread_ts)
                 return
-            self.slack.react(channel, ts, "white_check_mark" if reply.completed else "hourglass_flowing_sand")
+            self.slack.react(channel, ts, "white_check_mark" if reply.completed else "x" if reply.failed else "hourglass_flowing_sand")
             self._render(thread, reply, channel, thread_ts)
 
         def _parent(self, channel: str, thread_ts: str) -> dict | None:
@@ -798,7 +842,7 @@ data:
             footer = "" if thread.replied else "\n" + self._continue_line(thread)
             thread.replied = True
             if reply.completed:
-                self.slack.post_message(channel, (reply.answer or reply.status_text or "(no text)") + footer, thread_ts=thread_ts)
+                self.slack.post_long(channel, (reply.answer or reply.status_text or "(no text)") + footer, thread_ts=thread_ts)
                 return
             if reply.waiting and reply.pending_calls:
                 nonce = secrets.token_urlsafe(12)
