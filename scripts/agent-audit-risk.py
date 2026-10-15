@@ -156,6 +156,38 @@ def is_candidate(calls: list[dict], classes: dict[str, str]) -> list[str]:
     return reasons
 
 
+RESTART_AGENT = "kagent__NS__restarter"
+RESTART_TOOL = "k8s_delete_resource"
+
+
+def approved_calls(records: list[dict]) -> set[tuple[str, str]]:
+    """(session, call_id) of every call a human approved. The decision is its own record
+    (`kind: approval`, pointed at the call by agent-audit.py's _resolve_approvals); group_sessions
+    keeps calls only, so the set is built from the full record list and passed in."""
+    return {(r["session"], r["call_id"]) for r in records
+            if r.get("kind") == "approval" and r.get("decision") == "approved"
+            and isinstance(r.get("session"), str) and isinstance(r.get("call_id"), str) and r["call_id"]}
+
+
+def is_approved_restart(calls: list[dict], approved: set[tuple[str, str]], classes: dict[str, str]) -> bool:
+    """A dispatcher restart: the restarter agent, exactly one gated call, a pod delete, approved,
+    and nothing else that makes the session a candidate. The export carries no session owner,
+    so a restart the owner ran by hand through ask-hk matches too (the same approved single
+    delete). Added 2026-10-15 after three such sessions scored `high` and woke nobody usefully:
+    the rule proves a human-approval step ran, not who approved (§V.96)."""
+    if not calls or calls[0].get("agent") != RESTART_AGENT:
+        return False
+    gated = [c for c in calls if classes.get(c["tool"]) in ("write", "destructive")]
+    if len(gated) != 1 or gated[0]["tool"] != RESTART_TOOL:
+        return False
+    delete = gated[0]
+    if str(delete["args"].get("resource_type", "")).lower() != "pod":
+        return False
+    if (delete.get("session"), delete.get("call_id")) not in approved:
+        return False
+    return is_candidate(calls, classes) == [f"gated:{RESTART_TOOL}"]
+
+
 # -------------------------------------------------------------------- state
 
 
@@ -323,7 +355,8 @@ def risk_record(calls: list[dict], classes: dict[str, str], *, verdict: str, dec
 
 
 def score_sessions(sessions: dict[str, list[dict]], classes: dict[str, str], *, ask,
-                   max_sessions: int = 50, argument_free: bool = False, now=None) -> list[dict]:
+                   max_sessions: int = 50, argument_free: bool = False, now=None,
+                   approved: set[tuple[str, str]] = frozenset()) -> list[dict]:
     """Rules, then Jev for candidates (oldest first, capped), then records."""
     now = now or datetime.now(timezone.utc)
     out, used = [], 0
@@ -333,6 +366,10 @@ def score_sessions(sessions: dict[str, list[dict]], classes: dict[str, str], *, 
         if not why:
             out.append(risk_record(calls, classes, verdict="low", decided_by="rules",
                                    reasons=["read-only session"], jev=None, error=None, **kw))
+            continue
+        if is_approved_restart(calls, approved, classes):
+            out.append(risk_record(calls, classes, verdict="low", decided_by="rules",
+                                   reasons=["approved dispatcher restart"], jev=None, error=None, **kw))
             continue
         if used >= max_sessions:
             out.append(risk_record(calls, classes, verdict="review", decided_by="cap",
@@ -421,7 +458,7 @@ def main(argv=None) -> int:
         return ask_jev(state)
 
     out = score_sessions(sessions, classes, ask=ask, max_sessions=args.max_sessions,
-                         argument_free=args.argument_free)
+                         argument_free=args.argument_free, approved=approved_calls(records))
     if args.dry_run:
         for r in out:
             if r["decided_by"] == "jev-error":

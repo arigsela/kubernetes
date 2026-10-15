@@ -317,3 +317,73 @@ def test_propose_call_is_a_candidate_with_its_own_reason(classes):
 def test_state_counts_propose_calls(classes):
     state = ar.build_state([_call("create_pull_request", {"title": "fix"})], classes)
     assert state["counts"]["propose"] == 1 and state["counts"]["unknown"] == 0
+
+
+# ------------------------------------------------- approved restart (rule, before Jev)
+
+RESTARTER = "kagent__NS__restarter"
+DELETE_ARGS = {"resource_type": "pod", "resource_name": "n8n-7db6db668-h8rjh", "namespace": "n8n"}
+
+
+def _restart(session="r1", agent=RESTARTER, args=None, decision="approved", approval=True, extra=()):
+    """A dispatcher restart as the export records it: the request (a CONFIRM_TOOL call naming
+    the delete), the decision, then the delete itself. `extra` calls are appended."""
+    args = DELETE_ARGS if args is None else args
+    recs = [_call("k8s_get_resources", {"kind": "pod", "namespace": "n8n"}, at="2026-10-14T17:25:00+00:00",
+                  agent=agent, session=session)]
+    if approval:
+        recs.append({**_call(ar.CONFIRM_TOOL, {"originalFunctionCall": {"id": "c-del", "name": "k8s_delete_resource", "args": args}},
+                             at="2026-10-14T17:25:05+00:00", agent=agent, session=session),
+                     "call_id": "req-1", "for_call": "c-del", "for_tool": "k8s_delete_resource"})
+        recs.append({"kind": "approval", "decision": decision, "tool": "k8s_delete_resource", "call_id": "c-del",
+                     "approval_id": "req-1", "at": "2026-10-14T17:26:00+00:00", "agent": agent, "session": session})
+    recs.append({**_call("k8s_delete_resource", args, at="2026-10-14T17:26:05+00:00", agent=agent, session=session),
+                 "call_id": "c-del"})
+    recs.extend(extra)
+    return recs
+
+
+def test_approved_calls_come_from_approval_records_only():
+    recs = _restart()
+    assert ar.approved_calls(recs) == {("r1", "c-del")}
+    assert ar.approved_calls(_restart(decision="rejected")) == set()
+    assert ar.approved_calls([{"kind": "approval", "decision": "approved", "call_id": "", "session": "x"}]) == set()
+
+
+def test_an_approved_single_pod_delete_by_restarter_scores_low_by_rule(classes):
+    recs = _restart()
+    out = ar.score_sessions(ar.group_sessions(recs), classes, ask=lambda s: pytest.fail("Jev must not be called"),
+                            approved=ar.approved_calls(recs))
+    assert len(out) == 1
+    r = out[0]
+    assert r["verdict"] == "low" and r["decided_by"] == "rules" and r["reasons"] == ["approved dispatcher restart"]
+    assert r["candidate_reasons"] == ["gated:k8s_delete_resource"], "it was a candidate; the rule answered it"
+
+
+@pytest.mark.parametrize("recs", [
+    _restart(approval=False),                                                   # no approval request at all
+    _restart(decision="rejected"),                                              # rejected (the delete ran anyway)
+    _restart(extra=[{**_call("k8s_delete_resource", {**DELETE_ARGS, "resource_name": "n8n-0"},
+                             at="2026-10-14T17:27:00+00:00", agent=RESTARTER, session="r1"), "call_id": "c-2"}]),  # a second delete
+    _restart(args={**DELETE_ARGS, "resource_type": "deployment"}),              # not a pod
+    _restart(agent="kagent__NS__k8s_agent"),                                     # another agent, same delete
+    _restart(extra=[_call("k8s_get_resources", {"kind": "secret", "namespace": "n8n"},
+                          at="2026-10-14T17:27:00+00:00", agent=RESTARTER, session="r1")]),  # a Secret read too
+    _restart(args={**DELETE_ARGS, "resource_name": ar.REDACTED}),               # a redacted argument
+], ids=["unapproved", "rejected", "second-delete", "not-a-pod", "other-agent", "secret-read", "redacted-arg"])
+def test_anything_else_still_reaches_jev(recs, classes):
+    asked = []
+    out = ar.score_sessions(ar.group_sessions(recs), classes,
+                            ask=lambda s: asked.append(s) or _body(), approved=ar.approved_calls(recs))
+    assert len(asked) == 1 and out[0]["decided_by"] == "jev"
+
+
+def test_main_passes_the_approvals_to_the_rule(tmp_path, monkeypatch, capsys, classes):
+    records = tmp_path / "r.jsonl"
+    records.write_text("".join(json.dumps(r) + "\n" for r in _restart()))
+    out = tmp_path / "risk.jsonl"
+    monkeypatch.setattr(ar, "ask_jev", lambda *a, **k: pytest.fail("Jev must not be called"), raising=False)
+    rc = ar.main(["--records", str(records), "--out", str(out), "--repo-root", str(REPO), "--dry-run"])
+    assert rc == 0
+    rec = json.loads(out.read_text().splitlines()[0])
+    assert rec["verdict"] == "low" and rec["reasons"] == ["approved dispatcher restart"]
