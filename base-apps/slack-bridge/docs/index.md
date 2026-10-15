@@ -63,6 +63,9 @@ server-side, and a reply in the thread continues it. The answer itself is the st
 and the task is polled every 15 s until the deadline. Verified 2026-10-15: kagent ignores
 `configuration.blocking=false` (the unary call blocks to completion) and refuses a
 client-chosen contextId (permission denied), so streaming is the only way to learn the ids early.
+A long answer is posted whole, as consecutive numbered parts under Slack's per-message limit
+(paragraphs kept together while they fit), the session line on the last part. A failed task
+gets the :x: reaction and its status text; a pause gets the hourglass.
 
 ## Who may talk
 One Slack user id, `OWNER_SLACK_USER_ID` in `deployment.yaml`. Anyone else who mentions, DMs
