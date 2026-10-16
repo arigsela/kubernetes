@@ -17,6 +17,7 @@ EXPECTED_APPS = {
     "argo-workflow-tasks",
     "argo-workflows-aws-infrastructure",
     "argo-workflows-config",
+    "beacon-aws-infrastructure",
     "crossplane-aws-provider",
     "crossplane-compositions",
     "crossplane-functions",

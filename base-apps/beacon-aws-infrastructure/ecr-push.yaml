@@ -1,0 +1,128 @@
+---
+# GitHub Actions in arigsela/beacon pushes the six beacon images to ECR through
+# GitHub OIDC - no long-lived AWS keys in GitHub (beacon SPEC §T.3, §V.17).
+# Same pattern and OIDC provider as base-apps/agent-audit-aws-infrastructure/
+# web-ecr-push.yaml: trust is limited to v* TAG builds of that one repo, the
+# policy to its six repositories (terraform/roots/asela-cluster/ecr.tf).
+#
+# The subject is GitHub's IMMUTABLE form, repo:<owner>@<owner-id>/<repo>@<repo-id>.
+# GET repos/arigsela/beacon/actions/oidc/customization/sub shows
+# "use_immutable_subject": true with prefix repo:arigsela@2475907/beacon@1422247936.
+# 2475907 = user arigsela, 1422247936 = arigsela/beacon. A deleted and re-created
+# repo of the same name gets a new id and is NOT trusted.
+#
+# A tag can point at any commit, merged or not, and no OIDC claim says "this
+# commit is on main". beacon's release workflow refuses to push unless the
+# tagged commit is an ancestor of main (beacon §V.17); this trust policy alone
+# does not enforce that.
+#
+# Cluster-scoped Crossplane managed resources: nothing here lands in a namespace.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: github-actions-beacon-ecr
+  labels:
+    app: beacon
+    component: ci-role
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "GitHub Actions (arigsela/beacon, v* tags) pushes the beacon images to ECR"
+    maxSessionDuration: 3600
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Federated": "arn:aws:iam::852893458518:oidc-provider/token.actions.githubusercontent.com"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+              "StringEquals": {
+                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+              },
+              "StringLike": {
+                "token.actions.githubusercontent.com:sub": "repo:arigsela@2475907/beacon@1422247936:ref:refs/tags/v*"
+              }
+            }
+          }
+        ]
+      }
+    tags:
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+  providerConfigRef:
+    name: default
+---
+# Push to the six beacon repositories, nothing else. ecr:DescribeImages beyond the
+# agent-audit-web set: the release workflow checks whether a tag already exists
+# before pushing, because the repositories are IMMUTABLE and a re-run of a tag
+# build must skip rather than fail (beacon §V.17).
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: beacon-ecr-push
+  labels:
+    app: beacon
+    component: ci-policy
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "Push to the six beacon ECR repositories only"
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "EcrLogin",
+            "Effect": "Allow",
+            "Action": ["ecr:GetAuthorizationToken"],
+            "Resource": "*"
+          },
+          {
+            "Sid": "PushBeaconRepositoriesOnly",
+            "Effect": "Allow",
+            "Action": [
+              "ecr:BatchCheckLayerAvailability",
+              "ecr:BatchGetImage",
+              "ecr:CompleteLayerUpload",
+              "ecr:DescribeImages",
+              "ecr:InitiateLayerUpload",
+              "ecr:PutImage",
+              "ecr:UploadLayerPart"
+            ],
+            "Resource": [
+              "arn:aws:ecr:us-east-2:852893458518:repository/beacon-api",
+              "arn:aws:ecr:us-east-2:852893458518:repository/beacon-checker",
+              "arn:aws:ecr:us-east-2:852893458518:repository/beacon-mcp",
+              "arn:aws:ecr:us-east-2:852893458518:repository/beacon-notifier",
+              "arn:aws:ecr:us-east-2:852893458518:repository/beacon-scheduler",
+              "arn:aws:ecr:us-east-2:852893458518:repository/beacon-web"
+            ]
+          }
+        ]
+      }
+    tags:
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: RolePolicyAttachment
+metadata:
+  name: github-actions-beacon-ecr-push
+  labels:
+    app: beacon
+    component: ci-policy-attachment
+    managed-by: crossplane
+spec:
+  forProvider:
+    roleRef:
+      name: github-actions-beacon-ecr
+    policyArnRef:
+      name: beacon-ecr-push
+  providerConfigRef:
+    name: default
