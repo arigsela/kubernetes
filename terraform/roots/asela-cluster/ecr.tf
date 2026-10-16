@@ -38,6 +38,20 @@ locals {
     "plex-stack-mcp"           = { image_tag_mutability = "MUTABLE", scan_on_push = false }
     "weather-kitchen-backend"  = { image_tag_mutability = "MUTABLE", scan_on_push = false }
     "weather-kitchen-frontend" = { image_tag_mutability = "MUTABLE", scan_on_push = false }
+
+    # beacon (app repo arigsela/beacon; beacon SPEC §T.2, §V.17): one repository
+    # per service image, pushed only by that repo's v* tag builds through the
+    # GitHub-OIDC role in base-apps/beacon-aws-infrastructure/. IMMUTABLE because
+    # base-apps/beacon/ pins every image by digest. keep_tagged = 10, not the
+    # default 2: beacon rolls back and reverts injected faults with `git revert`
+    # (beacon §V.13), and a reverted pin has to still be pullable. Six images
+    # of ~60 MB keeping 10 versions each is ~3.6 GB, about $0.36 a month.
+    "beacon-api"       = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
+    "beacon-checker"   = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
+    "beacon-mcp"       = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
+    "beacon-notifier"  = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
+    "beacon-scheduler" = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
+    "beacon-web"       = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
   }
 
   # Repositories on their way out (step 1 above). Same settings as before the
@@ -45,6 +59,14 @@ locals {
   # Empty between retirements. homelab-agent went through both steps on
   # 2026-10-11 (kagent 1.0 plan, Task 5.2).
   ecr_repositories_retiring = {}
+
+  # How many tagged images each repository keeps (rule 1 of the lifecycle policy
+  # below): 2 unless the repository sets keep_tagged. Keyed like the
+  # repositories, so the policy's for_each can look its count up.
+  ecr_keep_tagged = {
+    for name, repo in merge(local.ecr_repositories, local.ecr_repositories_retiring) :
+    name => try(repo.keep_tagged, 2)
+  }
 }
 
 resource "aws_ecr_repository" "this" {
@@ -85,10 +107,13 @@ resource "aws_ecr_repository" "retiring" {
   }
 }
 
-# Every repository keeps its two newest tagged images and nothing else.
+# Every repository keeps its newest tagged images (two unless it sets
+# keep_tagged, see local.ecr_keep_tagged) and nothing else. The rendered policy
+# of a repository on the default is unchanged by that knob: same count, same
+# description text.
 #
-# Every image here is multi-arch: a tagged OCI index plus untagged platform and
-# attestation manifests. Counting "any image" would count those children and
+# Images here are mostly multi-arch: a tagged OCI index plus untagged platform and
+# attestation manifests (beacon's are single-platform, one tagged manifest each). Counting "any image" would count those children and
 # leave ONE deployable version, so rule 1 counts tagged images only. ECR will
 # not expire a child while the index that references it exists, so the two
 # kept versions stay pullable; rule 2 then sweeps the orphans of expired
@@ -103,12 +128,12 @@ resource "aws_ecr_lifecycle_policy" "this" {
     rules = [
       {
         rulePriority = 1
-        description  = "Keep only the 2 newest tagged images. Platform children of a kept multi-arch index are protected by ECR while the index exists."
+        description  = "Keep only the ${local.ecr_keep_tagged[each.key]} newest tagged images. Platform children of a kept multi-arch index are protected by ECR while the index exists."
         selection = {
           tagStatus      = "tagged"
           tagPatternList = ["*"]
           countType      = "imageCountMoreThan"
-          countNumber    = 2
+          countNumber    = local.ecr_keep_tagged[each.key]
         }
         action = { type = "expire" }
       },
