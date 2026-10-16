@@ -42,7 +42,7 @@ spec:
     # path while the other eleven look healthy.
     #
     # The cost is that removing a config leaves an orphan Application to delete
-    # by hand; see the "Removing an app" section of the runbook. For twelve
+    # by hand; see the "Removing an app" section of the runbook. For thirteen
     # rarely-changing infrastructure apps that is the better trade.
     applicationsSync: create-update
   template:

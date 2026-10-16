@@ -489,7 +489,7 @@ jobs:
 
   # The ApplicationSet configs are not schema-validated by kubernetes-validate
   # (they have no kind), and a malformed one does not fail loudly at apply time:
-  # goTemplateOptions missingkey=error halts the render for ALL 12 apps and the
+  # goTemplateOptions missingkey=error halts the render for ALL 13 apps and the
   # existing Applications silently stop reconciling. These tests are the loud
   # failure, including a golden check that no config changes an app's spec.
   appset-validate:
