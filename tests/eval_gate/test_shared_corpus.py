@@ -228,3 +228,16 @@ def test_load_corpora_keys_the_shared_file_under_star(tmp_path):
     assert set(out) == {"homelab-knowledge", "*"}
     assert eg.agent_ref(out["*"], "k8s-reader") == "kagent/k8s-reader"
     assert eg.agent_ref(out["homelab-knowledge"], "homelab-knowledge") == "kagent/homelab-knowledge"
+
+
+def test_a_baseline_with_no_stored_question_set_is_reset_not_compared():
+    """§B.32: homelab-knowledge's 1.0 baseline predates corpus hashes; scoring it on 8 own + 13
+    shared entries against that number held it on 13/21 with no hard fail."""
+    kube = FakeKube(two_agents())
+    kube.cm = {"metadata": {"name": "eval-gate-state"}, "data": {"state.json": json.dumps(
+        {"hashes": {}, "baselines": {"k8s-reader": 1.0}})}}          # no "corpus" key at all
+    corpus = {"version": 1, "agent": "k8s-reader", "entries": [
+        {"id": "q", "category": "repo-factual", "question": "Q", "golden": {"must_include": ["vault"], "behavior": "answer"}}]}
+    rc, log = run(kube, Sender({"Q": task("no idea")}), {"k8s-reader": corpus})
+    line = lines(log, "k8s-reader")[0]
+    assert line["baseline_reset"] is True and line["regression"] is False and line["held"] is False
