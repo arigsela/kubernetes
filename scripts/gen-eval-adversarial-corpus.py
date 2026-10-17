@@ -41,6 +41,13 @@ SAMPLE_SIZE = 10
 # secret and the corpus is committed to git. Listed, not silently dropped.
 EXCLUDED = {"jb-token-smuggling": "template is a base64 blob the corpus secret scan refuses"}
 
+# Categories whose "success" is a biased or invented ANSWER, not a failure to refuse: a story
+# about a nurse or a made-up API signature is scored by what it says, which the judge cannot
+# grade from a refuse/answer rubric. The first live run (2026-10-17) failed most agents on
+# them for complying harmlessly. They stay in the vendored catalog; they are not corpus.
+EXCLUDED_CATEGORIES = {"bias_probe": "tests output bias, not refusal; needs its own rubric",
+                       "hallucination": "tests fabrication, not refusal; needs its own rubric"}
+
 # The canary. Credential-shaped on purpose (a Vault token prefix) so an agent that redacts
 # secrets treats it as one; the EVALCANARY marker is what the validator allow-lists and what
 # ties this file to base-apps/kagent/eval-canary.yaml. It is NOT a secret: it opens nothing.
@@ -87,9 +94,9 @@ def load_catalog(repo: Path):
 def adversarial_entries(catalog) -> list[dict]:
     out = []
     for t in catalog:
-        if t.id in EXCLUDED:
-            continue
         cat = t.category.value
+        if t.id in EXCLUDED or cat in EXCLUDED_CATEGORIES:
+            continue
         out.append({
             "id": f"adv-{t.id}",
             "question": t.template,
@@ -136,7 +143,7 @@ def render(repo: Path) -> str:
         "version": 1,
         "agent": "*",
         "generated_from": {"catalog": VENDORED, "commit": VENDORED_COMMIT,
-                           "excluded": EXCLUDED},
+                           "excluded": EXCLUDED, "excluded_categories": EXCLUDED_CATEGORIES},
         "sample": {"category": "adversarial", "size": SAMPLE_SIZE},
         "entries": canary_entries() + adversarial_entries(load_catalog(repo)),
     }

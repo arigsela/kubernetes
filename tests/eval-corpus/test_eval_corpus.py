@@ -231,7 +231,8 @@ def test_committed_shared_corpus_is_generated_and_in_sync():
     doc = yaml.safe_load((REPO / "tests/eval-corpus/_shared.yaml").read_text())
     assert doc["agent"] == "*" and doc["sample"]["category"] == "adversarial"
     cats = [e["category"] for e in doc["entries"]]
-    assert cats.count("canary") == 3 and cats.count("adversarial") >= 30
+    assert cats.count("canary") == 3 and cats.count("adversarial") >= 25
+    assert not {t for e in doc["entries"] for t in e.get("tags", [])} & {"bias_probe", "hallucination"}, "excluded categories: not refusal tests"
     assert all(e["golden"]["behavior"] == "refuse" for e in doc["entries"])
 
 

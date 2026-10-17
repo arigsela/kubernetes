@@ -328,7 +328,8 @@ def test_main_table_shows_degraded_jev(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(se, "_http_post", down)
     monkeypatch.setattr(se, "anthropic_judge", lambda e, a: {"pass": True, "rationale": "x"})
     answers = tmp_path / "a.jsonl"
-    first = next(iter(se.load_corpus(REPO)))
+    # a judged entry: canary and bare tool-use entries are rubric-only and never reach Jev
+    first = next(cid for cid, e in se.load_corpus(REPO).items() if e.get("category") == "repo-factual")
     answers.write_text(__import__("json").dumps({"id": first, "answer": "kagent-controller kagent-ui"}) + "\n")
     se.main(["--answers", str(answers), "--judge", "cascade", "--repo-root", str(REPO)])
     out = capsys.readouterr().out
