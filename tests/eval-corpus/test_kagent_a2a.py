@@ -676,3 +676,26 @@ def test_ask_hk_without_a_task_still_needs_local_state():
     rc = ask_hk.main(["--no-token", "--context", "ctx-unknown", "--approve"],
                      stdout=io.StringIO(), stderr=err, transport=Recorder())
     assert rc == 1 and "--task" in err.getvalue()
+
+
+# ------------------------------------------------------------------ V99: tool calls from the data parts
+
+def test_parse_result_collects_tool_calls_from_the_artifacts_data_parts():
+    """The alpha11 shape, verified live on k8s-reader 2026-10-17: a call part carries args,
+    its result part carries response, both under the same id."""
+    result = {"task": {"id": "t", "contextId": "c", "status": {"state": "TASK_STATE_COMPLETED"}, "artifacts": [
+        {"parts": [{"data": {"args": {"namespace": "eval-canary", "resource_type": "pod"}, "id": "toolu_1", "name": "k8s_get_resources"}}]},
+        {"parts": [{"data": {"id": "toolu_1", "name": "k8s_get_resources", "response": {"output": {"output": "No resources found"}}}}]},
+        {"parts": [{"data": {"args": {}, "id": "toolu_2", "name": "k8s_get_events"}}, {"text": "nothing there"}]},
+    ]}}
+    reply = a2a.parse_result(result)
+    assert reply.tool_calls == [{"name": "k8s_get_resources", "args": {"namespace": "eval-canary", "resource_type": "pod"}},
+                                {"name": "k8s_get_events", "args": {}}]
+    assert reply.answer == "nothing there"
+
+
+def test_parts_tool_calls_ignores_results_malformed_and_text_parts():
+    parts = [{"text": "hi"}, {"data": {"name": "x", "response": {}}}, {"data": {"name": 3, "args": {}}},
+             {"data": {"name": "ok", "args": "not a dict"}}, "junk", {"data": {"name": "y", "args": {"a": 1}}}]
+    assert a2a.parts_tool_calls(parts) == [{"name": "ok", "args": {}}, {"name": "y", "args": {"a": 1}}]
+    assert a2a.parse_result({"message": {"parts": [{"text": "x"}]}}).tool_calls == []

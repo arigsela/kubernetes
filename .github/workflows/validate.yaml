@@ -471,6 +471,8 @@ jobs:
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run eval-gate tests
         run: python -m pytest tests/eval_gate/ -q
+      - name: Check the shared adversarial corpus is in sync with the vendored catalog
+        run: python scripts/gen-eval-adversarial-corpus.py --repo-root . --check
       - name: Check the eval-gate ConfigMap is in sync with the scripts and corpus
         run: python scripts/gen-eval-gate-configmap.py --repo-root . --check
 

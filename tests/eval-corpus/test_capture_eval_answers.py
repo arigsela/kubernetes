@@ -155,3 +155,53 @@ def test_capture_returns_answers_and_none_for_failures():
 
     out = cap.capture(entries, "http://x/agents/kagent/a", send=send, timeout=1)
     assert out == {"a": "answer to qa", "b": None}
+
+
+# ------------------------------------------------------------------ V99: capture_full and reject_pending
+a2a = _load("kagent_a2a")
+
+def _paused(pending, calls=()):
+    parts = [{"data": {"id": f"c{i}", "name": c, "args": {}}} for i, c in enumerate(calls)]
+    return {"task": {"id": "task-1", "contextId": "ctx-1", "status": {
+        "state": "TASK_STATE_INPUT_REQUIRED",
+        "message": {"parts": [{"text": "approve?"}], "metadata": {a2a.HITL_EXTENSION: {
+            "type": "tool_approval_request", "tools": pending}}}},
+        "artifacts": [{"parts": parts}]}}
+
+
+def test_capture_full_scores_a_pause_on_its_pending_calls_and_rejects_it():
+    sent = []
+
+    def send(endpoint, question, **kw):
+        sent.append(kw)
+        if kw.get("task_id"):
+            return {"task": {"id": "task-1", "contextId": "ctx-1", "status": {"state": "TASK_STATE_COMPLETED"},
+                             "artifacts": [{"parts": [{"text": "no restart: rejected"}]}]}}
+        return _paused([{"id": "call-9", "name": "k8s_delete_resource", "args": {"resource_name": "canary-logger-0"}}],
+                       calls=["k8s_describe_resource"])
+
+    out = cap.capture_full([{"id": "e", "question": "restart it"}], "http://a2a/agents/kagent/restarter", send=send,
+                           reject=lambda reply: cap.reject_pending(reply, "http://a2a/agents/kagent/restarter", send=send))
+    row = out["e"]
+    assert [c["name"] for c in row["tool_calls"]] == ["k8s_describe_resource", "k8s_delete_resource"]
+    assert row["tool_calls"][1]["pending"] is True and row["pending"][0]["id"] == "call-9"
+    assert row["answer"] == "no restart: rejected" and row["state"] == "TASK_STATE_COMPLETED"
+    assert sent[1]["task_id"] == "task-1" and sent[1]["context_id"] == "ctx-1"
+    approvals = sent[1]["metadata"][a2a.HITL_EXTENSION]["approvals"]
+    assert approvals[0]["id"] == "call-9" and approvals[0]["approved"] is False
+
+
+def test_capture_full_without_a_reject_hook_leaves_the_pause_and_records_it():
+    send = lambda endpoint, question, **kw: _paused([{"id": "c", "name": "k8s_delete_resource", "args": {}}])
+    row = cap.capture_full([{"id": "e", "question": "q"}], "http://a2a/x", send=send)["e"]
+    assert row["answer"] is None and row["pending"] and row["state"] == "TASK_STATE_INPUT_REQUIRED"
+
+
+def test_capture_keeps_its_old_shape():
+    send = lambda endpoint, question, **kw: {"message": {"parts": [{"text": "hello"}]}}
+    assert cap.capture([{"id": "e", "question": "q"}], "http://a2a/x", send=send) == {"e": "hello"}
+
+
+def test_reject_pending_does_nothing_without_pending_calls():
+    reply = a2a.parse_result({"message": {"parts": [{"text": "done"}]}})
+    assert cap.reject_pending(reply, "http://a2a/x", send=lambda *a, **k: pytest.fail("no send")) is None

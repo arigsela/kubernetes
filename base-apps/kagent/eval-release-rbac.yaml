@@ -1,0 +1,73 @@
+# base-apps/kagent/eval-release-rbac.yaml
+# The release gate's write path (V99, §T.124). After each scored run the eval-gate Job writes
+# ConfigMap `eval-release` (key release.json: which agents are held after a regression) into the
+# namespaces of the two automations that open agent sessions on their own, the dispatcher and the
+# Slack bridge. Each mounts it as an optional volume and reads a FILE: neither pod talks to the
+# API server (automountServiceAccountToken: false), and that stays true. The eval gate's identity
+# is kagent/eval-gate; these Roles grant it exactly that one ConfigMap per namespace (plus
+# `create`, which resourceNames cannot gate, as in eval-gate-rbac.yaml). The ConfigMaps are the
+# job's own scratch, not Git-managed objects: Argo CD neither creates nor prunes them.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eval-release-writer
+  namespace: dispatcher
+  labels:
+    app: eval-gate
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["eval-release"]
+    verbs: ["get", "update"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eval-release-writer
+  namespace: dispatcher
+  labels:
+    app: eval-gate
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eval-release-writer
+subjects:
+  - kind: ServiceAccount
+    name: eval-gate
+    namespace: kagent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eval-release-writer
+  namespace: slack-bridge
+  labels:
+    app: eval-gate
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["eval-release"]
+    verbs: ["get", "update"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eval-release-writer
+  namespace: slack-bridge
+  labels:
+    app: eval-gate
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eval-release-writer
+subjects:
+  - kind: ServiceAccount
+    name: eval-gate
+    namespace: kagent

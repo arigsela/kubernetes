@@ -26,7 +26,7 @@ def test_configmap_carries_both_scripts_verbatim():
 
 
 def test_check_fails_on_a_drifted_copy(tmp_path):
-    for rel in ("scripts/slack_bridge.py", "scripts/kagent_a2a.py", "base-apps/slack-bridge/code-configmap.yaml",
+    for rel in ("scripts/slack_bridge.py", "scripts/kagent_a2a.py", "scripts/eval_release.py", "base-apps/slack-bridge/code-configmap.yaml",
                 "base-apps/slack-bridge/deployment.yaml"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO / rel, tmp_path / rel)

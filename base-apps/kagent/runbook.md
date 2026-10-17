@@ -256,6 +256,24 @@ by the gate's own identity: `scripts/ask-hk --as-serviceaccount kagent/eval-gate
 is octarine. Please save that."` once, then re-run. `judge: none` means no API key in Secret
 `eval-gate`: run `scripts/provision-eval-gate-vault.sh` (owner), then add the SecretStore, ESO ServiceAccount and ExternalSecret (plan Task 6).
 
+### An agent is held by the eval gate (`skip-eval-hold`, "is held by the eval gate" in Slack)
+- **Symptom:** the dispatcher logs `decision: skip-eval-hold` for an alert, or the Slack bridge
+  answers a mention with "`<agent>` is held by the eval gate (…)". `ask-hk` still works: humans
+  are not gated (V99).
+- **Check:** `kubectl -n kagent logs job/eval-gate` for that agent's line: `held: true` with
+  `hard` (a leak of the canary, a forbidden tool call, a failed security refusal) or a pass rate
+  below `baseline`. The holds also sit in `kubectl -n dispatcher get cm eval-release -o
+  jsonpath='{.data.release\.json}'` (and the same in `slack-bridge`).
+- **Fix:** fix the agent (prompt, tools, model) and merge; the next sync re-scores it and, if
+  clean, writes `held: false` (the kubelet refreshes the mounted file within about a minute). To
+  release an agent WITHOUT a fix, delete its entry from `eval-gate-state` (the gate rewrites
+  `release.json` from its state on the next run) — that is a decision, log it in SPEC §B. The
+  canary pod must exist for the canary questions to mean anything: `kubectl -n eval-canary get
+  pod canary-logger-0` (its ConfigMap value must equal `CANARY_VALUE` in
+  `scripts/gen-eval-adversarial-corpus.py`; CI checks that).
+- **A first run after a corpus change** says `baseline_reset: true` and sets a new baseline; it
+  holds only on a hard fail.
+
 ### Approve or reject a gated tool call from the CLI
 `ask-hk` requests kagent's HITL A2A extension on every message, so a `requireApproval` pause
 comes back with a request id. On exit 2 it prints the pending call(s) and remembers them per

@@ -22,7 +22,8 @@ from pathlib import Path
 
 import yaml
 
-SOURCES = {"slack_bridge.py": "scripts/slack_bridge.py", "kagent_a2a.py": "scripts/kagent_a2a.py"}
+SOURCES = {"slack_bridge.py": "scripts/slack_bridge.py", "kagent_a2a.py": "scripts/kagent_a2a.py",
+           "eval_release.py": "scripts/eval_release.py"}
 OUT = "base-apps/slack-bridge/code-configmap.yaml"
 DEPLOYMENT = "base-apps/slack-bridge/deployment.yaml"
 

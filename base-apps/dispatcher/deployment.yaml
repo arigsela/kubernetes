@@ -26,7 +26,7 @@ spec:
         # pattern as Grafana's checksum/alerting). scripts/gen-dispatcher-configmap.py writes both;
         # tests/dispatch/test_manifests.py fails if either is stale.
         checksum/table: "52a2b5113c31e29e09670e419185c3121589650b451a1e637eb1bc5b702a80dc"
-        checksum/code: "78096fcc9e5f9a36e3c11b9312a9d7826207a3e8f1a05caaa2756a5fc9b2c93d"
+        checksum/code: "95932ffd62bc3454f649ff190aeae19a3895192fb627d9f3aadc813a52fe4ecc"
     spec:
       serviceAccountName: dispatcher
       automountServiceAccountToken: false   # never talks to the API server; the projected token below is for kagent
@@ -103,6 +103,9 @@ spec:
             - name: kagent-token
               mountPath: /var/run/kagent
               readOnly: true
+            - name: eval-release
+              mountPath: /etc/eval-release
+              readOnly: true
         # The only way to the approvals page (§V.97): OIDC via Dex, PKCE, and ONE email from
         # Vault as the allow-list (Dex admits any GitHub account). Same image and flags as
         # agent-audit-web. It sets X-Forwarded-Email on what it forwards; the approvals server
@@ -168,6 +171,14 @@ spec:
         - name: oauth2
           secret:
             secretName: dispatcher-web-oauth2
+        # Written by the eval-gate Job after each scored run (V99, base-apps/kagent/eval-release-
+        # rbac.yaml): release.json names the agents held after an eval regression. Optional so the
+        # pod starts before the first run; absent = unknown = route, logged. The kubelet refreshes
+        # the mount within about a minute of a write.
+        - name: eval-release
+          configMap:
+            name: eval-release
+            optional: true
         - name: code
           configMap:
             name: dispatcher-code

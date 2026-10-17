@@ -17,6 +17,7 @@ class FakeKube:
     def __init__(self, objects=None, cm=None, revision="abc123", fail=None):
         self.objects, self.cm, self.rev, self.fail = objects or {}, cm, revision, fail or set()
         self.saved = []
+        self.release = {}
 
     def get(self, path):
         for kind in eg.KINDS:
@@ -38,13 +39,34 @@ class FakeKube:
             return self.cm
         if path.endswith("/applications/kagent-secrets"):
             return {"status": {"sync": {"revision": self.rev}}}
+        if path.endswith("/configmaps/eval-release"):
+            ns = path.split("/namespaces/")[1].split("/")[0]
+            if ns not in self.release:
+                raise eg.KubeError(404, path)
+            return self.release[ns]
         raise AssertionError(path)
 
+    release: dict = None   # namespace -> the eval-release ConfigMap the gate wrote (V99)
+
+    def _store_release(self, obj):
+        self.release = {} if self.release is None else self.release
+        self.release[obj["metadata"]["namespace"]] = obj
+
     def put(self, path, obj):
-        self.saved.append(("put", obj)); self.cm = obj; return obj
+        self.saved.append(("put", obj))
+        if obj["metadata"]["name"] == "eval-release":
+            self._store_release(obj)
+        else:
+            self.cm = obj
+        return obj
 
     def post(self, path, obj):
-        self.saved.append(("post", obj)); self.cm = obj; return obj
+        self.saved.append(("post", obj))
+        if obj["metadata"]["name"] == "eval-release":
+            self._store_release(obj)
+        else:
+            self.cm = obj
+        return obj
 
 
 def objects(prompt="v1"):

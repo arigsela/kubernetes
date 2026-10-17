@@ -40,6 +40,15 @@ new A2A session with that agent, presenting its projected service account token 
 verifies it: the session is owned by `system:serviceaccount:dispatcher:dispatcher`, V91), then posts the answer to n8n's
 `agent-findings` webhook, which formats it for Slack `#oncall-alerts`.
 
+The eval gate can hold an agent (V99): after a sync whose evaluation regressed (a canary
+credential relayed, a forbidden tool call, a failed security refusal, a pass rate below its
+baseline), the `eval-gate` Job writes `release.json` into ConfigMap `eval-release` in this
+namespace, and the dispatcher reads it as a mounted file (`/etc/eval-release/release.json`,
+`scripts/eval_release.py`) on every decision. A held agent gets `decision: skip-eval-hold`
+(logged, no session, the alert still reaches humans) until a later sync scores it clean. The
+file is optional: absent means unknown, and unknown routes. The pod still never talks to the
+API server.
+
 ## What it is not
 - Not in the human path. Grafana's contact point `n8n` has two integrations: n8n (→ Slack,
   unchanged) and this service. If the dispatcher is down, Slack is unaffected (§V.86).

@@ -1215,3 +1215,56 @@ def test_the_webhook_and_approvals_servers_do_not_serve_decide():
         assert status == 404
     finally:
         srv.shutdown()
+
+
+# ------------------------------------------------------------------ V99: the eval gate's hold
+
+def _release(tmp_path, agents):
+    p = tmp_path / "release.json"
+    p.write_text(json.dumps({"version": 1, "written_at": "2026-10-17T20:00:00+00:00", "revision": "abc",
+                             "agents": agents}))
+    return str(p)
+
+
+def make_held(fake, release_path, table=TABLE):
+    cfg = dp.Config(table_path="/dev/null", a2a_base="http://a2a:8083", n8n_base="http://n8n:5678/webhook",
+                    user="dispatcher", timeout=5.0, release_path=release_path)
+    return dp.Dispatcher(dp.load_table(json.dumps(table)), cfg, send=fake.send, post=fake.post,
+                         log=fake.log, run_async=False)
+
+
+def test_a_held_agent_gets_no_investigation(tmp_path):
+    fake = Fake(reply=completed_task())
+    agent = TABLE["rules"][0]["route"].split(":", 1)[1]
+    d = make_held(fake, _release(tmp_path, {agent: {"held": True, "hash": "h", "reason": "eval regression on h: hard canary-pod-logs"}}))
+    decisions = d.handle_grafana({"alerts": [alert()]})
+    assert [x["decision"] for x in decisions] == ["skip-eval-hold"]
+    assert "canary-pod-logs" in decisions[0]["held"] and not fake.sent
+
+
+def test_a_released_or_unknown_agent_is_investigated(tmp_path):
+    agent = TABLE["rules"][0]["route"].split(":", 1)[1]
+    for path in (_release(tmp_path, {agent: {"held": False, "hash": "h", "reason": None}}),
+                 _release(tmp_path, {}), str(tmp_path / "absent.json")):
+        fake = Fake(reply=completed_task())
+        d = make_held(fake, path)
+        assert [x["decision"] for x in d.handle_grafana({"alerts": [alert()]})] == ["investigate"], path
+        assert len(fake.sent) == 1
+
+
+def test_the_hold_is_re_read_on_every_decision(tmp_path):
+    """The kubelet refreshes the mounted file; a hold lifted by a later sync takes effect
+    without a restart."""
+    agent = TABLE["rules"][0]["route"].split(":", 1)[1]
+    path = _release(tmp_path, {agent: {"held": True, "hash": "h", "reason": "r"}})
+    fake = Fake(reply=completed_task())
+    d = make_held(fake, path)
+    assert d.handle_grafana({"alerts": [alert(fingerprint="a")]})[0]["decision"] == "skip-eval-hold"
+    _release(tmp_path, {agent: {"held": False, "hash": "h2", "reason": None}})
+    assert d.handle_grafana({"alerts": [alert(fingerprint="b")]})[0]["decision"] == "investigate"
+
+
+def test_config_reads_the_release_path_from_env():
+    cfg = dp.Config.from_env({"EVAL_RELEASE_PATH": "/x/release.json"})
+    assert cfg.release_path == "/x/release.json"
+    assert dp.Config.from_env({}).release_path == "/etc/eval-release/release.json"

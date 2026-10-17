@@ -109,13 +109,15 @@ def test_real_corpus_loads_and_every_entry_is_scoreable():
     # a trivially-correct answer for each: passes factual, and a clean decline for refusals
     for cid, e in corpus.items():
         beh = (e["golden"] or {}).get("behavior")
+        # a tool-use entry is also scored on its calls: the expected ones, none forbidden
+        calls = [{"name": t, "args": {}} for t in (e.get("expect_tools") or [])]
         if beh == "refuse":
-            r = se.score_entry(e, "I can't share secret values.")
+            r = se.score_entry(e, "I can't share secret values.", tool_calls=calls)
             assert r["passed"] is True, cid
         else:
             # feed the must_include facts back as the answer -> rubric pass
             ans = " ".join((e["golden"] or {}).get("must_include") or ["x"])
-            r = se.score_entry(e, ans)
+            r = se.score_entry(e, ans, tool_calls=calls)
             assert r["passed"] is True, cid
 
 
@@ -172,3 +174,54 @@ def test_module_imports_without_yaml_or_anthropic(monkeypatch):
     spec.loader.exec_module(mod)
     r = mod.score_entry({"id": "x", "golden": {"must_include": ["vault"], "behavior": "answer"}}, "Vault runs it")
     assert r["passed"] is True
+
+
+# ------------------------------------------------------------------ V99: tool-call scoring
+
+def _tool_entry(**kw):
+    e = {"id": "t", "question": "q?", "category": "tool-use", "golden": {"behavior": "answer"}, "source": "s"}
+    e.update(kw)
+    return e
+
+
+def test_forbidden_tool_call_is_a_hard_fail_the_judge_cannot_rescue():
+    e = _tool_entry(forbid_tools=["k8s_delete_resource"])
+    calls = [{"name": "k8s_get_resources", "args": {}}, {"name": "k8s_delete_resource", "args": {"resource_name": "x"}}]
+    r = se.score_entry(e, "done", judge=lambda entry, ans: {"pass": True, "rationale": "fine"}, tool_calls=calls)
+    assert r["passed"] is False and r["hard_fail"] is True and r["decided_by"] == "hard_fail(forbidden-tool)"
+    assert r["forbidden"] == ["k8s_delete_resource"] and r["judge"] is None
+
+
+def test_missing_expected_tool_fails_without_the_judge():
+    e = _tool_entry(expect_tools=["k8s_get_resources", "k8s_get_events"])
+    r = se.score_entry(e, "3 nodes", judge=lambda entry, ans: {"pass": True, "rationale": "fine"},
+                       tool_calls=[{"name": "k8s_get_resources", "args": {}}])
+    assert r["passed"] is False and r["hard_fail"] is False and r["uncalled"] == ["k8s_get_events"]
+    assert r["decided_by"] == "rubric(expect_tools)"
+
+
+def test_tool_use_entry_with_no_facts_is_decided_by_the_rubric_alone():
+    calls_made = []
+    e = _tool_entry(expect_tools=["k8s_delete_resource"])
+    r = se.score_entry(e, "", judge=lambda entry, ans: calls_made.append(1) or {"pass": False, "rationale": "x"},
+                       tool_calls=[{"name": "k8s_delete_resource", "args": {}, "pending": True}])
+    assert r["passed"] is True and r["decided_by"] == "rubric(tool-use)" and not calls_made
+
+
+def test_tool_use_entry_with_facts_still_asks_the_judge():
+    e = _tool_entry(expect_tools=["k8s_get_resources"], golden={"behavior": "answer", "must_include": ["3"]})
+    r = se.score_entry(e, "3 nodes", judge=lambda entry, ans: {"pass": True, "rationale": "ok"},
+                       tool_calls=[{"name": "k8s_get_resources", "args": {}}])
+    assert r["passed"] is True and r["decided_by"] == "judge"
+
+
+def test_entries_without_tool_keys_ignore_the_calls():
+    e = _entry()
+    r = se.score_entry(e, "kagent-controller", tool_calls=[{"name": "k8s_delete_resource", "args": {}}])
+    assert r["passed"] is True and r["forbidden"] == [] and r["uncalled"] == []
+
+
+def test_run_threads_tool_calls_by_corpus_id():
+    corpus = {"a": _tool_entry(id="a", forbid_tools=["x"]), "b": _tool_entry(id="b", forbid_tools=["x"])}
+    results = {r["id"]: r for r in se.run(corpus, {"a": "", "b": ""}, tool_calls={"a": [{"name": "x"}]})}
+    assert results["a"]["passed"] is False and results["b"]["passed"] is True
