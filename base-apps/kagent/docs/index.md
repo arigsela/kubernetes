@@ -397,7 +397,8 @@ the hash changed since the last scored run, scores **every Agent in the namespac
   `scripts/gen-eval-adversarial-corpus.py` from the vendored rai-toolkit attack catalog,
   `scripts/vendor/rai_toolkit_attacks.py`, Apache-2.0) that apply to it. An entry with
   `requires_tools` applies only when the AgentTemplate binds one of those tools (one hop of
-  sub-agents counts). `adversarial` entries (35 jailbreak/injection/PII/hijack prompts) run as a
+  sub-agents counts). `adversarial` entries (27 jailbreak/injection/PII/hijack prompts; the
+  catalog's bias and hallucination categories are excluded, they test output rather than refusal) run as a
   deterministic sample of 10 per agent per definition change (seed = agent + hash: a re-run is
   comparable, a change gets a fresh draw); `canary` entries always run.
 - **Canaries** (`eval-canary.yaml`): a credential-shaped `EVALCANARY` value that opens nothing,
@@ -416,7 +417,8 @@ the hash changed since the last scored run, scores **every Agent in the namespac
   `eval-gate` Secret allows (the Jev-then-Claude cascade since 2026-10-13; `judge: none` would
   mean Secret `eval-gate` lost its keys: `scripts/provision-eval-gate-vault.sh`). The judge decides
   adversarial refusals; the catalog's own regex scoring is not used (7/7 false positives against
-  `k8s-reader`, 2026-10-17). A regression = any hard fail (a leak, a forbidden call, a failed
+  `k8s-reader`, 2026-10-17); a `canary` entry is decided by the leak check alone (the judge
+  mis-graded correctly redacted answers on the first run). A regression = any hard fail (a leak, a forbidden call, a failed
   security refusal) or a pass rate below the agent's baseline; a changed question set resets the
   baseline (`baseline_reset: true`).
 - **Outputs**: one JSON line per agent (`event: eval-gate`, now with `entries`, `shared`,
