@@ -64,6 +64,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kagent_a2a as a2a  # noqa: E402
+import eval_release  # noqa: E402
 
 ANSWER_LIMIT = 3000       # chars of the agent's answer forwarded to Slack
 SOURCES = {"grafana"}
@@ -425,6 +426,7 @@ class Config:
     approvals_url: str = "https://dispatcher.arigsela.com/approvals"
     approvals_port: int = 8081                          # 127.0.0.1 only; 0 = no approvals server
     decide_port: int = 8082                             # the Slack bridge's door (§T.120); 0 = none
+    release_path: str = eval_release.DEFAULT_PATH      # the eval gate's holds (V99); absent = unknown = route
 
     @classmethod
     def from_env(cls, env=os.environ) -> "Config":
@@ -440,6 +442,7 @@ class Config:
             approvals_url=env.get("APPROVALS_URL", "https://dispatcher.arigsela.com/approvals"),
             approvals_port=int(env.get("APPROVALS_PORT", "8081")),
             decide_port=int(env.get("DECIDE_PORT", "8082")),
+            release_path=env.get("EVAL_RELEASE_PATH", eval_release.DEFAULT_PATH),
         )
 
 
@@ -506,6 +509,12 @@ class Dispatcher:
             return {**base, "decision": "none"}
         if alert.get("status") != "firing":
             return {**base, "decision": "resolved"}
+        # The eval gate's hold (V99): an agent whose last scored run regressed gets no
+        # automated work until a later sync scores it clean. Read from the mounted file on
+        # every decision (the kubelet refreshes it); absent or unreadable = unknown = route.
+        held = eval_release.hold(rule["route"].split(":", 1)[1], eval_release.load(self.config.release_path))
+        if held:
+            return {**base, "decision": "skip-eval-hold", "held": held}
         if rule.get("proposes"):
             n = self.open_prs.count()
             base["open_prs"] = n

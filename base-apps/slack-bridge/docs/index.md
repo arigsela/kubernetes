@@ -53,6 +53,12 @@ time the agent can look up. Later replies in the thread are sent bare: the sessi
 context. A parent the bot cannot read (a private channel, a deleted message) is logged
 (`slack-error`, `conversations.replies`) and the question goes without it.
 
+A mention of an agent the eval gate holds (V99: its last scored run regressed) gets one reply,
+"`<agent>` is held by the eval gate (<reason>)", and no session. The holds arrive as
+`release.json` in ConfigMap `eval-release`, written by the `eval-gate` Job into this namespace
+and mounted at `/etc/eval-release` (`scripts/eval_release.py`); absent means unknown, and unknown
+sends. `scripts/ask-hk` is not gated, so the owner can still reach a held agent to see why.
+
 ## Long runs
 A send is a `SendStreamingMessage`. The first event, about a second in, carries the session
 and task ids, so the thread has a handle before the agent finishes: after two minutes the

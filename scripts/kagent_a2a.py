@@ -117,6 +117,11 @@ class Reply:
     text: str | None          # text parts of the artifacts (or the message)
     status_text: str | None   # text parts of task.status.message
     hitl: dict | None = None  # status.message.metadata[HITL_EXTENSION] of a waiting task
+    tool_calls: list = None   # [{name, args}] the agent CALLED, from the artifacts' data parts
+
+    def __post_init__(self):
+        if self.tool_calls is None:
+            self.tool_calls = []
 
     @property
     def failed(self) -> bool:
@@ -388,6 +393,18 @@ def parts_text(parts) -> str | None:
     return "\n".join(texts) if texts else None
 
 
+def parts_tool_calls(parts) -> list[dict]:
+    """The tool CALLS among the data parts: {id, name, args} (a result part carries `response`
+    instead of `args` and is skipped). Verified live on alpha11 (k8s-reader, 2026-10-17):
+    one data part per call, one per result, in order. The eval gate scores these (V99)."""
+    out = []
+    for p in parts or []:
+        d = p.get("data") if isinstance(p, dict) else None
+        if isinstance(d, dict) and isinstance(d.get("name"), str) and "args" in d and "response" not in d:
+            out.append({"name": d["name"], "args": d.get("args") if isinstance(d.get("args"), dict) else {}})
+    return out
+
+
 def parse_result(result: dict) -> Reply:
     """Reduce a SendMessage result to a Reply. Raises A2AError on an unknown shape."""
     if isinstance(result.get("task"), dict):
@@ -397,10 +414,12 @@ def parse_result(result: dict) -> Reply:
                              if isinstance(a, dict)) if t]
         status_msg = status.get("message") or {}
         hitl = (status_msg.get("metadata") or {}).get(HITL_EXTENSION)
+        calls = [c for a in (task.get("artifacts") or []) if isinstance(a, dict)
+                 for c in parts_tool_calls(a.get("parts"))]
         return Reply(kind="task", state=status.get("state"), context_id=task.get("contextId"),
                      task_id=task.get("id"), text="\n".join(texts) if texts else None,
                      status_text=parts_text(status_msg.get("parts")),
-                     hitl=hitl if isinstance(hitl, dict) else None)
+                     hitl=hitl if isinstance(hitl, dict) else None, tool_calls=calls)
     if isinstance(result.get("message"), dict):
         msg = result["message"]
         return Reply(kind="message", state=None, context_id=msg.get("contextId"),

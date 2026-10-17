@@ -1,7 +1,10 @@
 # base-apps/kagent/eval-gate-job.yaml
-# Evaluation as a gate (ADP harness · evaluation, E3; V93). An Argo CD PostSync hook of the
+# Evaluation as a gate (ADP harness · evaluation, E3; V93, V99). An Argo CD PostSync hook of the
 # kagent-secrets Application: after every sync it hashes each agent's live definition and,
-# when it changed, scores the agent against tests/eval-corpus as service account eval-gate.
+# when it changed, scores EVERY agent against tests/eval-corpus (its own file plus the shared
+# adversarial/canary corpus, tool calls included; approval pauses are rejected, never approved)
+# as service account eval-gate, and writes the release gate (ConfigMap eval-release in the
+# dispatcher and slack-bridge namespaces: a regressed agent gets no automated work).
 # Result: one JSON line (Loki -> Grafana "Agent eval regression" -> Slack), a commit status
 # eval/<agent> on the synced revision when the eval-gate Secret carries a GitHub token, and
 # the baseline in ConfigMap eval-gate-state. Exit 0 on a regression (the sync stands; the
@@ -20,7 +23,7 @@ metadata:
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 0
-  activeDeadlineSeconds: 1800          # 8 questions x up to 180 s, plus the judge
+  activeDeadlineSeconds: 7200          # every changed agent x (own + ~13 shared) questions x up to 180 s, plus the judge (V99)
   ttlSecondsAfterFinished: 604800
   template:
     metadata:
@@ -30,7 +33,7 @@ spec:
         # sha256 (first 16 hex) over the eval-gate-code ConfigMap's values, sorted by key;
         # written by scripts/gen-eval-gate-configmap.py so a code or corpus change is a new
         # pod template (tests/eval_gate/test_manifests.py).
-        checksum/code: aecab292bd9bab57
+        checksum/code: 9ed5feb4e955983a
     spec:
       serviceAccountName: eval-gate
       restartPolicy: Never

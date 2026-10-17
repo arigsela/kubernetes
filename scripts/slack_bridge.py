@@ -59,6 +59,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kagent_a2a as a2a  # noqa: E402
+import eval_release  # noqa: E402
 
 SLACK_API = "https://slack.com/api"
 TEXT_LIMIT = 3900            # Slack's hard limit is 4000 characters of text per message
@@ -463,6 +464,7 @@ class Config:
     decide_base: str = "http://dispatcher-decide.dispatcher.svc.cluster.local:8082"
     timeout: float = 900.0
     port: int = 8080
+    release_path: str = eval_release.DEFAULT_PATH   # the eval gate's holds (V99); absent = unknown = send
 
     @classmethod
     def from_env(cls, env=os.environ) -> "Config":
@@ -483,6 +485,7 @@ class Config:
             user=env.get("BRIDGE_USER", "slack-bridge"),
             decide_base=env.get("DISPATCHER_DECIDE_BASE", "http://dispatcher-decide.dispatcher.svc.cluster.local:8082"),
             timeout=float(env.get("A2A_TIMEOUT", "900")),
+            release_path=env.get("EVAL_RELEASE_PATH", eval_release.DEFAULT_PATH),
             port=int(env.get("PORT", "8080")),
         )
 
@@ -685,6 +688,16 @@ class Bridge:
             fresh = thread is None
             if fresh:
                 agent, text = pick_agent(text, self.config.agents, self.config.default_agent)
+                # The eval gate's hold (V99): no new session with an agent whose last scored
+                # run regressed. The owner can still reach it with ask-hk (humans are not gated).
+                held = eval_release.hold(agent, eval_release.load(self.config.release_path))
+                if held:
+                    self.log({"event": "held", "agent": agent, "reason": held, "channel": channel, "ts": ts})
+                    self.slack.post_message(channel, f"`{agent}` is held by the eval gate ({held}). "
+                                            "A later sync that scores it clean releases it; "
+                                            f"`scripts/ask-hk --agent kagent/{agent}` still works.",
+                                            thread_ts=thread_ts)
+                    return
                 thread = self.threads[key] = Thread(agent=agent)
             else:
                 m = _AGENT_PREFIX.match(text)

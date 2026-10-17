@@ -19,7 +19,8 @@ import yaml
 SOURCES = {"eval_gate.py": "scripts/eval_gate.py",
            "kagent_a2a.py": "scripts/kagent_a2a.py",
            "score_eval.py": "scripts/score-eval.py",
-           "capture_eval_answers.py": "scripts/capture-eval-answers.py"}
+           "capture_eval_answers.py": "scripts/capture-eval-answers.py",
+           "eval_release.py": "scripts/eval_release.py"}
 CORPUS_DIR = "tests/eval-corpus"
 OUT = "base-apps/kagent/eval-gate-code-configmap.yaml"
 JOB = "base-apps/kagent/eval-gate-job.yaml"

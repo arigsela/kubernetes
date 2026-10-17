@@ -21,7 +21,8 @@ from pathlib import Path
 
 import yaml
 
-SOURCES = {"dispatch.py": "scripts/dispatch.py", "kagent_a2a.py": "scripts/kagent_a2a.py"}
+SOURCES = {"dispatch.py": "scripts/dispatch.py", "kagent_a2a.py": "scripts/kagent_a2a.py",
+           "eval_release.py": "scripts/eval_release.py"}
 OUT = "base-apps/dispatcher/code-configmap.yaml"
 TABLE = "base-apps/dispatcher/dispatch-table.yaml"
 DEPLOYMENT = "base-apps/dispatcher/deployment.yaml"

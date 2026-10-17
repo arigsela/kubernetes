@@ -1,30 +1,42 @@
 #!/usr/bin/env python3
-"""Evaluation gate (ADP harness · evaluation, E3): score the live agents after a sync.
+"""Evaluation gate (ADP harness · evaluation, E3; V93, V99): score the live agents after a sync.
 
 Runs as an Argo CD PostSync hook of the kagent-secrets Application
-(base-apps/kagent/eval-gate-job.yaml). For every agent with a corpus:
+(base-apps/kagent/eval-gate-job.yaml). For EVERY Agent in the kagent namespace:
   1. hash the agent's live definition (Agent, its AgentTemplate, Harness, ModelConfig specs);
      unchanged since the last scored run -> skip;
-  2. capture one answer per corpus question over in-cluster A2A as service account
-     eval-gate (projected token, audience kagent);
-  3. score with the rubric and whatever judge the keys allow (none, jev, claude, cascade);
-  4. regression = any security-refusal failed, or pass rate below the stored baseline;
-  5. one JSON line (Loki -> Grafana "Agent eval regression"), a commit status on the synced
-     revision when GITHUB_TOKEN is set, and the baseline/hash saved in ConfigMap eval-gate-state.
-Exit 0 on a regression (the sync succeeded; the status and the alert are the gate), exit 1 only
-when scoring was impossible (surface unreadable, every capture failed).
+  2. assemble its corpus: tests/eval-corpus/<agent>.yaml (if any) plus the entries of
+     _shared.yaml (agent "*") that apply to it — an entry with `requires_tools` only when the
+     AgentTemplate binds one of those tools; `adversarial` entries as a deterministic sample
+     (seed = agent + hash, size from the file), `canary` entries always;
+  3. capture one answer per entry over in-cluster A2A as service account eval-gate (projected
+     token, audience kagent), with the tool calls the agent made; a task that paused for an
+     approval is scored on its PENDING calls and then rejected (the gate never approves);
+  4. score with the rubric (must_include/must_not_include, expect_tools/forbid_tools) and
+     whatever judge the keys allow (none, jev, claude, cascade);
+  5. regression = any hard fail (a leak, a forbidden tool call, a security refusal) or a pass
+     rate below the stored baseline; a changed corpus set resets the baseline (logged);
+  6. one JSON line (Loki -> Grafana "Agent eval regression"), a commit status on the synced
+     revision when GITHUB_TOKEN is set, the baseline/hash saved in ConfigMap eval-gate-state,
+     and release.json (held = the last scored run regressed) written to ConfigMap eval-release
+     in the dispatcher and slack-bridge namespaces, which those pods read as a file before
+     opening a session (scripts/eval_release.py).
+Exit 0 on a regression (the sync succeeded; the status, the alert and the hold are the gate),
+exit 1 only when scoring was impossible (surface unreadable, every capture failed).
 
 Environment: KAGENT_A2A_BASE, KAGENT_TOKEN_FILE, CORPUS_DIR (corpus__<agent>.json or
 <agent>.yaml files), KUBE_API (default https://kubernetes.default.svc), the pod's SA token/CA,
 ARGOCD_NAMESPACE (argo-cd), ARGOCD_APP (kagent-secrets), GITHUB_REPO, GITHUB_TOKEN,
-ANTHROPIC_API_KEY, TYPESAFE_API_KEY, QUESTION_TIMEOUT.
+ANTHROPIC_API_KEY, TYPESAFE_API_KEY, QUESTION_TIMEOUT, AGENT_READY_TIMEOUT.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import hashlib
 import importlib.util
 import json
 import os
+import random
 import ssl
 import sys
 import urllib.error
@@ -51,6 +63,7 @@ def load_sibling(stem: str):
 a2a = load_sibling("kagent_a2a")
 score_eval = load_sibling("score_eval")
 capture_mod = load_sibling("capture_eval_answers")
+eval_release = load_sibling("eval_release")
 
 KINDS = ["agenttemplates", "agents", "harnesses", "modelconfigs"]
 KAGENT_API = "/apis/api.kagent.dev/v1alpha3/namespaces/kagent"
@@ -58,6 +71,7 @@ STATE_CM = "/api/v1/namespaces/kagent/configmaps/eval-gate-state"
 SA_TOKEN = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 SA_CA = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 GITHUB_API = "https://api.github.com"
+SHARED = "*"                      # the corpus key of _shared.yaml: applies to every agent
 
 
 class KubeError(RuntimeError):
@@ -132,6 +146,37 @@ def _ref(spec: dict, key: str) -> str | None:
     return r.get("name") if isinstance(r, dict) else r
 
 
+def _template_of(surf: dict, agent: str) -> dict:
+    by = {o["name"]: o["spec"] for o in surf.get("agenttemplates", [])}
+    agent_spec = next((o["spec"] for o in surf.get("agents", []) if o["name"] == agent), {})
+    return by.get(_ref(agent_spec, "templateRef") or agent) or {}
+
+
+def template_tools(surf: dict, agent: str) -> set[str]:
+    """Every tool name the agent's AgentTemplate binds (across its MCP bindings), plus those of
+    its sub-agents' templates one hop down: a 1.0 sub-agent takes the conversation over, so
+    its tools are reachable from this agent."""
+    out: set[str] = set()
+    seen: set[str] = set()
+
+    def walk(template: dict, depth: int) -> None:
+        for binding in template.get("tools") or []:
+            mcp = binding.get("mcp") if isinstance(binding, dict) else None
+            if isinstance(mcp, dict):
+                out.update(t for t in (mcp.get("tools") or []) if isinstance(t, str))
+        if depth:
+            by = {o["name"]: o["spec"] for o in surf.get("agenttemplates", [])}
+            for sub in template.get("subAgents") or []:
+                name = _ref(sub, "name") if isinstance(sub, dict) else sub
+                name = name if isinstance(name, str) else (sub.get("name") if isinstance(sub, dict) else None)
+                if name and name not in seen and name in by:
+                    seen.add(name)
+                    walk(by[name], depth - 1)
+
+    walk(_template_of(surf, agent), 1)
+    return out
+
+
 def surface_hash(surf: dict[str, list[dict]], agent: str) -> str:
     """The pieces that define ONE agent: its Agent, the AgentTemplate, Harness and ModelConfig
     it references. A missing reference includes everything of that kind (conservative)."""
@@ -146,12 +191,43 @@ def surface_hash(surf: dict[str, list[dict]], agent: str) -> str:
     return hashlib.sha256(json.dumps(pieces, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
+# ------------------------------------------------------------------ the corpus per agent
+
+def applicable_shared(shared: dict, agent: str, tools: set[str], h: str) -> list[dict]:
+    """The _shared.yaml entries this agent gets this run (V99).
+
+    `requires_tools` scopes an entry to agents binding one of those tools (a canary question
+    about pod logs is pointless for an agent with no log tool). The file's `sample` category
+    is drawn as a deterministic sample — same agent, same definition, same questions, so a
+    re-run is comparable and a change is scored on fresh prompts; every other entry always
+    runs."""
+    sample = shared.get("sample") or {}
+    always, pool = [], []
+    for e in shared.get("entries") or []:
+        req = e.get("requires_tools")
+        if req and not (set(req) & tools):
+            continue
+        (pool if sample and e.get("category") == sample.get("category") else always).append(e)
+    if sample and pool:
+        k = min(int(sample.get("size") or len(pool)), len(pool))
+        rng = random.Random(f"{agent}:{h}")       # a str seed is stable across processes
+        pool = sorted(rng.sample(pool, k), key=lambda e: e["id"])
+    return always + pool
+
+
+def corpus_hash(entries: list[dict]) -> str:
+    """Identity of the question SET an agent was scored on: a different set resets the baseline."""
+    return hashlib.sha256(json.dumps(sorted(e["id"] for e in entries)).encode()).hexdigest()[:16]
+
+
 # ------------------------------------------------------------------ state
 
 @dataclass
 class State:
     hashes: dict = field(default_factory=dict)
     baselines: dict = field(default_factory=dict)
+    corpus: dict = field(default_factory=dict)      # agent -> corpus_hash it was last scored on
+    release: dict = field(default_factory=dict)     # agent -> {held, hash, reason, scored_at}
     exists: bool = False
     resource_version: str | None = None
 
@@ -165,13 +241,15 @@ class State:
             raise
         data = json.loads((cm.get("data") or {}).get("state.json") or "{}")
         return cls(hashes=data.get("hashes") or {}, baselines=data.get("baselines") or {},
+                   corpus=data.get("corpus") or {}, release=data.get("release") or {},
                    exists=True, resource_version=(cm.get("metadata") or {}).get("resourceVersion"))
 
     def save(self, kube) -> None:
         obj = {"apiVersion": "v1", "kind": "ConfigMap",
                "metadata": {"name": "eval-gate-state", "namespace": "kagent",
                             "labels": {"app": "eval-gate"}},
-               "data": {"state.json": json.dumps({"hashes": self.hashes, "baselines": self.baselines},
+               "data": {"state.json": json.dumps({"hashes": self.hashes, "baselines": self.baselines,
+                                                  "corpus": self.corpus, "release": self.release},
                                                  sort_keys=True)}}
         if self.exists:
             if self.resource_version:
@@ -180,6 +258,31 @@ class State:
         else:
             kube.post("/api/v1/namespaces/kagent/configmaps", obj)
             self.exists = True
+
+
+def write_release(kube, release: dict, *, revision: str | None, now: str, log) -> None:
+    """release.json into ConfigMap eval-release of each consumer namespace (V99). A failure is a
+    warning: the gate's own state carries the holds and the next run writes them again."""
+    text = eval_release.render(release, revision=revision, written_at=now)
+    for ns in eval_release.CONSUMER_NAMESPACES:
+        path = f"/api/v1/namespaces/{ns}/configmaps/{eval_release.CONFIGMAP}"
+        obj = {"apiVersion": "v1", "kind": "ConfigMap",
+               "metadata": {"name": eval_release.CONFIGMAP, "namespace": ns, "labels": {"app": "eval-gate"}},
+               "data": {eval_release.KEY: text}}
+        try:
+            try:
+                current = kube.get(path)
+            except KubeError as err:
+                if err.status != 404:
+                    raise
+                kube.post(f"/api/v1/namespaces/{ns}/configmaps", obj)
+                continue
+            rv = (current.get("metadata") or {}).get("resourceVersion")
+            if rv:
+                obj["metadata"]["resourceVersion"] = rv
+            kube.put(path, obj)
+        except KubeError as err:
+            log({"event": "eval-gate", "warning": f"release.json not written to {ns}: {err}"})
 
 
 # ------------------------------------------------------------------ decision
@@ -221,11 +324,12 @@ def post_status(repo: str, sha: str, context: str, state: str, description: str,
 def agent_ref(corpus: dict, agent: str) -> str:
     """namespace/name for resolve_endpoint: the corpus names the agent bare (`homelab-knowledge`)."""
     ref = corpus.get("agent") or agent
-    return ref if "/" in ref else f"kagent/{ref}"
+    return ref if "/" in ref and ref != SHARED else f"kagent/{agent if ref == SHARED else ref}"
 
 
 def load_corpora(corpus_dir: Path) -> dict[str, dict]:
-    """corpus__<agent>.json (what the generator writes) or <agent>.yaml (the repo); keyed by agent."""
+    """corpus__<agent>.json (what the generator writes) or <agent>.yaml (the repo); keyed by
+    agent, with _shared.yaml under the key "*"."""
     out = {}
     for p in sorted(Path(corpus_dir).iterdir()):
         if p.suffix == ".json":
@@ -236,28 +340,41 @@ def load_corpora(corpus_dir: Path) -> dict[str, dict]:
         else:
             continue
         if isinstance(doc, dict) and doc.get("entries"):
-            out[p.stem.removeprefix("corpus__")] = doc
+            stem = p.stem.removeprefix("corpus__")
+            out[SHARED if doc.get("agent") == SHARED or stem == "_shared" else stem] = doc
     return out
+
+
+def targets(surf: dict, corpora: dict) -> list[str]:
+    """Which agents this run scores: every Agent in the namespace once a shared corpus exists,
+    else only the agents with their own corpus."""
+    own = {a for a in corpora if a != SHARED}
+    if SHARED in corpora:
+        own |= {o["name"] for o in surf.get("agents", [])}
+    return sorted(own)
 
 
 # ------------------------------------------------------------------ run
 
 def run(env, *, kube, send, judge, judge_name: str, status_post, log, corpus_dir, corpora=None,
-        sleep=None, clock=None) -> int:
+        sleep=None, clock=None, now=None) -> int:
     import time
     sleep = sleep or time.sleep
     clock = clock or time.monotonic
+    now = now or (lambda: _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat())
     corpora = corpora if corpora is not None else load_corpora(corpus_dir)
+    shared = corpora.get(SHARED)
     try:
         surf = surface(kube)
+        agents = targets(surf, corpora)
         # PostSync fires when the CRs are applied, before the runtime rolls the new definition.
         # Wait, bounded, for the controller to observe the applied generation of each agent we
         # are about to score (kinds without the field pass straight through).
         deadline = clock() + float(env.get("AGENT_READY_TIMEOUT", "180"))
-        while agents_behind(surf, corpora) and clock() < deadline:
+        while agents_behind(surf, agents) and clock() < deadline:
             sleep(5)
             surf = surface(kube)
-        behind = agents_behind(surf, corpora)
+        behind = agents_behind(surf, agents)
         if behind:
             log({"event": "eval-gate", "warning": f"still rolling after the wait: {', '.join(behind)}"})
     except KubeError as err:
@@ -273,23 +390,42 @@ def run(env, *, kube, send, judge, judge_name: str, status_post, log, corpus_dir
     token_file = env.get("KAGENT_TOKEN_FILE", "/var/run/kagent/token")
     timeout = float(env.get("QUESTION_TIMEOUT", "180"))
     rc = 0
-    for agent, corpus in corpora.items():
+    for agent in agents:
+        corpus = corpora.get(agent) or {"agent": agent, "entries": []}
         h = surface_hash(surf, agent)
         if state.hashes.get(agent) == h:
             log({"event": "eval-gate", "agent": agent, "hash": h, "revision": rev, "skipped": "unchanged"})
             continue
-        entries = corpus["entries"]
+        own = list(corpus["entries"])
+        extra = applicable_shared(shared, agent, template_tools(surf, agent), h) if shared else []
+        entries = own + extra
+        if not entries:
+            log({"event": "eval-gate", "agent": agent, "hash": h, "revision": rev, "skipped": "no applicable entries"})
+            continue
+        ch = corpus_hash(entries)
+        baseline = state.baselines.get(agent)
+        reset = baseline is not None and state.corpus.get(agent) not in (None, ch)
+        if reset:
+            baseline = None             # a different question set: the old rate is not comparable
         endpoint = a2a.resolve_endpoint(base, agent_ref(corpus, agent))
-        answers = capture_mod.capture(entries, endpoint, send=send, timeout=timeout,
-                                      token_file=token_file, log=log)
-        if all(v is None for v in answers.values()):
+
+        def reject(reply, _ep=endpoint):
+            return capture_mod.reject_pending(reply, _ep, send=send, timeout=timeout, token_file=token_file)
+
+        captured = capture_mod.capture_full(entries, endpoint, send=send, timeout=timeout,
+                                            token_file=token_file, log=log, reject=reject)
+        if all(v["answer"] is None and not v["tool_calls"] for v in captured.values()):
             log({"event": "eval-gate", "agent": agent, "hash": h, "revision": rev,
                  "error": "every capture failed; nothing to score"})
             rc = 1
             continue
-        by_id = {e["id"]: {**e, "_agent": corpus.get("agent")} for e in entries}
-        results = score_eval.run(by_id, {k: v for k, v in answers.items() if v is not None}, judge)
-        d = decide(results, state.baselines.get(agent))
+        by_id = {e["id"]: {**e, "_agent": agent} for e in entries}
+        # A turn with calls but no text (a rejected pause whose closing text did not arrive)
+        # is scored on its calls: "" keeps the rubric running; None would be "no answer".
+        answers = {k: (v["answer"] if v["answer"] is not None else "")
+                   for k, v in captured.items() if v["answer"] is not None or v["tool_calls"]}
+        results = score_eval.run(by_id, answers, judge, tool_calls={k: v["tool_calls"] for k, v in captured.items()})
+        d = decide(results, baseline)
         # The answers must belong to the definition we hashed: re-read, and if it moved during
         # capture record nothing, so the next sync scores the new definition.
         try:
@@ -298,13 +434,22 @@ def run(env, *, kube, send, judge, judge_name: str, status_post, log, corpus_dir
             h_after = None
             log({"event": "eval-gate", "agent": agent, "warning": f"cannot re-read the surface: {err}"})
         moved = h_after is not None and h_after != h
+        rejected = sum(1 for v in captured.values() if v["pending"])
         line = {"event": "eval-gate", "agent": agent, "hash": h, "revision": rev, "judge": judge_name,
-                "surface_moved": moved, **d}
+                "surface_moved": moved, "entries": len(entries), "shared": len(extra), "corpus_hash": ch,
+                "baseline_reset": reset, "pauses_rejected": rejected, "held": d["regression"], **d}
         log(line)
         if moved:
             continue
         state.hashes[agent] = h
         state.baselines[agent] = d["baseline"]
+        state.corpus[agent] = ch
+        reason = None
+        if d["regression"]:
+            reason = (f"eval regression on {h} (rev {rev or '?'}): "
+                      + (f"hard {', '.join(d['hard'])}" if d["hard"] else
+                         f"pass rate {d['pass_rate']:.2f} < baseline {state.baselines[agent]:.2f}"))
+        state.release[agent] = {"held": d["regression"], "hash": h, "reason": reason, "scored_at": now()}
         if env.get("GITHUB_TOKEN") and env.get("GITHUB_REPO") and rev:
             desc = (f"{d['passed']}/{d['total']} (baseline {d['baseline']:.2f}, judge {judge_name})"
                     + (f" failed: {', '.join(d['failed'])}" if d["failed"] else ""))
@@ -318,6 +463,7 @@ def run(env, *, kube, send, judge, judge_name: str, status_post, log, corpus_dir
         state.save(kube)
     except KubeError as err:
         log({"event": "eval-gate", "warning": f"state not saved: {err}"})
+    write_release(kube, state.release, revision=rev, now=now(), log=log)
     return rc
 
 

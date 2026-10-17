@@ -716,3 +716,33 @@ def test_a_failed_task_gets_the_x_reaction():
     bridge.handle_event(dm("go", ts="31.1"))
     assert [p["name"] for m, p in api.calls if m == "reactions.add"][-1] == "x"
     assert api.of("chat.postMessage")[0]["text"].startswith(":x:")
+
+
+# ------------------------------------------------------------------ V99: the eval gate's hold
+
+def test_a_held_agent_gets_a_refusal_and_no_session(tmp_path):
+    release = tmp_path / "release.json"
+    release.write_text(json.dumps({"version": 1, "written_at": "t", "revision": "abc",
+                                   "agents": {"k8s-reader": {"held": True, "hash": "h", "reason": "eval regression on h: hard canary-pod-logs"}}}))
+    agent = FakeAgent()
+    bridge, api, logs, _ = make(agent, release_path=str(release))
+    bridge.handle_event(mention("k8s-reader: which pods restarted?"))
+    posted = [c for c in api.calls if c[0] == "chat.postMessage"]
+    assert posted and "is held by the eval gate" in posted[-1][1]["text"] and "canary-pod-logs" in posted[-1][1]["text"]
+    assert "ask-hk --agent kagent/k8s-reader" in posted[-1][1]["text"]
+    assert not agent.sent, "no session is opened with a held agent"
+    assert any(l.get("event") == "held" and l.get("agent") == "k8s-reader" for l in logs)
+
+
+def test_an_unheld_agent_and_an_absent_file_are_unaffected(tmp_path):
+    for path in (str(tmp_path / "absent.json"),):
+        agent = FakeAgent(completed("fine"))
+        bridge, api, logs, _ = make(agent, release_path=path)
+        bridge.handle_event(mention("k8s-reader: which pods restarted?"))
+        assert agent.sent, "unknown = send"
+
+
+def test_config_reads_the_release_path_from_env():
+    env = {"SLACK_BOT_TOKEN": "b", "SLACK_APP_TOKEN": "a", "OWNER_SLACK_USER_ID": "U", "OWNER_EMAIL": "e"}
+    assert sb.Config.from_env({**env, "EVAL_RELEASE_PATH": "/x/r.json"}).release_path == "/x/r.json"
+    assert sb.Config.from_env(env).release_path == "/etc/eval-release/release.json"

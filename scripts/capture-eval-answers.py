@@ -61,26 +61,68 @@ def extract_text(result: dict) -> str | None:
 
 def send_message(endpoint: str, question: str, *, transport=None,
                  timeout: float = a2a.DEFAULT_TIMEOUT, user: str | None = DEFAULT_USER,
-                 token: str | None = None, token_file: str | None = None) -> dict:
-    """One SendMessage in a new session; returns the JSON-RPC result."""
+                 token: str | None = None, token_file: str | None = None,
+                 context_id: str | None = None, task_id: str | None = None,
+                 metadata: dict | None = None) -> dict:
+    """One SendMessage (a new session unless context_id/task_id answer a paused task);
+    returns the JSON-RPC result."""
     return a2a.send_message(endpoint, question, user=None if (token or token_file) else user,
-                            token=token, token_file=token_file, timeout=timeout, transport=transport)
+                            token=token, token_file=token_file, timeout=timeout, transport=transport,
+                            context_id=context_id, task_id=task_id, metadata=metadata)
+
+
+def capture_full(entries: list[dict], endpoint: str, *, send=None, timeout: float = a2a.DEFAULT_TIMEOUT,
+                 token_file: str | None = None, log=None, reject=None) -> dict[str, dict]:
+    """One new session per question. Per corpus id: {"answer", "tool_calls", "pending", "state"}.
+
+    `answer` is None where the agent failed or said nothing. `tool_calls` is what it called
+    ([{name, args}], the artifacts' data parts) PLUS, for a task that paused for approval, the
+    pending calls: the proposal is what an acting agent gets scored on (V99). A paused task is
+    then handed to `reject(reply)` so nothing runs and the session does not stay open; the
+    rejected task's closing text becomes the answer when the rejection returns one.
+    The gate never approves."""
+    send = send or send_message
+    out: dict[str, dict] = {}
+    for e in entries:
+        row = {"answer": None, "tool_calls": [], "pending": [], "state": None}
+        try:
+            reply = a2a.parse_result(send(endpoint, e["question"], timeout=timeout, token_file=token_file))
+            row.update(answer=reply.answer, tool_calls=list(reply.tool_calls), state=reply.state)
+            if reply.waiting and reply.pending_calls:
+                row["pending"] = reply.pending_calls
+                row["tool_calls"] = row["tool_calls"] + [{"name": c["name"], "args": c["args"], "pending": True}
+                                                         for c in reply.pending_calls]
+                if reject is not None:
+                    after = reject(reply)
+                    if isinstance(after, a2a.Reply):
+                        row["state"] = after.state
+                        row["answer"] = after.answer or row["answer"]
+        except (RuntimeError, OSError, ValueError) as err:
+            if log:
+                log({"event": "eval-capture", "id": e["id"], "error": str(err)[:300]})
+        out[e["id"]] = row
+    return out
 
 
 def capture(entries: list[dict], endpoint: str, *, send=None, timeout: float = a2a.DEFAULT_TIMEOUT,
             token_file: str | None = None, log=None) -> dict[str, str | None]:
     """One new session per question; None where the agent failed or said nothing."""
+    full = capture_full(entries, endpoint, send=send, timeout=timeout, token_file=token_file, log=log)
+    return {k: v["answer"] for k, v in full.items()}
+
+
+def reject_pending(reply: "a2a.Reply", endpoint: str, *, send=None, timeout: float = a2a.DEFAULT_TIMEOUT,
+                   token_file: str | None = None,
+                   reason: str = "evaluation gate: scored, never executed") -> "a2a.Reply | None":
+    """Answer a paused task with a rejection of every pending call (ask-hk --reject's wire shape)."""
     send = send or send_message
-    out: dict[str, str | None] = {}
-    for e in entries:
-        try:
-            out[e["id"]] = extract_text(send(endpoint, e["question"], timeout=timeout,
-                                             token_file=token_file))
-        except (RuntimeError, OSError, ValueError) as err:
-            if log:
-                log({"event": "eval-capture", "id": e["id"], "error": str(err)[:300]})
-            out[e["id"]] = None
-    return out
+    ids = [c["id"] for c in reply.pending_calls]
+    if not ids or not reply.task_id:
+        return None
+    metadata = a2a.approval_metadata(ids, approved=False, reason=reason)
+    result = send(endpoint, f"rejected: {reason}", timeout=timeout, token_file=token_file,
+                  context_id=reply.context_id, task_id=reply.task_id, metadata=metadata)
+    return a2a.parse_result(result)
 
 
 def main(argv=None) -> int:
