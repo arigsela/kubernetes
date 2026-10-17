@@ -404,9 +404,13 @@ def run(env, *, kube, send, judge, judge_name: str, status_post, log, corpus_dir
             continue
         ch = corpus_hash(entries)
         baseline = state.baselines.get(agent)
-        reset = baseline is not None and state.corpus.get(agent) not in (None, ch)
+        # A baseline is comparable only to the question set it was measured on. A stored set
+        # that differs, or NO stored set (a baseline from before corpus hashes existed), means
+        # the old rate is not comparable: start a new baseline. §B.32: treating "no stored set"
+        # as "same set" held homelab-knowledge on 13/21 against a 1.0 measured on 8 questions.
+        reset = baseline is not None and state.corpus.get(agent) != ch
         if reset:
-            baseline = None             # a different question set: the old rate is not comparable
+            baseline = None
         endpoint = a2a.resolve_endpoint(base, agent_ref(corpus, agent))
 
         def reject(reply, _ep=endpoint):

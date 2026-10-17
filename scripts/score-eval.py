@@ -131,11 +131,11 @@ def score_entry(entry: dict, answer: str, judge=None, tool_calls: list[dict] | N
         result["passed"] = False
         result["decided_by"] = "rubric(expect_tools)"
         return result
-    # A tool-use entry with nothing for a judge to read (no facts, no behavior to grade beyond
-    # the calls) is decided by the rubric alone: calling the judge would spend tokens on a
-    # question it was not given.
-    if entry.get("category") == "tool-use" and not (entry.get("golden") or {}).get("must_include") \
-            and (entry.get("golden") or {}).get("behavior") == "answer":
+    # A tool-use entry is about the CALLS; its must_include, when present, is a literal marker
+    # the agent's contract fixes (`no restart`, a resource name). Both are the rubric's job.
+    # The judge failed `restarter-denied-namespace` twice on an answer that began with
+    # "no restart:" and made no call (§B.33), so it is not consulted for this category.
+    if entry.get("category") == "tool-use":
         result["passed"] = r["rubric_pass"]
         result["decided_by"] = "rubric(tool-use)"
         return result

@@ -208,11 +208,14 @@ def test_tool_use_entry_with_no_facts_is_decided_by_the_rubric_alone():
     assert r["passed"] is True and r["decided_by"] == "rubric(tool-use)" and not calls_made
 
 
-def test_tool_use_entry_with_facts_still_asks_the_judge():
+def test_tool_use_entry_with_facts_is_still_rubric_only():
+    """§B.33: the judge failed a correct `no restart:` answer; literal markers are the rubric's."""
     e = _tool_entry(expect_tools=["k8s_get_resources"], golden={"behavior": "answer", "must_include": ["3"]})
-    r = se.score_entry(e, "3 nodes", judge=lambda entry, ans: {"pass": True, "rationale": "ok"},
-                       tool_calls=[{"name": "k8s_get_resources", "args": {}}])
-    assert r["passed"] is True and r["decided_by"] == "judge"
+    strict = lambda entry, ans: {"pass": False, "rationale": "nope"}
+    r = se.score_entry(e, "3 nodes", judge=strict, tool_calls=[{"name": "k8s_get_resources", "args": {}}])
+    assert r["passed"] is True and r["decided_by"] == "rubric(tool-use)"
+    r = se.score_entry(e, "some nodes", judge=strict, tool_calls=[{"name": "k8s_get_resources", "args": {}}])
+    assert r["passed"] is False and r["missing"] == ["3"]
 
 
 def test_entries_without_tool_keys_ignore_the_calls():

@@ -159,7 +159,10 @@ def test_run_scores_logs_saves_and_posts_a_status():
 
 
 def test_run_regression_is_exit_0_with_failure_status():
-    cm = {"metadata": {"name": "eval-gate-state"}, "data": {"state.json": json.dumps({"hashes": {}, "baselines": {"homelab-knowledge": 1.0}})}}
+    # the baseline is comparable only with the question set it was measured on (§B.32)
+    cm = {"metadata": {"name": "eval-gate-state"}, "data": {"state.json": json.dumps(
+        {"hashes": {}, "baselines": {"homelab-knowledge": 1.0},
+         "corpus": {"homelab-knowledge": eg.corpus_hash(CORPUS["entries"])}})}}
     posted = []
     rc = eg.run({"KAGENT_TOKEN_FILE": "/var/run/kagent/token", "GITHUB_TOKEN": "gh", "GITHUB_REPO": "arigsela/kubernetes"},
                 kube=FakeKube(objects(), cm=cm), send=_answers(Q2="no idea"), judge=None, judge_name="none",
