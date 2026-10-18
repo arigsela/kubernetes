@@ -44,12 +44,14 @@ spec:
       requests:
         cpu: 50m
         # Raised from 96Mi on 2026-10-15 (Agent session scored high risk alert): idle use is ~110Mi, so 96Mi under-reported the pod to the scheduler.
-        memory: 128Mi
+        # Raised from 128Mi to 192Mi on 2026-10-18 with the limit, same 1:6 ratio (Grafana alert "Container near memory limit": 92% of the limit, no OOMKilled, 0 restarts).
+        memory: 192Mi
       limits:
         cpu: 300m
         # 384Mi was OOM-killed five times in three days at the moment an agent used the
         # server: adapter + idle child ~110Mi, plus one busy child up to the heap cap above.
-        memory: 768Mi
+        # Raised from 768Mi to 1152Mi on 2026-10-18 (Grafana alert "Container near memory limit": pod at 92% of 768Mi, steady, no OOMKilled, 0 restarts).
+        memory: 1152Mi
     nodeSelector:
       node.kubernetes.io/workload: infrastructure
     tolerations:
