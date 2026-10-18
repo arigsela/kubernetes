@@ -143,6 +143,12 @@ data:
           "interval_seconds": 300
         },
         {
+          "name": "beacon",
+          "kind": "http",
+          "target": "https://beacon.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
           "name": "chores",
           "kind": "http",
           "target": "https://chores.arigsela.com/",
@@ -185,15 +191,15 @@ data:
           "interval_seconds": 300
         },
         {
-          "name": "kagent-mcp",
-          "kind": "tcp",
-          "target": "kagent-mcp.arigsela.com:443",
-          "interval_seconds": 300
-        },
-        {
           "name": "kagent",
           "kind": "http",
           "target": "https://kagent.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "kagent-mcp",
+          "kind": "tcp",
+          "target": "kagent-mcp.arigsela.com:443",
           "interval_seconds": 300
         },
         {

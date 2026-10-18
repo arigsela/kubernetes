@@ -284,6 +284,21 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    # beacon (beacon §T.16): uptime monitor + status page SPA and API. The Certificate and the
+    # ReferenceGrant that lets this listener read it live in base-apps/beacon/.
+    - name: https-beacon
+      protocol: HTTPS
+      port: 443
+      hostname: beacon.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: beacon-tls
+            namespace: beacon
+      allowedRoutes:
+        namespaces:
+          from: All
     # vault.local / vault.10.0.1.110 are LAN-only names with no public DNS, but
     # Host-header routing needs no DNS - these hostnames are reachable from
     # anywhere by curling the Gateway's public IP with an explicit Host header.
