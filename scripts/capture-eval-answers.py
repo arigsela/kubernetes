@@ -72,22 +72,24 @@ def send_message(endpoint: str, question: str, *, transport=None,
 
 
 def capture_full(entries: list[dict], endpoint: str, *, send=None, timeout: float = a2a.DEFAULT_TIMEOUT,
-                 token_file: str | None = None, log=None, reject=None) -> dict[str, dict]:
-    """One new session per question. Per corpus id: {"answer", "tool_calls", "pending", "state"}.
+                 token_file: str | None = None, log=None, reject=None, wait=None) -> dict[str, dict]:
+    """One new session per question. Per corpus id: {"answer", "tool_calls", "pending", "state", "polled"}.
 
     `answer` is None where the agent failed or said nothing. `tool_calls` is what it called
     ([{name, args}], the artifacts' data parts) PLUS, for a task that paused for approval, the
     pending calls: the proposal is what an acting agent gets scored on (V99). A paused task is
     then handed to `reject(reply)` so nothing runs and the session does not stay open; the
     rejected task's closing text becomes the answer when the rejection returns one.
-    The gate never approves."""
+    The gate never approves. A task handed back before it settled is polled with
+    `wait(endpoint, task_id, timeout=, token_file=)` (GetTask) and `polled` records that."""
     send = send or send_message
     out: dict[str, dict] = {}
     for e in entries:
-        row = {"answer": None, "tool_calls": [], "pending": [], "state": None}
+        row = {"answer": None, "tool_calls": [], "pending": [], "state": None, "polled": False}
         try:
             reply = a2a.parse_result(send(endpoint, e["question"], timeout=timeout, token_file=token_file))
-            row.update(answer=reply.answer, tool_calls=list(reply.tool_calls), state=reply.state)
+            reply, polled = settle(reply, endpoint, wait=wait, timeout=timeout, token_file=token_file)
+            row.update(answer=reply.answer, tool_calls=list(reply.tool_calls), state=reply.state, polled=polled)
             if reply.waiting and reply.pending_calls:
                 row["pending"] = reply.pending_calls
                 row["tool_calls"] = row["tool_calls"] + [{"name": c["name"], "args": c["args"], "pending": True}
@@ -95,6 +97,8 @@ def capture_full(entries: list[dict], endpoint: str, *, send=None, timeout: floa
                 if reject is not None:
                     after = reject(reply)
                     if isinstance(after, a2a.Reply):
+                        after, polled = settle(after, endpoint, wait=wait, timeout=timeout, token_file=token_file)
+                        row["polled"] = row["polled"] or polled
                         row["state"] = after.state
                         row["answer"] = after.answer or row["answer"]
         except (RuntimeError, OSError, ValueError) as err:
@@ -109,6 +113,31 @@ def capture(entries: list[dict], endpoint: str, *, send=None, timeout: float = a
     """One new session per question; None where the agent failed or said nothing."""
     full = capture_full(entries, endpoint, send=send, timeout=timeout, token_file=token_file, log=log)
     return {k: v["answer"] for k, v in full.items()}
+
+
+def wait_task(endpoint: str, task_id: str, *, transport=None, timeout: float = a2a.DEFAULT_TIMEOUT,
+              user: str | None = DEFAULT_USER, token: str | None = None,
+              token_file: str | None = None) -> dict:
+    """GetTask until the task settles (or `timeout`); returns the JSON-RPC result."""
+    return a2a.wait_for_task(endpoint, task_id, user=None if (token or token_file) else user,
+                             token=token, token_file=token_file, timeout=timeout, transport=transport)
+
+
+def settle(reply: "a2a.Reply", endpoint: str, *, wait=None, timeout: float = a2a.DEFAULT_TIMEOUT,
+           token_file: str | None = None) -> "tuple[a2a.Reply, bool]":
+    """Re-read a task that came back before it settled, or settled with nothing in it.
+
+    SendMessage asks for a blocking reply, but a task returned while SUBMITTED/WORKING has
+    no answer and no calls yet; scoring it as given is a false fail (§B.35: a canary
+    question the agent had answered correctly). A COMPLETED task with neither text nor
+    calls is read once more for the same reason. Returns (reply, polled)."""
+    if reply.kind != "task" or not reply.task_id:
+        return reply, False
+    empty = reply.completed and reply.answer is None and not reply.tool_calls
+    if reply.settled and not empty:
+        return reply, False
+    wait = wait or wait_task
+    return a2a.parse_result(wait(endpoint, reply.task_id, timeout=timeout, token_file=token_file)), True
 
 
 def reject_pending(reply: "a2a.Reply", endpoint: str, *, send=None, timeout: float = a2a.DEFAULT_TIMEOUT,

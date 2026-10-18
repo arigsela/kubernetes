@@ -699,3 +699,74 @@ def test_parts_tool_calls_ignores_results_malformed_and_text_parts():
              {"data": {"name": "ok", "args": "not a dict"}}, "junk", {"data": {"name": "y", "args": {"a": 1}}}]
     assert a2a.parts_tool_calls(parts) == [{"name": "ok", "args": {}}, {"name": "y", "args": {"a": 1}}]
     assert a2a.parse_result({"message": {"parts": [{"text": "x"}]}}).tool_calls == []
+
+
+# ------------------------------------------------------------ §B.35: a task handed back early
+
+def test_send_request_asks_for_a_blocking_reply():
+    params = a2a.build_send_request("hi")["params"]
+    assert params["configuration"] == {"blocking": True}, \
+        "a non-blocking SendMessage returns a SUBMITTED/WORKING task with no answer in it"
+
+
+def _task(state, parts=()):
+    return {"task": {"id": "t", "contextId": "c", "status": {"state": state},
+                     "artifacts": [{"artifactId": "a", "parts": list(parts)}]}}
+
+
+@pytest.mark.parametrize("state,settled", [
+    ("TASK_STATE_SUBMITTED", False), ("TASK_STATE_WORKING", False), ("TASK_STATE_COMPLETED", True),
+    ("TASK_STATE_FAILED", True), ("TASK_STATE_CANCELED", True), ("TASK_STATE_REJECTED", True),
+    ("TASK_STATE_INPUT_REQUIRED", True), ("TASK_STATE_AUTH_REQUIRED", True), ("TASK_STATE_UNSPECIFIED", False),
+])
+def test_settled_states(state, settled):
+    assert a2a.parse_result(_task(state)).settled is settled
+
+
+def test_direct_message_is_settled():
+    assert a2a.parse_result({"message": {"parts": [{"text": "hi"}]}}).settled
+
+
+def test_wait_for_task_polls_until_the_task_settles():
+    states = iter(["TASK_STATE_SUBMITTED", "TASK_STATE_WORKING", "TASK_STATE_COMPLETED"])
+    calls, naps = [], []
+
+    def transport(url, payload, headers, timeout):
+        req = json.loads(payload)
+        calls.append(req)
+        assert req["method"] == "GetTask" and req["params"] == {"id": "t"}
+        return {"jsonrpc": "2.0", "id": req["id"],
+                "result": _task(next(states), [{"text": "done"}, {"data": {"id": "c1", "name": "k8s_get_resource_yaml", "args": {}}}])["task"]}
+
+    clock = iter(range(0, 1000))
+    res = a2a.wait_for_task("http://a2a/x", "t", token="tok", timeout=100, interval=3,
+                            transport=transport, sleep=naps.append, clock=lambda: next(clock))
+    r = a2a.parse_result(res)
+    assert r.completed and r.answer == "done" and [c["name"] for c in r.tool_calls] == ["k8s_get_resource_yaml"]
+    assert len(calls) == 3 and naps == [3, 3], "one GetTask per poll, one nap between polls"
+
+
+def test_wait_for_task_gives_up_at_the_deadline_and_returns_the_last_task():
+    calls = []
+
+    def transport(url, payload, headers, timeout):
+        calls.append(1)
+        return {"jsonrpc": "2.0", "id": "x", "result": _task("TASK_STATE_WORKING")["task"]}
+
+    ticks = iter([0, 0, 4, 4, 8, 8, 12, 12, 16, 16])
+    res = a2a.wait_for_task("http://a2a/x", "t", token="tok", timeout=10, interval=3,
+                            transport=transport, sleep=lambda s: None, clock=lambda: next(ticks))
+    r = a2a.parse_result(res)
+    assert not r.settled and r.answer is None and len(calls) >= 2
+
+
+def test_wait_for_task_returns_a_settled_task_after_one_read():
+    calls = []
+
+    def transport(url, payload, headers, timeout):
+        calls.append(1)
+        return {"jsonrpc": "2.0", "id": "x", "result": _task("TASK_STATE_FAILED")["task"]}
+
+    a2a.wait_for_task("http://a2a/x", "t", token="tok", timeout=10, transport=transport,
+                      sleep=lambda s: pytest.fail("no nap for a settled task"))
+    assert calls == [1]

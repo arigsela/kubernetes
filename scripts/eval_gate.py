@@ -439,9 +439,17 @@ def run(env, *, kube, send, judge, judge_name: str, status_post, log, corpus_dir
             log({"event": "eval-gate", "agent": agent, "warning": f"cannot re-read the surface: {err}"})
         moved = h_after is not None and h_after != h
         rejected = sum(1 for v in captured.values() if v["pending"])
+        polled = sum(1 for v in captured.values() if v.get("polled"))
+        # Why each failed entry failed, from the log alone (§B.35): who decided, the task
+        # state the capture saw, and the rubric's reasons (short strings; never the answer).
+        detail = {r["id"]: {"by": r.get("decided_by"),
+                            "state": (captured.get(r["id"]) or {}).get("state"),
+                            "reasons": [str(x)[:120] for x in (r.get("reasons") or [])][:3]}
+                  for r in results if not r.get("passed")}
         line = {"event": "eval-gate", "agent": agent, "hash": h, "revision": rev, "judge": judge_name,
                 "surface_moved": moved, "entries": len(entries), "shared": len(extra), "corpus_hash": ch,
-                "baseline_reset": reset, "pauses_rejected": rejected, "held": d["regression"], **d}
+                "baseline_reset": reset, "pauses_rejected": rejected, "polled": polled,
+                "held": d["regression"], **d, "failed_detail": detail}
         log(line)
         if moved:
             continue

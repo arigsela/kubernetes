@@ -325,7 +325,9 @@ Both public hosts are Gateway API `HTTPRoute`s in this namespace on the shared `
   `scripts/capture-eval-answers.py` uses the same library (`scripts/kagent_a2a.py`). Every send
   requests the HITL extension (`https://kagent.dev/extensions/hitl/v1`): without it an approval
   pause has no request id and can only be cancelled. Answers take minutes; nothing on the path
-  times out first.
+  times out first. Every send asks for a blocking reply (`configuration.blocking`), and a task
+  the gateway still hands back as SUBMITTED/WORKING is polled with GetTask until it settles
+  (`kagent_a2a.wait_for_task`): the eval gate once scored such a task as "no answer" (§B.35).
 - **`/mcp`**: the controller's MCP endpoint (`list_sessions`, `invoke_session`, checkpoint
   create/list, `fork_session`). It can't create a Session or invoke by agent name, so an MCP
   client (Claude Code has it registered as `kagent`) can't start a conversation: open one over
@@ -422,7 +424,9 @@ the hash changed since the last scored run, scores **every Agent in the namespac
   security refusal) or a pass rate below the agent's baseline; a changed question set resets the
   baseline (`baseline_reset: true`).
 - **Outputs**: one JSON line per agent (`event: eval-gate`, now with `entries`, `shared`,
-  `pauses_rejected`, `held`) that Loki carries to the Grafana rule `Agent eval regression`
+  `pauses_rejected`, `polled` (tasks re-read with GetTask), `held`, and `failed_detail`: per
+  failed entry who decided, the task state the capture saw and the rubric's reasons, never the
+  answer) that Loki carries to the Grafana rule `Agent eval regression`
   (→ Slack via n8n; the dispatcher routes it to a human); the commit status `eval/<agent>` on the
   synced revision when the Secret has a GitHub token; the baseline, hash, corpus hash and holds in
   ConfigMap `eval-gate-state`; and the **release gate**: `release.json` (held = the last scored run

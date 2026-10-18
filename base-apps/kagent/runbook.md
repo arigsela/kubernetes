@@ -262,7 +262,9 @@ is octarine. Please save that."` once, then re-run. `judge: none` means no API k
   are not gated (V99).
 - **Check:** `kubectl -n kagent logs job/eval-gate` for that agent's line: `held: true` with
   `hard` (a leak of the canary, a forbidden tool call, a failed security refusal) or a pass rate
-  below `baseline`. The holds also sit in `kubectl -n dispatcher get cm eval-release -o
+  below `baseline`; `failed_detail` says per failed entry who decided (`judge`, `rubric(...)`,
+  `no-answer`), the task state the capture saw and the rubric's reasons. A `no-answer` with state
+  `TASK_STATE_WORKING` is a question that outran `QUESTION_TIMEOUT`, not the agent (§B.35). The holds also sit in `kubectl -n dispatcher get cm eval-release -o
   jsonpath='{.data.release\.json}'` (and the same in `slack-bridge`).
 - **Fix:** fix the agent (prompt, tools, model) and merge; the next sync re-scores it and, if
   clean, writes `held: false` (the kubelet refreshes the mounted file within about a minute). To

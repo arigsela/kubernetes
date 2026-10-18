@@ -27,7 +27,7 @@ spec:
         # and nothing restarts the pod, so this checksum changes the pod template instead.
         # scripts/gen-slack-bridge-configmap.py writes it; tests/slack_bridge/test_manifests.py
         # fails if it is stale.
-        checksum/code: "c9a8f73338b36d8c1f41d922b7e462fc13d09d062a7119c968c840096ddf0ab0"
+        checksum/code: "f71ae6c7e75fdca4dc4fa4c0753029a5e90c7a6909541ac8f67dc8fa25fc91bf"
     spec:
       serviceAccountName: slack-bridge
       automountServiceAccountToken: false   # never talks to the API server; the projected token below is for kagent

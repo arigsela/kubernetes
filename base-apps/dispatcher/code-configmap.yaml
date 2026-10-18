@@ -1102,6 +1102,12 @@ data:
     STATE_COMPLETED = "TASK_STATE_COMPLETED"
     FAILED_STATES = {"TASK_STATE_FAILED", "TASK_STATE_CANCELED", "TASK_STATE_REJECTED"}
     WAITING_STATES = {"TASK_STATE_INPUT_REQUIRED", "TASK_STATE_AUTH_REQUIRED"}
+    # A task in any other state (SUBMITTED, WORKING, unknown) is still running: its artifacts
+    # are not the answer yet. SendMessage is asked to block, but a task handed back early is
+    # polled with GetTask until it settles (wait_for_task). §B.35: the eval gate scored one
+    # such task as "no answer" and failed a canary question the agent had answered correctly.
+    SETTLED_STATES = {STATE_COMPLETED} | FAILED_STATES | WAITING_STATES
+    POLL_INTERVAL = 3.0
 
     # a2a-go maps ErrUnsupportedOperation to -32004. kagent returns it with this
     # ErrorInfo reason only when the input was provably NOT dispatched (the session
@@ -1150,6 +1156,12 @@ data:
         @property
         def completed(self) -> bool:
             return self.kind == "message" or self.state == STATE_COMPLETED
+
+        @property
+        def settled(self) -> bool:
+            """Nothing more will arrive for this turn without another message: a direct message,
+            or a task that completed, failed or paused. False for SUBMITTED/WORKING."""
+            return self.kind == "message" or self.state in SETTLED_STATES
 
         @property
         def pending_calls(self) -> list[dict]:
@@ -1221,8 +1233,11 @@ data:
             message["taskId"] = task_id
         if metadata:
             message["metadata"] = metadata
+        # blocking: return the settled task, not a SUBMITTED/WORKING one (a2a v1
+        # SendMessageConfiguration). The caller still polls if the server returns early.
         return {"jsonrpc": "2.0", "id": rpc_id or str(uuid.uuid4()),
-                "method": "SendMessage", "params": {"message": message}}
+                "method": "SendMessage",
+                "params": {"message": message, "configuration": {"blocking": True}}}
 
 
     def build_get_task_request(task_id: str, rpc_id: str | None = None) -> dict:
@@ -1252,6 +1267,27 @@ data:
         if not isinstance(result, dict) or "status" not in result:
             raise A2AError("GetTask response has no task")
         return {"task": result}
+
+
+    def wait_for_task(endpoint: str, task_id: str, *, user: str | None = DEFAULT_USER,
+                      token: str | None = None, token_file: str | None = None,
+                      timeout: float = DEFAULT_TIMEOUT, interval: float = POLL_INTERVAL,
+                      transport=None, sleep=time.sleep, clock=time.monotonic) -> dict:
+        """GetTask until the task settles (completed, failed or paused) or `timeout` passes.
+
+        Returns the last result in SendMessage's shape ({"task": ...}); the caller reads
+        parse_result(...).settled to tell a settled task from one that ran out of time. One
+        GetTask is always made, so a task that is already settled costs a single round trip."""
+        deadline = clock() + timeout
+        while True:
+            result = get_task(endpoint, task_id, user=user, token=token, token_file=token_file,
+                              timeout=min(60.0, timeout), transport=transport)
+            if parse_result(result).settled:
+                return result
+            remaining = deadline - clock()
+            if remaining <= 0:
+                return result
+            sleep(min(interval, remaining))
 
 
     def approval_metadata(call_ids: list[str], *, approved: bool, reason: str | None = None) -> dict:

@@ -286,3 +286,20 @@ def test_run_waits_for_the_agents_observed_generation():
                 judge=None, judge_name="none", status_post=None, log=lambda o: None,
                 corpus_dir=None, corpora={"homelab-knowledge": CORPUS}, sleep=sleep)
     assert rc == 0 and ticks and all(s["observed"] == 3 for s in seen)
+
+
+def test_run_logs_why_each_failed_entry_failed_and_how_many_tasks_were_polled():
+    # §B.35: a failed question must be diagnosable from the Job log alone
+    posted = []
+    rc = eg.run({"KAGENT_TOKEN_FILE": "/var/run/kagent/token"}, kube=FakeKube(objects()),
+                send=_answers(Q2="no idea"), judge=None, judge_name="none",
+                status_post=None, log=lambda o: posted.append(o),
+                corpus_dir=None, corpora={"homelab-knowledge": CORPUS})
+    assert rc == 0
+    line = next(o for o in posted if o.get("event") == "eval-gate" and "passed" in o)
+    assert line["failed"] == ["q2"] and set(line["failed_detail"]) == {"q2"}
+    detail = line["failed_detail"]["q2"]
+    assert detail["by"].startswith("rubric") and detail["reasons"] and detail["state"] is None
+    assert line["polled"] == 0
+    # the answer itself never reaches the log
+    assert "no idea" not in json.dumps(line)

@@ -205,3 +205,69 @@ def test_capture_keeps_its_old_shape():
 def test_reject_pending_does_nothing_without_pending_calls():
     reply = a2a.parse_result({"message": {"parts": [{"text": "done"}]}})
     assert cap.reject_pending(reply, "http://a2a/x", send=lambda *a, **k: pytest.fail("no send")) is None
+
+
+# ------------------------------------------------------------------ §B.35: a task handed back early
+
+def _task(state, parts=(), task_id="task-1"):
+    return {"task": {"id": task_id, "contextId": "ctx-1", "status": {"state": state},
+                     "artifacts": [{"parts": list(parts)}]}}
+
+
+def test_capture_full_polls_a_task_returned_while_working():
+    waited = []
+
+    def send(endpoint, question, **kw):
+        return _task("TASK_STATE_WORKING")
+
+    def wait(endpoint, task_id, **kw):
+        waited.append((endpoint, task_id, kw))
+        return _task("TASK_STATE_COMPLETED", [{"data": {"id": "c1", "name": "k8s_get_resource_yaml", "args": {}}},
+                                              {"text": "the value is <redacted>"}])
+
+    row = cap.capture_full([{"id": "e", "question": "q"}], "http://a2a/agents/kagent/hk", send=send, wait=wait,
+                           timeout=42, token_file="/t")["e"]
+    assert waited == [("http://a2a/agents/kagent/hk", "task-1", {"timeout": 42, "token_file": "/t"})]
+    assert row["answer"] == "the value is <redacted>" and row["state"] == "TASK_STATE_COMPLETED"
+    assert [c["name"] for c in row["tool_calls"]] == ["k8s_get_resource_yaml"] and row["polled"] is True
+
+
+def test_capture_full_rereads_a_completed_task_with_nothing_in_it():
+    waited = []
+
+    def wait(endpoint, task_id, **kw):
+        waited.append(task_id)
+        return _task("TASK_STATE_COMPLETED", [{"text": "late text"}])
+
+    row = cap.capture_full([{"id": "e", "question": "q"}], "http://a2a/x",
+                           send=lambda *a, **k: _task("TASK_STATE_COMPLETED"), wait=wait)["e"]
+    assert waited == ["task-1"] and row["answer"] == "late text" and row["polled"] is True
+
+
+def test_capture_full_does_not_poll_a_settled_task():
+    send = lambda endpoint, question, **kw: _task("TASK_STATE_COMPLETED", [{"text": "done"}])
+    row = cap.capture_full([{"id": "e", "question": "q"}], "http://a2a/x", send=send,
+                           wait=lambda *a, **k: pytest.fail("settled tasks are not polled"))["e"]
+    assert row["answer"] == "done" and row["polled"] is False
+    failed = lambda endpoint, question, **kw: _task("TASK_STATE_FAILED")
+    row = cap.capture_full([{"id": "e", "question": "q"}], "http://a2a/x", send=failed,
+                           wait=lambda *a, **k: pytest.fail("a failed task is settled"))["e"]
+    assert row["answer"] is None and row["state"] == "TASK_STATE_FAILED" and row["polled"] is False
+
+
+def test_capture_full_scores_a_task_still_working_at_the_deadline_as_no_answer():
+    row = cap.capture_full([{"id": "e", "question": "q"}], "http://a2a/x",
+                           send=lambda *a, **k: _task("TASK_STATE_WORKING"),
+                           wait=lambda *a, **k: _task("TASK_STATE_WORKING"))["e"]
+    assert row["answer"] is None and row["tool_calls"] == [] and row["state"] == "TASK_STATE_WORKING"
+    assert row["polled"] is True
+
+
+def test_settle_default_wait_is_get_task(monkeypatch):
+    seen = []
+    # cap imports its own kagent_a2a (sys.path), not this file's `a2a` copy: patch the one it calls
+    monkeypatch.setattr(cap.a2a, "wait_for_task", lambda endpoint, task_id, **kw: (seen.append((task_id, kw)) or
+                                                                                     _task("TASK_STATE_COMPLETED", [{"text": "ok"}])))
+    reply, polled = cap.settle(a2a.parse_result(_task("TASK_STATE_WORKING")), "http://a2a/x", timeout=7, token_file="/t")
+    assert polled and reply.answer == "ok"
+    assert seen[0][0] == "task-1" and seen[0][1]["token_file"] == "/t" and seen[0][1]["user"] is None
