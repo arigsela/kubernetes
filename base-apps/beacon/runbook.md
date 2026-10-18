@@ -59,10 +59,12 @@ Change one `defaultVariant` in `configmaps.yaml` (`beacon-flags`) in a PR; clear
 `git revert`. Pods read the file live (directory mount), no restart.
 
 ### Rotate the database passwords
-`scripts/provision-beacon-vault.sh --rotate-db`, then let a `postgresql` sync re-run
-`init-beacon-roles` (any merged change under `base-apps/postgresql/` triggers one), then
-restart the beacon pods once ESO has refreshed (≤ 1h): until then they hold the old
-password. The signing key is never rotated this way (see "Webhook secrets unreadable").
+`scripts/provision-beacon-vault.sh --rotate-db`, then re-run `init-beacon-roles` with a PR
+that bumps `beacon.arigsela.com/rerun-init-beacon-roles` on
+`base-apps/postgresql/external-secrets-beacon-db.yaml` (hooks run only inside a sync, and
+only a desired-state change starts one: a hook's own annotations or a `.md` edit do not,
+beacon §B.8), then restart the beacon pods once ESO has refreshed (≤ 1h): until then they
+hold the old password. The signing key is never rotated this way (see "Webhook secrets unreadable").
 
 ## Failure modes
 
@@ -81,7 +83,8 @@ password. The signing key is never rotated this way (see "Webhook secrets unread
 ### Symptom: `beacon-migrate` fails, Deployments never appear
 - **Check:** `kubectl -n beacon logs job/beacon-migrate`.
 - `role "beacon_owner" does not exist` / `database "beacon" does not exist`: the postgresql
-  app has not run `init-beacon-roles` yet, or it skipped. Check
+  app has not run `init-beacon-roles` yet, or it skipped (bump
+  `beacon.arigsela.com/rerun-init-beacon-roles` to re-run it). Check
   `kubectl -n postgresql get database beacon -o jsonpath='{.status}'` and the postgresql
   app's last sync. The beacon app retries five times over about 25 minutes.
 - `password authentication failed`: Vault and Postgres disagree. A postgresql sync re-runs
@@ -96,8 +99,8 @@ beacon's roles are still created. Check:
 (`applied: true` once the roles exist).
 
 ### Symptom: `init-beacon-roles` logs "skipping"
-`beacon-db-credentials` has no passwords: run `scripts/provision-beacon-vault.sh`, then let
-a postgresql sync run.
+`beacon-db-credentials` has no passwords: run `scripts/provision-beacon-vault.sh`, then bump
+`beacon.arigsela.com/rerun-init-beacon-roles` (see "Rotate the database passwords").
 
 ### Symptom: login loops or fails at Dex
 - `invalid client` at Dex: the `beacon` client is missing from Dex's running config. Dex
