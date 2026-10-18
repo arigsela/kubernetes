@@ -1,0 +1,20 @@
+# base-apps/postgresql/beacon-database.yaml (beacon §T.15)
+# beacon's pooled database, owned by beacon_owner (who runs the migrations; beacon's
+# base-apps/beacon/jobs.yaml). The role must exist first: init-beacon-roles.yaml. Until it
+# does, CNPG retries this every 30s ("role beacon_owner does not exist"), which is expected
+# on the first sync only.
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: beacon
+  namespace: postgresql
+spec:
+  cluster:
+    name: postgresql-cluster
+  name: beacon
+  owner: beacon_owner
+  ensure: present
+  # CRD default, stated because the alternative drops the database when this manifest is
+  # pruned. Offboarding beacon is a backup first (beacon §V.12), never a prune.
+  databaseReclaimPolicy: retain

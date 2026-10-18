@@ -1,0 +1,48 @@
+# base-apps/beacon/services.yaml (beacon §T.15)
+# No Service carries istio.io/ingress-use-waypoint (beacon §V.8).
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: beacon-api
+  namespace: beacon
+  labels:
+    app: beacon-api
+spec:
+  selector:
+    app: beacon-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: beacon-web
+  namespace: beacon
+  labels:
+    app: beacon-web
+spec:
+  selector:
+    app: beacon-web
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+# Internal only: no HTTPRoute points here, and only the checker may call it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: beacon-notifier
+  namespace: beacon
+  labels:
+    app: beacon-notifier
+spec:
+  selector:
+    app: beacon-notifier
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

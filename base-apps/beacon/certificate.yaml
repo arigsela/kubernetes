@@ -1,0 +1,14 @@
+# base-apps/beacon/certificate.yaml (beacon §T.15)
+# Route 53 DNS-01, so it issues before beacon.arigsela.com has an A record (beacon §T.16).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: beacon-tls
+  namespace: beacon
+spec:
+  secretName: beacon-tls
+  dnsNames:
+    - beacon.arigsela.com
+  issuerRef:
+    name: letsencrypt-route53
+    kind: ClusterIssuer

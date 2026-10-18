@@ -1,0 +1,26 @@
+# base-apps/beacon/authorization-policy.yaml (beacon §T.15)
+# POST /internal/v1/notify is the checker's hand-off (beacon §I.svc). It has no auth of its
+# own, so the mesh is the gate: the waypoint admits exactly the checker's principal, for
+# exactly that call. ALLOW semantics: anything not matched is refused (403 from the
+# waypoint). Kubelet probes (/healthz, /readyz) do not pass through the waypoint.
+# network-policies.yaml is the L3 belt under it.
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: beacon-notifier
+  namespace: beacon
+spec:
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: beacon-notifier
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/beacon/sa/beacon-checker"]
+      to:
+        - operation:
+            methods: ["POST"]
+            paths: ["/internal/v1/notify"]

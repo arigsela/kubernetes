@@ -1,7 +1,7 @@
 ---
 type: "Kubernetes App Guide"
 title: "PostgreSQL"
-description: "Shared PostgreSQL + pgvector instance (root, kagent_v1, substrate, the read-only kagent 0.10 archive; no backup) + 2-instance CNPG cluster for donetick (daily S3 backups)"
+description: "Shared PostgreSQL + pgvector instance (root, kagent_v1, substrate, the read-only kagent 0.10 archive; no backup) + 2-instance CNPG cluster for donetick and beacon (daily S3 backups)"
 app: postgresql
 catalog_entity: postgresql
 kind: docs
@@ -33,6 +33,10 @@ sources:
   - base-apps/postgresql/external-secrets-kagent-audit.yaml
   - base-apps/postgresql/external-secrets-agent-audit-web-db.yaml
   - base-apps/postgresql/agent-audit-cronjob.yaml
+  - base-apps/postgresql/beacon-database.yaml
+  - base-apps/postgresql/init-beacon-roles.yaml
+  - base-apps/postgresql/external-secrets-beacon-db.yaml
+  - base-apps/postgresql/beacon-db-secret-store.yaml
   - scripts/gen-agent-audit-cronjob.py
   - base-apps/cnpg-system.yaml
   - docs/troubleshooting/cnpg-managed-roles-inert.md
@@ -56,7 +60,7 @@ Two separate PostgreSQL instances share this namespace:
 - **Drains:** the operator's primary PDB (minAvailable 1) blocks evicting the primary directly. With a replica available, the operator switches the primary to the other worker and the database stays up through a worker drain/reboot (e.g. `ansible/playbooks/patch.yml`). With `instances: 1` that PDB made every drain of the primary's node fail, which is why the second instance was added.
 - `smartShutdownTimeout: 30`: shutdown waits at most 30s for clients (donetick's pooled connections never leave on their own), then disconnects them. The 180s default turned an operator upgrade into a ~3m outage.
 - Services the operator creates: `postgresql-cluster-rw` (primary; what donetick uses), plus `-ro`/`-r` for replicas. To find the primary pod, use `kubectl -n postgresql get pods -l cnpg.io/cluster=postgresql-cluster,cnpg.io/instanceRole=primary`.
-- No superuser secret (`enableSuperuserAccess` unset, so false): only the operator creates roles and databases here. The psql-Job pattern used on the plain instance doesn't work against this cluster.
+- **Superuser access is on** since 2026-10-18 (`enableSuperuserAccess: true`, added for beacon §T.15): the operator generates Secret `postgresql-cluster-superuser` and sets the `postgres` password from it. Before that the password was NULL, no Job could create a role here, and every role was made by hand with `kubectl exec ... psql -U postgres` (donetick, `chores_user`). `init-beacon-roles.yaml` is the first Sync hook that logs in with it. Turning it off removes the Secret and blanks the password again; roles already made stay.
 
 ## Databases it provisions
 - **Primary/root database** (plain instance) — `deployments.yaml` sets `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_PASSWORD` from the `postgresql-credentials` Secret's `database-name`/`n8n-user`/`n8n-password` keys. Despite the `n8n-*` key naming (a holdover from this credential's original consumer), this user is the server's effective root/admin login, used by the init Jobs below to create further roles and databases.
@@ -66,6 +70,8 @@ Two separate PostgreSQL instances share this namespace:
 - All `init-*` Jobs are Argo CD **Sync hooks** (`HookSucceeded` delete policy, `ttlSecondsAfterFinished: 300`), idempotent and safe to re-run.
 - **Read-only audit roles**: `kagent_audit_ro` (the agent-audit CronJobs below) and `kagent_audit_web_ro` (the `agent-audit-web` UI), each created by its own Sync-hook Job (`init-kagent-audit-role.yaml`, `init-agent-audit-web-role.yaml`) with identical SQL (`tests/agent-audit/test_audit_role_jobs.py` keeps it identical): revoke everything, then grant `CONNECT`/`USAGE`/`SELECT` only, in **both** kagent databases. In the archive (`kagent`, schema `public`) the default privileges name the database owner; in `kagent_v1` (schema `kagent`) they name `kagent_owner`, which owns every table the controller's migrations create. The `kagent_v1` grants are skipped, not failed, while that database or its Vault property is missing, and a clean-database kagent bump drops them with the schema: the next `postgresql` sync restores them. Separate roles so either consumer's credential can be revoked alone.
 - **`donetick` database** (CNPG cluster) — declared through CloudNativePG's `Database` CRD (`donetick-database.yaml`, `databaseReclaimPolicy: retain` so an Argo prune can't drop it). Its `donetick` role is declared in `cnpg-cluster.yaml` (`spec.managed.roles`) with a `kubernetes.io/basic-auth` password Secret from `external-secrets-donetick.yaml`. **That role declaration is not enforced.** The operator never reconciled it, so the role was created by hand on 2026-08-03, and a Vault password rotation does **not** reach Postgres until that's fixed. See `docs/troubleshooting/cnpg-managed-roles-inert.md`. (The older `n8n` managed role points at an Opaque Secret and is an example of what not to copy.)
+
+- **`beacon` database** (CNPG cluster) for beacon (`base-apps/beacon/`, app repo `arigsela/beacon`): `beacon-database.yaml` (`Database` CR, owner `beacon_owner`, `retain`). Its roles come from `init-beacon-roles.yaml` (Sync hook, wave 1), which runs beacon's own image (`beacon-api bootstrap-roles`) as the CNPG superuser, so the role SQL has one copy, in the beacon repo. `beacon_owner` (LOGIN, CONNECTION LIMIT 3), `beacon_app` (LOGIN, LIMIT 20, `statement_timeout` 5s) and `beacon_system` (NOLOGIN); none has SUPERUSER or BYPASSRLS. Passwords from Vault key `beacon-db` (`external-secrets-beacon-db.yaml`, store `vault-beacon-db`, `scripts/provision-beacon-vault.sh`); the hook re-applies them on every sync, so a rotation reaches Postgres, and it skips (does not fail) while Vault has none. beacon's migrations run from its own app (`base-apps/beacon/jobs.yaml`).
 
 ## Agent-audit CronJobs
 `agent-audit-cronjob.yaml` is **generated** by `scripts/gen-agent-audit-cronjob.py` from `scripts/agent-audit.py`, `scripts/agent-audit-risk.py`, the capability taxonomy and `scripts/agent-audit-acknowledged.yaml`. CI fails on drift, so never edit it by hand. It holds a ConfigMap `agent-audit-code` and four CronJobs, all through the SELECT-only `kagent-audit-credentials`. The three scheduled ones read kagent 1.0 (`--source v1`: database `kagent_v1`, Secret key `audit-database-v1`, schema `kagent`). The fourth, `agent-audit-archive`, is the same summary against the 0.10 archive, **suspended**, with its own pod label so it never feeds the Grafana rules; run it with `kubectl create job -n postgresql --from=cronjob/agent-audit-archive <name>`. On kagent 1.0 an ungated call is judged per call (the gate never fired, or the call ran without an approved decision). The summary line also counts what it scanned and becomes a warning when it can't read the record, and both Grafana rules use `noDataState: Alerting`, so a check that stops reporting alerts too.

@@ -1,0 +1,398 @@
+# base-apps/beacon/deployments.yaml (beacon §T.15)
+# Images: IMMUTABLE ECR repos, pushed only by arigsela/beacon's release workflow from a v*
+# tag on main, pinned here by digest (beacon §V.17). Promotion is a PR: runbook.md,
+# "Promote a release" (beacon §T.41). The PreSync smoke Job in jobs.yaml runs every image on
+# a node first (beacon §V.18).
+#
+# SDK services (api, checker; scheduler in cronjobs.yaml) carry their own OpenTelemetry SDK
+# and opt out of operator injection with inject-python "false" (beacon §V.32). The
+# notifier has no OTel code at all (beacon §V.9): it gets traced only through the
+# namespace's otel opt-in once the operator exists (beacon §T.22), so it carries no
+# annotation and no OTEL_* variable here.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beacon-api
+  namespace: beacon
+  annotations:
+    # After the migrate Job (jobs.yaml, wave 1).
+    argocd.argoproj.io/sync-wave: "2"
+  labels:
+    app: beacon-api
+    app.kubernetes.io/name: beacon-api
+    app.kubernetes.io/part-of: beacon
+    backstage.io/kubernetes-id: beacon-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: beacon-api
+  template:
+    metadata:
+      labels:
+        app: beacon-api
+        app.kubernetes.io/name: beacon-api
+        app.kubernetes.io/part-of: beacon
+        backstage.io/kubernetes-id: beacon-api
+      annotations:
+        instrumentation.opentelemetry.io/inject-python: "false"
+    spec:
+      serviceAccountName: beacon-api
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.1@sha256:cd12e6976e21e0f43ae40349f3ba33ff51d490f8484dab2cd1e982e505642791
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: beacon-db-app
+                  key: DATABASE_URL
+            - name: DEX_ISSUER
+              value: https://dex.arigsela.com
+            - name: DEX_CLIENT_ID
+              value: beacon
+            - name: FLAGS_PATH
+              value: /etc/beacon/flags/beacon-flags.json
+            - name: SIGNING_KEY_REF
+              value: /etc/beacon/signing/signing-key
+            # Slugs nobody may sign up as (the platform seeds homelab, beacon §T.17).
+            - name: SSRF_EXEMPT_TENANTS
+              value: homelab
+            - name: BEACON_DB_POOL_MAX
+              value: "4"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 160Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          # 503 while the database is unreachable: the route stops sending requests.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: flags
+              mountPath: /etc/beacon/flags
+              readOnly: true
+            - name: signing
+              mountPath: /etc/beacon/signing
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: flags
+          configMap:
+            name: beacon-flags
+        - name: signing
+          secret:
+            secretName: beacon-signing
+            defaultMode: 0400
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beacon-web
+  namespace: beacon
+  annotations:
+    # After the migrate Job (jobs.yaml, wave 1).
+    argocd.argoproj.io/sync-wave: "2"
+  labels:
+    app: beacon-web
+    app.kubernetes.io/name: beacon-web
+    app.kubernetes.io/part-of: beacon
+    backstage.io/kubernetes-id: beacon-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: beacon-web
+  template:
+    metadata:
+      labels:
+        app: beacon-web
+        app.kubernetes.io/name: beacon-web
+        app.kubernetes.io/part-of: beacon
+        backstage.io/kubernetes-id: beacon-web
+    spec:
+      serviceAccountName: beacon-web
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        # nginx-unprivileged's own user.
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-web:v0.2.1@sha256:347784875aa6b5ba5cdf3ae91d2e9aee8cd4402fcbcfbd8078150afc00335594
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # nginx-unprivileged keeps its pid and temp files in /tmp.
+            - name: tmp
+              mountPath: /tmp
+            - name: config
+              mountPath: /usr/share/nginx/html/config.json
+              subPath: config.json
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+        - name: config
+          configMap:
+            name: beacon-web-config
+---
+# Claims due checks from the jobs table (FOR UPDATE SKIP LOCKED) and probes tenant targets.
+# Tenant-supplied URLs: the SSRF guard (beacon §V.5) refuses private, cluster and home
+# addresses after DNS, and network-policies.yaml denies the same ranges at L3.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beacon-checker
+  namespace: beacon
+  annotations:
+    # After the migrate Job (jobs.yaml, wave 1).
+    argocd.argoproj.io/sync-wave: "2"
+  labels:
+    app: beacon-checker
+    app.kubernetes.io/name: beacon-checker
+    app.kubernetes.io/part-of: beacon
+    backstage.io/kubernetes-id: beacon-checker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: beacon-checker
+  template:
+    metadata:
+      labels:
+        app: beacon-checker
+        app.kubernetes.io/name: beacon-checker
+        app.kubernetes.io/part-of: beacon
+        backstage.io/kubernetes-id: beacon-checker
+      annotations:
+        instrumentation.opentelemetry.io/inject-python: "false"
+    spec:
+      serviceAccountName: beacon-checker
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: checker
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-checker:v0.2.1@sha256:af6b6ce01f98d29381f0bf8782b57f3eb0d34736d088d4a5eb5deb3960e4b734
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: beacon-db-app
+                  key: DATABASE_URL
+            - name: NOTIFIER_URL
+              value: http://beacon-notifier.beacon.svc.cluster.local:8080
+            - name: FLAGS_PATH
+              value: /etc/beacon/flags/beacon-flags.json
+            # Names whose A records are the home WAN address, so the guard learns it
+            # without config (beacon §V.5). dex resolves even before beacon's own record.
+            - name: SSRF_SELF_HOSTS
+              value: dex.arigsela.com,beacon.arigsela.com
+            - name: SSRF_EXEMPT_TENANTS
+              value: homelab
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: flags
+              mountPath: /etc/beacon/flags
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: flags
+          configMap:
+            name: beacon-flags
+---
+# POST /internal/v1/notify (from the checker only: authorization-policy.yaml,
+# network-policies.yaml) persists one delivery per channel and answers 202; webhook, Slack
+# and email delivery retry from the database. No SMTP_URL yet: email deliveries dead-letter
+# until a relay exists (runbook.md).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beacon-notifier
+  namespace: beacon
+  annotations:
+    # After the migrate Job (jobs.yaml, wave 1).
+    argocd.argoproj.io/sync-wave: "2"
+  labels:
+    app: beacon-notifier
+    app.kubernetes.io/name: beacon-notifier
+    app.kubernetes.io/part-of: beacon
+    backstage.io/kubernetes-id: beacon-notifier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: beacon-notifier
+  template:
+    metadata:
+      labels:
+        app: beacon-notifier
+        app.kubernetes.io/name: beacon-notifier
+        app.kubernetes.io/part-of: beacon
+        backstage.io/kubernetes-id: beacon-notifier
+    spec:
+      serviceAccountName: beacon-notifier
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: notifier
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.2.1@sha256:8f89a2fd50b781cec1bde6f50e86812761a88c8b87db3093db563c97aa47e117
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: beacon-db-app
+                  key: DATABASE_URL
+            - name: SIGNING_KEY_REF
+              value: /etc/beacon/signing/signing-key
+            - name: FLAGS_PATH
+              value: /etc/beacon/flags/beacon-flags.json
+            - name: SSRF_SELF_HOSTS
+              value: dex.arigsela.com,beacon.arigsela.com
+            - name: SSRF_EXEMPT_TENANTS
+              value: homelab
+            - name: BEACON_DB_POOL_MAX
+              value: "4"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: flags
+              mountPath: /etc/beacon/flags
+              readOnly: true
+            - name: signing
+              mountPath: /etc/beacon/signing
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: flags
+          configMap:
+            name: beacon-flags
+        - name: signing
+          secret:
+            secretName: beacon-signing
+            defaultMode: 0400

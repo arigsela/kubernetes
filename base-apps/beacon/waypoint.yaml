@@ -1,0 +1,22 @@
+# base-apps/beacon/waypoint.yaml (beacon §T.15)
+# L7 proxy for east-west traffic to beacon's Services (namespace label istio.io/use-waypoint).
+# Today that is checker -> notifier: authorization-policy.yaml is enforced here, and from
+# beacon §T.20 its spans join the checker's trace. North-south traffic from the ingress
+# Gateway bypasses it by default and must keep doing so (beacon §V.8, istio#60780).
+# "service": only Service-addressed traffic; nothing addresses beacon pods directly.
+# One replica (Istio renders the Deployment). If it dies the checker cannot reach the
+# notifier; incidents are still recorded and notifications for them are lost (runbook.md).
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: beacon-waypoint
+  namespace: beacon
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+    - name: mesh
+      port: 15008
+      protocol: HBONE

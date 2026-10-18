@@ -1,0 +1,230 @@
+# base-apps/beacon/configmaps.yaml (beacon §T.15)
+---
+# Fault flags (beacon §I.flags), read through the OpenFeature flagd file provider. Every
+# flag defaults to "off". Injecting a fault is a commit that changes one defaultVariant;
+# reverting it is `git revert` (beacon §V.13), never a kubectl edit. Mounted as a DIRECTORY
+# (not subPath) so a change reaches running pods without a restart.
+# Faults degrade beacon only (beacon §V.26): tenantFloodIngest writes at most 50x the check
+# rows, apiDbPoolExhaust exhausts beacon's own pool, never the shared cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: beacon-flags
+  namespace: beacon
+data:
+  beacon-flags.json: |
+    {
+      "$schema": "https://flagd.dev/schema/v0/flags.json",
+      "flags": {
+        "checkerSlowProbe": {
+          "state": "ENABLED",
+          "variants": {
+            "off": 0.0,
+            "slow": 5.0
+          },
+          "defaultVariant": "off"
+        },
+        "checkerFalseDown": {
+          "state": "ENABLED",
+          "variants": {
+            "off": false,
+            "on": true
+          },
+          "defaultVariant": "off"
+        },
+        "notifierReceiverFail": {
+          "state": "ENABLED",
+          "variants": {
+            "off": false,
+            "on": true
+          },
+          "defaultVariant": "off"
+        },
+        "apiDbPoolExhaust": {
+          "state": "ENABLED",
+          "variants": {
+            "off": false,
+            "on": true
+          },
+          "defaultVariant": "off"
+        },
+        "apiSlowQuery": {
+          "state": "ENABLED",
+          "variants": {
+            "off": 0.0,
+            "slow": 2.0
+          },
+          "defaultVariant": "off"
+        },
+        "tenantFloodIngest": {
+          "state": "ENABLED",
+          "variants": {
+            "off": 0.0,
+            "flood": 10.0
+          },
+          "defaultVariant": "off"
+        },
+        "schedulerStall": {
+          "state": "ENABLED",
+          "variants": {
+            "off": false,
+            "on": true
+          },
+          "defaultVariant": "off"
+        }
+      }
+    }
+---
+# The SPA's runtime config (web/src/config.ts), served as /config.json.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: beacon-web-config
+  namespace: beacon
+data:
+  config.json: |
+    {"dexIssuer": "https://dex.arigsela.com", "dexClientId": "beacon"}
+---
+# The homelab dogfood tenant (beacon §T.17): beacon monitors every host on the shared Gateway.
+# Applied by the beacon-seed-homelab PostSync Job (jobs.yaml) with `beacon-api seed-tenant`:
+# idempotent, upserts by name, never deletes. homelab is the one tenant exempt from the SSRF
+# block on the platform's own hosts and the home WAN address (beacon §V.5), which is what lets
+# it probe these at all; its slug is reserved, so it cannot be signed up for.
+#
+# ADDING A HOST TO THE GATEWAY MEANS ADDING IT HERE (tests/beacon/test_homelab_seed.py fails
+# otherwise). "/" unless it answers >= 400 there: oauth2-proxy hosts use their unauthenticated
+# /ping (/ would redirect through Dex to github.com), kagent-mcp serves only A2A paths so it is
+# a TCP check on 443. Not here: the *.arigsela.com wildcard and the LAN-only vault names.
+#
+# owners: the owner's Dex subject (GitHub user 2475907 via the github connector), the same
+# value the API server pins (ansible/roles/k3s_node/files/authn/authn-config.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: beacon-homelab-seed
+  namespace: beacon
+data:
+  homelab.json: |
+    {
+      "slug": "homelab",
+      "tier": "free",
+      "owners": [
+        "CgcyNDc1OTA3EgZnaXRodWI"
+      ],
+      "monitors": [
+        {
+          "name": "agent-audit",
+          "kind": "http",
+          "target": "https://agent-audit.arigsela.com/ping",
+          "interval_seconds": 300
+        },
+        {
+          "name": "argo-workflows",
+          "kind": "http",
+          "target": "https://argo-workflows.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "argocd",
+          "kind": "http",
+          "target": "https://argocd.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "atlantis",
+          "kind": "http",
+          "target": "https://atlantis.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "backstage",
+          "kind": "http",
+          "target": "https://backstage.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "chores",
+          "kind": "http",
+          "target": "https://chores.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "coroot",
+          "kind": "http",
+          "target": "https://coroot.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "dex",
+          "kind": "http",
+          "target": "https://dex.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "dispatcher",
+          "kind": "http",
+          "target": "https://dispatcher.arigsela.com/ping",
+          "interval_seconds": 300
+        },
+        {
+          "name": "grafana",
+          "kind": "http",
+          "target": "https://grafana.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "home",
+          "kind": "http",
+          "target": "https://home.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "jupyter",
+          "kind": "http",
+          "target": "https://jupyter.arigsela.com/ping",
+          "interval_seconds": 300
+        },
+        {
+          "name": "kagent-mcp",
+          "kind": "tcp",
+          "target": "kagent-mcp.arigsela.com:443",
+          "interval_seconds": 300
+        },
+        {
+          "name": "kagent",
+          "kind": "http",
+          "target": "https://kagent.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "n8n",
+          "kind": "http",
+          "target": "https://n8n.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "oncall",
+          "kind": "http",
+          "target": "https://oncall.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "rollouts",
+          "kind": "http",
+          "target": "https://rollouts.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "vault",
+          "kind": "http",
+          "target": "https://vault.arigsela.com/",
+          "interval_seconds": 300
+        },
+        {
+          "name": "weather-kitchen",
+          "kind": "http",
+          "target": "https://weather-kitchen.arigsela.com/",
+          "interval_seconds": 300
+        }
+      ]
+    }

@@ -1,0 +1,38 @@
+# base-apps/beacon/httproute.yaml (beacon §T.15)
+# beacon.arigsela.com: the SPA, with /api/* and /public/* to beacon-api (beacon §I.host).
+# Straight to the Services, never via the waypoint (beacon §V.8). The listener
+# https-beacon and the allow-list rule arrive with beacon §T.16; until then this route is
+# not attached to anything. IP allow-listed until beacon's WAF work (beacon §V.20).
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: beacon
+  namespace: beacon
+spec:
+  parentRefs:
+    - name: main
+      namespace: istio-ingress
+      sectionName: https-beacon
+  hostnames:
+    - beacon.arigsela.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/
+        - path:
+            type: PathPrefix
+            value: /public/
+      backendRefs:
+        - name: beacon-api
+          port: 8080
+    # Everything else is the SPA. beacon-api's /metrics, /healthz and /readyz are not
+    # routed: those paths fall through to here and get index.html.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: beacon-web
+          port: 8080

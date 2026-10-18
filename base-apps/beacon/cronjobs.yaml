@@ -1,0 +1,163 @@
+# base-apps/beacon/cronjobs.yaml (beacon §T.15)
+# beacon-scheduler runs as two CronJobs: every minute it enqueues due checks into the jobs
+# table, each row carrying the run's traceparent (beacon §V.6); daily it applies retention
+# and writes the per-monitor roll-ups. Both are SDK services (inject-python "false").
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: beacon-scheduler
+  namespace: beacon
+  labels:
+    app: beacon-scheduler
+    app.kubernetes.io/name: beacon-scheduler
+    app.kubernetes.io/part-of: beacon
+    backstage.io/kubernetes-id: beacon-scheduler
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  schedule: "* * * * *"
+  # A slow run (schedulerStall) delays the next one instead of overlapping it; a missed
+  # minute is not made up later (the next run enqueues whatever is due by then).
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 50
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            app: beacon-scheduler
+            app.kubernetes.io/name: beacon-scheduler
+            app.kubernetes.io/part-of: beacon
+            backstage.io/kubernetes-id: beacon-scheduler
+          annotations:
+            instrumentation.opentelemetry.io/inject-python: "false"
+        spec:
+          serviceAccountName: beacon-scheduler
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          nodeSelector:
+            node.kubernetes.io/workload: application
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: scheduler
+              image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.2.1@sha256:28443c46e6c99e6497adf115150aa58257ddd027d52cb93b585b5934f751c286
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: beacon-db-app
+                      key: DATABASE_URL
+                - name: FLAGS_PATH
+                  value: /etc/beacon/flags/beacon-flags.json
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 96Mi
+                limits:
+                  cpu: 300m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+                - name: flags
+                  mountPath: /etc/beacon/flags
+                  readOnly: true
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi
+            - name: flags
+              configMap:
+                name: beacon-flags
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: beacon-scheduler-daily
+  namespace: beacon
+  labels:
+    app: beacon-scheduler-daily
+    app.kubernetes.io/name: beacon-scheduler
+    app.kubernetes.io/part-of: beacon
+    backstage.io/kubernetes-id: beacon-scheduler
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  # 03:17 UTC: away from the hour, when other homelab jobs start.
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: beacon-scheduler-daily
+            app.kubernetes.io/name: beacon-scheduler
+            app.kubernetes.io/part-of: beacon
+            backstage.io/kubernetes-id: beacon-scheduler
+          annotations:
+            instrumentation.opentelemetry.io/inject-python: "false"
+        spec:
+          serviceAccountName: beacon-scheduler
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          nodeSelector:
+            node.kubernetes.io/workload: application
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: scheduler
+              image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.2.1@sha256:28443c46e6c99e6497adf115150aa58257ddd027d52cb93b585b5934f751c286
+              args: ["--daily"]
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: beacon-db-app
+                      key: DATABASE_URL
+                - name: BEACON_RETENTION_DAYS
+                  value: "30"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 96Mi
+                limits:
+                  cpu: 300m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi

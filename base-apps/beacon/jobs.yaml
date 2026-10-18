@@ -1,0 +1,340 @@
+# base-apps/beacon/jobs.yaml (beacon §T.15)
+---
+# beacon §T.14, beacon §V.18: run every beacon image on a real node before anything rolls out.
+# The nodes are Xeon E5-2670 (Sandy Bridge-EP: AVX, no AVX2). CI already runs each image
+# under Sandy Bridge emulation, but only a node proves it. --self-check imports every native
+# extension the service loads, so a wheel built for x86-64-v3 dies here with SIGILL instead
+# of in a Deployment.
+#
+# PreSync: it runs before every sync of this app, so a new digest never reaches a
+# Deployment without passing here first, and a failure stops the whole sync. On the FIRST
+# sync it may wait in ImagePullBackOff for up to 15 minutes: a new namespace gets its
+# ecr-registry pull secret from kube-system/ecr-credentials-sync (runbook.md).
+# BeforeHookCreation keeps the last run's pod and logs for inspection until the next sync.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: beacon-smoke
+  namespace: beacon
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app: beacon-smoke
+        app.kubernetes.io/part-of: beacon
+    spec:
+      # The default ServiceAccount: PreSync runs before this app's ServiceAccounts exist.
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cpu
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.1@sha256:cd12e6976e21e0f43ae40349f3ba33ff51d490f8484dab2cd1e982e505642791
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              grep -m1 "model name" /proc/cpuinfo
+              grep -qw avx /proc/cpuinfo || { echo "no AVX on this node: beacon images need it" >&2; exit 1; }
+              if grep -qw avx2 /proc/cpuinfo; then echo "AVX2 present"; else echo "AVX2 absent (x86-64-v2 node, as expected)"; fi
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+        - name: api
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.1@sha256:cd12e6976e21e0f43ae40349f3ba33ff51d490f8484dab2cd1e982e505642791
+          args: ["--self-check"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+        - name: scheduler
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.2.1@sha256:28443c46e6c99e6497adf115150aa58257ddd027d52cb93b585b5934f751c286
+          args: ["--self-check"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+        - name: checker
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-checker:v0.2.1@sha256:af6b6ce01f98d29381f0bf8782b57f3eb0d34736d088d4a5eb5deb3960e4b734
+          args: ["--self-check"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+        - name: notifier
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.2.1@sha256:8f89a2fd50b781cec1bde6f50e86812761a88c8b87db3093db563c97aa47e117
+          args: ["--self-check"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+        - name: mcp
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-mcp:v0.2.1@sha256:e232e8b4c28508aff2f3a686d6424c91ebd7ffc9245fe2252af1ee1c82ee849a
+          args: ["--self-check"]
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+        # beacon §V.9 on the image that actually ships: no opentelemetry distribution.
+        - name: notifier-no-otel
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.2.1@sha256:8f89a2fd50b781cec1bde6f50e86812761a88c8b87db3093db563c97aa47e117
+          command: ["python", "-c"]
+          args:
+            - |
+              import importlib.metadata as m, sys
+              bad = sorted(d.metadata["Name"] for d in m.distributions() if d.metadata["Name"].lower().startswith("opentelemetry"))
+              print("opentelemetry distributions:", bad or "none")
+              sys.exit(1 if bad else 0)
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+        - name: web
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-web:v0.2.1@sha256:347784875aa6b5ba5cdf3ae91d2e9aee8cd4402fcbcfbd8078150afc00335594
+          command: ["/bin/sh", "-c"]
+          args:
+            - nginx -t && test -s /usr/share/nginx/html/index.html && echo "web smoke ok"
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+---
+# Alembic migrations as beacon_owner, after the secrets exist (wave 0) and before any
+# Deployment or CronJob (wave 2). Idempotent: on a sync with no new migration it is a
+# no-op. Roles and the database itself come from the postgresql app
+# (base-apps/postgresql/init-beacon-roles.yaml, beacon-database.yaml); on the very first
+# sync this Job retries until they exist.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: beacon-migrate
+  namespace: beacon
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app: beacon-migrate
+        app.kubernetes.io/part-of: beacon
+      annotations:
+        instrumentation.opentelemetry.io/inject-python: "false"
+    spec:
+      serviceAccountName: beacon-migrate
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.1@sha256:cd12e6976e21e0f43ae40349f3ba33ff51d490f8484dab2cd1e982e505642791
+          args: ["migrate"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: beacon-db-owner
+                  key: DATABASE_URL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+---
+# beacon §T.17: apply the homelab tenant (configmaps.yaml, beacon-homelab-seed) once the
+# workloads are healthy. Runs as beacon_app under the tenant's RLS context; idempotent, so
+# every sync re-applies the file and a new host's monitor appears on the next sync.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: beacon-seed-homelab
+  namespace: beacon
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app: beacon-seed-homelab
+        app.kubernetes.io/part-of: beacon
+      annotations:
+        instrumentation.opentelemetry.io/inject-python: "false"
+    spec:
+      serviceAccountName: beacon-migrate
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.1@sha256:cd12e6976e21e0f43ae40349f3ba33ff51d490f8484dab2cd1e982e505642791
+          args: ["seed-tenant"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: beacon-db-app
+                  key: DATABASE_URL
+            - name: BEACON_SEED_FILE
+              value: /etc/beacon/seed/homelab.json
+          resources:
+            requests:
+              cpu: 20m
+              memory: 96Mi
+            limits:
+              cpu: 300m
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: seed
+              mountPath: /etc/beacon/seed
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+        - name: seed
+          configMap:
+            name: beacon-homelab-seed

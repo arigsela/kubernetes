@@ -1,0 +1,152 @@
+# base-apps/beacon/network-policies.yaml (beacon §T.15)
+# Default-deny ingress for the namespace, then the paths that exist. The namespace is
+# ambient, so an in-mesh source arrives on HBONE 15008 and every allow rule from one lists
+# 15008 next to the app port (beacon §V.31; NetworkPolicy is enforced before ztunnel unwraps
+# HBONE). Kubelet probes are not affected (the dispatcher's ambient pods pass httpGet probes
+# behind the same kind of policy).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: beacon
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+# The ingress Gateway reaches the SPA and the API (httproute.yaml), nothing else.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-to-web-and-api
+  namespace: beacon
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [beacon-web, beacon-api]
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 15008
+          protocol: TCP
+---
+# Any beacon pod reaches the waypoint (it fronts every beacon Service, waypoint.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: beacon-to-waypoint
+  namespace: beacon
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: beacon-waypoint
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 15008
+          protocol: TCP
+---
+# The notifier takes connections from the waypoint (checker traffic after policy) and from
+# the checker itself (HBONE). authorization-policy.yaml decides who may actually call it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: notifier-from-checker
+  namespace: beacon
+spec:
+  podSelector:
+    matchLabels:
+      app: beacon-notifier
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: beacon-waypoint
+        - podSelector:
+            matchLabels:
+              app: beacon-checker
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 15008
+          protocol: TCP
+---
+# Egress for the two workloads that connect to tenant-supplied addresses (beacon §V.5): the
+# checker's probes and the notifier's webhook/Slack/email deliveries. The SSRF guard refuses
+# these ranges after DNS; this refuses them at L3 too, so a guard bug is not an open door.
+# Allowed: DNS, the shared Postgres, the in-namespace mesh (waypoint, notifier), and public
+# IPv4 on any port. Refused: RFC 1918 (incl. this cluster's pod 10.42/16, Service 10.43/16
+# and node 10.0.1/24 networks), CGNAT 100.64/10, loopback, link-local (incl. the cloud
+# metadata address 169.254.169.254) and 0/8.
+# NOT covered at L3: the home WAN address. Pod egress to it hairpins through the router to
+# the ingress Gateway as an allow-listed source (beacon §R.22), and it rotates, so it is
+# refused by the guard (which resolves it live from SSRF_SELF_HOSTS) and not pinned here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: probe-egress
+  namespace: beacon
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [beacon-checker, beacon-notifier]
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgresql
+          podSelector:
+            matchLabels:
+              cnpg.io/cluster: postgresql-cluster
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: beacon-waypoint
+        - podSelector:
+            matchLabels:
+              app: beacon-notifier
+      ports:
+        - port: 15008
+          protocol: TCP
+        - port: 8080
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16

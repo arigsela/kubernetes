@@ -1,0 +1,16 @@
+# base-apps/beacon/reference-grant.yaml (beacon §T.15)
+# Lets the shared Gateway's https-beacon listener (beacon §T.16) read this one Secret.
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: gateway-to-beacon-tls
+  namespace: beacon
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: istio-ingress
+  to:
+    - group: ""
+      kind: Secret
+      name: beacon-tls

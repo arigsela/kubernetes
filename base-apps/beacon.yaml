@@ -1,0 +1,40 @@
+# base-apps/beacon.yaml (beacon §T.15)
+# beacon: multi-tenant uptime monitor and public status page, the platform's customer zero.
+# App code, images and CI live in arigsela/beacon (private: Argo CD has no credentials for
+# it, so every manifest lives here). Its push role is the separate managed app
+# beacon-aws-infrastructure (appsets/managed-apps/), a different path on purpose
+# (tests/appset/test_disjoint.py).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: beacon
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/beacon
+    directory:
+      # The agent-docs contract: catalog-info.yaml and the generated mkdocs.yml are not manifests.
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: beacon
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # The PreSync smoke Job needs the namespace before namespace.yaml is applied.
+      - CreateNamespace=true
+    # The first sync races the postgresql app (roles, database) and the 15-minute pull
+    # secret sync; retry instead of leaving a failed sync until the next commit.
+    retry:
+      limit: 5
+      backoff:
+        duration: 1m
+        factor: 2
+        maxDuration: 10m

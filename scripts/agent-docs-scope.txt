@@ -25,3 +25,4 @@ system-upgrade-controller
 substrate
 dispatcher
 slack-bridge
+beacon

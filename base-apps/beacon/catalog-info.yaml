@@ -1,0 +1,26 @@
+# base-apps/beacon/catalog-info.yaml (beacon §T.15)
+# Structured facts for beacon's in-cluster side. beacon's System, Components and API are
+# defined ONCE, in the app repo's catalog-info.yaml (arigsela/beacon); this file defines only
+# what lives here, the database (beacon §V.28, beacon §I.catalog). Not a Kubernetes manifest:
+# excluded in base-apps/beacon.yaml.
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: beacon-db
+  namespace: beacon
+  description: beacon's database (beacon) on the shared CNPG postgresql-cluster, and the docs for beacon's deployment
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app.kubernetes.io/part-of=beacon'
+    backstage.io/kubernetes-namespace: beacon
+    github.com/project-slug: arigsela/kubernetes
+  tags: [database, uptime, multi-tenant]
+spec:
+  type: database
+  lifecycle: experimental
+  owner: group:default/platform
+  system: default/beacon
+  dependsOn:
+    - resource:postgresql/postgresql
+    - resource:vault/vault

@@ -34,6 +34,16 @@ spec:
   # primary crash could lose the last transactions.
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+  # Superuser access, enabled 2026-10-18 for beacon (beacon §T.15; owner decision, beacon §R.36).
+  # The operator generates Secret postgresql-cluster-superuser and sets the postgres
+  # password from it; before this the postgres password was NULL and every role here was
+  # made by hand with `kubectl exec ... psql -U postgres` (donetick, chores_user). It is
+  # the login for Sync-hook Jobs that create roles declaratively: init-beacon-roles.yaml.
+  # Blast radius: the postgres superuser can now log in over the network with that
+  # password (default pg_hba `host all all all scram-sha-256`); the Secret is readable only
+  # where Secrets in this namespace are. Revert: set false; the operator removes the
+  # Secret and blanks the password again (roles already created stay).
+  enableSuperuserAccess: true
   # Shutdown waits at most 30s for clients to leave (smart), then disconnects
   # them and checkpoints (fast). The default 180s turned the 1.30.1 operator
   # upgrade into a ~3m15s outage: donetick's pooled connections never leave on
