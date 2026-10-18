@@ -1,0 +1,21 @@
+# base-apps/beacon/namespace.yaml (beacon §T.15)
+# beacon: multi-tenant uptime monitor and status page (app repo arigsela/beacon, private).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: beacon
+  labels:
+    app.kubernetes.io/part-of: beacon
+    # In the mesh: east-west calls (checker -> notifier) carry SPIFFE identities and go
+    # through the waypoint below, where authorization-policy.yaml is enforced.
+    istio.io/dataplane-mode: ambient
+    istio.io/use-waypoint: beacon-waypoint
+    # NEVER add istio.io/ingress-use-waypoint here or on a beacon Service: with ambient it
+    # makes Istio drop the gateway's and the waypoint's spans (istio#60780, beacon §V.8).
+    # Ingress goes straight to the Service; the waypoint carries east-west only.
+    #
+    # Opt-ins for platform defaults that do not exist yet (beacon §T.22, beacon §T.23). Until
+    # those land the labels select nothing.
+    platform.arigsela.com/defaults: enabled
+    platform.arigsela.com/otel: python

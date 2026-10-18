@@ -1,0 +1,121 @@
+---
+type: "Kubernetes App Runbook"
+title: "Beacon — Runbook"
+description: "Operational runbook for beacon: release promotion, first deploy, smoke and migration failures, login, notifications, secrets."
+app: beacon
+catalog_entity: beacon-db
+kind: runbook
+namespace: beacon
+last_reviewed: 2026-10-18
+status: draft
+tags: [uptime, runbook]
+sources:
+  - base-apps/beacon/jobs.yaml
+  - base-apps/beacon/deployments.yaml
+  - base-apps/beacon/cronjobs.yaml
+  - base-apps/beacon/authorization-policy.yaml
+  - base-apps/beacon/network-policies.yaml
+  - base-apps/postgresql/init-beacon-roles.yaml
+  - scripts/provision-beacon-vault.sh
+---
+
+# Beacon — Runbook
+
+Everything here is a Git change. Never `kubectl apply/edit/patch/delete` (Argo CD reverts or
+prunes it); the read-only commands below only inspect.
+
+## How-to
+
+### Promote a release (beacon §T.41)
+Renovate does not watch beacon's ECR repos, so a new release reaches the cluster only through
+this PR.
+
+1. In `arigsela/beacon`, a `v*` tag on `main` runs the release workflow. Its step summary
+   lists six lines `852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-<svc>:<tag>@sha256:<digest>`.
+   A re-run of an already-pushed tag skips the push and prints the same digests.
+2. On a branch here, replace **every** beacon image reference with the new line for its
+   service. They are in `base-apps/beacon/deployments.yaml`, `cronjobs.yaml`, `jobs.yaml`
+   (the smoke Job lists all six) and `base-apps/postgresql/init-beacon-roles.yaml`.
+   `tests/beacon/test_manifests.py` fails if any reference is unpinned, from another
+   release, or missing from the smoke Job.
+3. Run `python -m pytest tests/beacon/ -q`, open the PR with a title citing `beacon §T.41`
+   and the tag, and merge it after review.
+4. Argo CD runs `beacon-smoke` first. If it fails, nothing rolls (next section).
+   Then `beacon-migrate`, then the Deployments and CronJobs.
+
+Rollback is `git revert` of that PR. ECR keeps the last 10 tagged beacon images, so a
+revert's digests are still pullable.
+
+### First deploy (once)
+1. `scripts/provision-beacon-vault.sh`, BEFORE this app's first sync (a SecretStore with no
+   Vault role fails the sync; the postgresql hook skips without the passwords).
+2. Merge the deploy PR. Argo CD syncs `postgresql` (superuser access, roles, database) and
+   `beacon` (smoke, migrate, workloads) independently; `beacon` retries until the roles and
+   the database exist.
+3. The listener, allow-list and DNS come after (beacon §T.16).
+
+### Inject or clear a fault
+Change one `defaultVariant` in `configmaps.yaml` (`beacon-flags`) in a PR; clear it with
+`git revert`. Pods read the file live (directory mount), no restart.
+
+### Rotate the database passwords
+`scripts/provision-beacon-vault.sh --rotate-db`, then let a `postgresql` sync re-run
+`init-beacon-roles` (any merged change under `base-apps/postgresql/` triggers one), then
+restart the beacon pods once ESO has refreshed (≤ 1h): until then they hold the old
+password. The signing key is never rotated this way (see "Webhook secrets unreadable").
+
+## Failure modes
+
+### Symptom: the beacon sync is stuck or failed at PreSync (`beacon-smoke`)
+- **Check:** `kubectl -n beacon get pods -l app=beacon-smoke`, then
+  `kubectl -n beacon logs job/beacon-smoke --all-containers --prefix`.
+- **ImagePullBackOff on the first sync:** the namespace has no `ecr-registry` secret yet.
+  `kube-system/ecr-credentials-sync` adds it within 15 minutes; the pod then pulls.
+- **A container exited 132 (SIGILL):** that image carries code built for AVX2
+  (x86-64-v3), which these Xeon E5-2670 nodes lack. Do not promote it; fix the build in
+  `arigsela/beacon` (its CI's Sandy Bridge emulation should have caught it: file it there
+  as a bug).
+- **`notifier-no-otel` failed:** an OpenTelemetry distribution reached the notifier image
+  (beacon §V.9). Same: do not promote.
+
+### Symptom: `beacon-migrate` fails, Deployments never appear
+- **Check:** `kubectl -n beacon logs job/beacon-migrate`.
+- `role "beacon_owner" does not exist` / `database "beacon" does not exist`: the postgresql
+  app has not run `init-beacon-roles` yet, or it skipped. Check
+  `kubectl -n postgresql get database beacon -o jsonpath='{.status}'` and the postgresql
+  app's last sync. The beacon app retries five times over about 25 minutes.
+- `password authentication failed`: Vault and Postgres disagree. A postgresql sync re-runs
+  `init-beacon-roles`, which re-applies the Vault passwords.
+
+### Symptom: `init-beacon-roles` logs "skipping"
+`beacon-db-credentials` has no passwords: run `scripts/provision-beacon-vault.sh`, then let
+a postgresql sync run.
+
+### Symptom: login loops or fails at Dex
+- `invalid client` at Dex: the `beacon` client is missing from Dex's running config. Dex
+  only reloads when `checksum/config` changes (`base-apps/dex/runbook.md`).
+- The browser console shows a CORS error on `dex.arigsela.com/token`: `web.allowedOrigins`
+  in `base-apps/dex/configmap.yaml` must list `https://beacon.arigsela.com`.
+- API answers 401 with a fresh login: `DEX_ISSUER`/`DEX_CLIENT_ID` on `beacon-api` must be
+  `https://dex.arigsela.com` / `beacon`; the API fetches Dex's keys over the public host.
+
+### Symptom: incidents open but nobody is notified
+- **Check:** checker logs for the hand-off (`kubectl -n beacon logs deploy/beacon-checker`).
+  `403` from the notifier is the waypoint's AuthorizationPolicy: the caller is not
+  `beacon-checker`'s ServiceAccount. Connection refused or timeouts: the waypoint is down
+  (`kubectl -n beacon get pods -l gateway.networking.k8s.io/gateway-name=beacon-waypoint`).
+- After three quick retries the checker gives up on that notification; the incident stays
+  recorded (a known limit). Deliveries already stored retry from the database.
+- Email: there is no SMTP relay, so email deliveries dead-letter by design until
+  `smtp-url` is provisioned.
+
+### Symptom: webhook secrets unreadable after a Vault restore
+Webhook channel secrets are AES-GCM-sealed with `k8s-secrets/beacon` `signing-key`. If Vault
+comes back without it (a fresh provision generates a new key), every stored webhook secret
+is unreadable and those deliveries fail. Restore Vault from its backup
+(`base-apps/vault/runbook.md`); otherwise tenants must recreate their webhook channels.
+
+### Symptom: "too many connections" on the shared cluster
+beacon's roles are capped at 23 of 100 (`CONNECTION LIMIT`); beacon cannot be the cause of
+the cluster-wide limit. If beacon itself is refused, check pool sizes (`BEACON_DB_POOL_MAX`)
+times replicas against `beacon_app`'s limit of 20.

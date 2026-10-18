@@ -1,0 +1,110 @@
+# base-apps/postgresql/init-beacon-roles.yaml (beacon §T.15)
+# Creates beacon's three roles on postgresql-cluster and sets the two login passwords from
+# Vault, declaratively (CNPG managed roles are inert here: docs/troubleshooting/
+# cnpg-managed-roles-inert.md). It runs beacon's own image: `beacon-api bootstrap-roles`
+# applies the roles.sql shipped in that image, so the SQL has exactly one copy, in
+# arigsela/beacon (services/api/src/beacon_api/sql/roles.sql):
+#   beacon_owner  LOGIN, CONNECTION LIMIT 3, owns the schema, runs the migrations
+#   beacon_app    LOGIN, CONNECTION LIMIT 20, statement_timeout 5s, every service at runtime
+#   beacon_system NOLOGIN, owns the SECURITY DEFINER functions (beacon §V.24)
+# None has SUPERUSER or BYPASSRLS (beacon §V.1); the limits sum to 23 of the cluster's
+# max_connections 100 (beacon §V.26: at most 25). Idempotent: every postgresql sync re-runs it
+# and re-applies the passwords, which is also how a --rotate-db reaches Postgres.
+#
+# Logs in as the CNPG superuser (cnpg-cluster.yaml, enableSuperuserAccess). Those refs are
+# not optional: the operator creates that Secret right after the Cluster change, and the
+# pod waits for it instead of racing it. beacon's own credentials ARE optional: without
+# them (provision-beacon-vault.sh not run yet) the hook skips instead of failing every
+# postgresql sync.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-beacon-roles
+  namespace: postgresql
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    # A Sync hook, like the other init Jobs here: a self-deleting Job in desired state
+    # would leave the app OutOfSync between syncs.
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app: init-beacon-roles
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: init-beacon-roles
+          # Same release as every other beacon image (runbook "Promote a release" in
+          # base-apps/beacon/runbook.md updates this line too).
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.1@sha256:cd12e6976e21e0f43ae40349f3ba33ff51d490f8484dab2cd1e982e505642791
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ -z "${BEACON_OWNER_PASSWORD:-}" ] || [ -z "${BEACON_APP_PASSWORD:-}" ]; then
+                echo "beacon-db-credentials has no passwords (scripts/provision-beacon-vault.sh not run?): skipping"
+                exit 0
+              fi
+              exec beacon-service bootstrap-roles
+          env:
+            - name: PGHOST
+              value: postgresql-cluster-rw.postgresql.svc.cluster.local
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: postgres
+            - name: PGSSLMODE
+              value: require
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-cluster-superuser
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-cluster-superuser
+                  key: password
+            - name: BEACON_OWNER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: beacon-db-credentials
+                  key: owner-password
+                  optional: true
+            - name: BEACON_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: beacon-db-credentials
+                  key: app-password
+                  optional: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 300m
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi

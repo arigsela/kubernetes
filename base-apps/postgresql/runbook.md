@@ -75,6 +75,12 @@ Expected behaviour when there are open findings: the Job exits non-zero if a wri
 ### "Agent session scored high risk" fired
 The summary names agent, session and flags. Open the session in agent-audit-web (`/sessions/<id>`) and read the calls in order. Every call may have been approved; the question is whether what the session did was warranted. If no session is high, read `jev_errors` in the summary line first: the rule also fires (severity `warning`) when Jev could not be reached, because a check that did not run must not look healthy. If the verdict is wrong, tune `HIGH_IF_P_GTE`, `HIGH_IF_FLAG_GTE` or the question text in `scripts/agent-audit-risk.py`, regenerate the CronJob, and note the change in the script header. There is no acknowledged-file for risk verdicts: each day scores afresh.
 
+### Symptom: `init-beacon-roles` failed or logged "skipping"
+beacon's role hook (beacon §T.15). "skipping" means Vault has no beacon passwords yet: run
+`scripts/provision-beacon-vault.sh`. A failure to connect means the CNPG superuser Secret
+`postgresql-cluster-superuser` is missing: `enableSuperuserAccess` must stay `true` in
+`cnpg-cluster.yaml`. The rest is in `base-apps/beacon/runbook.md`.
+
 ## CNPG cluster (`postgresql-cluster`)
 
 ### Find the primary / check cluster health

@@ -35,7 +35,13 @@ _LIST_FIELDS = {
     "children": "group",
 }
 
-_ALLOWLIST = set()  # (kind, namespace, name) tuples for live-ingested refs
+# (kind, namespace, name) tuples for live-ingested refs
+_ALLOWLIST = {
+    # beacon's System, Components and API are defined once, in the private app repo's
+    # catalog-info.yaml (arigsela/beacon, ingested by Backstage's GitHub provider). This repo
+    # defines only the beacon-db Resource, which points at that System (beacon §V.28).
+    ("system", "default", "beacon"),
+}
 
 
 def _parse_ref(ref, default_kind, source_ns):
