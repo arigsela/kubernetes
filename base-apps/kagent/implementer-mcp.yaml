@@ -32,10 +32,13 @@ spec:
     resources:
       requests:
         cpu: 50m
-        memory: 64Mi
+        # Raised 64Mi -> 96Mi with the limit, same 1:4 ratio (alert "Container near memory limit", 2026-10-18).
+        memory: 96Mi
       limits:
         cpu: 200m
-        memory: 256Mi
+        # Raised 256Mi -> 384Mi (alert "Container near memory limit", 2026-10-18): 92% of the
+        # limit in steady use, no OOMKilled, 0 restarts.
+        memory: 384Mi
     nodeSelector:
       node.kubernetes.io/workload: infrastructure
     tolerations:
