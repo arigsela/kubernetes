@@ -22,7 +22,13 @@ metadata:
   name: init-beacon-roles
   namespace: postgresql
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    # Wave 0, NOT 1 like the audit-role hooks (beacon §V.37, beacon §B.7): Argo halts a sync at the
+    # first wave holding a Degraded resource, and agent-audit-risk (agent-audit-cronjob.yaml,
+    # wave 0) is Degraded by design whenever its last run found a high-risk session. At
+    # wave 1 this hook did not run at all after the beacon §T.15 merge. In wave 0 it starts
+    # alongside external-secrets-beacon-db.yaml: on the very first sync that Secret may not
+    # exist yet, the hook then skips (below), and the next postgresql sync creates the roles.
+    argocd.argoproj.io/sync-wave: "0"
     # A Sync hook, like the other init Jobs here: a self-deleting Job in desired state
     # would leave the app OutOfSync between syncs.
     argocd.argoproj.io/hook: Sync
