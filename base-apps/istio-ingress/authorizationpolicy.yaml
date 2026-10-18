@@ -348,6 +348,22 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
+    # beacon - restricted (beacon §T.16, beacon §V.20). Dashboard and API stay behind this
+    # allow-list until beacon's WAF and rate-limit work lands (beacon §T.36); Dex login
+    # (public client `beacon`, any GitHub account) is the second layer, and tenant
+    # membership in beacon's own database the third.
+    - to:
+        - operation:
+            hosts:
+              - beacon.arigsela.com
+              - beacon.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 76.97.4.210/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
     # vault.local / vault.10.0.1.110 - CORRECTED 2026-08-11. This rule previously
       # had no `from:` clause on the premise that these are "LAN-only names, no
       # public DNS, no TLS... an IP rule here would be theatre rather than
