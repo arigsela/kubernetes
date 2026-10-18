@@ -25,6 +25,14 @@ data:
 
     web:
       http: 0.0.0.0:5556
+      # CORS, added for beacon (beacon §T.39): its SPA is a public client that runs
+      # the PKCE code exchange from the browser, so the browser fetches discovery,
+      # /keys and /token cross-origin. Dex then sends Access-Control-Allow-Origin
+      # for these origins only; requests from any other origin, and every
+      # redirect-based login (all other clients), are unchanged. Verified on Dex
+      # v2.46.0 locally: listed origin gets the header, others do not.
+      allowedOrigins:
+        - https://beacon.arigsela.com
 
     # Vault is an OIDC client of Dex. The secret matches Vault's oidc auth
     # config (oidc_client_secret). redirectURIs cover the Vault CLI helper
@@ -123,6 +131,23 @@ data:
         secretEnv: DISPATCHER_CLIENT_SECRET
         redirectURIs:
           - https://dispatcher.arigsela.com/oauth2/callback
+
+      # beacon, added 2026-10-18 (beacon §T.39; app repo arigsela/beacon, private).
+      # PUBLIC + PKCE for the same reason as argocd and kubernetes: the client is a
+      # single-page app, so the code exchange happens in the browser and a client
+      # secret could not stay secret. The SPA sends the access token to beacon-api,
+      # which verifies issuer, signature and audience `beacon`.
+      #
+      # Dex admits any GitHub account and that is intended here: beacon is a
+      # multi-tenant app whose tenant membership lives in its own database, so a
+      # login grants nothing until a tenant exists. The host stays IP allow-listed
+      # (istio-ingress authorizationpolicy.yaml) until the WAF work in beacon §V.20.
+      # Logout is local: Dex serves no end_session_endpoint.
+      - id: beacon
+        name: Beacon
+        public: true
+        redirectURIs:
+          - https://beacon.arigsela.com/callback
 
     connectors:
       - type: github

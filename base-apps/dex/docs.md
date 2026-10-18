@@ -64,9 +64,13 @@ installed by the Helm chart rather than by a manifest here.
 | agent-audit-web (oauth2-proxy) | confidential + PKCE | `agent-audit-client-secret` from Vault | `base-apps/agent-audit-web/` |
 | Jupyter (oauth2-proxy sidecar) | confidential + PKCE | `jupyter-client-secret` from Vault | `base-apps/jupyter/` |
 | Restart approvals (oauth2-proxy sidecar on the dispatcher) | confidential + PKCE | `dispatcher-client-secret` from Vault | `base-apps/dispatcher/` |
+| beacon (single-page app, beacon §T.39) | public (PKCE) | none, by design | `base-apps/dex/configmap.yaml`; app repo `arigsela/beacon` |
 
-All six clients are `staticClients` in `configmap.yaml`: `vault`, `argocd`,
-`kubernetes`, `agent-audit`, `jupyter`, `dispatcher`.
+All seven clients are `staticClients` in `configmap.yaml`: `vault`, `argocd`,
+`kubernetes`, `agent-audit`, `jupyter`, `dispatcher`, `beacon`. beacon's SPA
+exchanges its code from the browser, so `web.allowedOrigins` lists
+`https://beacon.arigsela.com` (CORS on discovery, `/keys`, `/token`, `/userinfo` for
+that origin only).
 
 **Dex is a single point of failure for human login to every relying party**, and
 each handles that differently:
