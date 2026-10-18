@@ -1,5 +1,70 @@
-apiVersion: kagent.dev/v1alpha1
-kind: MCPServer
+# Read the agent-docs from arigsela/kubernetes@main over MCP. Read-only, single-repo (token
+# scope) — see agent-docs-mcp-external-secret.yaml.
+#
+# A plain Deployment since §T.126. Until then kmcp's MCPServer CR rendered exactly this shape:
+# an init container copies the agentgateway binary into an emptyDir, and the main container
+# runs agentgateway, which starts the stdio server as its child and serves it as Streamable
+# HTTP on :3000 (/mcp and /sse). kagent 1.0.0-alpha14 removed kmcp (kagent#3223), so the shape
+# is declared here instead. The names kmcp used (Deployment, Service, ServiceAccount,
+# ConfigMap, container `mcp-server`) are kept: the RemoteMCPServer `agent-docs`
+# (agent-docs-mcp-remote.yaml) binds http://agent-docs-mcp.kagent:3000/mcp, and the Grafana
+# memory alerts key on the container name.
+#
+# agentgateway reads local.yaml once at start, and a ConfigMap change alone restarts nothing
+# (kmcp rolled the pod through a template checksum). The pod template therefore carries
+# checksum/config = sha256 of the local.yaml text; CI fails when it is stale
+# (tests/agent-identity/test_mcp_server_manifests.py), so every config edit in git rolls the pod.
+# Recompute:  yq '.data["local.yaml"]' <file> | sha256sum   (ConfigMap document only)
+# The stdio child inherits the container environment, which is how the token (envFrom the
+# ExternalSecret's Secret) reaches it without appearing in this file.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-docs-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: agent-docs-mcp
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-docs-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: agent-docs-mcp
+data:
+  local.yaml: |
+    binds:
+      - port: 3000
+        listeners:
+          - name: default
+            protocol: HTTP
+            routes:
+              - name: mcp
+                matches:
+                  - path:
+                      pathPrefix: /sse
+                  - path:
+                      pathPrefix: /mcp
+                backends:
+                  - weight: 100
+                    mcp:
+                      targets:
+                        - name: agent-docs-mcp
+                          stdio:
+                            cmd: ./github-mcp-server
+                            args:
+                              - stdio
+                              - --read-only
+                              - --toolsets
+                              - repos
+    config: {}
+---
+apiVersion: v1
+kind: Service
 metadata:
   name: agent-docs-mcp
   namespace: kagent
@@ -7,35 +72,83 @@ metadata:
     app.kubernetes.io/part-of: kagent
     app.kubernetes.io/name: agent-docs-mcp
 spec:
-  # Read the agent-docs from arigsela/kubernetes@main over MCP. Read-only,
-  # single-repo (token scope) — see agent-docs-mcp-external-secret.yaml.
-  #
-  # kagent 1.0 still serves this CRD (mcpservers.kagent.dev v1alpha1, from the kmcp 0.4.0
-  # subchart of kagent-crds 1.0.0-alpha11); every field below is in that schema, unchanged.
-  # Agents cannot bind it directly: they bind the RemoteMCPServer `agent-docs`
-  # (agent-docs-mcp-remote.yaml) that points at the Service this deploys.
-  transportType: stdio
-  deployment:
-    image: ghcr.io/github/github-mcp-server:v1.14.0@sha256:7aaeeec9ae4fe9a736d100c1ff0798f3c219b5009e05f5d3945fcacb13cc196b
-    cmd: ./github-mcp-server
-    args:
-      - stdio
-      - --read-only
-      - --toolsets
-      - repos
-    # Injects GITHUB_PERSONAL_ACCESS_TOKEN from the K8s Secret (Task 1).
-    secretRefs:
-      - name: agent-docs-github-mcp-token
-    # Thin stdio proxy; bounded so it never runs BestEffort on infra nodes.
-    resources:
-      requests:
-        cpu: 50m
-        memory: 64Mi
-      limits:
-        cpu: 200m
-        memory: 256Mi
-    nodeSelector:
-      node.kubernetes.io/workload: infrastructure
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        effect: NoSchedule
+  selector:
+    app.kubernetes.io/name: agent-docs-mcp
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+      # What kmcp set; the waypoint has served it under this value since 2026-10-11.
+      appProtocol: kgateway.dev/mcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-docs-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: agent-docs-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agent-docs-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: kagent
+        app.kubernetes.io/name: agent-docs-mcp
+      annotations:
+        # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
+        checksum/config: "34e77a21ef2b60d99497d6b959fc2539e488cefd7a33c2a97a065792529e0cb8"
+    spec:
+      serviceAccountName: agent-docs-mcp
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      initContainers:
+        - name: copy-binary
+          image: ghcr.io/agentgateway/agentgateway:0.9.0-musl@sha256:aa375451b6f925f6b260fe33cbe237555efd322f14f3b5e0c717628a069cfb0a
+          args: ["--copy-self", "/adapterbin/agentgateway"]
+          volumeMounts:
+            - name: binary
+              mountPath: /adapterbin
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+      containers:
+        - name: mcp-server
+          image: ghcr.io/github/github-mcp-server:v1.14.0@sha256:7aaeeec9ae4fe9a736d100c1ff0798f3c219b5009e05f5d3945fcacb13cc196b
+          command: ["/adapterbin/agentgateway"]
+          args: ["-f", "/config/local.yaml"]
+          ports:
+            - name: http
+              containerPort: 3000
+          # Injects GITHUB_PERSONAL_ACCESS_TOKEN (agent-docs-mcp-external-secret.yaml).
+          envFrom:
+            - secretRef:
+                name: agent-docs-github-mcp-token
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: binary
+              mountPath: /adapterbin
+          # Thin stdio proxy; bounded so it never runs BestEffort on infra nodes.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: agent-docs-mcp
+        - name: binary
+          emptyDir: {}
