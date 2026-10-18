@@ -161,6 +161,19 @@ def test_v37_role_hook_runs_in_wave_zero_and_skips_without_inputs():
     assert job["spec"]["backoffLimit"] <= 5 and job["spec"]["ttlSecondsAfterFinished"] <= 600
 
 
+def test_v37_a_git_change_reruns_the_role_hook():
+    """beacon §V.37 (§B.8): hooks run only inside a sync, and Argo auto-syncs only on a
+    desired-state diff. A hook's own annotations and *.md files are not desired state, so
+    #866 (wave 1 -> 0) merged without running anything. A counter on a real resource of the
+    postgresql app is the trigger; the runbook names it."""
+    (es,) = load("base-apps/postgresql/external-secrets-beacon-db.yaml")
+    rev = es["metadata"]["annotations"]["beacon.arigsela.com/rerun-init-beacon-roles"]
+    assert rev.isdigit() and int(rev) >= 1
+    runbook = (APP / "runbook.md").read_text()
+    assert "beacon.arigsela.com/rerun-init-beacon-roles" in runbook
+    assert "any merged change under" not in runbook
+
+
 # --- tracing (beacon §V.8, §V.9, §V.32) -----------------------------------------------------
 
 

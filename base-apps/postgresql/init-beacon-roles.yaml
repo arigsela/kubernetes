@@ -28,6 +28,8 @@ metadata:
     # wave 1 this hook did not run at all after the beacon §T.15 merge. In wave 0 it starts
     # alongside external-secrets-beacon-db.yaml: on the very first sync that Secret may not
     # exist yet, the hook then skips (below), and the next postgresql sync creates the roles.
+    # To force that sync: bump beacon.arigsela.com/rerun-init-beacon-roles on
+    # external-secrets-beacon-db.yaml (a hook's own annotations start no sync, beacon §B.8).
     argocd.argoproj.io/sync-wave: "0"
     # A Sync hook, like the other init Jobs here: a self-deleting Job in desired state
     # would leave the app OutOfSync between syncs.
