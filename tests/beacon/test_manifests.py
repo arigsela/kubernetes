@@ -127,7 +127,7 @@ def test_only_the_migrate_job_holds_the_owner_credential():
 def test_role_init_hook_runs_beacons_own_sql_as_the_cnpg_superuser():
     (job,) = load(INIT)
     ann = job["metadata"]["annotations"]
-    assert ann["argocd.argoproj.io/hook"] == "Sync" and ann["argocd.argoproj.io/sync-wave"] == "1"
+    assert ann["argocd.argoproj.io/hook"] == "Sync"
     c = job["spec"]["template"]["spec"]["containers"][0]
     assert "exec beacon-service bootstrap-roles" in c["args"][0]
     e = env(c)
@@ -145,6 +145,20 @@ def test_role_init_hook_runs_beacons_own_sql_as_the_cnpg_superuser():
     db = one("base-apps/postgresql/beacon-database.yaml", "Database", "beacon")
     assert db["spec"]["owner"] == "beacon_owner" and db["spec"]["databaseReclaimPolicy"] == "retain"
     assert db["spec"]["cluster"]["name"] == "postgresql-cluster"
+
+
+def test_v37_role_hook_runs_in_wave_zero_and_skips_without_inputs():
+    """beacon §V.37 (§B.7): in the shared postgresql app a Degraded neighbour in an earlier
+    wave halts every later wave. agent-audit-risk exits 1 by design whenever it finds a
+    high-risk session, so a wave-1 hook simply never ran. Wave 0, and never fail or hang on
+    beacon's own missing inputs."""
+    (job,) = load(INIT)
+    assert job["metadata"]["annotations"].get("argocd.argoproj.io/sync-wave", "0") == "0"
+    c = job["spec"]["template"]["spec"]["containers"][0]
+    assert 'exit 0' in c["args"][0]  # skip, don't fail, without Vault's passwords
+    for k in ("BEACON_OWNER_PASSWORD", "BEACON_APP_PASSWORD"):
+        assert env(c)[k]["valueFrom"]["secretKeyRef"]["optional"] is True  # don't hang either
+    assert job["spec"]["backoffLimit"] <= 5 and job["spec"]["ttlSecondsAfterFinished"] <= 600
 
 
 # --- tracing (beacon §V.8, §V.9, §V.32) -----------------------------------------------------

@@ -87,6 +87,14 @@ password. The signing key is never rotated this way (see "Webhook secrets unread
 - `password authentication failed`: Vault and Postgres disagree. A postgresql sync re-runs
   `init-beacon-roles`, which re-applies the Vault passwords.
 
+### Symptom: the postgresql app is Degraded and its sync "failed"
+Usually not beacon: the `agent-audit-risk` CronJob exits 1 on purpose when its daily run finds
+a high-risk agent session, which marks the app Degraded until a clean run, and Argo stops the
+sync before wave 1. `init-beacon-roles` runs in wave 0 for that reason (beacon §B.7), so
+beacon's roles are still created. Check:
+`kubectl -n postgresql get databases.postgresql.cnpg.io beacon -o jsonpath='{.status}'`
+(`applied: true` once the roles exist).
+
 ### Symptom: `init-beacon-roles` logs "skipping"
 `beacon-db-credentials` has no passwords: run `scripts/provision-beacon-vault.sh`, then let
 a postgresql sync run.
