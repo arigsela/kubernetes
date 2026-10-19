@@ -70,7 +70,6 @@ KNOWN_KAGENT = {
     ("api.kagent.dev/v1alpha3", "Harness"),
     ("api.kagent.dev/v1alpha3", "ModelConfig"),
     ("api.kagent.dev/v1alpha3", "RemoteMCPServer"),
-    ("kagent.dev/v1alpha1", "MCPServer"),
 }
 KAGENT_GROUPS = ("kagent.dev", "api.kagent.dev")
 RUNTIMES = ("kagent", "byo", "claude", "codex")

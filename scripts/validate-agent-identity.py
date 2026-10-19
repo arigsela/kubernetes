@@ -47,9 +47,6 @@ KNOWN_KAGENT = {
     ("api.kagent.dev/v1alpha3", "Harness"),
     ("api.kagent.dev/v1alpha3", "ModelConfig"),
     ("api.kagent.dev/v1alpha3", "RemoteMCPServer"),
-    # kmcp 0.4.0 (a kagent-crds subchart): deploys an MCP server; agents bind it through a
-    # RemoteMCPServer, never directly.
-    ("kagent.dev/v1alpha1", "MCPServer"),
 }
 KAGENT_GROUPS = ("kagent.dev", "api.kagent.dev")
 

@@ -195,8 +195,7 @@ The App token is minted from the Secret `implementer-github-app` (Vault `impleme
 ### Symptom: a `RemoteMCPServer` isn't accepted, or an agent says it lacks a tool
 - **Check:** `kubectl -n kagent get remotemcpservers` (`ACCEPTED`) and
   `kubectl -n kagent describe remotemcpserver <name>` (`status.discoveredTools`). For `agent-docs`,
-  also the backing pod: `kubectl -n kagent get pods -l app.kubernetes.io/name=agent-docs-mcp`. A
-  kmcp `MCPServer` only deploys the server; the `RemoteMCPServer` is what agents bind. A tool is
+  also the backing pod: `kubectl -n kagent get pods -l app.kubernetes.io/name=agent-docs-mcp`. A server Deployment registers no tools with agents; the `RemoteMCPServer` that points at its Service does. A tool is
   available to an agent only if its AgentTemplate binding lists it.
 - **Fix:** fix the target Service first. A missing tool: add it to the binding's `tools` by PR.
   A tool new to the taxonomy must be classified first (`agent-capability-taxonomy.yaml`), or CI
@@ -339,7 +338,7 @@ a routine Renovate merge. Sessions and long-term memory reset.
    Dependency Dashboard, labelled `clean-db-migration`): the five charts (`kagent-crds`, `kagent`,
    `substrate-crds`, `substrate-podcert`, `substrate`) to the versions the kagent release names;
    re-pin **every** digest in the values of `base-apps/kagent.yaml` (controller, `agentImage`, UI,
-   kmcp, tools, `substrateWorkerPool.workerImage`), `substrate-podcert.yaml` and `substrate.yaml`
+   tools, `substrateWorkerPool.workerImage`), `substrate-podcert.yaml` and `substrate.yaml`
    (plus the component digests in its header); the golang-adk `workload.image` in **all three**
    Harnesses (identical); and the CRD fixture under `tests/admission-policies/fixtures/crds/`.
    Re-render both charts with `helm template --kube-version` and read the release notes for
