@@ -23,6 +23,10 @@ sources:
   - base-apps/postgresql/init-substrate-db.yaml
   - base-apps/postgresql/init-kagent-v1-db.yaml
   - scripts/provision-kagent-1-0-vault.sh
+  - scripts/provision-docs-checker-pull.sh
+  - ansible/playbooks/ate-image-credentials.yml
+  - terraform/roots/asela-cluster/docs-checker-pull-iam.tf
+  - docs/superpowers/specs/2026-10-18-substrate-ecr-pulls.md
   - docs/plans/kagent-1-0-on-k8s-1-37-implementation-plan.md
   - id: kagent-install
     resource: https://github.com/kagent-dev/kagent/blob/v1.0.0-alpha11/go/core/cli/internal/commands/substrate_init.go
@@ -103,12 +107,25 @@ State:
   Substrate's own `internal/localca` and `internal/localjwtauthority` code.
 - `configmap-ate-api-authentication.yaml`: ate-api-server accepts ServiceAccount tokens for the
   audience `api.ate-system.svc` from the cluster's issuer, `https://kubernetes.default.svc.cluster.local`.
+- **Private sandbox images (ECR)**, SPEC §T.129 and §V.100:
+  - `atelet.imageCredential*` in `substrate.yaml` make atelet run `ecr-credential-provider`
+    from `/opt/ate-image-credential-provider` on each worker.
+  - Beside the binary is `aws-credentials` (root 0600), the key of IAM user
+    `system/docs-checker-pull` (`terraform/roots/asela-cluster/docs-checker-pull-iam.tf`), which can
+    pull only the `docs-checker` repository.
+  - The key's source of truth is Vault `k8s-secrets/docs-checker-pull`. No Vault role reads it.
+  - `scripts/provision-docs-checker-pull.sh` creates and rotates the key and places it with
+    `ansible/playbooks/ate-image-credentials.yml`.
+  - Design and spike: `docs/superpowers/specs/2026-10-18-substrate-ecr-pulls.md`.
 
 ## Security profile
 Nothing runs privileged, but Substrate is not a hardened workload:
 - atelet (DaemonSet) runs as root with `DAC_OVERRIDE`, mounts
   `/var/lib/ate`, `/var/lib/kubelet/{plugins,device-plugins}` and `/dev`, and binds hostPorts
-  8085 (gRPC) and 9090 (metrics).
+  8085 (gRPC) and 9090 (metrics). It also mounts `/opt/ate-image-credential-provider` read-only,
+  which holds the docs-checker pull key. That directory is outside `/var/lib/ate` on purpose: worker
+  pods mount `/var/lib/ate`, and sandbox mounts all come from it (§V.100). Only a gVisor escape
+  followed by a node escape reaches the key, and the key can pull one repository.
 - Worker pods (in `kagent`) run as UID 0 with 13 capabilities and seccomp and AppArmor Unconfined:
   gVisor's own sandbox is the isolation boundary.
 - k8s-credential-provider has cluster-wide `get` on Secrets, limited by its namespace policy.
@@ -150,6 +167,19 @@ Nothing runs privileged, but Substrate is not a hardened workload:
   tied to a node with a ~6 s deadline (substrate#1761), and a snapshot only restores on a node with
   the same CPU flags (substrate#1657): `patch.yml` refuses to run if the k3s VMs' flags differ. Single-replica components (ate-controller, atenet-router,
   podcertificate-controller, rustfs) make agents briefly unavailable while their node drains.
+- **Private images need the pull credentials on the node** (§T.129). The cluster's `ecr-registry`
+  pull Secret never reaches a sandbox: atelet pulls actor images itself, and Harness, SandboxTemplate
+  and WorkerPool have no pull-secret field. Only `852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker*`
+  goes through the credential provider. Every other image is pulled anonymously, so it must be public.
+  The rules:
+  - The bin dir is a hostPath of type `Directory`, so atelet **does not start** on a worker without it.
+    Run the provisioning script on a new or rebuilt worker before atelet lands there.
+  - atelet parses the provider config strictly at startup and **dies** on any error, on every node.
+  - The provider inherits atelet's env, which carries rustfs's `AWS_*` keys and endpoint. That is why
+    the config blanks them.
+  - A config change needs `kubectl -n ate-system rollout restart ds/atelet`: the chart mounts the
+    config by subPath and adds no checksum.
+  - atelet caches each registry token for about 6 h.
 - **Connections.** The read/write string carries `pool_max_conns=5`: two ate-api-server replicas
   share a Postgres (`max_connections` 100) with n8n and kagent.
 - **No feature gates.** ClusterTrustBundle, ClusterTrustBundleProjection and PodCertificateRequest

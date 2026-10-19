@@ -17,6 +17,9 @@ sources:
   - base-apps/substrate/rustfs-pvc-placement.yaml
   - base-apps/postgresql/init-substrate-db.yaml
   - scripts/provision-kagent-1-0-vault.sh
+  - scripts/provision-docs-checker-pull.sh
+  - ansible/playbooks/ate-image-credentials.yml
+  - terraform/roots/asela-cluster/docs-checker-pull-iam.tf
   - ansible/playbooks/tasks/patch-node.yml
   - ansible/playbooks/tasks/cpu-flags-preflight.yml
 ---
@@ -82,6 +85,36 @@ sources:
   `kubectl -n kagent rollout restart deploy/kagent-default` (the same as a node drain; sessions
   resume from snapshots). Then `kubectl -n kagent get agents` all Ready and one `scripts/ask-hk`.
 
+### Symptom: atelet stuck in `ContainerCreating` on one worker
+- **Check:** `kubectl describe pod -n ate-system -l app=atelet --field-selector spec.nodeName=<node>`.
+  `hostPath type check failed: /opt/ate-image-credential-provider is not a directory` means the worker
+  never got the pull-credentials directory. That happens on a new or rebuilt worker, or when the
+  §T.129 values merged before provisioning.
+- **Fix:** `scripts/provision-docs-checker-pull.sh --limit <node>` (needs Vault and the AWS CLI; see
+  How-to: The docs-checker pull key). The kubelet retries the mount by itself.
+
+### Symptom: atelet CrashLoopBackOff, log `Failed to configure image pull credentials`
+- **Check:** `kubectl logs -n ate-system -l app=atelet --previous | grep -i credential`. atelet parses
+  `atelet.imageCredentialProviderConfigYAML` strictly at startup, and any error kills it on **every**
+  node. An unknown field, `valueFrom` in `env`, an unquoted duration, or a wrong `apiVersion`/`kind`
+  all do this.
+- **Fix:** revert the values change in `base-apps/substrate.yaml`, or correct it so that
+  `python -m pytest tests/substrate/ -q` passes, then merge. Once Argo has synced, run
+  `kubectl -n ate-system rollout restart ds/atelet`. An edit to the config alone does not roll the
+  DaemonSet, and a subPath mount does not pick up a changed ConfigMap.
+
+### Symptom: an actor using the docs-checker image never starts (pull `401`/`403`/`denied`)
+- **Check:** `kubectl logs -n ate-system -l app=atelet --since=30m --prefix | grep -E 'Resolved image credentials|Image credential provider failed'`.
+  - `Image credential provider failed`: its stderr follows. `failed to get shared config profile` = the
+    credentials file is missing or wrong. `UnrecognizedClientException`/`InvalidClientTokenId` = the key
+    was deleted or deactivated. `AccessDenied` = the IAM policy. `no such file` = the binary is missing.
+  - No line at all: the image did not match `matchImages`. Only `…/docs-checker*` is covered, and every
+    other image is pulled anonymously.
+  - `cached=true` and still denied: a token from a retired key, cached for up to 6 h.
+- **Fix:** `scripts/provision-docs-checker-pull.sh` re-places what Vault holds and checks it from each
+  worker. A deleted key needs `--rotate` (then `--retire-old`). A stale cached token needs
+  `kubectl -n ate-system rollout restart ds/atelet`.
+
 ### Symptom: Grafana alert "Substrate CA expires in under 30 days"
 - **Check:** `kubectl logs -n ate-system -l app.kubernetes.io/name=substrate-ca-expiry --tail=10`
   lists each CA's `not_after`. No data at all = the check stopped:
@@ -137,6 +170,27 @@ e.g. `openssl rand -hex 32 | tr -d '\n' > /tmp/p && vault kv patch -mount=k8s-se
 (kagent: `kagent-db` `v1-password`). Force the ExternalSecrets in `postgresql` and the consumer
 namespace, sync the `postgresql` app (its init Jobs set the new password), then restart
 ate-api-server (Substrate) or kagent-controller (kagent reads its connection string once, at startup).
+
+### The docs-checker pull key (private sandbox images, §T.129)
+The key of IAM user `system/docs-checker-pull` lives in Vault `k8s-secrets/docs-checker-pull` and in
+`/opt/ate-image-credential-provider/aws-credentials` (root 0600) on both workers, next to the pinned
+`ecr-credential-provider`. `scripts/provision-docs-checker-pull.sh` is the only writer. It needs
+`VAULT_ADDR` and a Vault login, the AWS CLI as an IAM admin, and `ansible-playbook` with SSH to the
+workers (`ansible/README.md`). Every run that places the key also checks it from each worker.
+- **First install:** open the PR, then let Atlantis apply the IAM user. Next, run
+  `scripts/provision-docs-checker-pull.sh --check`, then the script with no options. Merge only
+  after that (atelet needs the directory). The acceptance checks are in
+  `docs/superpowers/specs/2026-10-18-substrate-ecr-pulls.md`.
+- **New or rebuilt worker:** `scripts/provision-docs-checker-pull.sh --limit <node>`, before atelet
+  is scheduled there.
+- **Rotate:**
+  1. `--rotate`. This adds a second key, stores it, places it and checks it on every worker. The
+     old key stays active.
+  2. `--retire-old`. This deletes every key except Vault's.
+  3. `kubectl -n ate-system rollout restart ds/atelet`. This drops tokens cached from the old key.
+  4. `aws iam get-access-key-last-used --access-key-id <new id>` should show `ecr` after the next pull.
+- **Bump the provider binary:** in `ansible/playbooks/ate-image-credentials.yml`, set
+  `ate_cp_version`, and `ate_cp_sha256` from `<ate_cp_url>.sha256`. Then run the script with no options.
 
 ### Check the component image digests
 The four Substrate component images run by tag. Compare what the tag resolves to today with the

@@ -35,6 +35,7 @@ Run every command from this directory (ansible.cfg lives here). `k3s-authn.yml` 
 | Preview / apply the baseline | `ansible-playbook playbooks/site.yml --check --diff` then without `--check` |
 | Patch the VMs (apt full-upgrade, drained serial reboot, workers first) | `ansible-playbook playbooks/patch.yml` (`--limit k3s-worker-02` for one) |
 | Patch and reboot the hypervisor (all VMs shut down in order, never forced) | `ansible-playbook playbooks/patch-hypervisor.yml -e confirm=yes`. It takes no backup: take one first per `recovery/CLUSTER-RECOVERY.md` ("Taking backups before risky work") |
+| Install or refresh atelet's ECR credential provider and pull key on the workers (SPEC §T.129) | from the repo root, `scripts/provision-docs-checker-pull.sh --check`, then without `--check` (`--limit <node>` for a new or rebuilt worker). It runs `playbooks/ate-image-credentials.yml` with the key from Vault. That playbook refuses to run without the key, so do not run it directly. It is not part of `site.yml` for the same reason. |
 | Change the API server's authn config | edit `roles/k3s_node/files/authn/`, then `ansible-playbook playbooks/k3s-authn.yml --check`, then without `--check`. The first run after the 2026-09-29 move re-installs both files (only their comments changed) and restarts k3s once (about 20 s of API blip); `--check` shows `DRY: would restart k3s` first. |
 
 No router change is needed for the workers: `roles/k3s_node` pins each worker's current address on the host itself and
@@ -56,5 +57,7 @@ Docker. The same command runs in CI (`ansible-validate` in `.github/workflows/va
 
 ## Not here (yet)
 
-In-cluster scheduling of patch runs, Vault-backed secrets, hypervisor netplan, VM creation.
+In-cluster scheduling of patch runs, Vault lookups from Ansible (the one secret it places, the
+docs-checker pull key, comes from `scripts/provision-docs-checker-pull.sh` in the environment),
+hypervisor netplan, VM creation.
 Backups, restores and recovery after a hypervisor power loss are in `recovery/CLUSTER-RECOVERY.md`.
