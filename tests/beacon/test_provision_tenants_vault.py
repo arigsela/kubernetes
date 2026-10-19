@@ -110,8 +110,20 @@ def test_v52_tenant_policy_reaches_only_the_namespaces_own_folder(vault):
     assert p.returncode == 0, p.stderr
     assert db["policies"]["beacon-tenant-rw"] == (
         f'path "k8s-secrets/data/tenants/{NS}/*" {{ capabilities = ["create", "read", "update", "patch"] }}\n'
-        f'path "k8s-secrets/metadata/tenants/{NS}/*" {{ capabilities = ["list", "read", "delete"] }}\n'
+        f'path "k8s-secrets/metadata/tenants/{NS}/*" '
+        f'{{ capabilities = ["create", "read", "update", "patch", "list", "delete"] }}\n'
     )
+
+
+def test_b26_a_tenant_may_write_its_keys_metadata(vault):
+    """ESO's Vault PushSecret PUTs custom metadata on every key it pushes (managed-by:
+    external-secrets); without create/update on metadata/<key> every push is a 403 (beacon §B.26).
+    Still only the tenant's own folder."""
+    _, db = vault()
+    meta = [line for line in db["policies"]["beacon-tenant-rw"].splitlines() if "/metadata/" in line][0]
+    assert f"k8s-secrets/metadata/tenants/{NS}/*" in meta
+    for cap in ("create", "update", "read", "delete"):
+        assert f'"{cap}"' in meta, cap
 
 
 def test_v52_api_role_lists_only_tenants_and_reads_only_api_keys(vault):
