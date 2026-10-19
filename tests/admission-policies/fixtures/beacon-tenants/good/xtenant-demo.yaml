@@ -1,0 +1,9 @@
+# A tenant as the owner's onboarding PR adds it (base-apps/beacon-tenants/runbook.md).
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XTenant
+metadata:
+  name: demo
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  tenantId: 3f1c2a9e-7b4d-4e2a-9c1f-0a2b3c4d5e6f

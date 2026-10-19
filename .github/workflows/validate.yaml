@@ -478,6 +478,31 @@ jobs:
           BEACON_REQUIRE_DOCKER: "1"
         run: python -m pytest tests/beacon/ -q
 
+  # beacon §V.50: every XTenant (the fixtures and each tenant committed in base-apps/beacon-tenants/)
+  # rendered through the pinned crossplane CLI and function-python, compared with its golden. One
+  # Composition renders every tenant, and Crossplane deletes whatever leaves its desired state.
+  # The XApplication cases (tests/composition/render.sh) are not in CI: their goldens are stale.
+  composition-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        # The cluster's Crossplane version (base-apps/crossplane-system/Chart.yaml), checksum-pinned.
+        run: |
+          pip install pyyaml==6.0.2 pytest==8.3.3
+          curl -sfSL -o /tmp/crossplane https://releases.crossplane.io/stable/v2.2.1/bin/linux_amd64/crank
+          echo "58686ed7e5485e4661d73620c4ea8de610fb2a13951fe3773e30bacd69a3ffd4  /tmp/crossplane" | sha256sum -c -
+          sudo install -m 0755 /tmp/crossplane /usr/local/bin/crossplane
+      - name: Render every XTenant
+        # COMPOSITION_REQUIRE: a missing CLI or Docker fails here instead of skipping.
+        env:
+          COMPOSITION_REQUIRE: "1"
+        run: python -m pytest tests/composition/ -q
+
   # Substrate: atelet's ECR credential provider (§T.129, §V.100). atelet dies at startup on a config it
   # cannot parse, on every node, so the config is checked against atelet's own rules here. Also the
   # provisioning script, end to end against stub vault/aws/ansible-playbook. tests/substrate/.

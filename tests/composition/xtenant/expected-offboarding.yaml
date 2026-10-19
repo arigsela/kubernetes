@@ -1,0 +1,520 @@
+# rendered from tests/composition/xtenant/xr-offboarding.yaml; UPDATE_GOLDENS=1 rewrites it
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: AccessKey
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: access-key
+  labels:
+    app.kubernetes.io/component: access-key
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co
+spec:
+  forProvider:
+    userRef:
+      name: beacon-tenant-acme-co
+  providerConfigRef:
+    name: default
+  writeConnectionSecretToRef:
+    name: beacon-s3
+    namespace: tenant-acme-co
+---
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: bucket
+  labels:
+    app.kubernetes.io/component: storage
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co-0b5e9d72
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    region: us-east-2
+    tags:
+      Environment: homelab
+      ManagedBy: Crossplane
+      Name: beacon tenant acme-co
+      Project: beacon
+      Purpose: beacon tenant dumps
+      Tenant: acme-co
+  providerConfigRef:
+    name: default
+---
+apiVersion: s3.aws.upbound.io/v1beta2
+kind: BucketLifecycleConfiguration
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: bucket-lifecycle
+  labels:
+    app.kubernetes.io/component: storage
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co-0b5e9d72
+spec:
+  forProvider:
+    bucketRef:
+      name: beacon-tenant-acme-co-0b5e9d72
+    region: us-east-2
+    rule:
+    - expiration:
+      - days: 14
+      filter:
+      - prefix: nightly/
+      id: expire-nightly-dumps
+      status: Enabled
+  providerConfigRef:
+    name: default
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: database
+  labels:
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-db
+  namespace: tenant-acme-co
+spec:
+  bootstrap:
+    initdb:
+      database: beacon
+      owner: beacon_owner
+      secret:
+        name: beacon-db-secrets
+  enableSuperuserAccess: true
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+  inheritedMetadata:
+    labels:
+      app.kubernetes.io/part-of: beacon
+      beacon.arigsela.com/tenant: acme-co
+      istio.io/dataplane-mode: none
+  instances: 1
+  postgresql:
+    parameters:
+      max_connections: '40'
+      shared_buffers: 64MB
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 256Mi
+  storage:
+    size: 1Gi
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: generated-secrets
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-db-secrets
+  namespace: tenant-acme-co
+spec:
+  dataFrom:
+  - sourceRef:
+      generatorRef:
+        apiVersion: generators.external-secrets.io/v1alpha1
+        kind: Password
+        name: beacon-db-passwords
+  - sourceRef:
+      generatorRef:
+        apiVersion: generators.external-secrets.io/v1alpha1
+        kind: Password
+        name: beacon-signing-key
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    name: beacon-db-secrets
+    template:
+      data:
+        app-password: '{{ index . "app-password" }}'
+        password: '{{ index . "owner-password" }}'
+        signing-key: '{{ index . "signing-key" }}'
+        username: beacon_owner
+      engineVersion: v2
+      type: kubernetes.io/basic-auth
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: limits
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: tenant-defaults
+  namespace: tenant-acme-co
+spec:
+  limits:
+  - default:
+      cpu: 200m
+      memory: 256Mi
+    defaultRequest:
+      cpu: 20m
+      memory: 64Mi
+    type: Container
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: namespace
+  labels:
+    app.kubernetes.io/component: namespace
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+    istio.io/dataplane-mode: ambient
+    platform.arigsela.com/defaults: enabled
+    platform.arigsela.com/otel: python
+    platform.arigsela.com/tenant: enterprise
+  name: tenant-acme-co
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: netpol-db-from-operator
+  labels:
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: db-from-cnpg-operator
+  namespace: tenant-acme-co
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: cnpg-system
+    ports:
+    - port: 8000
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: beacon-db
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: netpol-default-deny
+  labels:
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: default-deny-ingress
+  namespace: tenant-acme-co
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: gen-db-passwords
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-db-passwords
+  namespace: tenant-acme-co
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 32
+  noUpper: false
+  secretKeys:
+  - owner-password
+  - app-password
+  symbols: 0
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: gen-signing-key
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-signing-key
+  namespace: tenant-acme-co
+spec:
+  allowRepeat: true
+  digits: 8
+  encoding: base64
+  length: 32
+  noUpper: false
+  secretKeys:
+  - signing-key
+  symbols: 0
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: iam-policy
+  labels:
+    app.kubernetes.io/component: iam-policy
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co-s3
+spec:
+  forProvider:
+    description: 'beacon tenant acme-co: its own bucket only'
+    policy: '{"Version": "2012-10-17", "Statement": [{"Sid": "TenantBucket", "Effect":
+      "Allow", "Action": ["s3:ListBucket", "s3:GetObject", "s3:PutObject"], "Resource":
+      ["arn:aws:s3:::beacon-tenant-acme-co-0b5e9d72", "arn:aws:s3:::beacon-tenant-acme-co-0b5e9d72/*"]}]}'
+    tags:
+      Environment: homelab
+      ManagedBy: Crossplane
+      Name: beacon tenant acme-co
+      Project: beacon
+      Purpose: beacon tenant dumps
+      Tenant: acme-co
+  providerConfigRef:
+    name: default
+---
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: vault-push
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-vault-push
+  namespace: tenant-acme-co
+spec:
+  data:
+  - match:
+      remoteRef:
+        property: owner-password
+        remoteKey: tenants/tenant-acme-co/db
+      secretKey: password
+  - match:
+      remoteRef:
+        property: app-password
+        remoteKey: tenants/tenant-acme-co/db
+      secretKey: app-password
+  - match:
+      remoteRef:
+        property: signing-key
+        remoteKey: tenants/tenant-acme-co/signing
+      secretKey: signing-key
+  - match:
+      remoteRef:
+        property: dsn
+        remoteKey: tenants/tenant-acme-co/api
+      secretKey: dsn
+  - match:
+      remoteRef:
+        property: signing_key
+        remoteKey: tenants/tenant-acme-co/api
+      secretKey: signing-key
+  deletionPolicy: Delete
+  refreshInterval: 1h
+  secretStoreRefs:
+  - kind: SecretStore
+    name: vault-backend
+  selector:
+    secret:
+      name: beacon-db-secrets
+  template:
+    data:
+      dsn: postgresql://beacon_app:{{ index . "app-password" }}@beacon-db-rw.tenant-acme-co.svc.cluster.local:5432/beacon
+    engineVersion: v2
+    mergePolicy: Merge
+  updatePolicy: Replace
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: quota
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: tenant-quota
+  namespace: tenant-acme-co
+spec:
+  hard:
+    limits.cpu: '2'
+    limits.memory: 2Gi
+    persistentvolumeclaims: '2'
+    pods: '20'
+    requests.cpu: 500m
+    requests.memory: 1Gi
+    requests.storage: 4Gi
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: secretstore
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: vault-backend
+  namespace: tenant-acme-co
+spec:
+  provider:
+    vault:
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: beacon-tenant
+          serviceAccountRef:
+            name: eso-tenant
+      path: k8s-secrets
+      server: http://vault.vault.svc.cluster.local:8200
+      version: v2
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: eso-serviceaccount
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: eso-tenant
+  namespace: tenant-acme-co
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: usage-eso-serviceaccount
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: eso-serviceaccount-outlives-push
+  namespace: tenant-acme-co
+spec:
+  by:
+    apiVersion: external-secrets.io/v1alpha1
+    kind: PushSecret
+    resourceRef:
+      name: beacon-vault-push
+  of:
+    apiVersion: v1
+    kind: ServiceAccount
+    resourceRef:
+      name: eso-tenant
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: usage-secretstore
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: secretstore-outlives-push
+  namespace: tenant-acme-co
+spec:
+  by:
+    apiVersion: external-secrets.io/v1alpha1
+    kind: PushSecret
+    resourceRef:
+      name: beacon-vault-push
+  of:
+    apiVersion: external-secrets.io/v1
+    kind: SecretStore
+    resourceRef:
+      name: vault-backend
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: User
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: iam-user
+  labels:
+    app.kubernetes.io/component: iam-user
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co
+spec:
+  forProvider:
+    path: /serviceaccounts/
+    tags:
+      Environment: homelab
+      ManagedBy: Crossplane
+      Name: beacon tenant acme-co
+      Project: beacon
+      Purpose: beacon tenant dumps
+      Tenant: acme-co
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: UserPolicyAttachment
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: iam-attachment
+  labels:
+    app.kubernetes.io/component: iam-policy-attachment
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co-s3
+spec:
+  forProvider:
+    policyArnRef:
+      name: beacon-tenant-acme-co-s3
+    userRef:
+      name: beacon-tenant-acme-co
+  providerConfigRef:
+    name: default
+---
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XTenant
+metadata:
+  name: acme-co
+status:
+  conditions:
+  - message: 'Unready resources: access-key, bucket, bucket-lifecycle, and 17 more'
+    reason: Creating
+    status: 'False'
+    type: Ready

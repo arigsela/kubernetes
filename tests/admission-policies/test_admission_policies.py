@@ -111,6 +111,71 @@ def test_api_server_service_is_exempt(cluster):
     assert "ValidatingAdmissionPolicy" not in r.stderr, r.stderr
 
 
+# --- xtenant-guard: beacon's enterprise tenants (beacon §T.25) -------------------------------
+
+TENANT_ID = "3f1c2a9e-7b4d-4e2a-9c1f-0a2b3c4d5e6f"
+
+
+def _xtenant(name, offboard=None):
+    spec = {"tenantId": TENANT_ID}
+    if offboard is not None:
+        spec["offboard"] = offboard
+    return yaml.safe_dump({"apiVersion": "platform.arigsela.com/v1alpha1", "kind": "XTenant",
+                           "metadata": {"name": name}, "spec": spec})
+
+
+@pytest.mark.parametrize("name", ["1acme", "ab", "acme.co", "a" * 32])
+def test_v30_xtenant_name_must_be_a_slug(cluster, name):
+    """The name becomes namespace tenant-<slug>, the bucket name and the Vault folder: only a
+    slug (^[a-z][a-z0-9-]{2,30}$) gets in, through Argo CD or anyone else."""
+    verdict, fired, out = cluster.verdict(_xtenant(name))
+    assert verdict == "deny" and "xtenant-guard" in fired, out
+
+
+def test_v12_xtenant_delete_needs_offboard_and_backup(cluster):
+    """Deleting an XTenant deletes its namespace and database: refused until it is offboarded
+    (spec.offboard) AND carries a verified s3:// backup (status.backup, set by the composition
+    only after the dump Job checked the dump). Argo CD's prune is refused like anyone's."""
+    name = "guard-probe"
+    cluster.apply(_xtenant(name, offboard=False))
+
+    def delete(who=(ARGO, ())):
+        return cluster.verdict_of("delete", "xtenant", name, "--dry-run=server",
+                                  as_user=who[0], as_groups=who[1])
+
+    def set_status(backup):
+        r = cluster.kubectl("patch", "xtenant", name, "--subresource=status", "--type=merge",
+                            "-p", json.dumps({"status": {"backup": backup}}))
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def offboard(value):
+        r = cluster.kubectl("patch", "xtenant", name, "--type=merge",
+                            "-p", json.dumps({"spec": {"offboard": value}}))
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    try:
+        for who in [(ARGO, ()), ("system:admin", ("system:masters",))]:
+            verdict, fired, out = delete(who)
+            assert verdict == "deny" and "xtenant-guard" in fired, out
+        set_status("s3://beacon-tenant-guard-probe-3f1c2a9e/offboard/beacon.dump")
+        verdict, fired, out = delete()          # a backup alone: not offboarded
+        assert verdict == "deny" and "xtenant-guard" in fired, out
+        offboard(True)
+        set_status("")
+        verdict, fired, out = delete()          # offboarded, no backup yet
+        assert verdict == "deny" and "xtenant-guard" in fired, out
+        set_status("file:///tmp/beacon.dump")
+        verdict, fired, out = delete()          # not a bucket
+        assert verdict == "deny" and "xtenant-guard" in fired, out
+        set_status("s3://beacon-tenant-guard-probe-3f1c2a9e/offboard/beacon.dump")
+        verdict, fired, out = delete()
+        assert verdict == "allow", out
+    finally:
+        offboard(True)
+        set_status("s3://beacon-tenant-guard-probe-3f1c2a9e/offboard/beacon.dump")
+        cluster.kubectl("delete", "xtenant", name, "--wait=false")
+
+
 # --- agent-definitions-from-git: who may write an agent definition (SPEC §V.101) -------------
 
 WRITERS = "agent-definitions-from-git"
@@ -303,7 +368,8 @@ def test_every_policy_has_bad_fixtures():
 KINDS = {"pods": "Pod", "deployments": "Deployment", "statefulsets": "StatefulSet",
          "daemonsets": "DaemonSet", "jobs": "Job", "cronjobs": "CronJob", "services": "Service",
          "agents": "Agent", "agenttemplates": "AgentTemplate", "harnesses": "Harness",
-         "remotemcpservers": "RemoteMCPServer", "externalsecrets": "ExternalSecret"}
+         "remotemcpservers": "RemoteMCPServer", "externalsecrets": "ExternalSecret",
+         "xtenants": "XTenant"}
 
 
 def test_every_matched_kind_has_a_bad_fixture():

@@ -38,7 +38,7 @@ Each suite has its own conftest; `pytest tests/` as a whole is not what CI runs.
 | `admission-policies` | Docker (boots a real k3s and server-side dry-runs the fixtures) |
 | `ansible` | Docker; `ansible-core==2.21.4 ansible-lint==26.9.0 kubernetes==36.0.3`, then `ansible-galaxy collection install -r ansible/requirements.yml` |
 | `k3s-upgrade` | Docker and `sqlite3` (backup and restore drills against a real k3s) |
-| `composition` | Not in CI. `tests/composition/render.sh xr-minimal` (also `xr-with-db`, `xr-with-s3`); needs the crossplane CLI, Docker and `yq` v4 |
+| `composition` | the crossplane CLI and Docker. CI runs `test_xtenant_render.py` (every XTenant, beacon §V.50); the XApplication cases (`tests/composition/render.sh xr-minimal`, `xr-with-db`, `xr-with-s3`, also `yq` v4) are not in CI |
 
 **Validators** (all take `--repo-root .`):
 `scripts/validate-agent-docs.py`, `validate-catalog-refs.py`, `validate-waf-scope.py`,

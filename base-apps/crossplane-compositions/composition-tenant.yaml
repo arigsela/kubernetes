@@ -1,0 +1,340 @@
+# base-apps/crossplane-compositions/composition-tenant.yaml
+# tenant — the single Composition for XTenant (beacon §I.crd). One function-python step maps an
+# XTenant named <slug> to everything that tenant gets. This half (beacon §T.25) is the
+# infrastructure; beacon §T.46 adds the tenant's own beacon stack on top.
+#
+# Rules the script keeps, each pinned by a test (arigsela/kubernetes tests/composition/,
+# tests/beacon/test_tenants.py):
+#   * every namespaced object lands in tenant-<slug> (beacon §V.50);
+#   * the bucket is deletionPolicy: Orphan and its name carries the tenant id (beacon §V.12, §V.49);
+#   * quota + LimitRange, default-deny ingress (beacon §V.51, §V.31);
+#   * secrets come from ESO Password generators, created once, pushed to the tenant's own Vault
+#     folder k8s-secrets/tenants/tenant-<slug>/ with role beacon-tenant (beacon §V.52). The
+#     PushSecret deletes them when it is deleted (offboarding, beacon §V.49), so two Usages keep
+#     its SecretStore and ServiceAccount alive until it is gone;
+#   * no in-tree barmanObjectStore (removed in CNPG 1.31, beacon §R.46): backups are pg_dump Jobs.
+#
+# Changing this file re-renders EVERY tenant at once (compositionUpdatePolicy Automatic,
+# beacon §R.24), and Crossplane deletes whatever leaves the desired state: CI renders every
+# committed XTenant and fails if a Namespace, CNPG Cluster or Bucket disappears (beacon §V.50).
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: tenant
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  compositeTypeRef:
+    apiVersion: platform.arigsela.com/v1alpha1
+    kind: XTenant
+  mode: Pipeline
+  pipeline:
+    - step: render-tenant
+      functionRef:
+        name: function-python
+      input:
+        apiVersion: python.fn.crossplane.io/v1beta1
+        kind: Script
+        script: |
+          from crossplane.function import resource
+          from crossplane.function.proto.v1 import run_function_pb2 as fnv1
+
+          REGION = "us-east-2"
+          VAULT = "http://vault.vault.svc.cluster.local:8200"
+          # The pooled postgresql-cluster's image: already pulled and running on the nodes, so
+          # a tenant adds no new image to smoke-run (beacon §V.18).
+          PG_IMAGE = "ghcr.io/cloudnative-pg/postgresql:16.4"
+          DB = "beacon-db"
+          SECRETS = "beacon-db-secrets"
+          QUOTA = {
+              "requests.cpu": "500m",
+              "requests.memory": "1Gi",
+              "limits.cpu": "2",
+              "limits.memory": "2Gi",
+              "pods": "20",
+              "persistentvolumeclaims": "2",
+              "requests.storage": "4Gi",
+          }
+
+
+          class Tenant:
+              def __init__(self, xr):
+                  self.slug = xr["metadata"]["name"]
+                  self.id = xr["spec"]["tenantId"]
+                  self.offboard = bool(xr["spec"].get("offboard", False))
+                  self.ns = f"tenant-{self.slug}"
+                  self.bucket = f"beacon-tenant-{self.slug}-{self.id.replace('-', '')[:8]}"
+                  self.iam = f"beacon-tenant-{self.slug}"
+                  self.vault = f"tenants/{self.ns}"
+
+              def labels(self, component):
+                  return {
+                      "app.kubernetes.io/part-of": "beacon",
+                      "app.kubernetes.io/component": component,
+                      "app.kubernetes.io/managed-by": "crossplane",
+                      "beacon.arigsela.com/tenant": self.slug,
+                  }
+
+              def meta(self, name, component, namespaced=True):
+                  m = {"name": name, "labels": self.labels(component)}
+                  if namespaced:
+                      m["namespace"] = self.ns
+                  return m
+
+
+          def tags(t, purpose):
+              return {"Name": f"beacon tenant {t.slug}", "Purpose": purpose, "ManagedBy": "Crossplane",
+                      "Environment": "homelab", "Project": "beacon", "Tenant": t.slug}
+
+
+          def namespace(t):
+              labels = t.labels("namespace")
+              labels.update({
+                  # East-west traffic of the tenant's stack carries mesh identities (ztunnel, no
+                  # waypoint); the database pods opt out below.
+                  "istio.io/dataplane-mode": "ambient",
+                  # base-apps/admission-policies/workload-defaults.yaml adds the platform labels
+                  # and annotations; otel: python lets the OTel Operator instrument the tenant's
+                  # notifier exactly like beacon's (beacon §V.9).
+                  "platform.arigsela.com/defaults": "enabled",
+                  "platform.arigsela.com/otel": "python",
+                  "platform.arigsela.com/tenant": "enterprise",
+              })
+              return {"apiVersion": "v1", "kind": "Namespace",
+                      "metadata": {"name": t.ns, "labels": labels}}
+
+
+          def quota(t):
+              return {"apiVersion": "v1", "kind": "ResourceQuota", "metadata": t.meta("tenant-quota", "quota"),
+                      "spec": {"hard": dict(QUOTA)}}
+
+
+          def limits(t):
+              # A quota on requests/limits rejects any pod that declares none; these defaults
+              # admit the ones CNPG and ESO create (beacon §V.51).
+              return {"apiVersion": "v1", "kind": "LimitRange", "metadata": t.meta("tenant-defaults", "quota"),
+                      "spec": {"limits": [{"type": "Container",
+                                           "default": {"cpu": "200m", "memory": "256Mi"},
+                                           "defaultRequest": {"cpu": "20m", "memory": "64Mi"}}]}}
+
+
+          def default_deny(t):
+              return {"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+                      "metadata": t.meta("default-deny-ingress", "network-policy"),
+                      "spec": {"podSelector": {}, "policyTypes": ["Ingress"]}}
+
+
+          def db_from_operator(t):
+              # The CNPG operator reads each instance's status from its instance manager (8000).
+              return {"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+                      "metadata": t.meta("db-from-cnpg-operator", "network-policy"),
+                      "spec": {"podSelector": {"matchLabels": {"cnpg.io/cluster": DB}},
+                               "policyTypes": ["Ingress"],
+                               "ingress": [{"from": [{"namespaceSelector": {"matchLabels": {
+                                   "kubernetes.io/metadata.name": "cnpg-system"}}}],
+                                   "ports": [{"port": 8000, "protocol": "TCP"}]}]}}
+
+
+          def eso_sa(t):
+              return {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": t.meta("eso-tenant", "secrets")}
+
+
+          def secret_store(t):
+              return {"apiVersion": "external-secrets.io/v1", "kind": "SecretStore",
+                      "metadata": t.meta("vault-backend", "secrets"),
+                      "spec": {"provider": {"vault": {
+                          "server": VAULT, "path": "k8s-secrets", "version": "v2",
+                          "auth": {"kubernetes": {"mountPath": "kubernetes", "role": "beacon-tenant",
+                                                  "serviceAccountRef": {"name": "eso-tenant"}}}}}}}
+
+
+          def password_gen(t, name, keys, **extra):
+              spec = {"length": 32, "digits": 8, "symbols": 0, "allowRepeat": True, "noUpper": False,
+                      "secretKeys": keys}
+              spec.update(extra)
+              return {"apiVersion": "generators.external-secrets.io/v1alpha1", "kind": "Password",
+                      "metadata": t.meta(name, "secrets"), "spec": spec}
+
+
+          def generated_secrets(t):
+              """One Secret holding every generated value, created once and never regenerated
+              (refreshPolicy CreatedOnce, beacon §V.52). Typed basic-auth so CNPG's initdb uses
+              it directly for the owner role."""
+              def gen(name):
+                  return {"sourceRef": {"generatorRef": {
+                      "apiVersion": "generators.external-secrets.io/v1alpha1", "kind": "Password", "name": name}}}
+              return {"apiVersion": "external-secrets.io/v1", "kind": "ExternalSecret",
+                      "metadata": t.meta(SECRETS, "secrets"),
+                      "spec": {"refreshPolicy": "CreatedOnce",
+                               "dataFrom": [gen("beacon-db-passwords"), gen("beacon-signing-key")],
+                               "target": {"name": SECRETS, "creationPolicy": "Owner", "template": {
+                                   "engineVersion": "v2", "type": "kubernetes.io/basic-auth",
+                                   "data": {"username": "beacon_owner",
+                                            "password": '{{ index . "owner-password" }}',
+                                            "app-password": '{{ index . "app-password" }}',
+                                            "signing-key": '{{ index . "signing-key" }}'}}}}}
+
+
+          def push(t):
+              dsn = (f'postgresql://beacon_app:{{{{ index . "app-password" }}}}@{DB}-rw.{t.ns}.svc.cluster.local'
+                     ':5432/beacon')
+              def match(key, remote, prop):
+                  return {"match": {"secretKey": key, "remoteRef": {"remoteKey": f"{t.vault}/{remote}",
+                                                                     "property": prop}}}
+              return {"apiVersion": "external-secrets.io/v1alpha1", "kind": "PushSecret",
+                      "metadata": t.meta("beacon-vault-push", "secrets"),
+                      "spec": {"refreshInterval": "1h", "updatePolicy": "Replace",
+                               # Offboarding removes the tenant's Vault keys (beacon §V.49).
+                               "deletionPolicy": "Delete",
+                               "secretStoreRefs": [{"name": "vault-backend", "kind": "SecretStore"}],
+                               "selector": {"secret": {"name": SECRETS}},
+                               "template": {"engineVersion": "v2", "mergePolicy": "Merge", "data": {"dsn": dsn}},
+                               "data": [match("password", "db", "owner-password"),
+                                        match("app-password", "db", "app-password"),
+                                        match("signing-key", "signing", "signing-key"),
+                                        # tenants/<ns>/api is the only key beacon-api may read (beacon §V.52).
+                                        match("dsn", "api", "dsn"),
+                                        match("signing-key", "api", "signing_key")]}}
+
+
+          def usage(t, name, of_api, of_kind, of_name):
+              # Crossplane's usage webhook refuses to delete `of` while `by` exists, so the
+              # PushSecret's finalizer can still reach Vault through them when the tenant goes.
+              return {"apiVersion": "protection.crossplane.io/v1beta1", "kind": "Usage",
+                      "metadata": t.meta(name, "secrets"),
+                      "spec": {"of": {"apiVersion": of_api, "kind": of_kind, "resourceRef": {"name": of_name}},
+                               "by": {"apiVersion": "external-secrets.io/v1alpha1", "kind": "PushSecret",
+                                      "resourceRef": {"name": "beacon-vault-push"}}}}
+
+
+          def cluster(t):
+              return {"apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster", "metadata": t.meta(DB, "database"),
+                      "spec": {
+                          "instances": 1,
+                          "imageName": PG_IMAGE,
+                          # beacon-api bootstrap-roles (beacon §T.46) runs as the superuser, as on the
+                          # pooled cluster (beacon §R.36).
+                          "enableSuperuserAccess": True,
+                          "inheritedMetadata": {"labels": {
+                              # Out of the mesh like the pooled cluster: plain TCP from the operator
+                              # and the tenant's clients, guarded by NetworkPolicy.
+                              "istio.io/dataplane-mode": "none",
+                              "app.kubernetes.io/part-of": "beacon",
+                              "beacon.arigsela.com/tenant": t.slug}},
+                          "bootstrap": {"initdb": {"database": "beacon", "owner": "beacon_owner",
+                                                   "secret": {"name": SECRETS}}},
+                          "storage": {"size": "1Gi"},
+                          "resources": {"requests": {"cpu": "50m", "memory": "256Mi"},
+                                        "limits": {"cpu": "500m", "memory": "512Mi"}},
+                          "postgresql": {"parameters": {"max_connections": "40", "shared_buffers": "64MB"}},
+                      }}
+
+
+          def bucket(t):
+              return {"apiVersion": "s3.aws.upbound.io/v1beta1", "kind": "Bucket",
+                      "metadata": {"name": t.bucket, "labels": t.labels("storage")},
+                      "spec": {
+                          # Deleting the XR must never delete the tenant's dumps (beacon §V.12).
+                          "deletionPolicy": "Orphan",
+                          "forProvider": {"region": REGION, "tags": tags(t, "beacon tenant dumps")},
+                          "providerConfigRef": {"name": "default"}}}
+
+
+          def lifecycle(t):
+              return {"apiVersion": "s3.aws.upbound.io/v1beta2", "kind": "BucketLifecycleConfiguration",
+                      "metadata": {"name": t.bucket, "labels": t.labels("storage")},
+                      "spec": {"forProvider": {
+                          "region": REGION, "bucketRef": {"name": t.bucket},
+                          # Nightly dumps rotate; the offboarding dump (offboard/) is kept.
+                          "rule": [{"id": "expire-nightly-dumps", "status": "Enabled",
+                                    "filter": [{"prefix": "nightly/"}], "expiration": [{"days": 14}]}]},
+                               "providerConfigRef": {"name": "default"}}}
+
+
+          def iam_user(t):
+              return {"apiVersion": "iam.aws.upbound.io/v1beta1", "kind": "User",
+                      "metadata": {"name": t.iam, "labels": t.labels("iam-user")},
+                      "spec": {"forProvider": {"path": "/serviceaccounts/", "tags": tags(t, "beacon tenant dumps")},
+                               "providerConfigRef": {"name": "default"}}}
+
+
+          def iam_policy(t):
+              doc = ('{"Version": "2012-10-17", "Statement": [{"Sid": "TenantBucket", "Effect": "Allow", '
+                     '"Action": ["s3:ListBucket", "s3:GetObject", "s3:PutObject"], '
+                     f'"Resource": ["arn:aws:s3:::{t.bucket}", "arn:aws:s3:::{t.bucket}/*"]}}]}}')
+              return {"apiVersion": "iam.aws.upbound.io/v1beta1", "kind": "Policy",
+                      "metadata": {"name": f"{t.iam}-s3", "labels": t.labels("iam-policy")},
+                      "spec": {"forProvider": {"description": f"beacon tenant {t.slug}: its own bucket only",
+                                               "policy": doc, "tags": tags(t, "beacon tenant dumps")},
+                               "providerConfigRef": {"name": "default"}}}
+
+
+          def iam_attachment(t):
+              return {"apiVersion": "iam.aws.upbound.io/v1beta1", "kind": "UserPolicyAttachment",
+                      "metadata": {"name": f"{t.iam}-s3", "labels": t.labels("iam-policy-attachment")},
+                      "spec": {"forProvider": {"policyArnRef": {"name": f"{t.iam}-s3"}, "userRef": {"name": t.iam}},
+                               "providerConfigRef": {"name": "default"}}}
+
+
+          def access_key(t):
+              return {"apiVersion": "iam.aws.upbound.io/v1beta1", "kind": "AccessKey",
+                      "metadata": {"name": t.iam, "labels": t.labels("access-key")},
+                      "spec": {"forProvider": {"userRef": {"name": t.iam}},
+                               # keys `username` (access key id) and `attribute.secret`
+                               "writeConnectionSecretToRef": {"name": "beacon-s3", "namespace": t.ns},
+                               "providerConfigRef": {"name": "default"}}}
+
+
+          def desired(t):
+              yield "namespace", namespace(t)
+              yield "quota", quota(t)
+              yield "limits", limits(t)
+              yield "netpol-default-deny", default_deny(t)
+              yield "netpol-db-from-operator", db_from_operator(t)
+              yield "eso-serviceaccount", eso_sa(t)
+              yield "secretstore", secret_store(t)
+              yield "gen-db-passwords", password_gen(t, "beacon-db-passwords", ["owner-password", "app-password"])
+              # base64 of 32 generated characters = the 32-byte AES-GCM key beacon reads (beacon §V.4).
+              yield "gen-signing-key", password_gen(t, "beacon-signing-key", ["signing-key"], encoding="base64")
+              yield "generated-secrets", generated_secrets(t)
+              yield "vault-push", push(t)
+              yield "usage-secretstore", usage(t, "secretstore-outlives-push", "external-secrets.io/v1",
+                                               "SecretStore", "vault-backend")
+              yield "usage-eso-serviceaccount", usage(t, "eso-serviceaccount-outlives-push", "v1",
+                                                      "ServiceAccount", "eso-tenant")
+              yield "database", cluster(t)
+              yield "bucket", bucket(t)
+              yield "bucket-lifecycle", lifecycle(t)
+              yield "iam-user", iam_user(t)
+              yield "iam-policy", iam_policy(t)
+              yield "iam-attachment", iam_attachment(t)
+              yield "access-key", access_key(t)
+
+
+          def condition(obj, kind="Ready"):
+              for c in (obj or {}).get("status", {}).get("conditions", []):
+                  if c.get("type") == kind:
+                      return c.get("status") == "True"
+              return False
+
+
+          def is_ready(kind, obs):
+              """Readiness from the observed object (Crossplane marks the XR Ready when all are)."""
+              if not obs:
+                  return False
+              if kind == "Namespace":
+                  return obs.get("status", {}).get("phase") == "Active"
+              if kind == "Cluster":
+                  return condition(obs)
+              if kind in ("SecretStore", "ExternalSecret", "PushSecret", "Usage") or "upbound.io" in obs.get("apiVersion", ""):
+                  return condition(obs)
+              return True  # ResourceQuota, LimitRange, NetworkPolicy, ServiceAccount, Password: existing is ready
+
+
+          def compose(req, rsp):
+              t = Tenant(resource.struct_to_dict(req.observed.composite.resource))
+              observed = {name: resource.struct_to_dict(r.resource) for name, r in req.observed.resources.items()}
+              for name, obj in desired(t):
+                  resource.update(rsp.desired.resources[name], obj)
+                  rsp.desired.resources[name].ready = (
+                      fnv1.READY_TRUE if is_ready(obj["kind"], observed.get(name)) else fnv1.READY_FALSE)

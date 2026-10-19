@@ -1,0 +1,8 @@
+# tests/composition/xtenant/xr-offboarding.yaml — a tenant being offboarded (beacon §T.27 render case)
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XTenant
+metadata:
+  name: acme-co
+spec:
+  tenantId: 0b5e9d72-1c3a-4f8e-b6d0-9e8f7a6b5c4d
+  offboard: true

@@ -1,5 +1,23 @@
 # Composition tests
 
+## XTenant (beacon §V.50) — in CI
+
+`test_xtenant_render.py` renders every XTenant with the pinned `crossplane` CLI and
+function-python: the fixtures in `xtenant/` and every tenant committed in
+`base-apps/beacon-tenants/`. Each render must match its golden (`xtenant/expected-<case>.yaml`),
+keep the tenant's Namespace, CNPG Cluster and Bucket under the names the XR implies, and put
+every namespaced object in `tenant-<slug>`. CI's `composition-validate` job runs it.
+
+```bash
+python -m pytest tests/composition/ -q                  # needs crossplane + Docker
+UPDATE_GOLDENS=1 python -m pytest tests/composition/    # after a composition change; review the diff
+```
+
+Without Docker, run function-python v0.4.0 from source (`python -m function.main --insecure`,
+listening on :9443) and set `COMPOSITION_RUNTIME=Development`.
+
+## XApplication — local only
+
 Local regression suite for the `Application` Composition (XRD: `XApplication`,
 `base-apps/crossplane-compositions/`). The Composition is deployed but dormant: nothing
 instantiates an `XApplication` today (see `templates/new-app/README.md` for the path in use).

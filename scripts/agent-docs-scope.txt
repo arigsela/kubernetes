@@ -26,4 +26,5 @@ substrate
 dispatcher
 slack-bridge
 beacon
+beacon-tenants
 tracing

@@ -1,0 +1,23 @@
+# base-apps/beacon-tenants/catalog-info.yaml (beacon §T.25)
+# The registry of beacon's enterprise tenants (one XTenant per file here). beacon's System and
+# Components are defined once, in arigsela/beacon (beacon §V.28). Not a Kubernetes manifest:
+# excluded in base-apps/beacon-tenants.yaml.
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: beacon-tenants
+  namespace: beacon
+  description: beacon's enterprise tenants, one XTenant per file, each composed into its own namespace, database, bucket and Vault folder
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app.kubernetes.io/part-of=beacon'
+    github.com/project-slug: arigsela/kubernetes
+  tags: [tenancy, crossplane, multi-tenant]
+spec:
+  type: tenant-registry
+  lifecycle: experimental
+  owner: group:default/platform
+  system: default/beacon
+  dependsOn:
+    - resource:vault/vault
