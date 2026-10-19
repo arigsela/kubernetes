@@ -664,3 +664,64 @@ data:
                         type: lt
                         params:
                           - 30
+
+      # beacon §V.9: beacon-notifier has no tracing code; it is traced only because the
+      # platform's defaulting policy annotates it and the OpenTelemetry Operator injects its
+      # Python layer (beacon §T.22, beacon §T.23). That webhook fails open, so a notifier pod
+      # created while the operator was down runs untraced and says nothing. Its 2 s DB poll
+      # keeps its span count steady while it is instrumented and running, so no spans for 30
+      # minutes means not traced (or not running). The count is the collector's, before
+      # sampling (tracing_spans_received_total, base-apps/tracing/collector.yaml).
+      - orgId: 1
+        name: beacon
+        folder: Beacon
+        interval: 5m
+        rules:
+          - uid: beacon-notifier-not-traced
+            title: Beacon notifier not traced
+            condition: threshold
+            for: 10m
+            annotations:
+              summary: >-
+                No beacon-notifier spans reached the collector in the last 30 minutes: the
+                notifier is not instrumented (the operator's webhook failed open) or not running.
+              runbook: >-
+                base-apps/beacon/runbook.md "Symptom: the notifier is not traced". Check that the
+                notifier pod has the opentelemetry-auto-instrumentation-python init container.
+            labels:
+              severity: warning
+              pillar: observability
+            # `or vector(0)` makes a missing series 0, so absence alerts too; no data then
+            # means Prometheus itself did not answer.
+            noDataState: Alerting
+            execErrState: KeepLast
+            data:
+              - refId: query
+                relativeTimeRange:
+                  from: 1800
+                  to: 0
+                datasourceUid: PBFA97CFB590B2093
+                model:
+                  refId: query
+                  datasource:
+                    type: prometheus
+                    uid: PBFA97CFB590B2093
+                  instant: true
+                  range: false
+                  expr: >-
+                    sum(increase(tracing_spans_received_total{service_name="beacon-notifier"}[30m]))
+                    or vector(0)
+              - refId: threshold
+                relativeTimeRange:
+                  from: 1800
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: query
+                  conditions:
+                    - evaluator:
+                        type: lt
+                        params:
+                          - 1

@@ -116,7 +116,7 @@ spec:
         # grafana-alerting.yaml must restart it. sha256 of that ConfigMap's `data`
         # (json.dumps, sort_keys); tests/dashboards/test_grafana_alerting.py fails if
         # it is stale. Before this, rule changes needed a manual rollout restart.
-        checksum/alerting: 5157f14722c7f3a87ac536ff0b6d8543d5db273a12760592099d547247dff223
+        checksum/alerting: 45833e96e85586083684a8dff810df231cb2a63c744609469c8480ac5cb76353
         # Same for datasource provisioning (grafana-datasources above), also read only at
         # startup; tests/dashboards/test_grafana_datasources.py fails if it is stale.
         checksum/datasources: 47961dc25f2f630df3ad89bddf752d53de701d9c0722c050550490df2f6b8da9

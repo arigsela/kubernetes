@@ -145,6 +145,13 @@ data:
           "match": {"alertname": "Substrate CA expires in under 30 days"},
           "route": "none",
           "why": "The runbook is deterministic (rotate the CAs); there is nothing to investigate."
+        },
+        {
+          "id": "beacon-notifier-not-traced",
+          "source": "grafana",
+          "match": {"alertname": "Beacon notifier not traced"},
+          "route": "none",
+          "why": "The runbook is a two-step check (init container present? operator ready?); a rollout of the notifier fixes it."
         }
       ]
     }
