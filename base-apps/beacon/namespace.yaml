@@ -15,7 +15,8 @@ metadata:
     # makes Istio drop the gateway's and the waypoint's spans (istio#60780, beacon §V.8).
     # Ingress goes straight to the Service; the waypoint carries east-west only.
     #
-    # Opt-ins for platform defaults that do not exist yet (beacon §T.22, beacon §T.23). Until
-    # those land the labels select nothing.
+    # Opt-ins for platform defaults: pod-template labels and annotations
+    # (base-apps/admission-policies/workload-defaults.yaml, beacon §T.23) and Python
+    # auto-instrumentation (base-apps/opentelemetry-operator.yaml, beacon §T.22).
     platform.arigsela.com/defaults: enabled
     platform.arigsela.com/otel: python

@@ -21,6 +21,7 @@ sources:
   - base-apps/admission-policies/require-labels.yaml
   - base-apps/admission-policies/disallow-default-namespace.yaml
   - base-apps/admission-policies/inject-ecr-pull-secret.yaml
+  - base-apps/admission-policies/workload-defaults.yaml
   - base-apps/admission-policies/kyverno-reports-rbac.yaml
   - scripts/gen-agent-capability-policy.py
   - scripts/validate-agent-capability.py
@@ -153,6 +154,18 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   `kyverno`. A mutation has no shadow mode, so it was first bound to a test namespace and
   verified live before being widened. It is the only mechanism: Kyverno's
   `inject-ecr-pull-secret` ClusterPolicy has been deleted.
+- `workload-defaults.yaml` (beacon §T.23): a **MutatingAdmissionPolicy** for namespaces that
+  opt in with `platform.arigsela.com/defaults: enabled` (today only `beacon`). On the pod
+  template of every Deployment, StatefulSet and CronJob, it adds what the author left out, and
+  never overrides what the author set: labels `app.kubernetes.io/part-of` (the namespace),
+  `backstage.io/kubernetes-id` (the object's name), `platform.arigsela.com/team` (the
+  namespace's own label, else `platform`); annotation `prometheus.io/scrape: "false"` (a
+  workload opts in with its own port and path); and, where the namespace also says
+  `platform.arigsela.com/otel: python`, `instrumentation.opentelemetry.io/inject-python: "true"`,
+  which is how beacon's notifier, with no tracing code, gets traced by the OpenTelemetry
+  Operator (beacon §V.9). Objects istiod generates (`gateway.istio.io/managed`, a waypoint's
+  Deployment) are never touched. CREATE and UPDATE, so a sync keeps the defaults; a change
+  reaches a running workload on its next rollout. Fail-open.
 - Tests: `tests/admission-policies/` boots a real k3s of the cluster's version in Docker,
   installs the kagent CRDs from `fixtures/crds/`, creates the cluster's real kagent objects
   (every AgentTemplate, Harness and Agent in `base-apps/kagent/`: the AgentTemplates are the
@@ -160,7 +173,11 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   `fixtures/<suite>/good/*.yaml` (must pass clean against EVERY policy) and
   `fixtures/<suite>/bad/<policy>/*.yaml` (must be flagged by that policy). Mutation fixtures,
   `fixtures/<suite>/mutate/<policy>/*.yaml`, are created as **real Pods**, and their admitted
-  `imagePullSecrets` must equal the `test.homelab/expect-pull-secrets` annotation. The harness
+  `imagePullSecrets` must equal the `test.homelab/expect-pull-secrets` annotation; or they are
+  workloads whose admitted pod-template labels and annotations must equal the JSON in
+  `test.homelab/expect-template`, on CREATE and again on an UPDATE (a dry-run replace of the
+  unchanged manifest over the real object). The harness's namespaces `defaults-on` and
+  `defaults-otel` carry the opt-in labels. The harness
   submits everything **as Argo CD's application controller** (impersonation), as production
   does, unless a fixture names another identity in `test.homelab/as-user` /
   `test.homelab/as-groups`; RBAC is opened to every authenticated identity so only admission

@@ -37,6 +37,11 @@ spec:
         backstage.io/kubernetes-id: beacon-api
       annotations:
         instrumentation.opentelemetry.io/inject-python: "false"
+        # Opt in to scraping (the platform default is "false", beacon §V.44): only the api
+        # serves /metrics. Labels stay bounded (beacon §V.29).
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
     spec:
       serviceAccountName: beacon-api
       automountServiceAccountToken: false
@@ -161,6 +166,10 @@ spec:
         app.kubernetes.io/name: beacon-web
         app.kubernetes.io/part-of: beacon
         backstage.io/kubernetes-id: beacon-web
+      annotations:
+        # nginx, not Python: opt out of the namespace's Python instrumentation, which the
+        # platform's defaulting policy would otherwise turn on here (beacon §V.44).
+        instrumentation.opentelemetry.io/inject-python: "false"
     spec:
       serviceAccountName: beacon-web
       automountServiceAccountToken: false

@@ -8,13 +8,16 @@ from pathlib import Path
 import pytest
 import yaml
 
-from conftest import (ARGO, FIXTURES, REPO, _wait, api_server_panics, expected_pull_secrets,
+from conftest import (ARGO, EXPECT, EXPECT_TEMPLATE, FIXTURES, REPO, _wait, api_server_panics,
+                      expectation_of, expected_pull_secrets, expected_template, input_template,
                       policy_docs, policy_files, real_kagent_files, unpinned_images)
 
 SUITES = sorted(p.name for p in FIXTURES.iterdir() if p.is_dir() and p.name != "crds")
 GOOD = sorted(FIXTURES.glob("*/good/*.yaml"))
 BAD = sorted(FIXTURES.glob("*/bad/*/*.yaml"))
 MUTATE = sorted(FIXTURES.glob("*/mutate/*/*.yaml"))
+MUTATE_PULL = [p for p in MUTATE if expectation_of(p.read_text()) == EXPECT]
+MUTATE_TEMPLATE = [p for p in MUTATE if expectation_of(p.read_text()) == EXPECT_TEMPLATE]
 
 
 def _id(p: Path) -> str:
@@ -67,7 +70,7 @@ def test_real_kagent_manifests_are_all_there():
     assert "docs-checker" in kinds.get("Harness", set()), kinds.get("Harness")
 
 
-@pytest.mark.parametrize("path", MUTATE, ids=_id)
+@pytest.mark.parametrize("path", MUTATE_PULL, ids=_id)
 def test_mutation_fixture_gets_expected_pull_secrets(cluster, path):
     """A real Pod: the imagePullSecrets it is admitted with must be exactly the expected set,
     with no duplicates. Order is not asserted: a keyed-list merge may append or re-sort."""
@@ -76,6 +79,26 @@ def test_mutation_fixture_gets_expected_pull_secrets(cluster, path):
     got = cluster.admitted_pull_secrets(text)
     assert len(got) == len(set(got)), f"{_id(path)}: duplicate pull secrets {got}"
     assert sorted(got) == expected, f"{_id(path)}: got {got}, expected {expected}"
+
+
+@pytest.mark.parametrize("path", MUTATE_TEMPLATE, ids=_id)
+def test_mutation_fixture_gets_expected_template(cluster, path):
+    """beacon §V.10, §V.44: the admitted pod template's labels and annotations are exactly the
+    expected ones (the fixture's own plus the defaults it lacked), so a default the author
+    already set, or one that must not apply, is checked as much as one that must."""
+    text = path.read_text()
+    got = cluster.admitted_template(text)
+    assert got == expected_template(text), f"{_id(path)}: got {got}"
+
+
+@pytest.mark.parametrize("path", [p for p in MUTATE_TEMPLATE
+                                  if expected_template(p.read_text()) != input_template(p.read_text())],
+                         ids=_id)
+def test_workload_defaults_survive_an_update(cluster, path):
+    """beacon §V.10 on UPDATE: Argo CD re-applies a workload's manifest, which never carries the
+    defaults; the policy must add them again, or the next sync would strip them."""
+    text = path.read_text()
+    assert cluster.admitted_template(text, update=True) == expected_template(text), _id(path)
 
 
 def test_api_server_service_is_exempt(cluster):
@@ -295,6 +318,19 @@ def test_every_matched_kind_has_a_bad_fixture():
                 matched.add(KINDS[res])
         covered = {yaml.safe_load(p.read_text())["kind"] for p in BAD if p.parent.name == name}
         assert matched <= covered, f"{name}: no bad fixture for kinds {matched - covered}"
+
+
+def test_every_kind_a_mutating_policy_matches_has_a_fixture():
+    """Same reason for MutatingAdmissionPolicies: a per-kind variable (CronJob's jobTemplate,
+    beacon §T.23) is only exercised by a mutate fixture of that kind."""
+    for name, map_ in _by_kind("MutatingAdmissionPolicy").items():
+        matched = set()
+        for rule in map_["spec"]["matchConstraints"]["resourceRules"]:
+            for res in rule["resources"]:
+                assert res in KINDS, f"{name}: add {res!r} to KINDS"
+                matched.add(KINDS[res])
+        covered = {yaml.safe_load(p.read_text())["kind"] for p in MUTATE if p.parent.name == name}
+        assert matched <= covered, f"{name}: no mutate fixture for kinds {matched - covered}"
 
 
 REPORTING_LABEL = "reports.kyverno.io/enabled"

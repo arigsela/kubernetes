@@ -38,6 +38,33 @@ spec:
         - port: 15008
           protocol: TCP
 ---
+# Prometheus scrapes beacon-api's /metrics (the only workload that opts in, beacon §V.44).
+# Prometheus is not in the mesh, so it arrives as plain TCP on 8080; 15008 as every allow here
+# (beacon §V.31).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-to-api
+  namespace: beacon
+spec:
+  podSelector:
+    matchLabels:
+      app: beacon-api
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 15008
+          protocol: TCP
+---
 # Any beacon pod reaches the waypoint (it fronts every beacon Service, waypoint.yaml).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

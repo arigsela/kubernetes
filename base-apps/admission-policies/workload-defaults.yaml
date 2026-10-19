@@ -1,0 +1,107 @@
+# Platform defaults for workload pod templates (beacon §T.23, beacon §V.10, beacon §V.44).
+#
+# In a namespace that opts in with `platform.arigsela.com/defaults: enabled`, every
+# Deployment, StatefulSet and CronJob gets these on its POD TEMPLATE, unless the author already
+# set the key (the author's value always wins):
+#   labels       app.kubernetes.io/part-of     = the namespace name
+#                backstage.io/kubernetes-id    = the object's name (the Backstage component)
+#                platform.arigsela.com/team    = the namespace's own team label, else "platform"
+#   annotations  prometheus.io/scrape          = "false" (opt in with port and path yourself:
+#                                                 a default port would scrape things that
+#                                                 serve no /metrics)
+#                instrumentation.opentelemetry.io/inject-python = "true", only when the
+#                                                 namespace also says platform.arigsela.com/otel:
+#                                                 python. This is how beacon-notifier, which has
+#                                                 no tracing code, is traced (beacon §V.9);
+#                                                 workloads that are not plain Python set "false".
+#
+# Never touched: objects istiod generates (label gateway.istio.io/managed, e.g. a waypoint
+# Deployment). Mutating those would put the Python layer into Envoy (beacon §V.44).
+#
+# Pod templates, not Pods: the defaults then show in the Deployment Argo CD compares, and a
+# default lands on the next rollout of each workload. On CREATE and UPDATE, so a sync that
+# rewrites a template keeps them.
+#
+# JSONPatch, add-only: maps that do not exist yet are added empty first (the R4 landmine in
+# inject-ecr-pull-secret.yaml), and a key is added only if absent. failurePolicy Ignore: a CEL
+# error leaves one object without defaults instead of blocking every workload.
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: workload-defaults
+spec:
+  failurePolicy: Ignore
+  reinvocationPolicy: Never
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        platform.arigsela.com/defaults: enabled
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        resources: ["deployments", "statefulsets"]
+        operations: ["CREATE", "UPDATE"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        resources: ["cronjobs"]
+        operations: ["CREATE", "UPDATE"]
+  matchConditions:
+    - name: not-generated-by-istiod
+      expression: >-
+        !(has(object.metadata.labels) && 'gateway.istio.io/managed' in object.metadata.labels)
+  variables:
+    - name: template
+      expression: >-
+        object.kind == 'CronJob' ? object.spec.jobTemplate.spec.template : object.spec.template
+    - name: path
+      expression: >-
+        object.kind == 'CronJob' ? '/spec/jobTemplate/spec/template/metadata' : '/spec/template/metadata'
+    - name: hasMetadata
+      expression: has(variables.template.metadata)
+    - name: labels
+      expression: >-
+        variables.hasMetadata && has(variables.template.metadata.labels)
+        ? variables.template.metadata.labels : {}
+    - name: annotations
+      expression: >-
+        variables.hasMetadata && has(variables.template.metadata.annotations)
+        ? variables.template.metadata.annotations : {}
+    - name: namespaceLabels
+      expression: >-
+        has(namespaceObject.metadata.labels) ? namespaceObject.metadata.labels : {}
+    - name: wantLabels
+      expression: >-
+        {
+          'app.kubernetes.io/part-of': namespaceObject.metadata.name,
+          'backstage.io/kubernetes-id': object.metadata.name,
+          'platform.arigsela.com/team': 'platform.arigsela.com/team' in variables.namespaceLabels
+            ? variables.namespaceLabels['platform.arigsela.com/team'] : 'platform'
+        }
+    - name: wantAnnotations
+      expression: >-
+        'platform.arigsela.com/otel' in variables.namespaceLabels
+          && variables.namespaceLabels['platform.arigsela.com/otel'] == 'python'
+        ? {'prometheus.io/scrape': 'false', 'instrumentation.opentelemetry.io/inject-python': 'true'}
+        : {'prometheus.io/scrape': 'false'}
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          (variables.hasMetadata ? [] : [JSONPatch{op: "add", path: variables.path, value: {}}])
+          + (has(variables.template.metadata) && has(variables.template.metadata.labels) ? []
+             : [JSONPatch{op: "add", path: variables.path + "/labels", value: {}}])
+          + (has(variables.template.metadata) && has(variables.template.metadata.annotations) ? []
+             : [JSONPatch{op: "add", path: variables.path + "/annotations", value: {}}])
+          + variables.wantLabels.filter(k, !(k in variables.labels)).map(k,
+              JSONPatch{op: "add", path: variables.path + "/labels/" + jsonpatch.escapeKey(k),
+                        value: variables.wantLabels[k]})
+          + variables.wantAnnotations.filter(k, !(k in variables.annotations)).map(k,
+              JSONPatch{op: "add", path: variables.path + "/annotations/" + jsonpatch.escapeKey(k),
+                        value: variables.wantAnnotations[k]})
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: workload-defaults
+spec:
+  policyName: workload-defaults

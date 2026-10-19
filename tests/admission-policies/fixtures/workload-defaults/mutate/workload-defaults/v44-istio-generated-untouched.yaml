@@ -1,0 +1,28 @@
+# beacon §V.44: objects istiod generates (label gateway.istio.io/managed) get nothing, not even in an opted-in namespace.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: waypoint-like
+  namespace: defaults-otel
+  labels:
+    app.kubernetes.io/name: waypoint-like
+    gateway.istio.io/managed: istio.io-mesh-controller
+  annotations:
+    test.homelab/expect-template: '{"annotations": {}, "labels": {"app": "waypoint-like"}}'
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: waypoint-like
+  template:
+    metadata:
+      labels:
+        app: waypoint-like
+    spec:
+      containers:
+      - name: app
+        image: registry.example/demo:1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi

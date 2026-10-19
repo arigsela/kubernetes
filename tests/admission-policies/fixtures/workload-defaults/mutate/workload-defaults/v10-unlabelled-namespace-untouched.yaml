@@ -1,0 +1,27 @@
+# beacon §V.10: a namespace without platform.arigsela.com/defaults gets nothing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: not-opted-in
+  namespace: admission-test
+  labels:
+    app.kubernetes.io/name: not-opted-in
+  annotations:
+    test.homelab/expect-template: '{"annotations": {}, "labels": {"app": "not-opted-in"}}'
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: not-opted-in
+  template:
+    metadata:
+      labels:
+        app: not-opted-in
+    spec:
+      containers:
+      - name: app
+        image: registry.example/demo:1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi

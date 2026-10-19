@@ -11,7 +11,10 @@ Fixture layout encodes the expectation:
                                                  (enforcing) BY THAT POLICY
     fixtures/<suite>/mutate/<policy-name>/*.yaml a Pod created FOR REAL; its admitted
                                                  imagePullSecrets must equal the annotation
-                                                 test.homelab/expect-pull-secrets
+                                                 test.homelab/expect-pull-secrets. Or a
+                                                 workload whose admitted pod-template labels and
+                                                 annotations must equal the JSON annotation
+                                                 test.homelab/expect-template (workload-defaults)
 The verdict is mode-agnostic, so the same fixtures keep passing when a binding moves from
 [Warn, Audit] to [Deny], with one rule: a bad fixture must violate ONLY its own policy. In
 warn mode every violated policy is reported; with [Deny] the API server reports just the first
@@ -44,8 +47,15 @@ NAME = "admission-harness-pytest"
 # (fixtures/workload-hygiene/good/exempt-*-namespace-deployment.yaml).
 NAMESPACES = ["kagent", "team-a", "postgresql", "admission-test",
               "ate-system", "podcertificate-controller-system"]
+# Namespaces that opt in to workload-defaults (beacon §T.23): one with its own team label, one
+# that also opts in to Python instrumentation, like beacon.
+LABELLED_NAMESPACES = {
+    "defaults-on": {"platform.arigsela.com/defaults": "enabled", "platform.arigsela.com/team": "payments"},
+    "defaults-otel": {"platform.arigsela.com/defaults": "enabled", "platform.arigsela.com/otel": "python"},
+}
 NOT_MANIFESTS = {"catalog-info.yaml", "mkdocs.yml"}
 EXPECT = "test.homelab/expect-pull-secrets"
+EXPECT_TEMPLATE = "test.homelab/expect-template"
 # The identity Argo CD syncs with (in-cluster destination, the pod's own projected token; no
 # cluster Secret), and the one agent-definitions-from-git exempts. Checked against the policy
 # by test_harness_argo_identity_is_the_policys.
@@ -179,6 +189,26 @@ class Cluster:
             return None
         return sorted(s["name"] for s in json.loads(r.stdout)["spec"].get("imagePullSecrets", []))
 
+    def admitted_template(self, text, update=False):
+        """The pod-template labels and annotations a workload is admitted with, as Argo CD
+        would submit it: a server-side dry-run create, or with update=True a dry-run REPLACE
+        of the unchanged manifest over a real object (the UPDATE path, carrying none of the
+        defaults the CREATE added). None if the API server refused it."""
+        if update:
+            r = self.kubectl("create", "-f", "-", input=text, as_user=ARGO)
+            assert r.returncode == 0, r.stdout + r.stderr
+            try:
+                r = self.kubectl("replace", "--dry-run=server", "-o", "json", "-f", "-",
+                                 input=text, as_user=ARGO)
+            finally:
+                self.kubectl("delete", "-f", "-", "--wait=false", input=text)
+        else:
+            r = self.kubectl("create", "--dry-run=server", "-o", "json", "-f", "-",
+                             input=text, as_user=ARGO)
+        if r.returncode != 0:
+            return None
+        return template_metadata(json.loads(r.stdout))
+
     def admitted_pull_secrets(self, text):
         """Create the Pod for real (a dry run is not proof of what gets persisted), read back
         its imagePullSecrets names in order, delete it."""
@@ -198,6 +228,31 @@ class Cluster:
 def expected_pull_secrets(text):
     raw = yaml.safe_load(text)["metadata"]["annotations"][EXPECT]
     return sorted(s for s in raw.split(",") if s)
+
+
+def expectation_of(text):
+    """Which kind of mutate fixture this is: EXPECT (pull secrets) or EXPECT_TEMPLATE."""
+    ann = yaml.safe_load(text)["metadata"].get("annotations") or {}
+    kinds = [k for k in (EXPECT, EXPECT_TEMPLATE) if k in ann]
+    assert len(kinds) == 1, f"a mutate fixture needs exactly one of {EXPECT}, {EXPECT_TEMPLATE}"
+    return kinds[0]
+
+
+def pod_template(obj):
+    return obj["spec"]["jobTemplate"]["spec"]["template"] if obj["kind"] == "CronJob" else obj["spec"]["template"]
+
+
+def template_metadata(obj):
+    meta = pod_template(obj).get("metadata") or {}
+    return {"labels": meta.get("labels") or {}, "annotations": meta.get("annotations") or {}}
+
+
+def expected_template(text):
+    return json.loads(yaml.safe_load(text)["metadata"]["annotations"][EXPECT_TEMPLATE])
+
+
+def input_template(text):
+    return template_metadata(yaml.safe_load(text))
 
 
 def input_pull_secrets(text):
@@ -263,10 +318,13 @@ def cluster():
         _wait(lambda: c.kubectl("get", "--raw", "/readyz").stdout.strip() == "ok", 180, "API server ready")
         for ns in NAMESPACES:
             c.apply(f"apiVersion: v1\nkind: Namespace\nmetadata:\n  name: {ns}\n")
+        for ns, labels in LABELLED_NAMESPACES.items():
+            c.apply(yaml.safe_dump({"apiVersion": "v1", "kind": "Namespace",
+                                    "metadata": {"name": ns, "labels": labels}}))
         c.apply(HARNESS_RBAC)
         # A Pod is admitted only once its namespace's default ServiceAccount exists; the
         # controller creates it a moment after the namespace.
-        for ns in NAMESPACES + ["default", "kube-system"]:
+        for ns in NAMESPACES + list(LABELLED_NAMESPACES) + ["default", "kube-system"]:
             _wait(lambda: c.kubectl("get", "serviceaccount", "default", "-n", ns).returncode == 0,
                   60, f"default ServiceAccount in {ns}")
         for crd in sorted((FIXTURES / "crds").glob("*.yaml")):
@@ -298,10 +356,14 @@ def cluster():
         # comes back with it (read from the object, not grepped: the expectation annotation
         # itself contains the names; and a no-change fixture proves nothing).
         for pdir in sorted(FIXTURES.glob("*/mutate/*")):
-            samples = [s for s in (p.read_text() for p in sorted(pdir.glob("*.yaml")))
-                       if expected_pull_secrets(s) != input_pull_secrets(s)]
-            _wait(lambda: any(c.dry_run_pull_secrets(s) == expected_pull_secrets(s)
-                              for s in samples), 90, f"policy {pdir.name} active", soft=True)
+            texts = [p.read_text() for p in sorted(pdir.glob("*.yaml"))]
+            pulls = [s for s in texts if expectation_of(s) == EXPECT
+                     and expected_pull_secrets(s) != input_pull_secrets(s)]
+            templates = [s for s in texts if expectation_of(s) == EXPECT_TEMPLATE
+                         and expected_template(s) != input_template(s)]
+            _wait(lambda: any(c.dry_run_pull_secrets(s) == expected_pull_secrets(s) for s in pulls)
+                  or any(c.admitted_template(s) == expected_template(s) for s in templates),
+                  90, f"policy {pdir.name} active", soft=True)
         yield c
     finally:
         _docker("rm", "-fv", NAME)
