@@ -74,7 +74,7 @@ def test_v50_rbac_covers_only_composed_kinds():
 
 def test_v12_xr_files_carry_prune_and_delete_false():
     """Removing a tenant's file, or deleting the Application, must leave the tenant. Only the
-    offboarding PR (spec.offboard: true) drops the annotation (beacon §V.12, §R.18)."""
+    offboarding PR (spec.offboard: true) drops the annotation (beacon §V.12, beacon §R.18)."""
     for f in _xtenant_files():
         for xr in (d for d in yaml.safe_load_all(f.read_text()) if d):
             opts = xr["metadata"].get("annotations", {}).get("argocd.argoproj.io/sync-options", "")
@@ -140,7 +140,7 @@ def test_v52_composition_authenticates_with_the_provisioned_tenant_role():
     assert "'bound_service_account_namespaces=tenant-*'" in script
 
 
-# --- the tenant's beacon stack (beacon §T.46, §V.53) -----------------------------------------
+# --- the tenant's beacon stack (beacon §T.46, beacon §V.53) -----------------------------------------
 # Read from the committed render of a running tenant (tests/composition/xtenant/running/), which
 # the composition-validate job proves equal to what the composition renders.
 
@@ -249,3 +249,56 @@ def test_v53_tenant_flags_are_beacons_flags_all_off():
     ours = json.loads(cm["data"]["beacon-flags.json"])["flags"]
     assert {k: v["variants"] for k, v in ours.items()} == {k: v["variants"] for k, v in beacon["flags"].items()}
     assert all(v["defaultVariant"] == "off" and "targeting" not in v for v in ours.values())
+
+
+# --- beacon-api's route to the tenants' databases (beacon §T.45) -----------------------------
+
+
+def test_v52_beacon_api_reads_tenants_only_through_its_own_store():
+    """The DSNs come through role beacon-tenants (list tenants/, read tenants/+/api), with its
+    own service account, never through beacon's main store."""
+    store = one("base-apps/beacon/secret-stores.yaml", "SecretStore", "vault-beacon-tenants")
+    k8s = store["spec"]["provider"]["vault"]["auth"]["kubernetes"]
+    assert k8s["role"] == "beacon-tenants" and k8s["serviceAccountRef"]["name"] == "eso-beacon-tenants"
+    one("base-apps/beacon/serviceaccounts.yaml", "ServiceAccount", "eso-beacon-tenants")
+    script = VAULT_SCRIPT.read_text()
+    assert re.search(r"auth/kubernetes/role/beacon-tenants \\\n\s+bound_service_account_names=eso-beacon-tenants"
+                     r" \\\n\s+bound_service_account_namespaces=beacon", script)
+    es = one("base-apps/beacon/external-secrets.yaml", "ExternalSecret", "beacon-tenant-dsns")
+    assert es["spec"]["secretStoreRef"]["name"] == "vault-beacon-tenants"
+    [src] = es["spec"]["dataFrom"]
+    assert src["find"]["path"] == "tenants"
+    name = re.compile(src["find"]["name"]["regexp"])
+    assert name.fullmatch("tenants/tenant-demo/api")
+    for other in ("tenants/tenant-demo/db", "tenants/tenant-demo/signing", "beacon/api", "tenants/x/api"):
+        assert not name.fullmatch(other), other
+    rw = src["rewrite"][0]["regexp"]
+    assert re.sub(rw["source"], rw["target"].replace("$1", r"\1"), "tenants/tenant-demo/api") == "demo"
+    # Both depend on the owner-run Vault script: last wave, never ahead of beacon's rollout (beacon §V.38).
+    for d in (store, es):
+        assert d["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"] == "3"
+
+
+def test_v55_beacon_api_mounts_the_tenant_dsns():
+    api = one("base-apps/beacon/deployments.yaml", "Deployment", "beacon-api")["spec"]["template"]["spec"]
+    c = api["containers"][0]
+    env = {e["name"]: e.get("value") for e in c["env"]}
+    mounts = {m["name"]: m for m in c["volumeMounts"]}
+    vols = {v["name"]: v for v in api["volumes"]}
+    assert env["TENANT_DSN_DIR"] == mounts["tenant-dsns"]["mountPath"] and mounts["tenant-dsns"]["readOnly"]
+    secret = vols["tenant-dsns"]["secret"]
+    # Optional: no tenant yet means no Secret, and the api must still start (beacon §V.55: 503s).
+    assert secret["secretName"] == "beacon-tenant-dsns" and secret["optional"] is True
+    assert secret["defaultMode"] == 0o440 and api["securityContext"]["fsGroup"] == api["securityContext"]["runAsGroup"]
+    # Only beacon-api reads across tenants.
+    for d in load("base-apps/beacon/deployments.yaml"):
+        if d["metadata"]["name"] != "beacon-api":
+            assert "tenant-dsns" not in yaml.safe_dump(d), d["metadata"]["name"]
+
+
+def test_v54_beacon_holds_no_github_credential():
+    """Enterprise signup never opens a PR itself (beacon §V.54): no beacon manifest names a
+    GitHub token or app key."""
+    for f in sorted((REPO / "base-apps/beacon").glob("*.yaml")):
+        text = f.read_text()
+        assert not re.search(r"(?i)github[_-]?(token|app|key|pat)|GH_TOKEN|api\.github\.com", text), f.name

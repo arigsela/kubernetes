@@ -170,6 +170,14 @@ comes back without it (a fresh provision generates a new key), every stored webh
 is unreadable and those deliveries fail. Restore Vault from its backup
 (`base-apps/vault/runbook.md`); otherwise tenants must recreate their webhook channels.
 
+### Symptom: an enterprise tenant's pages answer 503
+beacon-api has no database file for it. `kubectl -n beacon get externalsecret beacon-tenant-dsns`
+(Ready?) and `kubectl -n beacon exec deploy/beacon-api -- ls /etc/beacon/tenants` (names only).
+An `invalid role name` on store `vault-beacon-tenants` means `scripts/provision-beacon-tenants-vault.sh`
+was never run. A file appears about a minute after the tenant's PushSecret wrote its Vault key; the
+api picks it up without a restart. 409 instead means the tenant is still `pending`: its own database
+has no tenant row yet (its init Job, `base-apps/beacon-tenants/runbook.md`).
+
 ### Symptom: "too many connections" on the shared cluster
 beacon's roles are capped at 23 of 100 (`CONNECTION LIMIT`); beacon cannot be the cause of
 the cluster-wide limit. If beacon itself is refused, check pool sizes (`BEACON_DB_POOL_MAX`)

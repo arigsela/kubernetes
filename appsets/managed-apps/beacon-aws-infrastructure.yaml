@@ -3,7 +3,7 @@ sourcePath: base-apps/beacon-aws-infrastructure
 # Everything in the directory is a cluster-scoped Crossplane managed resource,
 # so nothing is created in this namespace and it does not have to exist yet.
 # Deliberately no CreateNamespace=true: the beacon namespace is created with its
-# ambient and defaults labels by base-apps/beacon/ (beacon SPEC §T.15), not bare here.
+# ambient and defaults labels by base-apps/beacon/ (beacon §T.15), not bare here.
 namespace: beacon
 syncOptions:
   - ServerSideApply=true

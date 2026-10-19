@@ -1,5 +1,5 @@
 # base-apps/crossplane-compositions/xrd-tenant.yaml
-# XTenant — one beacon enterprise tenant (beacon §I.crd, §V.11). One cluster-scoped XR per
+# XTenant — one beacon enterprise tenant (beacon §I.crd, beacon §V.11). One cluster-scoped XR per
 # tenant, committed in base-apps/beacon-tenants/<slug>.yaml, composes everything the tenant
 # gets: namespace tenant-<slug>, quota, network policies, its own CNPG database, an S3 bucket
 # with an IAM user, generated secrets pushed to Vault, and (beacon §T.46) its own beacon

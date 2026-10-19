@@ -1,6 +1,6 @@
 ---
 # GitHub Actions in arigsela/beacon pushes the six beacon images to ECR through
-# GitHub OIDC - no long-lived AWS keys in GitHub (beacon SPEC §T.3, §V.17).
+# GitHub OIDC - no long-lived AWS keys in GitHub (beacon §T.3, beacon §V.17).
 # Same pattern and OIDC provider as base-apps/agent-audit-aws-infrastructure/
 # web-ecr-push.yaml: trust is limited to v* TAG builds of that one repo, the
 # policy to its six repositories (terraform/roots/asela-cluster/ecr.tf).

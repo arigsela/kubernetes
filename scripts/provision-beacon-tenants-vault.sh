@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# beacon enterprise tenants — Vault provisioning (beacon §T.42, §V.52). Idempotent; safe to
+# beacon enterprise tenants — Vault provisioning (beacon §T.42, beacon §V.52). Idempotent; safe to
 # re-run. Run it ONCE, before the first XTenant lands in base-apps/beacon-tenants/ and before
 # the beacon §T.45 PR merges: a SecretStore whose Vault role does not exist fails its app's sync.
 #

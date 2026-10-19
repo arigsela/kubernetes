@@ -1101,6 +1101,36 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   annotations:
+    crossplane.io/composition-resource-name: netpol-db-from-beacon-api
+  labels:
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: db-from-beacon-api
+  namespace: tenant-acme-co
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: beacon
+      podSelector:
+        matchLabels:
+          app: beacon-api
+    ports:
+    - port: 5432
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: beacon-db
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
     crossplane.io/composition-resource-name: netpol-db-from-operator
   labels:
     app.kubernetes.io/component: network-policy
@@ -1652,7 +1682,7 @@ metadata:
 status:
   backup: s3://beacon-tenant-acme-co-0b5e9d72/offboard/beacon.dump
   conditions:
-  - message: 'Unready resources: access-key, bucket, bucket-lifecycle, and 32 more'
+  - message: 'Unready resources: access-key, bucket, bucket-lifecycle, and 33 more'
     reason: Creating
     status: 'False'
     type: Ready

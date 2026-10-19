@@ -254,6 +254,36 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   annotations:
+    crossplane.io/composition-resource-name: netpol-db-from-beacon-api
+  labels:
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: demo
+  name: db-from-beacon-api
+  namespace: tenant-demo
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: beacon
+      podSelector:
+        matchLabels:
+          app: beacon-api
+    ports:
+    - port: 5432
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: beacon-db
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
     crossplane.io/composition-resource-name: netpol-db-from-operator
   labels:
     app.kubernetes.io/component: network-policy
@@ -804,7 +834,7 @@ metadata:
   name: demo
 status:
   conditions:
-  - message: 'Unready resources: access-key, bucket, bucket-lifecycle, and 28 more'
+  - message: 'Unready resources: access-key, bucket, bucket-lifecycle, and 29 more'
     reason: Creating
     status: 'False'
     type: Ready
