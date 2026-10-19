@@ -399,3 +399,51 @@ def test_t22_operator_ignores_defaulted_crd_conversion():
     app = yaml.safe_load(OPERATOR.read_text())
     assert {"group": "apiextensions.k8s.io", "kind": "CustomResourceDefinition",
             "jqPathExpressions": [".spec.conversion"]} in app["spec"]["ignoreDifferences"]
+
+
+# --- beacon §T.23: what the workload-defaults MAP will and will not do here ----------------------
+
+MAP = "base-apps/admission-policies/workload-defaults.yaml"
+
+
+def test_v44_non_python_workloads_opt_out_of_injection():
+    """Only the notifier may be instrumented by the platform: every other beacon workload says
+    "false" itself (the SDK services, beacon §V.32; beacon-web, nginx, beacon §V.44)."""
+    for name, spec in pod_specs():
+        doc = next(d for f in ("deployments.yaml", "cronjobs.yaml") for d in load(f"base-apps/beacon/{f}")
+                   if d["metadata"]["name"] == name)
+        meta = doc["spec"]["jobTemplate"]["spec"]["template"]["metadata"] if doc["kind"] == "CronJob" \
+            else doc["spec"]["template"]["metadata"]
+        inject = meta.get("annotations", {}).get("instrumentation.opentelemetry.io/inject-python")
+        if name == "beacon-notifier":
+            assert inject is None, "the notifier's annotation must come from the platform (beacon §V.9)"
+        else:
+            assert inject == "false", name
+
+
+def test_v44_only_the_api_opts_in_to_scraping_and_prometheus_may_reach_it():
+    for name, spec in pod_specs():
+        doc = next(d for f in ("deployments.yaml", "cronjobs.yaml") for d in load(f"base-apps/beacon/{f}")
+                   if d["metadata"]["name"] == name)
+        meta = doc["spec"]["jobTemplate"]["spec"]["template"]["metadata"] if doc["kind"] == "CronJob" \
+            else doc["spec"]["template"]["metadata"]
+        ann = meta.get("annotations", {})
+        if name == "beacon-api":
+            assert (ann["prometheus.io/scrape"], ann["prometheus.io/port"], ann["prometheus.io/path"]) == ("true", "8080", "/metrics")
+        else:
+            assert "prometheus.io/scrape" not in ann, name  # the platform default "false" applies
+    pol = one("base-apps/beacon/network-policies.yaml", "NetworkPolicy", "prometheus-to-api")
+    assert pol["spec"]["podSelector"] == {"matchLabels": {"app": "beacon-api"}}
+    assert pol["spec"]["ingress"][0]["from"] == [{
+        "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "logging"}},
+        "podSelector": {"matchLabels": {"app": "prometheus"}}}]
+
+
+def test_v44_map_skips_istiod_objects_and_scopes_to_opted_in_namespaces():
+    policy = one(MAP, "MutatingAdmissionPolicy", "workload-defaults")
+    spec = policy["spec"]
+    assert spec["failurePolicy"] == "Ignore"
+    assert spec["matchConstraints"]["namespaceSelector"] == {"matchLabels": {"platform.arigsela.com/defaults": "enabled"}}
+    assert any("gateway.istio.io/managed" in c["expression"] for c in spec["matchConditions"])
+    waypoint = one("base-apps/beacon/waypoint.yaml", "Gateway", "beacon-waypoint")
+    assert waypoint["spec"]["gatewayClassName"] == "istio-waypoint"  # istiod generates its Deployment

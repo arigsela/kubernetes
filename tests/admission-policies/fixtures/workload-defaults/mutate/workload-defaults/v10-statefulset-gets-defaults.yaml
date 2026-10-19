@@ -1,0 +1,31 @@
+# beacon §V.10: a StatefulSet in an opted-in namespace gets every default; team from the namespace label.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: statefulset-demo
+  namespace: defaults-on
+  labels:
+    app.kubernetes.io/name: statefulset-demo
+  annotations:
+    test.homelab/expect-template: '{"annotations": {"prometheus.io/scrape": "false"},
+      "labels": {"app": "statefulset-demo", "app.kubernetes.io/part-of": "defaults-on",
+      "backstage.io/kubernetes-id": "statefulset-demo", "platform.arigsela.com/team":
+      "payments"}}'
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: statefulset-demo
+  template:
+    metadata:
+      labels:
+        app: statefulset-demo
+    spec:
+      containers:
+      - name: app
+        image: registry.example/demo:1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi
+  serviceName: statefulset-demo

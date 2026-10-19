@@ -1,0 +1,36 @@
+# beacon §V.10: keys the author set keep the author's value; only the missing one is added.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: author-wins
+  namespace: defaults-on
+  labels:
+    app.kubernetes.io/name: author-wins
+  annotations:
+    test.homelab/expect-template: '{"annotations": {"prometheus.io/path": "/metrics",
+      "prometheus.io/port": "8080", "prometheus.io/scrape": "true"}, "labels": {"app":
+      "author-wins", "app.kubernetes.io/part-of": "custom", "backstage.io/kubernetes-id":
+      "author-wins", "platform.arigsela.com/team": "core"}}'
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: author-wins
+  template:
+    metadata:
+      labels:
+        app: author-wins
+        app.kubernetes.io/part-of: custom
+        platform.arigsela.com/team: core
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '8080'
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+      - name: app
+        image: registry.example/demo:1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi

@@ -1,0 +1,30 @@
+# beacon §V.10: a Deployment in an opted-in namespace gets every default; team from the namespace label.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-demo
+  namespace: defaults-on
+  labels:
+    app.kubernetes.io/name: deployment-demo
+  annotations:
+    test.homelab/expect-template: '{"annotations": {"prometheus.io/scrape": "false"},
+      "labels": {"app": "deployment-demo", "app.kubernetes.io/part-of": "defaults-on",
+      "backstage.io/kubernetes-id": "deployment-demo", "platform.arigsela.com/team":
+      "payments"}}'
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: deployment-demo
+  template:
+    metadata:
+      labels:
+        app: deployment-demo
+    spec:
+      containers:
+      - name: app
+        image: registry.example/demo:1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi

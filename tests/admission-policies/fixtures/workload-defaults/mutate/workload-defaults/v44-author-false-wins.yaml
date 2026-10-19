@@ -1,0 +1,32 @@
+# beacon §V.44: beacon-web and the SDK services set inject-python "false"; it stays false.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-like
+  namespace: defaults-otel
+  labels:
+    app.kubernetes.io/name: web-like
+  annotations:
+    test.homelab/expect-template: '{"annotations": {"instrumentation.opentelemetry.io/inject-python":
+      "false", "prometheus.io/scrape": "false"}, "labels": {"app": "web-like", "app.kubernetes.io/part-of":
+      "defaults-otel", "backstage.io/kubernetes-id": "web-like", "platform.arigsela.com/team":
+      "platform"}}'
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: web-like
+  template:
+    metadata:
+      labels:
+        app: web-like
+      annotations:
+        instrumentation.opentelemetry.io/inject-python: 'false'
+    spec:
+      containers:
+      - name: app
+        image: registry.example/demo:1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        resources:
+          limits:
+            cpu: 100m
+            memory: 64Mi

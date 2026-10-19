@@ -1,0 +1,26 @@
+# beacon §V.10: a CronJob's jobTemplate pod template with no metadata at all gets it, then the defaults.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cronjob-demo
+  namespace: defaults-on
+  labels:
+    app.kubernetes.io/name: cronjob-demo
+  annotations:
+    test.homelab/expect-template: '{"annotations": {"prometheus.io/scrape": "false"},
+      "labels": {"app.kubernetes.io/part-of": "defaults-on", "backstage.io/kubernetes-id":
+      "cronjob-demo", "platform.arigsela.com/team": "payments"}}'
+spec:
+  schedule: '*/5 * * * *'
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: app
+            image: registry.example/demo:1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+            resources:
+              limits:
+                cpu: 100m
+                memory: 64Mi
+          restartPolicy: Never
