@@ -15,7 +15,7 @@ This is a GitOps repository for a homelab k3s cluster. Argo CD deploys everythin
 ### GitOps Workflow
 - **Argo CD** monitors this repository and automatically syncs changes to the cluster
 - **Master App Pattern**: A master Argo CD app-of-apps, defined in `base-apps/master-app.yaml` (it manages itself), watches the `base-apps/` directory and creates an Application for each top-level `.yaml` file
-- **managed-apps ApplicationSet**: 13 apps have no hand-written Application; `base-apps/managed-apps.yaml` generates them from configs in `appsets/managed-apps/` (see `docs/managed-apps-appset.md`)
+- **managed-apps ApplicationSet**: 14 apps have no hand-written Application; `base-apps/managed-apps.yaml` generates them from configs in `appsets/managed-apps/` (see `docs/managed-apps-appset.md`)
 - **Auto-sync**: Applications use `prune: true` and `selfHeal: true` (a few, like Atlantis, disable prune to protect a PVC)
 - **External Secrets Operator**: Manages secrets from Vault using Kubernetes authentication
 

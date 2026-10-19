@@ -1,0 +1,19 @@
+# base-apps/tracing/catalog-info.yaml (beacon §T.18)
+# Not a Kubernetes manifest: excluded in base-apps/tracing.yaml.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: tracing
+  namespace: tracing
+  description: Distributed tracing (Tempo on S3, the OpenTelemetry Collector), built for beacon's Phase 3
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app in (tempo,otel-collector)'
+    backstage.io/kubernetes-namespace: tracing
+  tags: [tempo, tracing, opentelemetry]
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/platform
+  system: default/platform-observability

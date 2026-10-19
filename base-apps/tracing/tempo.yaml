@@ -1,0 +1,180 @@
+# Tempo 3.x, single binary (beacon §T.18, beacon §R.5): no Kafka in this mode, blocks on S3,
+# metrics-generator off until its cost is measured. Raw manifests like Loki in
+# base-apps/logging/: the Grafana-maintained Helm charts are frozen at Tempo 2.9 and the 3.x
+# chart moved to grafana-community; this is the config that chart renders for 3.1.0, trimmed.
+#
+# Only the collector (base-apps/tracing/, beacon §T.19) sends here: OTLP gRPC on 4317. Grafana
+# queries on 3200.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tempo
+  namespace: tracing
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+  namespace: tracing
+  labels:
+    app: tempo
+data:
+  tempo.yaml: |
+    multitenancy_enabled: false
+    usage_report:
+      reporting_enabled: false
+    server:
+      http_listen_port: 3200
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+    # Seven days of traces; the bucket's lifecycle rule expires leftovers a day later.
+    backend_scheduler:
+      provider:
+        compaction:
+          compaction:
+            block_retention: 168h
+    backend_worker:
+      compaction:
+        block_retention: 168h
+    storage:
+      trace:
+        backend: s3
+        s3:
+          bucket: asela-tempo-traces-20261019
+          endpoint: s3.us-east-2.amazonaws.com
+          region: us-east-2
+          # Credentials: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from tempo-s3-creds.
+        wal:
+          path: /var/tempo/wal
+    overrides:
+      defaults: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  namespace: tracing
+  labels:
+    app: tempo
+spec:
+  replicas: 1
+  # One live-store; two pods would split recent traces between them during a rollout.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tempo
+  template:
+    metadata:
+      labels:
+        app: tempo
+      annotations:
+        # Tempo reads its config only at startup. sha256 of tempo-config's `data` (json.dumps,
+        # sort_keys); tests/beacon/test_tracing.py fails if it is stale.
+        checksum/config: 73e9173fac286f21ae36c020e8b81d18bbc0c93c7c6269bf3cd98e379ee43553
+    spec:
+      serviceAccountName: tempo
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: tempo
+          image: grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
+          args:
+            - -config.file=/conf/tempo.yaml
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: tempo-s3-creds
+                  key: username
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: tempo-s3-creds
+                  key: attribute.secret
+            # Go sizes its heap from the host, not the cgroup, unless told (the Alloy OOM loop
+            # in base-apps/logging/alloy-daemonset.yaml). ~85% of the memory limit.
+            - name: GOMEMLIMIT
+              value: 1300MiB
+          ports:
+            - name: http
+              containerPort: 3200
+            - name: otlp-grpc
+              containerPort: 4317
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1536Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+            - name: data
+              mountPath: /var/tempo
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: tempo-config
+        # Live-store WAL and scheduler scratch. emptyDir like Loki's: a restart loses only the
+        # traces not yet flushed to S3 (minutes), and the pod is not pinned to one node.
+        - name: data
+          emptyDir:
+            sizeLimit: 5Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  namespace: tracing
+  labels:
+    app: tempo
+spec:
+  type: ClusterIP
+  selector:
+    app: tempo
+  ports:
+    - name: http
+      port: 3200
+      targetPort: http
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc

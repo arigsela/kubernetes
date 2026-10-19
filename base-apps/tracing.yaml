@@ -1,0 +1,30 @@
+# base-apps/tracing.yaml (beacon §T.18)
+# tracing: Tempo (trace store, S3-backed) and, from beacon §T.19, the OpenTelemetry Collector
+# every trace source sends to. Its own namespace and app, not part of `logging`, so a failed
+# PreSync image smoke here holds back only tracing, never Loki, Grafana or Prometheus.
+# The bucket, IAM user and key are the managed app tracing-aws-infrastructure.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: tracing
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/tracing
+    directory:
+      # The agent-docs contract: catalog-info.yaml and the generated mkdocs.yml are not manifests.
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tracing
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

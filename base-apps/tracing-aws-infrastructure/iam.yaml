@@ -1,0 +1,110 @@
+# Tempo's own IAM user, scoped to its one bucket (beacon §T.18).
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: User
+metadata:
+  name: tempo-s3-user
+  labels:
+    app: tempo
+    component: iam-user
+    managed-by: crossplane
+spec:
+  forProvider:
+    path: /serviceaccounts/
+    tags:
+      Name: "Tempo S3 Service Account"
+      Purpose: "Tempo-S3-Access"
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+      Project: "beacon"
+      ServiceType: "observability"
+  providerConfigRef:
+    name: default
+---
+# The actions Tempo's S3 backend uses: list, read, write and delete blocks (retention), and
+# the object tagging calls it makes on block metadata.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: tempo-s3-access
+  labels:
+    app: tempo
+    component: iam-policy
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "Allows Tempo to read/write trace blocks in its S3 bucket"
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "TempoS3Access",
+            "Effect": "Allow",
+            "Action": [
+              "s3:ListBucket",
+              "s3:PutObject",
+              "s3:GetObject",
+              "s3:DeleteObject",
+              "s3:GetObjectTagging",
+              "s3:PutObjectTagging"
+            ],
+            "Resource": [
+              "arn:aws:s3:::asela-tempo-traces-20261019",
+              "arn:aws:s3:::asela-tempo-traces-20261019/*"
+            ]
+          }
+        ]
+      }
+    tags:
+      Name: "Tempo S3 Access Policy"
+      Purpose: "Tempo-S3-Access"
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+      Project: "beacon"
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: UserPolicyAttachment
+metadata:
+  name: tempo-s3-user-policy
+  labels:
+    app: tempo
+    component: iam-policy-attachment
+    managed-by: crossplane
+spec:
+  forProvider:
+    policyArnSelector:
+      matchLabels:
+        app: tempo
+        component: iam-policy
+    userRef:
+      name: tempo-s3-user
+  providerConfigRef:
+    name: default
+---
+# Crossplane mints the key and writes it straight into a Secret where Tempo runs: no hand-made
+# key, no Vault round-trip, so no new imperative step (beacon §C). Pattern and key names from
+# base-apps/agent-audit-aws-infrastructure/access-key.yaml (confirmed against a live Secret):
+#   username          -> the AWS access key ID
+#   attribute.secret  -> the AWS secret access key
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: AccessKey
+metadata:
+  name: tempo-s3-key
+  labels:
+    app: tempo
+    component: access-key
+    managed-by: crossplane
+spec:
+  forProvider:
+    userSelector:
+      matchLabels:
+        app: tempo
+        component: iam-user
+  writeConnectionSecretToRef:
+    name: tempo-s3-creds
+    namespace: tracing
+  providerConfigRef:
+    name: default
