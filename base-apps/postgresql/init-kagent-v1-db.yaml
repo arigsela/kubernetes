@@ -4,13 +4,22 @@
 # `extensions` (helm/README.md and go/core/pkg/migrations/runner.go @ kagent v1.0.0-alpha11).
 #
 # What it creates — the same identities `kagent install` makes for its bundled database
-# (bundled_postgres.sql), with a password instead of a client certificate:
-#   * database kagent_v1; CONNECT revoked from PUBLIC and granted to the login user only
-#   * NOLOGIN role kagent_owner; login user (Vault kagent-db/v1-user) NOINHERIT, member of it
+# (bundled_postgres.sql), with a password instead of a client certificate, plus kagent 1.0's
+# read/write login (kagent#3160, alpha14):
+#   * database kagent_v1; CONNECT revoked from PUBLIC and granted to both logins only
+#   * NOLOGIN role kagent_owner (migrates, owns schema kagent); login user (Vault
+#     kagent-db/v1-user) NOINHERIT, member of it
+#   * NOLOGIN role kagent_readwrite (serves runtime queries, cannot change the schema); login user
+#     (Vault kagent-db/v1-readwrite-user) NOINHERIT, member of it. Schema USAGE, and the owner's
+#     default privileges (tables, sequences, routines, types) so tables kagent_owner creates later
+#     are readable and writable by it. Existing objects are not regranted: the database is
+#     recreated empty at the kagent 1.0 cutover, so no GRANT … ON ALL TABLES is needed.
 #   * schema kagent owned by kagent_owner; CREATE on public revoked
-#   * schema extensions with pgvector (`vector`); USAGE for kagent_owner, nothing for PUBLIC
+#   * schema extensions with pgvector (`vector`); USAGE for kagent_owner and kagent_readwrite,
+#     nothing for PUBLIC
 # The 0.10 `kagent` database is NOT touched (it becomes the read-only archive at cutover).
 # Anyone else who needs to read kagent_v1 (the audit role) must be granted CONNECT explicitly.
+# Both logins are NOINHERIT: kagent assumes kagent_owner or kagent_readwrite itself.
 #
 # Idempotent (re-runs on every postgresql sync; the password follows Vault). A role or schema
 # that exists with the wrong attributes or owner fails the Job loudly instead of being bent.
@@ -19,6 +28,8 @@
 #
 # Wave 1: after the ExternalSecret that feeds it (wave 0) is healthy. activeDeadlineSeconds: if
 # the Vault properties were never provisioned, fail the sync visibly instead of hanging it.
+# The read/write login needs its Vault properties (scripts/provision-kagent-1-0-vault.sh) before
+# this Job can succeed: provision first, then merge.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -69,29 +80,39 @@ spec:
               # to it as transaction-local settings, the way Substrate's setup.sql does.
               psql --no-psqlrc -v ON_ERROR_STOP=1 -h "$PG_HOST" -p "$PG_PORT" \
                 -U "$POSTGRES_USER" -d "$V1_DB" \
-                -v v1_user="$V1_USER" -v v1_password="$V1_PASSWORD" <<'EOSQL'
+                -v v1_user="$V1_USER" -v v1_password="$V1_PASSWORD" \
+                -v v1_rw_user="$V1_READWRITE_USER" -v v1_rw_password="$V1_READWRITE_PASSWORD" <<'EOSQL'
               BEGIN;
               SELECT set_config('kagent_v1_setup.login_user', :'v1_user', true) AS login_user,
-                     set_config('kagent_v1_setup.login_password', :'v1_password', true) AS login_password
+                     set_config('kagent_v1_setup.login_password', :'v1_password', true) AS login_password,
+                     set_config('kagent_v1_setup.rw_user', :'v1_rw_user', true) AS rw_user,
+                     set_config('kagent_v1_setup.rw_password', :'v1_rw_password', true) AS rw_password
               \gset
 
               DO $setup$
               DECLARE
                   login_user text := current_setting('kagent_v1_setup.login_user');
                   login_password text := current_setting('kagent_v1_setup.login_password');
+                  rw_user text := current_setting('kagent_v1_setup.rw_user');
+                  rw_password text := current_setting('kagent_v1_setup.rw_password');
                   managed record;
                   role_attrs record;
                   schema_owner text;
                   vector_schema text;
               BEGIN
                   PERFORM pg_advisory_xact_lock(hashtextextended('homelab:kagent-v1-db-setup', 0));
-                  IF login_user = '' OR login_password = '' THEN
+                  IF login_user = '' OR login_password = '' OR rw_user = '' OR rw_password = '' THEN
                       RAISE EXCEPTION 'kagent v1 login user or password is empty (Vault kagent-db/v1-*)';
+                  END IF;
+                  IF login_user = rw_user THEN
+                      RAISE EXCEPTION 'the owner and read/write logins must differ (they would merge privileges)';
                   END IF;
 
                   FOR managed IN SELECT * FROM (VALUES
                       ('kagent_owner', false),
-                      (login_user, true)
+                      ('kagent_readwrite', false),
+                      (login_user, true),
+                      (rw_user, true)
                   ) AS roles(name, can_login) LOOP
                       SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolinherit
                         INTO role_attrs FROM pg_roles WHERE rolname = managed.name;
@@ -108,7 +129,9 @@ spec:
                       END IF;
                   END LOOP;
                   EXECUTE format('ALTER ROLE %I PASSWORD %L', login_user, login_password);
+                  EXECUTE format('ALTER ROLE %I PASSWORD %L', rw_user, rw_password);
                   EXECUTE format('GRANT kagent_owner TO %I', login_user);
+                  EXECUTE format('GRANT kagent_readwrite TO %I', rw_user);
 
                   SELECT pg_get_userbyid(nspowner) INTO schema_owner FROM pg_namespace WHERE nspname = 'kagent';
                   IF NOT FOUND THEN
@@ -118,6 +141,12 @@ spec:
                   END IF;
                   REVOKE CREATE ON SCHEMA public FROM PUBLIC;
                   REVOKE ALL ON SCHEMA kagent FROM PUBLIC;
+                  -- upstream setup.sql @ v1.0.0-alpha14 (go/core/pkg/postgressetup): the read/write role's grants
+                  GRANT USAGE ON SCHEMA kagent TO kagent_readwrite;
+                  ALTER DEFAULT PRIVILEGES FOR ROLE kagent_owner IN SCHEMA kagent GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO kagent_readwrite;
+                  ALTER DEFAULT PRIVILEGES FOR ROLE kagent_owner IN SCHEMA kagent GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO kagent_readwrite;
+                  ALTER DEFAULT PRIVILEGES FOR ROLE kagent_owner IN SCHEMA kagent GRANT EXECUTE ON ROUTINES TO kagent_readwrite;
+                  ALTER DEFAULT PRIVILEGES FOR ROLE kagent_owner IN SCHEMA kagent GRANT USAGE ON TYPES TO kagent_readwrite;
 
                   CREATE SCHEMA IF NOT EXISTS extensions;
                   SELECT n.nspname INTO vector_schema
@@ -129,16 +158,16 @@ spec:
                       RAISE EXCEPTION 'pgvector is in schema "%", kagent 1.0 requires "extensions"', vector_schema;
                   END IF;
                   REVOKE ALL ON SCHEMA extensions FROM PUBLIC;
-                  GRANT USAGE ON SCHEMA extensions TO kagent_owner;
+                  GRANT USAGE ON SCHEMA extensions TO kagent_owner, kagent_readwrite;
 
                   EXECUTE format('REVOKE CONNECT, TEMPORARY ON DATABASE %I FROM PUBLIC', current_database());
-                  EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), login_user);
+                  EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I, %I', current_database(), login_user, rw_user);
               END
               $setup$;
               COMMIT;
               EOSQL
 
-              echo "kagent_v1 database ready: role kagent_owner, schema kagent, pgvector in schema extensions"
+              echo "kagent_v1 database ready: roles kagent_owner/kagent_readwrite, schema kagent, pgvector in schema extensions"
           env:
             - name: POSTGRES_USER
               valueFrom:
@@ -170,6 +199,16 @@ spec:
                 secretKeyRef:
                   name: kagent-v1-db-credentials
                   key: password
+            - name: V1_READWRITE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-v1-db-credentials
+                  key: readwrite-user
+            - name: V1_READWRITE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kagent-v1-db-credentials
+                  key: readwrite-password
           resources:
             requests:
               memory: "64Mi"
