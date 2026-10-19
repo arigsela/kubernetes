@@ -51,6 +51,18 @@ spec:
     # could not be read. Haiku output is $0.50 per million tokens, so 16384 costs under a cent.
     - name: DOCS_CHECKER_EXTRACT_MAX_TOKENS
       value: "16384"
+    # TEMPORARY baseline (2026-10-19): every cost lever off (Sonnet on every node, no prompt
+    # cache, whole files as evidence, every tool schema bound, an extra model-written report,
+    # SDK retries, no per-doc call cap), to compare a live check's cost against the levers-on
+    # runs on the same docs. Revert this block (both entries) before the Monday 14:00 UTC
+    # weekly run; `check all` stays capped at the $1.00 whole-repo budget meanwhile.
+    - name: DOCS_CHECKER_LEVERS
+      value: "none"
+    # With retry_limits off the per-doc call cap is off, so the run budget is the only cap.
+    # $2.00 per named doc is the eval plan's baseline budget (a baseline run is never cut
+    # short); the code default $0.10 would stop a levers-off check part way.
+    - name: DOCS_CHECKER_RUN_BUDGET_DOC_USD
+      value: "2.00"
   substrate:
     workerPoolRef:
       name: kagent-default
