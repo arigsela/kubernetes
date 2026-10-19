@@ -46,6 +46,7 @@ spec:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -122,7 +123,10 @@ spec:
         - name: signing
           secret:
             secretName: beacon-signing
-            defaultMode: 0400
+            # Group-readable, and the pod's fsGroup makes the group 10001: kubelet makes
+            # volume files root-owned, so 0400 alone is unreadable to this non-root user
+            # (beacon §V.39, beacon §B.10). Nobody else in the pod exists to read it.
+            defaultMode: 0440
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -329,6 +333,7 @@ spec:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -395,4 +400,7 @@ spec:
         - name: signing
           secret:
             secretName: beacon-signing
-            defaultMode: 0400
+            # Group-readable, and the pod's fsGroup makes the group 10001: kubelet makes
+            # volume files root-owned, so 0400 alone is unreadable to this non-root user
+            # (beacon §V.39, beacon §B.10). Nobody else in the pod exists to read it.
+            defaultMode: 0440

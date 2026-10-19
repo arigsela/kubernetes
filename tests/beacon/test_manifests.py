@@ -187,6 +187,30 @@ def test_v38_objects_that_depend_on_other_apps_go_last():
     assert max(waves.values()) < 3, waves
 
 
+def test_v39_mounted_secrets_and_configmaps_are_readable_by_the_pod_user():
+    """beacon §V.39 (§B.10): kubelet makes Secret/ConfigMap volume files root-owned. With
+    defaultMode 0400 and no fsGroup the signing key was unreadable to uid 10001, and api and
+    notifier crash-looped on their first rollout."""
+    checked = 0
+    for _, d in app_docs():
+        spec = pod_spec(d)
+        if not spec:
+            continue
+        sc = spec.get("securityContext", {})
+        for v in spec.get("volumes", []):
+            src = v.get("secret") or v.get("configMap")
+            if src is None:
+                continue
+            mode = src.get("defaultMode", 0o644)
+            if mode & 0o004:  # world-readable: any uid can read it
+                continue
+            checked += 1
+            assert mode & 0o040, f"{d['metadata']['name']}/{v['name']}: mode {oct(mode)} is not group-readable"
+            assert sc.get("fsGroup") == sc.get("runAsGroup"), \
+                f"{d['metadata']['name']}: {v['name']} needs fsGroup == runAsGroup to be readable"
+    assert checked >= 2  # the api's and the notifier's signing key
+
+
 # --- tracing (beacon §V.8, §V.9, §V.32) -----------------------------------------------------
 
 
