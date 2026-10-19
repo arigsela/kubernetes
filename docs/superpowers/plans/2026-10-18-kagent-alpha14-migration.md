@@ -147,6 +147,18 @@ def test_pod_template_checksum_matches_the_config(name):
     want = hashlib.sha256(text.encode()).hexdigest()
     got = one(name, "Deployment")["spec"]["template"]["metadata"]["annotations"]["checksum/config"]
     assert got == want, f"{name}: set checksum/config to {want}"
+
+
+@pytest.mark.parametrize("name", sorted(SERVERS))
+def test_deployment_selector_is_the_immutable_pair_kmcp_set(name):
+    """kmcp's Deployments select on instance+name. A selector is immutable, so the manifest that
+    Argo applies onto the live object must carry exactly that pair or the hand-over is rejected."""
+    want = {"app.kubernetes.io/instance": name, "app.kubernetes.io/name": name}
+    dep = one(name, "Deployment")
+    assert dep["spec"]["selector"]["matchLabels"] == want
+    labels = dep["spec"]["template"]["metadata"]["labels"]
+    assert all(labels.get(k) == v for k, v in want.items())
+    assert one(name, "Service")["spec"]["selector"] == want
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -234,6 +246,7 @@ metadata:
     app.kubernetes.io/name: agent-docs-mcp
 spec:
   selector:
+    app.kubernetes.io/instance: agent-docs-mcp
     app.kubernetes.io/name: agent-docs-mcp
   ports:
     - name: http
@@ -254,12 +267,16 @@ metadata:
 spec:
   replicas: 1
   selector:
+    # Both keys exactly as kmcp set them: a Deployment selector is immutable and Argo applies
+    # this manifest onto the live object (§T.126). Verified live on 2026-10-18.
     matchLabels:
+      app.kubernetes.io/instance: agent-docs-mcp
       app.kubernetes.io/name: agent-docs-mcp
   template:
     metadata:
       labels:
         app.kubernetes.io/part-of: kagent
+        app.kubernetes.io/instance: agent-docs-mcp
         app.kubernetes.io/name: agent-docs-mcp
       annotations:
         # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
@@ -364,7 +381,7 @@ Expected: FAIL (`MCPServer` present, no `Deployment`).
 
 - [ ] **Step 2: Replace `base-apps/kagent/brave-search-mcp.yaml`**
 
-Same four documents as Task 1 with these differences (including its own `checksum/config` annotation over its own `local.yaml`; the test in Task 1 covers all three servers). Keep the whole existing header (Docker catalog image, tool allow-list, Node heap sizing, memory history) as the Deployment's comment block, prefixed by the "plain Deployment since §T.126" paragraph from Task 1.
+Same four documents as Task 1 with these differences (including its own `checksum/config` annotation over its own `local.yaml`, and the immutable selector pair `app.kubernetes.io/instance: brave-search-mcp` + `app.kubernetes.io/name: brave-search-mcp` on the Deployment selector, the pod template labels and the Service selector, exactly as kmcp set them live; the tests in Task 1 cover all three servers). Keep the whole existing header (Docker catalog image, tool allow-list, Node heap sizing, memory history) as the Deployment's comment block, prefixed by the "plain Deployment since §T.126" paragraph from Task 1.
 
 ConfigMap target:
 
@@ -503,7 +520,7 @@ Keep the header (GitHub App auth, the `--tools` contract, why no toolset) and ad
                               - get_file_contents,search_code,list_commits,get_commit,list_branches,list_pull_requests,pull_request_read,create_branch,create_or_update_file,push_files,create_pull_request
 ```
 
-Container: image `ghcr.io/github/github-mcp-server:v1.14.0@sha256:7aaeeec9ae4fe9a736d100c1ff0798f3c219b5009e05f5d3945fcacb13cc196b`, `envFrom` secretRef `implementer-github-app`, resources requests `50m`/`96Mi`, limits `200m`/`384Mi` (carry the 2026-10-18 sizing comments). Names and labels: `implementer-mcp`.
+Container: image `ghcr.io/github/github-mcp-server:v1.14.0@sha256:7aaeeec9ae4fe9a736d100c1ff0798f3c219b5009e05f5d3945fcacb13cc196b`, `envFrom` secretRef `implementer-github-app`, resources requests `50m`/`96Mi`, limits `200m`/`384Mi` (carry the 2026-10-18 sizing comments). Names and labels: `implementer-mcp`, with the immutable selector pair `app.kubernetes.io/instance: implementer-mcp` + `app.kubernetes.io/name: implementer-mcp` on the Deployment selector, the pod template labels and the Service selector (what kmcp set live), and its own `checksum/config` annotation.
 
 - [ ] **Step 4: Run the suites**
 
