@@ -46,6 +46,11 @@ this PR.
 Rollback is `git revert` of that PR. ECR keeps the last 10 tagged beacon images, so a
 revert's digests are still pullable.
 
+A failed sync keeps retrying **its own revision** (five retries, about 25 minutes) before
+Argo CD takes a newer commit, so a revert or fix merged meanwhile waits for it (seen during
+beacon §B.10). To skip the wait, terminate the running operation in the Argo CD UI; auto-sync
+then picks up the new commit.
+
 ### First deploy (once)
 1. `scripts/provision-beacon-vault.sh`, BEFORE this app's first sync (a SecretStore with no
    Vault role fails the sync; the postgresql hook skips without the passwords).
