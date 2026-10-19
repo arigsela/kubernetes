@@ -463,19 +463,42 @@ a routine Renovate merge. Sessions and long-term memory reset.
    (`kubectl create job -n postgresql --from=cronjob/agent-audit-export pre-bump-export`), then dump
    `kagent_v1` and `substrate` off-cluster with checksums (the pgvector Deployment has no backup
    script; `pg-backup.sh` covers only CNPG) to `s3://mysql-backups-asela-cluster/pg/`.
-4. **Clean databases:** drop `kagent_v1` and `substrate` on the pgvector Postgres, then sync the
-   `postgresql` app once: `init-kagent-v1-db` and `init-substrate-db` recreate them empty, and
-   `init-kagent-audit-role` / `init-agent-audit-web-role` restore the audit grants.
-   `init-kagent-v1-db` also recreates the read/write login.
-5. **Merge**, then restart `kagent-controller` and Substrate's `ate-api-server` if they don't roll
-   on their own.
+4. **Drop, merge, then recreate** (this order; the alpha14 cutover on 2026-10-19 proved the
+   other one unsafe): drop `kagent_v1` and `substrate` on the pgvector Postgres
+   (`WITH (FORCE)` ends ate-api-server's connections), **then merge the bump PR**, then
+   recreate. The running controller keeps serving without its database (readiness ignores it)
+   and migrates a fresh database at its next start with *its* `000001_initial.sql`, which the new
+   version then sees as "already applied" and runs on the wrong tables. Argo's selfHeal undoes
+   a `scale --replicas=0` within ~2 min, so the old version cannot be kept down for the minutes
+   the merge sync takes. With the database gone the new controller pod CrashLoops on
+   `vector precheck: database does not exist` (safe) while the old pod stays up until the new
+   one is Ready. Once the new ReplicaSet exists, scale the controller to 0, sync the
+   `postgresql` app once (`init-kagent-v1-db` and `init-substrate-db` recreate the databases
+   empty, `init-kagent-v1-db` also recreates the read/write login, and the wave-2 Jobs
+   `init-kagent-audit-role` / `init-agent-audit-web-role` restore the audit grants); selfHeal
+   brings back only the new ReplicaSet and it migrates at start. Verify with
+   `SELECT * FROM kagent.schema_migrations` (the timestamp is the new pod's start) and the table
+   list against the pre-bump dump. Restart Substrate's `ate-api-server` (`rollout restart`) so it
+   re-initialises its recreated database.
+5. **Watch Argo, and expect two by-hand steps.** A CRD schema change prunes the old field from
+   every live Agent (`spec.templateRef` vanished when alpha14 landed), so all Agents sit at
+   `Ready=False / Compatible` until `kagent-secrets` re-applies the Git manifests — and that
+   Application can be stuck on `ComparisonError: … field not declared in schema` (Argo's stale
+   schema cache; a hard refresh does not clear it): restart
+   `statefulset/argo-cd-argocd-application-controller` in `argo-cd`. A CRD the old chart
+   installed without Argo tracking (kmcp's `mcpservers.kagent.dev`) is never pruned: check it has
+   no instances and `kubectl delete crd` it.
 6. **Accept:** 10 Agents `Ready`; each Go ADK agent answers a multi-step tool question;
    docs-checker returns a report for one `check <path>` call
-   (`scripts/ask-hk --agent kagent/docs-checker "check base-apps/vault/docs.md"`); `k8s-agent`
-   pauses a delete for approval (reject keeps the object); `scripts/ask-hk` works; run
-   `agent-audit-ungated` once by hand and read its line. Expect the eval gate to re-score every
-   agent (the Harness digest is in each definition hash) and to hold `homelab-knowledge` on the
-   memory entry until it is reseeded (see *Read, re-run or reset the evaluation gate*).
+   (`scripts/ask-hk --agent kagent/docs-checker "check base-apps/vault/docs.md"`); `restarter` pauses a
+   pod delete for approval (`ask-hk --agent kagent/restarter "Restart the pod <ns>/<pod>."`
+   exits 2; `--reject` keeps the pod); `scripts/ask-hk` works; run `agent-audit-ungated` once
+   by hand and read its line. The eval gate re-scores every agent (the Harness digest and the
+   Agent spec are in each definition hash); because the hashes are new, that run is a first run
+   per agent, which `eval_gate.decide` holds only on a hard failure. Reseed the memory entry
+   **before** triggering that sync (`ask-hk --as-serviceaccount kagent/eval-gate "My favorite
+   color is octarine. Please save that."`) so `homelab-knowledge` scores it on the first run
+   (see *Read, re-run or reset the evaluation gate* for the hash-only re-score if it still fails).
 
 ### Roll back
 - **A bad agent, prompt or value change:** `git revert` the PR. Argo CD applies it.
