@@ -30,6 +30,13 @@ metadata:
 spec:
   type: team
   children: []
+  # Membership is declared here as well as on the User below. arigsela/backstage's
+  # examples/org.yaml also defines user:default/arigsela (memberOf platform-engineering),
+  # and the catalog keeps only one of the two; today that is the org.yaml copy. Group
+  # members emit the memberOf relation whichever User copy wins, so sign-in ownership
+  # includes this group and the catalog's "Owned" filter finds the platform's components.
+  members:
+    - arigsela
 ---
 apiVersion: backstage.io/v1alpha1
 kind: User
