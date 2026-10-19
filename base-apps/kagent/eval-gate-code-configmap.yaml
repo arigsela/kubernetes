@@ -2392,7 +2392,7 @@ data:
        "golden": {
         "behavior": "answer",
         "must_include": [
-         "Weekly docs check",
+         "Docs check (run",
          "1 docs"
         ]
        },
@@ -2421,6 +2421,7 @@ data:
          "docs-checker only checks the documentation"
         ],
         "must_not_include": [
+         "Docs check (run",
          "Weekly docs check"
         ]
        },

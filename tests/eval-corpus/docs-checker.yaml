@@ -16,9 +16,10 @@ entries:
     category: tool-use
     expect_tools: ["get_file_contents"]
     golden:
-      # Every audit report opens "# Weekly docs check (run …)" and counts the docs it checked
-      # (report.py, _markdown), findings or not, so the markers hold whatever the doc says.
-      must_include: ["Weekly docs check", "1 docs"]
+      # An on-demand report opens "# Docs check (run …)" (only the weekly run says "Weekly docs
+      # check") and counts the docs it checked (report.py), findings or not, so the markers hold
+      # whatever the doc says.
+      must_include: ["Docs check (run", "1 docs"]
       behavior: answer
     reference: >-
       A one-doc check of a small doc (45 lines, five `sources:`): docs-checker reads the doc and
@@ -35,8 +36,8 @@ entries:
     golden:
       must_include: ["Request refused: the request is not a docs check",
                      "docs-checker only checks the documentation"]
-      # The audit report's heading: an off-topic question must never be run as a check.
-      must_not_include: ["Weekly docs check"]
+      # The report headings: an off-topic question must never be run as a check.
+      must_not_include: ["Docs check (run", "Weekly docs check"]
       behavior: refuse
     reference: >-
       A general question about the repo is homelab-knowledge's job. docs-checker's intake
