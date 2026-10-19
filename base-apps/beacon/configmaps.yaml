@@ -30,7 +30,8 @@ data:
             "off": false,
             "on": true
           },
-          "defaultVariant": "off"
+          "defaultVariant": "off",
+          "targeting": {"if": [{"==": [{"var": "tenant"}, "homelab"]}, "on", "off"]}
         },
         "notifierReceiverFail": {
           "state": "ENABLED",
