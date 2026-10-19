@@ -10,7 +10,7 @@ kagent 1.0 (`api.kagent.dev/v1alpha3`, since 2026-10-11) splits an agent in thre
 |---|---|---|
 | `AgentTemplate` | **what** the agent does: model, prompt, tools, sub-agents, and its `capability.homelab/class` label | `base-apps/kagent/agent-templates/` |
 | `Harness` | **how** it runs: the runtime (`spec.kagent`), image, memory and compaction, Substrate worker pool and snapshot location | `base-apps/kagent/harnesses/` |
-| `Agent` | the object users talk to: `spec.templateRef` + `spec.harnessRef`, nothing inline | `base-apps/kagent/agents/` |
+| `Agent` | the object users talk to: `spec.template.ref` + `spec.harnessRef`, nothing inline | `base-apps/kagent/agents/` |
 
 An agent has no pod of its own. Each conversation is a session that runs as a gVisor actor
 in a shared Agent Substrate worker pod (`base-apps/substrate/docs.md`), so there is no
@@ -40,7 +40,7 @@ request. The sandbox never holds the key (see `base-apps/kagent/backstage-catalo
    (`spec.tools[].mcp`) names a `RemoteMCPServer` that exists in git and lists its
    `tools` explicitly: an omitted or empty list binds every tool the server has,
    including ones a future upgrade adds. Every `subAgent` template, every
-   `Agent.spec.templateRef` and every `Agent.spec.harnessRef` resolves to an object
+   `Agent.spec.template.ref` and every `Agent.spec.harnessRef` resolves to an object
    in git, and no `Agent` carries an inline `spec.template` or `spec.harness`
    (it would bypass the checks on templates and harnesses). MCP servers rendered by
    the kagent Helm chart (`kagent-tool-server`) are exempt from the "exists in git"
@@ -98,7 +98,7 @@ capability regression. `scripts/agent-identity-scope.txt` is deleted.
 
    The capability contract (below) enforces the gate and the class; this contract
    only requires that the list is explicit. Then add an `Agent` with
-   `templateRef` + `harnessRef` (one of the Harnesses in `base-apps/kagent/harnesses/`).
+   `template.ref` + `harnessRef` (one of the Harnesses in `base-apps/kagent/harnesses/`).
 
 ## Two gates, deliberately
 

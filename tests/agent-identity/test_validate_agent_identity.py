@@ -62,10 +62,10 @@ def _agent(name: str, template: str | None = None, harness: str = "kagent-memory
            inline_template: bool = False, inline_harness: bool = False) -> str:
     spec: dict = {}
     if inline_template:
-        spec["template"] = {"modelConfig": {"name": "anthropic-claude-sonnet-5-5"},
-                            "systemPrompt": "x"}
+        spec["template"] = {"inline": {"modelConfig": {"name": "anthropic-claude-sonnet-5-5"},
+                                       "systemPrompt": "x"}}
     else:
-        spec["templateRef"] = {"name": template or name}
+        spec["template"] = {"ref": {"name": template or name}}
     if inline_harness:
         spec["harness"] = {"kagent": {}, "workload": {"image": "x@sha256:" + "0" * 64},
                            "substrate": {"workerPoolRef": {"name": "p"},
@@ -288,6 +288,19 @@ def test_inline_template_or_harness_is_error(tmp_path):
     _write(root2 / "base-apps" / "kagent" / "agents" / "a.yaml",
            _agent("a", template="homelab-knowledge", inline_harness=True))
     assert run(root2) == 1
+
+
+def test_agent_inline_spec_template_fails_with_inline_message(tmp_path, capsys):
+    """alpha14 (kagent#3080): spec.template.inline bypasses the AgentTemplate checks."""
+    root = _good_repo(tmp_path)
+    _write(root / "base-apps" / "kagent" / "agents" / "a.yaml",
+           _dump({"apiVersion": API, "kind": "Agent",
+                  "metadata": {"name": "a", "namespace": "kagent"},
+                  "spec": {"template": {"inline": {"systemPrompt": "x"}},
+                           "harnessRef": {"name": "kagent-memory"}}}))
+    assert run(root) == 1
+    captured = capsys.readouterr()
+    assert "inline" in captured.out + captured.err
 
 
 # ----------------------------------------------------- fail closed (§V.84)

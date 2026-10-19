@@ -280,15 +280,20 @@ def check_refs_only(agents, templates) -> list[str]:
     known = {_name(doc) for _, doc in templates}
     for path, doc in agents:
         spec = doc.get("spec") or {}
-        for inline, what in (("template", "AgentTemplate"), ("harness", "Harness")):
-            if inline in spec:
-                errors.append(
-                    f"Agent {_name(doc)} ({path}): inline spec.{inline}. Reference a {what} "
-                    f"by name; an inline {inline} bypasses the capability checks.")
-        ref = (spec.get("templateRef") or {}).get("name")
-        if "template" not in spec and ref not in known:
-            errors.append(f"Agent {_name(doc)}: templateRef {ref!r} is not an AgentTemplate "
-                          f"in git")
+        tpl = spec.get("template") or {}
+        if "inline" in tpl:
+            errors.append(
+                f"Agent {_name(doc)} ({path}): inline spec.template is not allowed. Reference an "
+                f"AgentTemplate by name with spec.template.ref; an inline template bypasses the "
+                f"capability checks.")
+        else:
+            ref = (tpl.get("ref") or {}).get("name")
+            if ref not in known:
+                errors.append(f"Agent {_name(doc)}: spec.template.ref {ref!r} is not an "
+                              f"AgentTemplate in git")
+        if "harness" in spec:
+            errors.append(f"Agent {_name(doc)} ({path}): inline spec.harness. Reference a Harness "
+                          f"by name; an inline harness bypasses the capability checks.")
     return errors
 
 

@@ -28,7 +28,8 @@ metadata:
     backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/k8s-agent.yaml
     backstage.io/owner: group:default/platform-engineering
 spec:
-  templateRef:
-    name: k8s-agent
+  template:
+    ref:
+      name: k8s-agent
   harnessRef:
     name: kagent-memory

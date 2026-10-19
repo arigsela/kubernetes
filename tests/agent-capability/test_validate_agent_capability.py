@@ -89,9 +89,9 @@ def template(name, cls, tools=None, approval=None, gated=None, subagents=None):
 def agent(name, inline_template=False, inline_harness=False):
     spec: dict = {}
     if inline_template:
-        spec["template"] = {"modelConfig": {"name": "m"}}
+        spec["template"] = {"inline": {"modelConfig": {"name": "m"}}}
     else:
-        spec["templateRef"] = {"name": name}
+        spec["template"] = {"ref": {"name": name}}
     if inline_harness:
         spec["harness"] = harness("x")["spec"]
     else:
@@ -232,6 +232,15 @@ def test_subagent_cycle_is_caught(tmp_path):
 def test_inline_template_agent_is_error(tmp_path):
     t = [template("reader", "read", tools=["k8s_get_resources"], approval=False)]
     assert run(tmp_path, t, agents=[agent("reader", inline_template=True)]) == 1
+
+
+def test_inline_spec_template_agent_fails_with_inline_message(tmp_path, capsys):
+    t = [template("reader", "read", tools=["k8s_get_resources"], approval=False)]
+    a = agent("reader")
+    a["spec"]["template"] = {"inline": {"systemPrompt": "x"}}
+    assert run(tmp_path, t, agents=[a]) == 1
+    captured = capsys.readouterr()
+    assert "inline" in captured.out + captured.err
 
 
 def test_inline_harness_agent_is_error(tmp_path):

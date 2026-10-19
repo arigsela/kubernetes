@@ -27,7 +27,7 @@ def test_class_model_and_harness():
     assert t["metadata"]["labels"]["capability.homelab/class"] == "propose"
     assert t["spec"]["modelConfig"]["name"] == "anthropic-claude-sonnet-5-5"
     agent = one("base-apps/kagent/agents/implementer.yaml", "Agent", "implementer")
-    assert agent["spec"] == {"templateRef": {"name": "implementer"}, "harnessRef": {"name": "kagent-stateless"}}
+    assert agent["spec"] == {"template": {"ref": {"name": "implementer"}}, "harnessRef": {"name": "kagent-stateless"}}
 
 
 def test_bindings_are_the_contract_and_no_subagents():

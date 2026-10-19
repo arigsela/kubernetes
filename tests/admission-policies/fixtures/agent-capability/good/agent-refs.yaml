@@ -5,7 +5,8 @@ metadata:
   name: good-agent-refs
   namespace: kagent
 spec:
-  templateRef:
-    name: k8s-reader
+  template:
+    ref:
+      name: k8s-reader
   harnessRef:
     name: kagent-stateless

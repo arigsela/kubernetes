@@ -71,9 +71,10 @@ NATIVE_HEADER = """\
 #                                   `propose`, `write` or `admin`; 6b. a `propose` template
 #                                   with a subAgent whose template is `write` or `admin`
 #                                7. a `write` template with a subAgent whose template is `admin`
-#   agent-capability-refs        8. an Agent with an inline spec.template or spec.harness:
-#                                   every Agent must reference an AgentTemplate and a Harness,
-#                                   so nothing reaches the runtime without passing 1-7 and 9
+#   agent-capability-refs        8. an Agent whose spec.template is inline instead of spec.template.ref:
+#                                   capability is checked on AgentTemplates. (alpha14 has no inline
+#                                   Harness any more — kagent#3080 — so the runtime check on Harnesses
+#                                   cannot be bypassed from an Agent.)
 #   agent-capability-runtime     9. a Harness that is not the `kagent` runtime, or whose image
 #                                   is not one of the taxonomy's runtime-images. 1-7 are
 #                                   enforced INSIDE the runtime (tool selection and the
@@ -246,14 +247,10 @@ def build_native(read: list[str], propose: list[str], write: list[str], destruct
         "agent-capability-refs", "agents",
         variables=[],
         validations=[
-            _deny("!has(object.spec.template)",
-                  agent + "has an inline spec.template. Reference an AgentTemplate with "
-                  "spec.templateRef: capability (class, tools, approval gates, subagents) is "
+            _deny("has(object.spec.template) && has(object.spec.template.ref)",
+                  agent + "has an inline spec.template.inline. Reference an AgentTemplate with "
+                  "spec.template.ref: capability (class, tools, approval gates, subagents) is "
                   "checked on AgentTemplates, so an inline template would bypass it.\""),
-            _deny("!has(object.spec.harness)",
-                  agent + "has an inline spec.harness. Reference a Harness with "
-                  "spec.harnessRef: the runtime check (agent-capability-runtime) is on "
-                  "Harnesses, so an inline harness would bypass it.\""),
         ],
     )
 

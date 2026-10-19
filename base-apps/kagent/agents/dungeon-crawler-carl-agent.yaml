@@ -30,7 +30,8 @@ metadata:
     backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/dungeon-crawler-carl-agent.yaml
     backstage.io/owner: group:default/platform-engineering
 spec:
-  templateRef:
-    name: dungeon-crawler-carl-agent
+  template:
+    ref:
+      name: dungeon-crawler-carl-agent
   harnessRef:
     name: kagent-chat

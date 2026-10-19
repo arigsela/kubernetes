@@ -58,9 +58,9 @@ def test_class_model_and_harness():
     assert t["metadata"]["labels"]["capability.homelab/class"] == "admin"
     assert t["spec"]["modelConfig"]["name"] == "anthropic-claude-sonnet-5-5"
     a = one(AGENT, "Agent", "restarter")
-    assert a["spec"]["templateRef"]["name"] == "restarter"
+    assert a["spec"]["template"]["ref"]["name"] == "restarter"
     assert a["spec"]["harnessRef"]["name"] == "kagent-stateless"
-    assert "template" not in a["spec"] and "harness" not in a["spec"]
+    assert "inline" not in a["spec"]["template"] and "harness" not in a["spec"]
 
 
 def test_bindings_are_exactly_the_reads_ungated_and_one_gated_delete():

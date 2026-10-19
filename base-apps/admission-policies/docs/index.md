@@ -89,7 +89,7 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
     sub-agent. A sub-agent template whose class label is missing or not read/write counts as
     admin.
   - `agent-capability-refs` (rule 8): an `Agent` must reference a template and a Harness
-    (`templateRef`/`harnessRef`); an inline `spec.template` or `spec.harness` would bypass the
+    (`template.ref`/`harnessRef`); an inline `spec.template.inline` or `spec.harness` would bypass the
     other checks.
   - `agent-capability-runtime` (rule 9): a `Harness` must use the `kagent` runtime on an image
     from the taxonomy's `runtime-images` list; rules 1-7 are enforced inside that runtime.

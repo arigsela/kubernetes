@@ -146,10 +146,17 @@ def _ref(spec: dict, key: str) -> str | None:
     return r.get("name") if isinstance(r, dict) else r
 
 
+def _template_ref(agent_spec: dict) -> str | None:
+    """The AgentTemplate an Agent references: alpha14's spec.template.ref.name (kagent#3080);
+    alpha11's spec.templateRef.name is still read so a stored surface from before the bump hashes the same way."""
+    ref = ((agent_spec.get("template") or {}).get("ref") or {})
+    return ref.get("name") or _ref(agent_spec, "templateRef")
+
+
 def _template_of(surf: dict, agent: str) -> dict:
     by = {o["name"]: o["spec"] for o in surf.get("agenttemplates", [])}
     agent_spec = next((o["spec"] for o in surf.get("agents", []) if o["name"] == agent), {})
-    return by.get(_ref(agent_spec, "templateRef") or agent) or {}
+    return by.get(_template_ref(agent_spec) or agent) or {}
 
 
 def template_tools(surf: dict, agent: str) -> set[str]:
@@ -182,7 +189,7 @@ def surface_hash(surf: dict[str, list[dict]], agent: str) -> str:
     it references. A missing reference includes everything of that kind (conservative)."""
     by = {kind: {o["name"]: o["spec"] for o in surf.get(kind, [])} for kind in KINDS}
     agent_spec = by["agents"].get(agent, {})
-    template = _ref(agent_spec, "templateRef") or agent
+    template = _template_ref(agent_spec) or agent
     harness = _ref(agent_spec, "harnessRef")
     model = _ref(agent_spec, "modelConfigRef") or _ref(by["agenttemplates"].get(template, {}), "modelConfigRef")
     pieces = {"agent": agent_spec, "template": by["agenttemplates"].get(template),
