@@ -33,6 +33,10 @@ beacon-aws-infrastructure:
   description: "GitHub-OIDC role that lets arigsela/beacon v* tag builds push the six beacon images to ECR (Crossplane)"
   namespace: beacon
 
+istio-60780-repro:
+  description: "TEMPORARY (beacon §T.21): reproduces istio#60780 (ingress-use-waypoint drops gateway and waypoint spans) behind one path on beacon's host; removed after the test"
+  namespace: istio-60780-repro
+
 cluster-rbac:
   description: "ClusterRoleBinding oidc-cluster-admins: binds the Dex OIDC user oidc:arigsela to cluster-admin (see docs/troubleshooting/kubectl-oidc.md)"
   namespace: kube-system

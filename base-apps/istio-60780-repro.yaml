@@ -1,0 +1,25 @@
+# base-apps/istio-60780-repro.yaml (beacon §T.21) — TEMPORARY, removed by a revert after the test.
+# Reproduces istio#60780 on the running Istio (beacon §R.2, beacon §V.8): in ambient, with
+# `istio.io/ingress-use-waypoint` on a Service, the ingress Gateway's and the waypoint's spans
+# are reported dropped. beacon itself must never carry that label (beacon §V.8), so the test
+# runs in its own namespace, behind one path on beacon's host.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: istio-60780-repro
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/istio-60780-repro
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-60780-repro
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
