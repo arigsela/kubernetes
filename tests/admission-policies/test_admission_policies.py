@@ -115,12 +115,14 @@ def _patch(cluster, live, patch, who, *extra):
                               as_user=user, as_groups=groups)
 
 
+@pytest.mark.parametrize("change", ["labels", "annotations"])
 @pytest.mark.parametrize("who", NOT_GIT)
 @pytest.mark.parametrize("live", LIVE)
-def test_direct_change_to_a_live_definition_is_denied(cluster, live, who):
-    """The UPDATE path, for every kind and every non-git writer. A label is part of the
-    definition: the class label is one, and kagent selects on labels."""
-    verdict, fired, out = _patch(cluster, live, {"metadata": {"labels": {"probe": "x"}}},
+def test_direct_change_to_a_live_definition_is_denied(cluster, live, who, change):
+    """The UPDATE path, for every kind and every non-git writer, with nothing changed but one
+    label or one annotation. Both are part of the definition: the class label is a label, kagent
+    selects on labels, and annotations steer Argo CD and Backstage."""
+    verdict, fired, out = _patch(cluster, live, {"metadata": {change: {"probe": "x"}}},
                                  NOT_GIT[who])
     assert verdict == "deny" and WRITERS in fired, out
 

@@ -376,24 +376,68 @@ def test_byo_agent_outside_the_kagent_namespace_is_error(tmp_path):
     assert run_repo(repo) == 1
 
 
-def test_byo_refs_resolve_in_the_agents_namespace(tmp_path):
-    """A same-named read template in `kagent` must not stand in for the byo Agent's own,
-    which lives in its namespace and is class admin. (Its files sort BEFORE kagent's, so a
-    name-only index would keep the kagent template.)"""
+def _in_team_a(repo, doc):
+    """Write doc into namespace team-a, under base-apps/z-team/: it sorts AFTER base-apps/kagent,
+    so a name-only index (last one wins) would resolve to it."""
+    d = repo / "base-apps" / "z-team"
+    d.mkdir(exist_ok=True)
+    doc["metadata"]["namespace"] = "team-a"
+    (d / f"{doc['kind'].lower()}-{doc['metadata']['name']}.yaml").write_text(yaml.safe_dump(doc))
+
+
+def _read_twin():
+    return template("docs-checker", "read", tools=DOCS_CHECKER_TOOLS, approval=False,
+                    server="agent-docs")
+
+
+def _byo_template_only_in_team_a(tmp_path):
     repo = byo_repo(tmp_path)
-    kd = repo / "base-apps" / "kagent"
-    elsewhere = repo / "base-apps" / "a-team"
-    elsewhere.mkdir()
-    tpl = template("docs-checker", "admin", tools=DOCS_CHECKER_TOOLS, approval=False,
-                   server="agent-docs")
-    tpl["metadata"]["namespace"] = "team-a"
-    (elsewhere / "template.yaml").write_text(yaml.safe_dump(tpl))
-    for sub in ("agents", "harnesses"):
-        doc = yaml.safe_load((kd / sub / "docs-checker.yaml").read_text())
-        doc["metadata"]["namespace"] = "team-a"
-        (elsewhere / f"{sub}.yaml").write_text(yaml.safe_dump(doc))
-        (kd / sub / "docs-checker.yaml").unlink()
-    assert run_repo(repo) == 1
+    (repo / "base-apps" / "kagent" / "agent-templates" / "docs-checker.yaml").unlink()
+    _in_team_a(repo, _read_twin())
+    return repo
+
+
+def _agent_docs_only_in_team_a(tmp_path):
+    repo = byo_repo(tmp_path, servers=("kagent-tool-server",))
+    server = remote_server("agent-docs")
+    server["spec"]["url"] = "http://kagent-tools.kagent:8084/mcp"
+    _in_team_a(repo, server)
+    return repo
+
+
+def _admin_template_with_a_read_twin_in_team_a(tmp_path):
+    repo = byo_repo(tmp_path, cls="admin")
+    _in_team_a(repo, _read_twin())
+    return repo
+
+
+def _byo_harness_with_a_kagent_twin_in_team_a(tmp_path):
+    repo = byo_repo(tmp_path, cls="admin")
+    _in_team_a(repo, harness("docs-checker"))
+    return repo
+
+
+def _read_template_with_an_admin_twin_in_team_a(tmp_path):
+    repo = byo_repo(tmp_path)
+    _in_team_a(repo, template("docs-checker", "admin", tools=DOCS_CHECKER_TOOLS,
+                              approval=False, server="agent-docs"))
+    return repo
+
+
+@pytest.mark.parametrize("build,expect", [
+    # The byo Agent stays in kagent; the name it references exists ONLY in another namespace.
+    (_byo_template_only_in_team_a, 1),
+    (_agent_docs_only_in_team_a, 1),
+    # Its own (kagent) object is bad; a same-named good twin elsewhere must not stand in.
+    (_admin_template_with_a_read_twin_in_team_a, 1),
+    (_byo_harness_with_a_kagent_twin_in_team_a, 1),
+    # Its own object is good; a same-named bad twin elsewhere must not count against it.
+    (_read_template_with_an_admin_twin_in_team_a, 0),
+], ids=lambda f: f.__name__.strip("_") if callable(f) else str(f))
+def test_byo_refs_resolve_in_the_agents_namespace(tmp_path, build, expect):
+    """An Agent's templateRef/harnessRef and its template's server refs resolve in the Agent's
+    namespace (kagent), never by name alone: a regression to name-only lookup fails here."""
+    assert run_repo(build(tmp_path)) == expect
 
 
 def test_agent_with_an_unknown_harness_ref_is_error(tmp_path):
@@ -440,6 +484,18 @@ def test_taxonomy_without_a_byo_key_is_error(tmp_path, key):
     repo = make_repo(tmp_path, [template("reader", "read", tools=["k8s_get_resources"])],
                      taxonomy=tax)
     assert run_repo(repo) == 1
+
+
+@pytest.mark.parametrize("key", ["byo-images", "read-only-servers"])
+def test_malformed_byo_list_is_a_named_error_not_a_traceback(tmp_path, capsys, key):
+    repo = make_repo(tmp_path, [template("reader", "read", tools=["k8s_get_resources"])])
+    path = repo / "base-apps" / "admission-policies" / "agent-capability-taxonomy.yaml"
+    cm = yaml.safe_load(path.read_text())
+    cm["data"][key] = '["unterminated'
+    path.write_text(yaml.safe_dump(cm))
+    assert run_repo(repo) == 1
+    err = capsys.readouterr().err
+    assert f"taxonomy '{key}' is not valid JSON" in err, err
 
 
 def test_empty_byo_lists_admit_no_byo(tmp_path):
@@ -512,9 +568,14 @@ def test_real_harnesses_share_one_pinned_runtime_image():
 # proof per listed server; a server listed without one fails here.
 def _agent_docs_is_read_only_server_side():
     """RemoteMCPServer agent-docs -> Service agent-docs-mcp -> agentgateway running
-    github-mcp-server with --read-only and only the repos toolset."""
+    github-mcp-server with --read-only and only the repos toolset. The RemoteMCPServer is
+    resolved the way the validator resolves it (vac.collect, namespace kagent), and must be
+    defined exactly once."""
     kd = REPO / "base-apps" / "kagent"
-    remote = yaml.safe_load((kd / "agent-docs-mcp-remote.yaml").read_text())
+    found = [d for _, d in vac.collect(REPO)[0].get("RemoteMCPServer", [])
+             if vac._key(d) == (vac.BYO_NAMESPACE, "agent-docs")]
+    assert len(found) == 1, f"RemoteMCPServer kagent/agent-docs is defined {len(found)} times"
+    remote = found[0]
     assert remote["spec"]["url"] == "http://agent-docs-mcp.kagent:3000/mcp", remote["spec"]["url"]
     cm = next(d for d in yaml.safe_load_all((kd / "agent-docs-mcp.yaml").read_text())
               if d and d.get("kind") == "ConfigMap")

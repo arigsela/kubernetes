@@ -49,6 +49,11 @@
 # runbook prescribes for a new policy: the byo exception depends on it in the same change
 # (§V.84), and the inventory above found no legitimate writer it blocks. Tested against a real
 # API server, per principal: tests/admission-policies/. Emergency: delete the binding (runbook).
+# TO SOAK instead: the binding's `validationActions: [Warn, Audit]` and the policy's
+# `failurePolicy: Ignore` (the two lines marked "enforcing" below; this file is hand-written,
+# not generated). PRECONDITION: soak only while byo-images holds no pinned digest (every entry
+# still ends in REPLACE_WITH_DIGEST) and before any byo Agent syncs. The byo admission
+# (§V.101) is safe only while git is the only writer: flip back to [Deny] + Fail before pinning.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:

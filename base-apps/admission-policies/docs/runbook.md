@@ -33,7 +33,9 @@ sources:
   wrong: set its binding back to shadow (`validationActions: [Warn, Audit]` plus
   `failurePolicy: Ignore` on the policy) in git, or `git revert` the flip. For
   `agent-capability*` that means the `ENFORCE` constant in
-  `scripts/gen-agent-capability-policy.py`, then regenerate (the YAML is generated). Add a fixture that
+  `scripts/gen-agent-capability-policy.py`, then regenerate (the YAML is generated).
+  `agent-definitions-from-git` is hand-written: edit its YAML, and only under the precondition
+  in "Break glass" below (no pinned byo digest yet). Add a fixture that
   reproduces the false positive to `tests/admission-policies/fixtures/<suite>/good/`.
 - **Emergency (a policy blocks everything and git can't sync):**
   `kubectl delete validatingadmissionpolicybinding <name>`. That disables the policy at once,
@@ -150,6 +152,15 @@ Argo CD's `selfHeal` puts git's version back at its next sync of `kagent-secrets
 same change in git (or pause auto-sync on that app) before the edit is reverted. If the policy
 itself is broken: `kubectl delete validatingadmissionpolicybinding agent-definitions-from-git`
 (Argo re-creates it at the next sync, so fix git first).
+
+**To soak it instead of enforcing** (shadow: it warns and audits, blocks nothing): in
+`base-apps/admission-policies/agent-definitions-from-git.yaml` (hand-written; there is no
+`ENFORCE` constant for it) set `failurePolicy: Ignore` at line 62 and
+`validationActions: [Warn, Audit]` at line 103. **Precondition:** soak only while `byo-images`
+holds no pinned digest (every entry still ends in `REPLACE_WITH_DIGEST`) and before any byo
+Agent syncs, so in practice land the policy on its own before the byo change. The byo admission
+(SPEC §V.101) is safe only while git is the only writer of agent definitions, so flip back to
+`[Deny]` and `failurePolicy: Fail` before a digest is pinned.
 
 ### Pin a byo image digest (or admit another byo image)
 A `byo` runtime is admitted only on an image listed **exactly** in `byo-images`
