@@ -9,7 +9,8 @@ metadata:
     test.homelab/as-user: system:admin
     test.homelab/as-groups: system:masters
 spec:
-  templateRef:
-    name: k8s-reader
+  template:
+    ref:
+      name: k8s-reader
   harnessRef:
     name: kagent-stateless
