@@ -1,5 +1,61 @@
-apiVersion: kagent.dev/v1alpha1
-kind: MCPServer
+# agentgateway reads local.yaml once at start, and a ConfigMap change alone restarts nothing
+# (kmcp rolled the pod through a template checksum). The pod template therefore carries
+# checksum/config = sha256 of the local.yaml text; CI fails when it is stale
+# (tests/agent-identity/test_mcp_server_manifests.py), so every config edit in git rolls the pod.
+# Recompute:  python3 -c 'import sys,yaml,hashlib; d=[x for x in yaml.safe_load_all(open(sys.argv[1])) if x and x["kind"]=="ConfigMap"][0]; print(hashlib.sha256(d["data"]["local.yaml"].encode()).hexdigest())' base-apps/kagent/brave-search-mcp.yaml
+# The stdio child inherits the container environment, which is how the API key (envFrom the
+# ExternalSecret's Secret) reaches it without appearing in this file.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: brave-search-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: brave-search-mcp
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: brave-search-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: brave-search-mcp
+data:
+  local.yaml: |
+    binds:
+      - port: 3000
+        listeners:
+          - name: default
+            protocol: HTTP
+            routes:
+              - name: mcp
+                matches:
+                  - path:
+                      pathPrefix: /sse
+                  - path:
+                      pathPrefix: /mcp
+                backends:
+                  - weight: 100
+                    mcp:
+                      targets:
+                        - name: brave-search-mcp
+                          stdio:
+                            cmd: node
+                            args:
+                              - dist/index.js
+                              - --transport
+                              - stdio
+                            env:
+                              BRAVE_MCP_ENABLED_TOOLS: brave_web_search brave_news_search
+                              BRAVE_MCP_LOG_LEVEL: warning
+                              NODE_OPTIONS: --max-old-space-size=320
+    config: {}
+---
+apiVersion: v1
+kind: Service
 metadata:
   name: brave-search-mcp
   namespace: kagent
@@ -7,53 +63,122 @@ metadata:
     app.kubernetes.io/part-of: kagent
     app.kubernetes.io/name: brave-search-mcp
 spec:
-  # Brave Search over MCP, the official server (github.com/brave/brave-search-mcp-server) from
-  # Docker's MCP catalog. Same shape as agent-docs-mcp.yaml: kmcp wraps the stdio server in an
-  # agentgateway adapter and exposes it as a Service on :3000; the RemoteMCPServer
-  # `brave-search` (brave-search-mcp-remote.yaml) is what agents bind.
-  #
-  # Image pinned by digest only: Docker Hub publishes this image under `latest` alone
-  # (disallow-latest-tag accepts a digest). Renovate's docker manager tracks the digest.
-  # Node 25 on these x86-64-v2 nodes: Node 24 (the kagent UI) ran clean here on 2026-09-26.
-  #
-  # Only two of its eight tools are enabled, the two the taxonomy classifies `read`
-  # (agent-capability-taxonomy.yaml). Enabling more here is not enough: a tool absent from the
-  # taxonomy is denied at admission when an AgentTemplate binds it.
-  transportType: stdio
-  deployment:
-    image: docker.io/mcp/brave-search@sha256:f58a5c22c1196ec7bd1ca586ce216f2334fc298550ddcf652c0e8adb6d256d78
-    cmd: node
-    args:
-      - dist/index.js
-      - --transport
-      - stdio
-    env:
-      BRAVE_MCP_ENABLED_TOOLS: "brave_web_search brave_news_search"
-      BRAVE_MCP_LOG_LEVEL: warning
-      # The adapter keeps one node child per MCP session alive (~90Mi idle) and a session that
-      # searches grows that child by hundreds of Mi at once; the pod's working set is flat for
-      # days between such steps (Prometheus, 2026-10-12..15), so this is sizing, not a leak.
-      # Cap each child's heap below the pod limit so a runaway session dies alone instead of
-      # OOM-killing the pod mid-initialize, which fails every agent bound to brave-search
-      # (homelab-knowledge's run on 2026-10-15 14:36 UTC).
-      NODE_OPTIONS: "--max-old-space-size=320"
-    # Injects BRAVE_API_KEY from the K8s Secret (brave-search-mcp-external-secret.yaml).
-    secretRefs:
-      - name: brave-search-mcp-api-key
-    resources:
-      requests:
-        cpu: 50m
-        # Raised from 96Mi on 2026-10-15 (Agent session scored high risk alert): idle use is ~110Mi, so 96Mi under-reported the pod to the scheduler.
-        # Raised from 128Mi to 192Mi on 2026-10-18 with the limit, same 1:6 ratio (Grafana alert "Container near memory limit": 92% of the limit, no OOMKilled, 0 restarts).
-        memory: 192Mi
-      limits:
-        cpu: 300m
-        # 384Mi was OOM-killed five times in three days at the moment an agent used the
-        # server: adapter + idle child ~110Mi, plus one busy child up to the heap cap above.
-        # Raised from 768Mi to 1152Mi on 2026-10-18 (Grafana alert "Container near memory limit": pod at 92% of 768Mi, steady, no OOMKilled, 0 restarts).
-        memory: 1152Mi
-    nodeSelector:
-      node.kubernetes.io/workload: infrastructure
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        effect: NoSchedule
+  # Both keys exactly as kmcp set them: a Deployment selector is immutable and Argo applies this onto the live object (§T.126).
+  selector:
+    app.kubernetes.io/instance: brave-search-mcp
+    app.kubernetes.io/name: brave-search-mcp
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+      # What kmcp set; the waypoint has served it under this value since 2026-10-11.
+      appProtocol: kgateway.dev/mcp
+---
+# Brave Search over MCP, the official server (github.com/brave/brave-search-mcp-server) from
+# Docker's MCP catalog. The RemoteMCPServer `brave-search` (brave-search-mcp-remote.yaml) binds it.
+#
+# A plain Deployment since §T.126. kagent 1.0.0-alpha14 removed kmcp (kagent#3223); kmcp's MCPServer
+# CR had rendered this shape: an init container copies the agentgateway binary into an emptyDir,
+# and the main container runs agentgateway, which starts the stdio server as its child and serves
+# it as Streamable HTTP on :3000 (/mcp and /sse). The names kmcp used (Deployment, Service,
+# ServiceAccount, ConfigMap, container `mcp-server`) are kept: the RemoteMCPServer `brave-search`
+# binds http://brave-search-mcp.kagent:3000/mcp, and the Grafana memory alerts key on the container name.
+#
+# Only two of its eight tools are enabled, the two the taxonomy classifies `read`
+# (agent-capability-taxonomy.yaml). Enabling more here is not enough: a tool absent from the
+# taxonomy is denied at admission when an AgentTemplate binds it.
+#
+# Image pinned by digest only: Docker Hub publishes this image under `latest` alone
+# (disallow-latest-tag accepts a digest). Renovate's docker manager tracks the digest.
+# Node 25 on these x86-64-v2 nodes: Node 24 (the kagent UI) ran clean here on 2026-09-26.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: brave-search-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: brave-search-mcp
+spec:
+  replicas: 1
+  # Both keys exactly as kmcp set them: a Deployment selector is immutable and Argo applies this onto the live object (§T.126).
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: brave-search-mcp
+      app.kubernetes.io/name: brave-search-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: kagent
+        app.kubernetes.io/instance: brave-search-mcp
+        app.kubernetes.io/name: brave-search-mcp
+      annotations:
+        # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
+        checksum/config: "3b2e1679f46c4945ab7c8cd726f3f9e9f8298f0f6ed39158c140d201df3c52f1"
+    spec:
+      serviceAccountName: brave-search-mcp
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      initContainers:
+        - name: copy-binary
+          image: ghcr.io/agentgateway/agentgateway:0.9.0-musl@sha256:aa375451b6f925f6b260fe33cbe237555efd322f14f3b5e0c717628a069cfb0a
+          args: ["--copy-self", "/adapterbin/agentgateway"]
+          volumeMounts:
+            - name: binary
+              mountPath: /adapterbin
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+      containers:
+        - name: mcp-server
+          image: docker.io/mcp/brave-search@sha256:f58a5c22c1196ec7bd1ca586ce216f2334fc298550ddcf652c0e8adb6d256d78
+          command: ["/adapterbin/agentgateway"]
+          args: ["-f", "/config/local.yaml"]
+          ports:
+            - name: http
+              containerPort: 3000
+          # Injects BRAVE_API_KEY (brave-search-mcp-external-secret.yaml).
+          envFrom:
+            - secretRef:
+                name: brave-search-mcp-api-key
+          # The adapter keeps one node child per MCP session alive (~90Mi idle) and a session that
+          # searches grows that child by hundreds of Mi at once; the pod's working set is flat for
+          # days between such steps (Prometheus, 2026-10-12..15), so this is sizing, not a leak.
+          # Cap each child's heap below the pod limit so a runaway session dies alone instead of
+          # OOM-killing the pod mid-initialize, which fails every agent bound to brave-search
+          # (homelab-knowledge's run on 2026-10-15 14:36 UTC).
+          env:
+            - name: BRAVE_MCP_ENABLED_TOOLS
+              value: "brave_web_search brave_news_search"
+            - name: BRAVE_MCP_LOG_LEVEL
+              value: warning
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=320"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: binary
+              mountPath: /adapterbin
+          resources:
+            # Raised from 96Mi on 2026-10-15 (Agent session scored high risk alert): idle use is ~110Mi, so 96Mi under-reported the pod to the scheduler.
+            # Raised from 128Mi to 192Mi on 2026-10-18 with the limit, same 1:6 ratio (Grafana alert "Container near memory limit": 92% of the limit, no OOMKilled, 0 restarts).
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              cpu: 300m
+              # 384Mi was OOM-killed five times in three days at the moment an agent used the
+              # server: adapter + idle child ~110Mi, plus one busy child up to the heap cap above.
+              # Raised from 768Mi to 1152Mi on 2026-10-18 (Grafana alert "Container near memory limit": pod at 92% of 768Mi, steady, no OOMKilled, 0 restarts).
+              memory: 1152Mi
+      volumes:
+        - name: config
+          configMap:
+            name: brave-search-mcp
+        - name: binary
+          emptyDir: {}
