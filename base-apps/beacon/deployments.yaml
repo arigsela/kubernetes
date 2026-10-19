@@ -56,7 +56,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.3@sha256:ad35a0cfb29ff17fadac7c6fc16c35673ef8f502f7b5159a6ad0be902b1faa33
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.0@sha256:b0f291037c23dae671d59c64482e9f9acc2fc44d996559888421751447a7e550
           ports:
             - name: http
               containerPort: 8080
@@ -184,7 +184,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: web
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-web:v0.2.3@sha256:902375f303dadc2a5defc91202beca3e56fedebf4bbbd0ea1f93c21471917a52
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-web:v0.3.0@sha256:51298066b4fdf677e411c20109124cd467889e23b10c1fc9a178b95a92393ba1
           ports:
             - name: http
               containerPort: 8080
@@ -269,7 +269,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: checker
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-checker:v0.2.3@sha256:47e84f028fa949692e03d27f96af58541c704c67747fd5e5bf2d5ee4aece55c1
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-checker:v0.3.0@sha256:6f33631de90e28387e77ef09b843c905f7bf2a584c0e27668dc817f7e768d6f4
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -361,7 +361,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: notifier
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.2.3@sha256:ca852f149c1a408ed9507d9f100c4f123fb89747222709eb1acfc6079f240cb3
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.3.0@sha256:79db1a801dc89aeddd8adf22effd981d7664d3717e27d38f964ab9d64ee6203d
           ports:
             - name: http
               containerPort: 8080

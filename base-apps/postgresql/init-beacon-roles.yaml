@@ -57,7 +57,7 @@ spec:
         - name: init-beacon-roles
           # Same release as every other beacon image (runbook "Promote a release" in
           # base-apps/beacon/runbook.md updates this line too).
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.3@sha256:ad35a0cfb29ff17fadac7c6fc16c35673ef8f502f7b5159a6ad0be902b1faa33
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.0@sha256:b0f291037c23dae671d59c64482e9f9acc2fc44d996559888421751447a7e550
           command: ["/bin/sh", "-c"]
           args:
             - |
