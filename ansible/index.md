@@ -15,6 +15,7 @@ tags: [ansible, infrastructure, hosts]
 | `playbooks/patch.yml` | VM patching with drained serial reboots |
 | `playbooks/patch-hypervisor.yml` | Confirmed hypervisor reboot with ordered VM shutdown |
 | `playbooks/k3s-authn.yml` | Validate and install the control plane's kube-apiserver authn config |
+| `playbooks/ate-image-credentials.yml` | Workers: atelet's ECR credential provider and the docs-checker pull key (run by `scripts/provision-docs-checker-pull.sh`) |
 | `playbooks/tasks/patch-node.yml` | Per-node patch steps included by `patch.yml` |
 | `roles/` | `common`, `hypervisor`, `k3s_node` (holds `files/authn/`) |
 | `requirements.yml` | Ansible Galaxy collections (`ansible-galaxy collection install -r requirements.yml`) |

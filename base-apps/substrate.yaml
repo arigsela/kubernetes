@@ -25,7 +25,8 @@
 #   kubernetes-secrets sha256:3594e9e14b11904253aac5a42967a2711e8bb54868d3042e42517998b94d849b
 #
 # SECURITY PROFILE (nothing privileged): atelet runs as root with DAC_OVERRIDE and hostPorts
-# 8085/9090; worker pods (rendered by ate-controller from kagent's WorkerPool, in `kagent`) run
+# 8085/9090, and mounts /opt/ate-image-credential-provider read-only (the docs-checker pull key,
+# §V.100); worker pods (rendered by ate-controller from kagent's WorkerPool, in `kagent`) run
 # as UID 0 with 13 capabilities and seccomp/AppArmor Unconfined. The repo's Deny admission
 # policies match only agents and externalsecrets; the audit-only hygiene policies exclude
 # ate-system and podcertificate-controller-system (base-apps/admission-policies/).
@@ -97,6 +98,54 @@ spec:
             endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
           metrics:
             enabled: false
+
+        # Private sandbox images: SPEC §T.129, §V.100; design and spike in
+        # docs/superpowers/specs/2026-10-18-substrate-ecr-pulls.md. (Not the egress `credentialProvider`
+        # above, which injects model API keys.) atelet pulls actor images itself, so the cluster's
+        # ecr-registry pull Secret never reaches a sandbox. atelet runs this kubelet credential provider
+        # instead: ecr-credential-provider from the host directory below, with the pull-only key of IAM user
+        # docs-checker-pull in a 0600 file beside it. ansible/playbooks/ate-image-credentials.yml lays both
+        # down, run by scripts/provision-docs-checker-pull.sh.
+        #   * The directory MUST exist on both workers before this syncs. It is a hostPath of type Directory,
+        #     and atelet does not start without it.
+        #   * It is outside /var/lib/ate on purpose: every Substrate worker pod mounts /var/lib/ate read-write.
+        #   * The inline config (a ConfigMap), not the host-path variant (imageCredentialProviderConfig), so
+        #     matchImages and env are reviewed here. atelet parses it strictly at startup and DIES on any
+        #     error, on every node; tests/substrate/ applies its rules first. atelet reads it once, and the
+        #     chart mounts it by subPath with no checksum annotation, so after a later change here run
+        #     `kubectl -n ate-system rollout restart ds/atelet`.
+        #   * env takes literals only, and is ADDED to atelet's own env, which carries rustfs's AWS_* keys and
+        #     endpoint (rustfs, above). In the AWS SDK, env keys beat the credentials file, and AWS_ENDPOINT_URL
+        #     would send the ECR call to rustfs. So those are blanked here (an empty value is "unset").
+        atelet:
+          imageCredentialProviderBinDir: /opt/ate-image-credential-provider
+          imageCredentialProviderConfigYAML: |
+            apiVersion: kubelet.config.k8s.io/v1
+            kind: CredentialProviderConfig
+            providers:
+              - name: ecr-credential-provider
+                apiVersion: credentialprovider.kubelet.k8s.io/v1
+                # Matches the path by string prefix (atelet's match.go), so docs-checker* repositories.
+                # The IAM policy limits the token to docs-checker itself.
+                matchImages:
+                  - 852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker
+                # Used only when a response carries no duration. The provider sends ~6 h (half the token's life).
+                defaultCacheDuration: "1h"
+                env:
+                  - name: AWS_SHARED_CREDENTIALS_FILE
+                    value: /run/image-credential-provider/bin/aws-credentials
+                  - name: AWS_PROFILE
+                    value: docs-checker-pull
+                  - name: AWS_ACCESS_KEY_ID
+                    value: ""
+                  - name: AWS_SECRET_ACCESS_KEY
+                    value: ""
+                  - name: AWS_ENDPOINT_URL
+                    value: ""
+                  - name: AWS_IGNORE_CONFIGURED_ENDPOINT_URLS
+                    value: "true"
+                  - name: AWS_EC2_METADATA_DISABLED
+                    value: "true"
   destination:
     server: https://kubernetes.default.svc
     namespace: ate-system

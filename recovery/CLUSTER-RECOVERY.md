@@ -293,7 +293,11 @@ you've restored them.
    CA pools and database credentials from Vault (`substrate-cas`, `substrate-db`, and kagent's
    `kagent-db` `v1-*` properties). A restored Vault has them. Without a Vault artifact, run
    `scripts/provision-kagent-1-0-vault.sh` before the `substrate-*` apps sync: it generates
-   fresh CAs and passwords. kagent then starts with empty databases (above).
+   fresh CAs and passwords. kagent then starts with empty databases (above). atelet also needs
+   `/opt/ate-image-credential-provider` on each worker, or it never starts there. Rebuilt VMs lack
+   it, so run `scripts/provision-docs-checker-pull.sh` before `substrate` syncs (SPEC §T.129).
+   Restore Vault first. If Vault lost the key, the script names the user's orphaned key to delete,
+   then makes a new one.
 
 ## Vault and the KMS key
 

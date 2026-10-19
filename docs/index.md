@@ -128,6 +128,7 @@ The ones still here and why:
 | `superpowers/specs/2026-08-17-jupyter-notebooks-design.md` | cited by `base-apps/jupyter/docs.md` for its egress exceptions |
 | `superpowers/specs/2026-08-17-image-vulnerability-scanning-design.md` | cited by `base-apps/argo-workflow-tasks/image-scan.yaml` |
 | `superpowers/specs/2026-09-29-ansible-host-management-design.md` + plan | active: the operator rollout isn't confirmed yet (`ansible/README.md`) |
+| `superpowers/specs/2026-10-18-substrate-ecr-pulls.md` | active (SPEC §T.129): holds the owner's acceptance steps, and is a `sources:` entry of `base-apps/substrate/docs.md` |
 | `superpowers/plans/2026-09-27-agent-audit-web-gitops.md` | cited inside Dex's hashed config (`base-apps/dex/configmap.yaml`); remove with the next Dex config change |
 
 `SPEC.md` at the repo root is the current task and invariant ledger; manifests
