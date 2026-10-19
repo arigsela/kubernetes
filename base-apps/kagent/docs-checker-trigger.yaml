@@ -1,0 +1,163 @@
+# base-apps/kagent/docs-checker-trigger.yaml
+# The weekly docs check (K6 of the docs-checker design, §T.132, V102): every Monday at 14:00 UTC
+# (after Renovate's Monday batch) the CronJob runs scripts/docs_checker_trigger.py, which
+#   1. reads docs-checker's memory snapshot from ConfigMap docs-checker-memory (below),
+#   2. sends docs-checker one A2A request {"scope": "all", "mode": "scheduled", "memory": ...}
+#      as service account kagent/docs-checker-trigger (projected token, audience kagent; the
+#      waypoint admits any service-account token on /agents/*, authorization-policy.yaml rule 2),
+#   3. saves the snapshot docs-checker returns (always, after a completed run; optimistic, by
+#      resourceVersion) and posts the Slack digest to n8n's agent-findings webhook, the path the
+#      dispatcher uses to reach #oncall-alerts ("Investigation: Weekly docs check"),
+#   4. on any failure leaves the memory alone and posts a visible ":x: ... Failed:" alert.
+# Delivery is at most once per run id (the Job name): a retried pod never posts twice. The
+# full report is in the Job log (Loki). Code: the generated docs-checker-trigger-code ConfigMap.
+# Runbook: base-apps/kagent/runbook.md, "Weekly docs check".
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: docs-checker-trigger
+  namespace: kagent
+  labels:
+    app: docs-checker-trigger
+---
+# The minimum on the API: read and replace ONE ConfigMap. No create (the ConfigMap comes from git,
+# below), no list, no other object. Calling the agent needs no RBAC: the mesh checks the token.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: docs-checker-trigger
+  namespace: kagent
+  labels:
+    app: docs-checker-trigger
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["docs-checker-memory"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: docs-checker-trigger
+  namespace: kagent
+  labels:
+    app: docs-checker-trigger
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: docs-checker-trigger
+subjects:
+  - kind: ServiceAccount
+    name: docs-checker-trigger
+    namespace: kagent
+---
+# docs-checker's long-term memory (design §9: the caller holds it). The trigger writes two keys:
+#   memory.json      the agent's full snapshot (doc and source hashes, past verdicts; <= 512 KiB
+#                    normally), replaced after every completed run;
+#   deliveries.json  the last 10 run ids it delivered (or claimed), so a retried pod of the same
+#                    Job never posts twice.
+# Git declares NO data on purpose: the kagent-secrets app syncs with ServerSideApply, so Argo CD
+# owns only the fields written here and selfHeal never reverts what the trigger writes. Starting
+# empty means no snapshot: the first run checks every doc (it costs the most). To reset the memory,
+# delete the ConfigMap; Argo CD recreates it empty (runbook).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: docs-checker-memory
+  namespace: kagent
+  labels:
+    app: docs-checker-trigger
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: docs-checker-trigger
+  namespace: kagent
+  labels:
+    app: docs-checker-trigger
+spec:
+  schedule: "0 14 * * 1"
+  timeZone: Etc/UTC
+  # One run at a time; a run missed by more than an hour (controller down) is skipped, not run late.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  # Kept so `kubectl -n kagent logs job/<run id>` (named in every alert) works for three weeks.
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # One retry, for a pod lost before it recorded anything (eviction, node drain); a pod that
+      # got as far as claiming its delivery makes the retry a no-op.
+      backoffLimit: 1
+      # docs-checker stops itself after 15 minutes and the trigger gives up at RUN_TIMEOUT
+      # (20 minutes), leaving time to save, post or alert before this kills the pod silently.
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app: docs-checker-trigger
+          annotations:
+            # sha256 (first 16 hex) over the docs-checker-trigger-code ConfigMap's values, sorted
+            # by key; written by scripts/gen-docs-checker-trigger-configmap.py so a code change is
+            # a new pod template (tests/docs_checker_trigger).
+            checksum/code: 4bbb0cd458d16a51
+        spec:
+          serviceAccountName: docs-checker-trigger
+          restartPolicy: Never
+          nodeSelector:
+            node.kubernetes.io/workload: application
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: trigger
+              # Renovate pins the digest on its next run (kubernetes manager, pinDigests for base-apps).
+              image: python:3.12-slim
+              command: ["python", "-u", "/opt/docs-checker-trigger/docs_checker_trigger.py"]
+              env:
+                # The run id: the Job's name, shared by a retried pod, new every week.
+                - name: RUN_ID
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['batch.kubernetes.io/job-name']
+                - name: KAGENT_A2A_BASE
+                  value: http://kagent-controller.kagent.svc.cluster.local:8083
+                - name: KAGENT_TOKEN_FILE
+                  value: /var/run/kagent/token
+                - name: N8N_WEBHOOK_BASE
+                  value: http://n8n.n8n.svc.cluster.local:5678/webhook
+                - name: RUN_TIMEOUT
+                  value: "1200"
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: code
+                  mountPath: /opt/docs-checker-trigger
+                  readOnly: true
+                - name: kagent-token
+                  mountPath: /var/run/kagent
+                  readOnly: true
+          volumes:
+            - name: code
+              configMap:
+                name: docs-checker-trigger-code
+            - name: kagent-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      audience: kagent
+                      expirationSeconds: 3600
+                      path: token

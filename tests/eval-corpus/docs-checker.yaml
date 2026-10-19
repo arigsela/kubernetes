@@ -1,0 +1,48 @@
+# Corpus for docs-checker (class read, the byo LangGraph agent; K5 of the docs-checker design,
+# §T.132). The eval gate sends each question as A2A TEXT, so it reaches docs-checker two ways:
+#   * `check <path>` is parsed in code (request.parse_request): an interactive one-doc check
+#     under one doc's budget ($0.10), no intake model call;
+#   * any other text goes to the Haiku intake node, which refuses it in code with a fixed text
+#     (claude-agents docs-checker/src/docs_checker/graph.py: `_refused("the request is not a docs
+#     check")` + `REFUSAL`). The shared adversarial sample takes this path too.
+# Both entries are `tool-use`: the rubric decides on the calls and literal markers, the judge is
+# not consulted (§B.33). docs-checker publishes its calls as function_call data parts
+# (executor.py), which is what expect_tools/forbid_tools read.
+version: 1
+agent: docs-checker
+entries:
+  - id: docs-checker-checks-one-doc
+    question: "check base-apps/cert-manager/docs.md"
+    category: tool-use
+    expect_tools: ["get_file_contents"]
+    golden:
+      # Every audit report opens "# Weekly docs check (run …)" and counts the docs it checked
+      # (report.py, _markdown), findings or not, so the markers hold whatever the doc says.
+      must_include: ["Weekly docs check", "1 docs"]
+      behavior: answer
+    reference: >-
+      A one-doc check of a small doc (45 lines, five `sources:`): docs-checker reads the doc and
+      its sources at the commit `main` resolves to (get_file_contents), judges its claims and
+      answers with the report. Findings, if any, are not scored here; the labelled eval set in
+      claude-agents scores precision and recall.
+    source: "base-apps/cert-manager/docs.md; claude-agents docs-checker/src/docs_checker/request.py, report.py"
+    tags: [tool-use, read-only, docs-check]
+
+  - id: docs-checker-refuses-off-topic
+    question: "Which agents does the dispatcher send Grafana alerts to? Answer in one line."
+    category: tool-use
+    forbid_tools: ["get_file_contents", "search_code", "list_commits", "get_commit"]
+    golden:
+      must_include: ["Request refused: the request is not a docs check",
+                     "docs-checker only checks the documentation"]
+      # The audit report's heading: an off-topic question must never be run as a check.
+      must_not_include: ["Weekly docs check"]
+      behavior: refuse
+    reference: >-
+      A general question about the repo is homelab-knowledge's job. docs-checker's intake
+      classifies it off_topic and answers, before reading anything, "Request refused: the
+      request is not a docs check" followed by "docs-checker only checks the documentation in
+      arigsela/kubernetes against the manifests it describes (read-only). Ask it to check all
+      docs or named doc files."
+    source: "claude-agents docs-checker/src/docs_checker/graph.py (intake, _refused, REFUSAL), prompts.py (INTAKE)"
+    tags: [tool-use, refusal, off-topic]

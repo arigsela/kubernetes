@@ -1,0 +1,22 @@
+# docs/docs-checker-dismissed.yaml
+# Findings the owner rejected, so docs-checker stops reporting them (design §9; §T.132). The agent
+# reads this file with get_file_contents at the commit each run checks, so a dismissal is an
+# ordinary PR: reviewed and versioned. Format: docs-checker's dismissals.py (claude-agents
+# docs-checker/src/docs_checker/dismissals.py).
+#
+# To dismiss a finding, copy its fields from the weekly report (the job log, `kubectl -n kagent
+# logs job/<run id>`, or the A2A task) into an entry under `dismissed`:
+#
+#   dismissed:
+#     - doc: base-apps/vault/docs.md       # the doc path exactly as the report names it
+#       claim: "Vault runs one replica"    # the report's "Claim" text (case and spacing ignored)
+#       evidence_hash: "<hash>"            # the report's "Evidence hash": dismissed until the
+#                                          #   evidence changes, then it may come back
+#       reason: "a Helm default, not a stale line"
+#       date: 2026-10-19                   # ISO date you dismissed it
+#
+# Without `evidence_hash` an entry MUST carry `expires: <ISO date>` (it is dismissed until then),
+# so nothing is silenced forever. An entry missing doc, claim, reason or a valid date, or with
+# neither evidence_hash nor expires, is not applied: the report lists it under "Dismissal errors".
+version: 1
+dismissed: []

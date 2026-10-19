@@ -33,6 +33,7 @@ and Evaluation.
 | `superpowers/specs/2026-07-13-agent-capability-classes-design.md` | record | Security: per-agent capability classes + tool taxonomy |
 | `agent-ready-docs-review.md` | record | Research review: docs-as-code for agents (led to the agent-docs contract) |
 | `okf-documentation-structure.md` | living | How this repo's docs map onto the Open Knowledge Format |
+| `docs-checker-dismissed.yaml` | living | Findings the owner rejected, which the weekly `docs-checker` run must not report again (doc, claim, evidence hash or expiry, reason, date); read by the agent at every run, changed by PR (`base-apps/kagent/docs.md`, "Weekly docs check") |
 
 The enforced contracts themselves: `templates/agent-identity/README.md`, the
 native admission policies in `base-apps/admission-policies/agent-*.yaml`, and the validators

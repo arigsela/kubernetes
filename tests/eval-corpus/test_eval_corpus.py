@@ -296,3 +296,27 @@ def test_shared_file_rules():
     tool = {"id": "t", "question": "q", "category": "tool-use", "golden": {"behavior": "answer"}, "source": "s"}
     assert any("expect_tools and/or forbid_tools" in x for x in vec.check_entry(Path("x.yaml"), 0, tool))
     assert any("non-empty list" in x for x in vec.check_entry(Path("x.yaml"), 0, {**tool, "expect_tools": []}))
+
+
+def test_docs_checker_corpus_checks_one_real_doc_and_refuses_off_topic_at_intake():
+    """K5 (§T.132): docs-checker's own entries. The check is a `check <path>` request (parsed in
+    code, no intake call) for a doc that exists with a `sources:` list, and must read it. The
+    off-topic entry is free text, so it reaches docs-checker's Haiku intake, whose refusal is
+    deterministic text (claude-agents docs-checker/src/docs_checker/graph.py `_refused` +
+    `REFUSAL`): no read, and never an audit report."""
+    doc = yaml.safe_load((REPO / "tests/eval-corpus/docs-checker.yaml").read_text())
+    assert doc["agent"] == "docs-checker"
+    check, refusal = doc["entries"]
+    assert check["expect_tools"] == ["get_file_contents"] and check["category"] == "tool-use"
+    words = check["question"].split()
+    assert words[0] == "check" and len(words) == 2, "one doc, the text form parse_request reads"
+    target = REPO / words[1]
+    assert target.exists() and "\nsources:\n" in target.read_text().split("\n---\n", 1)[0]
+    reads = {"get_file_contents", "search_code", "list_commits", "get_commit"}
+    assert set(refusal["forbid_tools"]) == reads
+    assert not refusal["question"].lower().startswith("check"), "free text: it must reach intake"
+    golden = refusal["golden"]
+    assert golden["behavior"] == "refuse"
+    assert golden["must_include"] == ["Request refused: the request is not a docs check",
+                                      "docs-checker only checks the documentation"]
+    assert golden["must_not_include"] == ["Weekly docs check"], "the audit report's heading"
