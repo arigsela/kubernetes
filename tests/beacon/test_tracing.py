@@ -22,6 +22,9 @@ def images(doc) -> list[str]:
 
     def walk(node):
         if isinstance(node, dict):
+            # Helm values spell an image as {repository, tag}.
+            if isinstance(node.get("repository"), str) and isinstance(node.get("tag"), str) and node["repository"]:
+                out.append(f"{node['repository']}:{node['tag']}")
             for k, v in node.items():
                 if k == "image" and isinstance(v, str):
                     out.append(v)
@@ -314,3 +317,76 @@ def test_v47_collector_ports_declare_their_protocol():
     ports = {p["port"]: p for p in one(COLLECTOR, "Service", "otel-collector")["spec"]["ports"]}
     assert ports[4317].get("appProtocol") == "grpc"
     assert ports[4318].get("appProtocol") == "http"
+
+
+# --- beacon §T.22: the OpenTelemetry Operator and beacon's Instrumentation ----------------------
+
+OPERATOR = REPO / "base-apps" / "opentelemetry-operator.yaml"
+LAYER_PATH = "/otel-auto-instrumentation-python"
+
+
+def operator_values() -> dict:
+    return yaml.safe_load(yaml.safe_load(OPERATOR.read_text())["spec"]["source"]["helm"]["values"])
+
+
+def instrumentation() -> dict:
+    return one("base-apps/beacon/instrumentation.yaml", "Instrumentation", "beacon-python")
+
+
+def test_v25_operator_pod_webhook_is_namespace_scoped_and_fails_open():
+    """The chart's default pod selector is {}: every pod creation in the cluster."""
+    pods = operator_values()["admissionWebhooks"]["pods"]
+    assert pods["namespaceSelector"] == {"matchLabels": {"platform.arigsela.com/otel": "python"}}
+    assert pods["failurePolicy"] == "Ignore"
+    assert "namespaceSelector" not in operator_values()["admissionWebhooks"]  # no wider common selector
+    ns = one("base-apps/beacon/namespace.yaml", "Namespace", "beacon")
+    assert ns["metadata"]["labels"]["platform.arigsela.com/otel"] == "python"
+
+
+def test_v18_operator_images_are_the_smoked_ones():
+    v = operator_values()["manager"]
+    layer = f"{v['autoInstrumentationImage']['python']['repository']}:{v['autoInstrumentationImage']['python']['tag']}"
+    assert instrumentation()["spec"]["python"]["image"] == layer
+    assert {layer, f"{v['image']['repository']}:{v['image']['tag']}"} <= smoke_images()
+
+
+def test_v41_instrumentation_exports_traces_only_to_4318_with_an_explicit_sampler():
+    spec = instrumentation()["spec"]
+    assert spec["exporter"]["endpoint"] == ENDPOINT
+    assert spec["sampler"] == {"type": "parentbased_traceidratio", "argument": "1.0"}
+    env = {e["name"]: e["value"] for e in spec["python"]["env"]}
+    assert env == {"OTEL_PYTHON_LOG_CORRELATION": "true", "OTEL_METRICS_EXPORTER": "none",
+                   "OTEL_LOGS_EXPORTER": "none"}
+
+
+def test_v38_instrumentation_waits_for_its_crd():
+    ann = instrumentation()["metadata"]["annotations"]
+    assert ann["argocd.argoproj.io/sync-wave"] == "3"
+    assert ann["argocd.argoproj.io/sync-options"] == "SkipDryRunOnMissingResource=true"
+
+
+def test_v18_notifier_smoke_runs_under_the_operators_layer():
+    """beacon §V.18: the layer is built on python:3.14, the notifier runs 3.13 (beacon §R.25)."""
+    job = one("base-apps/beacon/jobs.yaml", "Job", "beacon-smoke")
+    spec = job["spec"]["template"]["spec"]
+    [init] = [c for c in spec["initContainers"] if c["name"] == "otel-layer"]
+    assert init["image"] == instrumentation()["spec"]["python"]["image"]
+    assert init["command"] == ["cp", "-r", "/autoinstrumentation/.", LAYER_PATH]
+    [c] = [c for c in spec["containers"] if c["name"] == "notifier-otel-layer"]
+    notifier = one("base-apps/beacon/deployments.yaml", "Deployment", "beacon-notifier")
+    assert c["image"] == notifier["spec"]["template"]["spec"]["containers"][0]["image"]
+    env = {e["name"]: e["value"] for e in c["env"]}
+    assert env["PYTHONPATH"] == f"{LAYER_PATH}/opentelemetry/instrumentation/auto_instrumentation:{LAYER_PATH}"
+    assert {"name": "otel-layer", "mountPath": LAYER_PATH, "readOnly": True} in c["volumeMounts"]
+    script = c["args"][0]
+    for lib in ("starlette", "httpx", "psycopg"):
+        assert lib in script
+    assert "import beacon_notifier.app" in script
+
+
+def test_v9_notifier_manifest_still_carries_no_otel():
+    """Instrumented only by the platform: no annotation, no OTEL_* variable in its own manifest."""
+    notifier = one("base-apps/beacon/deployments.yaml", "Deployment", "beacon-notifier")
+    tmpl = notifier["spec"]["template"]
+    assert not any(k.startswith("instrumentation.opentelemetry.io") for k in tmpl["metadata"].get("annotations", {}))
+    assert not any(e["name"].startswith("OTEL_") for c in tmpl["spec"]["containers"] for e in c.get("env", []))

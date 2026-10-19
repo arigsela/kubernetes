@@ -11,6 +11,7 @@ status: draft
 tags: [uptime, runbook]
 sources:
   - base-apps/beacon/jobs.yaml
+  - base-apps/beacon/instrumentation.yaml
   - base-apps/beacon/deployments.yaml
   - base-apps/beacon/cronjobs.yaml
   - base-apps/beacon/authorization-policy.yaml
@@ -113,6 +114,17 @@ beacon's roles are still created. Check:
 ### Symptom: `init-beacon-roles` logs "skipping"
 `beacon-db-credentials` has no passwords: run `scripts/provision-beacon-vault.sh`, then bump
 `beacon.arigsela.com/rerun-init-beacon-roles` (see "Rotate the database passwords").
+
+### Symptom: the notifier is not traced (no `beacon-notifier` spans)
+- **Check:** `kubectl -n beacon get pod -l app=beacon-notifier -o jsonpath='{.items[0].spec.initContainers[*].name}'`
+  must list `opentelemetry-auto-instrumentation-python`.
+- **Missing:** the operator's webhook failed open when the pod was created (operator down or
+  not ready). Check `kubectl -n opentelemetry-operator-system get pods`; once it is Ready, the
+  next rollout of the notifier (any change to its Deployment, e.g. a promotion) instruments it.
+- **Present, still no spans:** the notifier's egress to the collector (`probe-egress`, port
+  4318), then the collector (`base-apps/tracing/runbook.md`).
+- `beacon-smoke`'s `notifier-otel-layer` container failing means the operator's Python layer
+  does not load under the notifier's Python: do not roll that layer out (pin the previous one).
 
 ### Symptom: login loops or fails at Dex
 - `invalid client` at Dex: the `beacon` client is missing from Dex's running config. Dex

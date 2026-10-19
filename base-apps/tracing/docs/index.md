@@ -13,6 +13,8 @@ sources:
   - base-apps/tracing.yaml
   - base-apps/tracing/tempo.yaml
   - base-apps/tracing/collector.yaml
+  - base-apps/opentelemetry-operator.yaml
+  - base-apps/beacon/instrumentation.yaml
   - base-apps/tracing/smoke-job.yaml
   - appsets/managed-apps/tracing-aws-infrastructure.yaml
   - base-apps/tracing-aws-infrastructure/s3-bucket.yaml
@@ -59,6 +61,20 @@ A second pipeline counts spans per `service.name` before sampling
 (`tracing_spans_received_total`, one label, a running total via `deltatocumulative`, beacon
 §B.14) for the beacon §V.9 alert. One replica on
 purpose: tail sampling needs a whole trace on one instance.
+
+## The OpenTelemetry Operator (`base-apps/opentelemetry-operator.yaml`)
+Helm chart 0.126.0 (operator 0.161.0), namespace `opentelemetry-operator-system`. One job:
+Python auto-instrumentation. Its pod webhook only sees namespaces labelled
+`platform.arigsela.com/otel: python` (today only `beacon`; the chart default would be every
+pod in the cluster) and fails open: with the operator down, a pod starts untraced rather than
+not at all. A pod is instrumented when it carries
+`instrumentation.opentelemetry.io/inject-python: "true"`; the operator then adds an init
+container that copies its Python layer into the pod and points `PYTHONPATH` at it. How it
+instruments is the namespace's `Instrumentation` (`base-apps/beacon/instrumentation.yaml`):
+OTLP/HTTP to the collector, explicit sampler, log correlation on, traces only. beacon's
+smoke Job runs the notifier under that layer before every sync (the layer is built on Python
+3.14, the notifier runs 3.13). The operator's images are smoke-run here first
+(`smoke-job.yaml`).
 
 ## Storage
 - Bucket `asela-tempo-traces-20261019` (us-east-2), its IAM user, policy and access key are

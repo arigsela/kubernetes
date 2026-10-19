@@ -1,0 +1,41 @@
+# base-apps/beacon/instrumentation.yaml (beacon §T.22)
+# How the OpenTelemetry Operator instruments a beacon pod annotated
+# `instrumentation.opentelemetry.io/inject-python: "true"`. Only beacon-notifier gets that
+# annotation, and not from its own manifest: the platform's defaulting policy adds it (beacon
+# §T.23, beacon §V.9). The SDK services opt out with "false" (beacon §V.32).
+#
+# Last wave and no dry run while the CRD is missing: the CRD comes from another app
+# (base-apps/opentelemetry-operator.yaml), and an object whose type does not exist yet must
+# not hold back migrate or the rollout (beacon §V.38).
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: beacon-python
+  namespace: beacon
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  exporter:
+    # OTLP/HTTP: the Python layer ships only the http exporter (beacon §R.25, beacon §V.41).
+    endpoint: http://otel-collector.tracing.svc.cluster.local:4318
+  propagators:
+    - tracecontext
+    - baggage
+  # Explicit (beacon §V.41): every root trace; a request from the checker carries the checker's
+  # decision in traceparent. The collector samples (beacon §V.43).
+  sampler:
+    type: parentbased_traceidratio
+    argument: "1.0"
+  python:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b1@sha256:fcfd4588cbf2c68ae6a5b67501d8aa4a1c58c0b89e664c8eee71952ac12430ff
+    env:
+      # Log lines get trace_id=..., which Grafana links to Tempo (beacon §T.43). The httpx
+      # logger stays at WARNING all the same (beacon_core.logs.setup, beacon §V.45).
+      - name: OTEL_PYTHON_LOG_CORRELATION
+        value: "true"
+      # Traces only: the collector takes no OTLP metrics or logs.
+      - name: OTEL_METRICS_EXPORTER
+        value: none
+      - name: OTEL_LOGS_EXPORTER
+        value: none

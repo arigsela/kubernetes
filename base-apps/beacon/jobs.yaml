@@ -39,6 +39,27 @@ spec:
         runAsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
+      # beacon §V.18: the operator's Python layer, copied exactly as the operator does it
+      # (cp -r /autoinstrumentation/. /otel-auto-instrumentation-python), for notifier-otel-layer.
+      initContainers:
+        - name: otel-layer
+          image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b1@sha256:fcfd4588cbf2c68ae6a5b67501d8aa4a1c58c0b89e664c8eee71952ac12430ff
+          command: ["cp", "-r", "/autoinstrumentation/.", "/otel-auto-instrumentation-python"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: otel-layer
+              mountPath: /otel-auto-instrumentation-python
       containers:
         - name: cpu
           image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.2@sha256:2f9c37b78551a153444bba277014731be16508d1d40f09503ccbf2dc89890ad7
@@ -175,6 +196,61 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+        # beacon §V.18, beacon §T.22: the notifier image under the operator's Python layer, with the
+        # PYTHONPATH the operator injects. The layer is built on python:3.14 and the notifier
+        # runs 3.13 (beacon §R.25): its C extensions may not load, and pure-Python fallbacks
+        # must. sitecustomize runs at startup; this checks it instrumented what the notifier uses.
+        - name: notifier-otel-layer
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.2.2@sha256:fb6bc08cf624b45ff2dfb0f35a169a6fcce41a6f0036b684fe052154a65afb92
+          command: ["python", "-c"]
+          args:
+            - |
+              import sys
+              from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+              from opentelemetry.instrumentation.psycopg import PsycopgInstrumentor
+              from opentelemetry.instrumentation.starlette import StarletteInstrumentor
+              import beacon_notifier.app  # noqa: F401  the notifier itself imports under the layer
+              try:
+                  import wrapt._wrappers  # noqa: F401
+                  wrapt_c = "C extension"
+              except ImportError:
+                  wrapt_c = "pure Python"
+              from google.protobuf.internal import api_implementation
+              print("python", sys.version.split()[0], "| wrapt:", wrapt_c, "| protobuf:", api_implementation.Type())
+              off = [n for n, i in (("starlette", StarletteInstrumentor()), ("httpx", HTTPXClientInstrumentor()),
+                                    ("psycopg", PsycopgInstrumentor())) if not i.is_instrumented_by_opentelemetry]
+              if off:
+                  sys.exit(f"not instrumented under the layer: {off}")
+              print("notifier under the operator's python layer: starlette, httpx, psycopg instrumented")
+          env:
+            - name: PYTHONPATH
+              value: /otel-auto-instrumentation-python/opentelemetry/instrumentation/auto_instrumentation:/otel-auto-instrumentation-python
+            - name: OTEL_SERVICE_NAME
+              value: beacon-smoke
+            - name: OTEL_TRACES_EXPORTER
+              value: none
+            - name: OTEL_METRICS_EXPORTER
+              value: none
+            - name: OTEL_LOGS_EXPORTER
+              value: none
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: otel-layer
+              mountPath: /otel-auto-instrumentation-python
+              readOnly: true
         - name: web
           image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-web:v0.2.2@sha256:e5a9cf3c5d9dad965ac3cf27b751384b18563566504113628b2ce22ee2fdb5ef
           command: ["/bin/sh", "-c"]
@@ -201,6 +277,9 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 16Mi
+        - name: otel-layer
+          emptyDir:
+            sizeLimit: 256Mi
 ---
 # Alembic migrations as beacon_owner, after the secrets exist (wave 0) and before any
 # Deployment or CronJob (wave 2). Idempotent: on a sync with no new migration it is a
