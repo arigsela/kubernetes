@@ -1,7 +1,7 @@
 ---
 type: "Kubernetes App Guide"
 title: "Tracing"
-description: "Distributed tracing: Tempo 3.x on S3, queried from Grafana; the platform's trace store, added for beacon's Phase 3"
+description: "Distributed tracing: the OpenTelemetry Collector (scrubs, samples, fans out) and Tempo 3.x on S3, queried from Grafana; added for beacon's Phase 3"
 app: tracing
 catalog_entity: tracing
 kind: docs
@@ -12,6 +12,7 @@ tags: [tempo, tracing, opentelemetry]
 sources:
   - base-apps/tracing.yaml
   - base-apps/tracing/tempo.yaml
+  - base-apps/tracing/collector.yaml
   - base-apps/tracing/smoke-job.yaml
   - appsets/managed-apps/tracing-aws-infrastructure.yaml
   - base-apps/tracing-aws-infrastructure/s3-bucket.yaml
@@ -19,6 +20,8 @@ sources:
   - base-apps/tracing-aws-infrastructure/iam.yaml
   - base-apps/logging/grafana-deployment.yaml
   - tests/beacon/test_tracing.py
+  - tests/beacon/test_collector.py
+  - base-apps/beacon/network-policies.yaml
 ---
 
 # Tracing
@@ -34,9 +37,26 @@ is this repo's own SPEC.md).
 | Workload | Kind | What it does |
 |---|---|---|
 | `tempo` | Deployment, 1 replica | Tempo 3.1 single binary: receives OTLP gRPC on 4317, keeps recent traces in its live-store, writes blocks to S3, serves queries on 3200. No Kafka in this mode. |
+| `otel-collector` | Deployment, 1 replica | OTLP in on 4317 (gRPC) and 4318 (HTTP). Scrubs URLs, tail-samples, sends to Tempo and to Coroot. Counts spans per service on 8889 for Prometheus. |
 | `tracing-smoke` | PreSync Job | Runs every third-party image of beacon's Phase 3 on a node before any of it rolls out (beacon §V.18): Tempo, the collector, the OpenTelemetry Operator and its Python layer. |
 
-The OpenTelemetry Collector (the only thing that sends to Tempo) arrives in beacon §T.19.
+## The collector (`collector.yaml`)
+Every trace source except kagent and Substrate (which export to Coroot themselves) sends to
+`otel-collector.tracing.svc.cluster.local`: 4318 for OTLP/HTTP (beacon's services; the Python
+SDK ships only the HTTP exporter), 4317 for gRPC (Istio, from beacon §T.20). In order:
+1. `memory_limiter` first in every traces pipeline (beacon §V.41): refuse, don't OOM.
+2. `transform/scrub` (beacon §V.42): strips the query string from `http.url`, `url.full` and
+   `http.target`, drops `url.query`, and cuts the notifier's outgoing `url.full` to
+   `scheme://host`. Envoy's `http.url` keeps the query (OAuth `code`/`state`, search text),
+   and a Slack webhook path is itself the credential. `tests/beacon/test_collector.py` runs
+   this exact config and checks the secret parts never come out.
+3. `tail_sampling` (beacon §V.43): keeps every trace with an error and every trace touching a
+   `beacon-*` service, and 10% of the rest. Sampling happens here, not at the Gateway,
+   because apps behind the Gateway (kagent, Substrate) follow its sampling decision.
+4. Exported to Tempo and to Coroot (Coroot keeps its own 7 days).
+A second pipeline counts spans per `service.name` before sampling
+(`tracing_spans_received_total`, one label) for the beacon §V.9 alert. One replica on
+purpose: tail sampling needs a whole trace on one instance.
 
 ## Storage
 - Bucket `asela-tempo-traces-20261019` (us-east-2), its IAM user, policy and access key are

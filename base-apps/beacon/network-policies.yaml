@@ -85,10 +85,10 @@ spec:
 # Egress for the two workloads that connect to tenant-supplied addresses (beacon §V.5): the
 # checker's probes and the notifier's webhook/Slack/email deliveries. The SSRF guard refuses
 # these ranges after DNS; this refuses them at L3 too, so a guard bug is not an open door.
-# Allowed: DNS, the shared Postgres, the in-namespace mesh (waypoint, notifier), and public
-# IPv4 on any port. Refused: RFC 1918 (incl. this cluster's pod 10.42/16, Service 10.43/16
-# and node 10.0.1/24 networks), CGNAT 100.64/10, loopback, link-local (incl. the cloud
-# metadata address 169.254.169.254) and 0/8.
+# Allowed: DNS, the shared Postgres, the in-namespace mesh (waypoint, notifier), the trace
+# collector (beacon §V.41), and public IPv4 on any port. Refused: RFC 1918 (incl. this
+# cluster's pod 10.42/16, Service 10.43/16 and node 10.0.1/24 networks), CGNAT 100.64/10,
+# loopback, link-local (incl. the cloud metadata address 169.254.169.254) and 0/8.
 # NOT covered at L3: the home WAN address. Pod egress to it hairpins through the router to
 # the ingress Gateway as an allow-listed source (beacon §R.22), and it rotates, so it is
 # refused by the guard (which resolves it live from SSRF_SELF_HOSTS) and not pinned here.
@@ -138,6 +138,18 @@ spec:
         - port: 15008
           protocol: TCP
         - port: 8080
+          protocol: TCP
+    # Traces to the collector (beacon §V.41): its pods only, OTLP/HTTP only. `tracing` is not in
+    # the mesh, so plain TCP to the pod, no HBONE.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tracing
+          podSelector:
+            matchLabels:
+              app: otel-collector
+      ports:
+        - port: 4318
           protocol: TCP
     - to:
         - ipBlock:

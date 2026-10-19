@@ -1,7 +1,7 @@
 ---
 type: "Kubernetes App Runbook"
 title: "Tracing — Runbook"
-description: "Operational runbook for Tracing: Tempo startup and S3 access, the image smoke Job, Grafana datasource."
+description: "Operational runbook for Tracing: the collector, Tempo startup and S3 access, the image smoke Job, Grafana datasource."
 app: tracing
 catalog_entity: tracing
 kind: runbook
@@ -11,6 +11,7 @@ status: draft
 tags: [tempo, tracing, runbook]
 sources:
   - base-apps/tracing/tempo.yaml
+  - base-apps/tracing/collector.yaml
   - base-apps/tracing/smoke-job.yaml
   - base-apps/tracing-aws-infrastructure/iam.yaml
   - base-apps/logging/grafana-deployment.yaml
@@ -45,5 +46,17 @@ commands below only inspect.
   `checksum/datasources` on the Grafana Deployment (tested in `tests/beacon/test_tracing.py`).
 
 ### Symptom: no traces for a service
-- Until beacon §T.19 nothing sends to Tempo. After it, check the collector first (its runbook
-  section lands with it).
+- **Is it sending?** Its span count: Prometheus `tracing_spans_received_total{service_name="<svc>"}`.
+  Zero means the service never reached the collector: for beacon, check its
+  `OTEL_EXPORTER_OTLP_ENDPOINT` and, for the checker and notifier, the `probe-egress`
+  NetworkPolicy rule to `tracing` port 4318 (beacon §V.41).
+- **Received but not in Tempo:** `kubectl -n tracing logs deploy/otel-collector --tail=100`.
+  `memory_limiter` refusing data means the collector is at its limit; export errors name Tempo
+  or Coroot. A trace with no error and no beacon service is kept only 10% of the time (by design).
+- **In Tempo, but a URL is cut short:** expected. Query strings and the notifier's delivery
+  paths are scrubbed (beacon §V.42).
+
+### Symptom: `otel-collector` CrashLoopBackOff
+- A config error: the collector names the bad key and exits. Run the config locally:
+  `otelcol-contrib validate --config=<file>`, or `OTELCOL_BIN=... python -m pytest tests/beacon/test_collector.py`.
+  Update `checksum/config` with the fix.
