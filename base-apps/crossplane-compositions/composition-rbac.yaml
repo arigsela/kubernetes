@@ -93,3 +93,11 @@ rules:
   - apiGroups: ["generators.external-secrets.io"]
     resources: ["passwords"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # The tenant's own beacon stack (beacon §T.46): its init and dump Jobs, scheduler and dump
+  # CronJobs, and the Instrumentation that lets the OTel Operator instrument its notifier.
+  - apiGroups: ["batch"]
+    resources: ["jobs", "jobs/status", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["opentelemetry.io"]
+    resources: ["instrumentations"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

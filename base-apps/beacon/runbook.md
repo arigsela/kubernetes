@@ -40,8 +40,14 @@ this PR.
    (the smoke Job lists all six) and `base-apps/postgresql/init-beacon-roles.yaml`.
    `tests/beacon/test_manifests.py` fails if any reference is unpinned, from another
    release, or missing from the smoke Job.
+   Also the four in `IMAGES` in `base-apps/crossplane-compositions/composition-tenant.yaml`
+   (api, scheduler, checker, notifier): every enterprise tenant runs the same release
+   (beacon §V.53, `tests/beacon/test_tenants.py`). Then re-render the tenants' goldens,
+   `UPDATE_GOLDENS=1 python -m pytest tests/composition/` (crossplane CLI, see
+   `tests/composition/README.md`): the diff is the new images and the new init Job name.
 3. Run `python -m pytest tests/beacon/ -q`, open the PR with a title citing `beacon §T.41`
-   and the tag, and merge it after review.
+   and the tag, and merge it after review. Each tenant then runs its own `beacon-init-<digest>`
+   Job (roles, migrations) and its workers move to the release once that Job succeeded.
 4. Argo CD runs `beacon-smoke` first. If it fails, nothing rolls (next section).
    Then `beacon-migrate`, then the Deployments and CronJobs.
 

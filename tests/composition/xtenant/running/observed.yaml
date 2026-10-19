@@ -1,0 +1,13 @@
+# Observed state for crossplane render (--observed-resources). {init} / {init_job} are replaced
+# with the init Job's composition name and object name for the composition's current beacon-api
+# image, so a promotion does not invalidate the case.
+- name: database
+  apiVersion: postgresql.cnpg.io/v1
+  kind: Cluster
+  metadataName: beacon-db
+  status: {conditions: [{type: Ready, status: "True"}]}
+- name: "{init}"
+  apiVersion: batch/v1
+  kind: Job
+  metadataName: "{init_job}"
+  status: {succeeded: 1}

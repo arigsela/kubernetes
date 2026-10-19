@@ -1,0 +1,1658 @@
+# rendered from tests/composition/xtenant/offboarding/xr.yaml; UPDATE_GOLDENS=1 rewrites it
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: AccessKey
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: access-key
+  labels:
+    app.kubernetes.io/component: access-key
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co
+spec:
+  forProvider:
+    userRef:
+      name: beacon-tenant-acme-co
+  providerConfigRef:
+    name: default
+  writeConnectionSecretToRef:
+    name: beacon-s3
+    namespace: tenant-acme-co
+---
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: bucket
+  labels:
+    app.kubernetes.io/component: storage
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co-0b5e9d72
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    region: us-east-2
+    tags:
+      Environment: homelab
+      ManagedBy: Crossplane
+      Name: beacon tenant acme-co
+      Project: beacon
+      Purpose: beacon tenant dumps
+      Tenant: acme-co
+  providerConfigRef:
+    name: default
+---
+apiVersion: s3.aws.upbound.io/v1beta2
+kind: BucketLifecycleConfiguration
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: bucket-lifecycle
+  labels:
+    app.kubernetes.io/component: storage
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co-0b5e9d72
+spec:
+  forProvider:
+    bucketRef:
+      name: beacon-tenant-acme-co-0b5e9d72
+    region: us-east-2
+    rule:
+    - expiration:
+      - days: 14
+      filter:
+      - prefix: nightly/
+      id: expire-nightly-dumps
+      status: Enabled
+  providerConfigRef:
+    name: default
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: database
+  labels:
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-db
+  namespace: tenant-acme-co
+spec:
+  bootstrap:
+    initdb:
+      database: beacon
+      owner: beacon_owner
+      secret:
+        name: beacon-db-secrets
+  enableSuperuserAccess: true
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+  inheritedMetadata:
+    labels:
+      app.kubernetes.io/part-of: beacon
+      beacon.arigsela.com/tenant: acme-co
+      istio.io/dataplane-mode: none
+  instances: 1
+  postgresql:
+    parameters:
+      max_connections: '40'
+      shared_buffers: 64MB
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 256Mi
+  storage:
+    size: 1Gi
+---
+apiVersion: v1
+data:
+  beacon-flags.json: "{\n  \"$schema\": \"https://flagd.dev/schema/v0/flags.json\"\
+    ,\n  \"flags\": {\n    \"checkerSlowProbe\": {\n      \"state\": \"ENABLED\",\n\
+    \      \"variants\": {\n        \"off\": 0.0,\n        \"slow\": 5.0\n      },\n\
+    \      \"defaultVariant\": \"off\"\n    },\n    \"checkerFalseDown\": {\n    \
+    \  \"state\": \"ENABLED\",\n      \"variants\": {\n        \"off\": false,\n \
+    \       \"on\": true\n      },\n      \"defaultVariant\": \"off\"\n    },\n  \
+    \  \"notifierReceiverFail\": {\n      \"state\": \"ENABLED\",\n      \"variants\"\
+    : {\n        \"off\": false,\n        \"on\": true\n      },\n      \"defaultVariant\"\
+    : \"off\"\n    },\n    \"apiDbPoolExhaust\": {\n      \"state\": \"ENABLED\",\n\
+    \      \"variants\": {\n        \"off\": false,\n        \"on\": true\n      },\n\
+    \      \"defaultVariant\": \"off\"\n    },\n    \"apiSlowQuery\": {\n      \"\
+    state\": \"ENABLED\",\n      \"variants\": {\n        \"off\": 0.0,\n        \"\
+    slow\": 2.0\n      },\n      \"defaultVariant\": \"off\"\n    },\n    \"tenantFloodIngest\"\
+    : {\n      \"state\": \"ENABLED\",\n      \"variants\": {\n        \"off\": 0.0,\n\
+    \        \"flood\": 10.0\n      },\n      \"defaultVariant\": \"off\"\n    },\n\
+    \    \"schedulerStall\": {\n      \"state\": \"ENABLED\",\n      \"variants\"\
+    : {\n        \"off\": false,\n        \"on\": true\n      },\n      \"defaultVariant\"\
+    : \"off\"\n    }\n  }\n}"
+kind: ConfigMap
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: flags
+  labels:
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-flags
+  namespace: tenant-acme-co
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: dump-nightly
+  labels:
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-dump-nightly
+  namespace: tenant-acme-co
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: beacon-dump
+            app.kubernetes.io/name: beacon-dump
+            app.kubernetes.io/part-of: beacon
+            backstage.io/kubernetes-id: beacon-dump
+            beacon.arigsela.com/tenant: acme-co
+        spec:
+          automountServiceAccountToken: false
+          containers:
+          - command:
+            - /bin/sh
+            - -c
+            - 'set -eu
+
+              key="${KEY:-${KEY_PREFIX}$(date -u +%Y-%m-%dT%H%M%SZ).dump}"
+
+              aws s3 cp /dump/beacon.dump "s3://$BUCKET/$key" --only-show-errors
+
+              size=$(aws s3api head-object --bucket "$BUCKET" --key "$key" --query
+              ContentLength --output text)
+
+              test "$size" -gt 0
+
+              echo "dump verified: s3://$BUCKET/$key ($size bytes)"
+
+              '
+            env:
+            - name: BUCKET
+              value: beacon-tenant-acme-co-0b5e9d72
+            - name: KEY_PREFIX
+              value: nightly/
+            - name: AWS_REGION
+              value: us-east-2
+            - name: HOME
+              value: /tmp
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: beacon-s3
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: attribute.secret
+                  name: beacon-s3
+            image: public.ecr.aws/aws-cli/aws-cli:2.37.13@sha256:d32864c20087d486f5988c3e70817d67a73f584a47535cada9ad97e0ea1e5196
+            name: upload
+            resources:
+              limits:
+                cpu: 500m
+                memory: 256Mi
+              requests:
+                cpu: 50m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+            volumeMounts:
+            - mountPath: /dump
+              name: dump
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+          initContainers:
+          - command:
+            - /bin/sh
+            - -c
+            - "set -eu\npg_dump --format=custom --no-owner --file=/dump/beacon.dump\n\
+              # A dump that does not list is not a backup (beacon \xA7V.12).\npg_restore\
+              \ --list /dump/beacon.dump > /dev/null\ntest -s /dump/beacon.dump\n"
+            env:
+            - name: PGHOST
+              value: beacon-db-rw.tenant-acme-co.svc.cluster.local
+            - name: PGPORT
+              value: '5432'
+            - name: PGDATABASE
+              value: beacon
+            - name: PGSSLMODE
+              value: require
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  key: username
+                  name: beacon-db-superuser
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: beacon-db-superuser
+            image: ghcr.io/cloudnative-pg/postgresql:16.4
+            name: pg-dump
+            resources:
+              limits:
+                cpu: 500m
+                memory: 256Mi
+              requests:
+                cpu: 50m
+                memory: 64Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsGroup: 26
+              runAsUser: 26
+            volumeMounts:
+            - mountPath: /dump
+              name: dump
+          nodeSelector:
+            node.kubernetes.io/workload: application
+          restartPolicy: Never
+          securityContext:
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: beacon-dump
+          volumes:
+          - emptyDir:
+              sizeLimit: 1Gi
+            name: dump
+          - emptyDir:
+              sizeLimit: 64Mi
+            name: tmp
+  schedule: 40 2 * * *
+  successfulJobsHistoryLimit: 1
+  suspend: true
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: scheduler
+  labels:
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-scheduler
+  namespace: tenant-acme-co
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 0
+      template:
+        metadata:
+          annotations:
+            instrumentation.opentelemetry.io/inject-python: 'false'
+          labels:
+            app: beacon-scheduler
+            app.kubernetes.io/name: beacon-scheduler
+            app.kubernetes.io/part-of: beacon
+            backstage.io/kubernetes-id: beacon-scheduler
+            beacon.arigsela.com/tenant: acme-co
+        spec:
+          automountServiceAccountToken: false
+          containers:
+          - env:
+            - name: BEACON_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: app-password
+                  name: beacon-db-secrets
+            - name: DATABASE_URL
+              value: postgresql://beacon_app:$(BEACON_APP_PASSWORD)@beacon-db-rw.tenant-acme-co.svc.cluster.local:5432/beacon
+            - name: FLAGS_PATH
+              value: /etc/beacon/flags/beacon-flags.json
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.tracing.svc.cluster.local:4318
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_traceidratio
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: '1.0'
+            image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.2.3@sha256:70cfb48e9a22f255dff7d9d13bc404eac359b3282e265d13ad8998c75f5ac431
+            name: scheduler
+            resources:
+              limits:
+                cpu: 300m
+                memory: 256Mi
+              requests:
+                cpu: 50m
+                memory: 96Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+            volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /etc/beacon/flags
+              name: flags
+              readOnly: true
+          nodeSelector:
+            node.kubernetes.io/workload: application
+          restartPolicy: Never
+          securityContext:
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: beacon-scheduler
+          volumes:
+          - emptyDir:
+              sizeLimit: 16Mi
+            name: tmp
+          - configMap:
+              name: beacon-flags
+            name: flags
+      ttlSecondsAfterFinished: 600
+  schedule: '* * * * *'
+  startingDeadlineSeconds: 50
+  successfulJobsHistoryLimit: 1
+  suspend: true
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: scheduler-daily
+  labels:
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-scheduler-daily
+  namespace: tenant-acme-co
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      backoffLimit: 0
+      template:
+        metadata:
+          annotations:
+            instrumentation.opentelemetry.io/inject-python: 'false'
+          labels:
+            app: beacon-scheduler-daily
+            app.kubernetes.io/name: beacon-scheduler
+            app.kubernetes.io/part-of: beacon
+            backstage.io/kubernetes-id: beacon-scheduler
+            beacon.arigsela.com/tenant: acme-co
+        spec:
+          automountServiceAccountToken: false
+          containers:
+          - args:
+            - --daily
+            env:
+            - name: BEACON_APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: app-password
+                  name: beacon-db-secrets
+            - name: DATABASE_URL
+              value: postgresql://beacon_app:$(BEACON_APP_PASSWORD)@beacon-db-rw.tenant-acme-co.svc.cluster.local:5432/beacon
+            - name: BEACON_RETENTION_DAYS
+              value: '30'
+            - name: FLAGS_PATH
+              value: /etc/beacon/flags/beacon-flags.json
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.tracing.svc.cluster.local:4318
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_traceidratio
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: '1.0'
+            image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.2.3@sha256:70cfb48e9a22f255dff7d9d13bc404eac359b3282e265d13ad8998c75f5ac431
+            name: scheduler
+            resources:
+              limits:
+                cpu: 300m
+                memory: 256Mi
+              requests:
+                cpu: 50m
+                memory: 96Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+            volumeMounts:
+            - mountPath: /tmp
+              name: tmp
+            - mountPath: /etc/beacon/flags
+              name: flags
+              readOnly: true
+          nodeSelector:
+            node.kubernetes.io/workload: application
+          restartPolicy: Never
+          securityContext:
+            runAsGroup: 10001
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          serviceAccountName: beacon-scheduler
+          volumes:
+          - emptyDir:
+              sizeLimit: 16Mi
+            name: tmp
+          - configMap:
+              name: beacon-flags
+            name: flags
+      ttlSecondsAfterFinished: 600
+  schedule: 17 3 * * *
+  startingDeadlineSeconds: 50
+  successfulJobsHistoryLimit: 1
+  suspend: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: checker
+  labels:
+    app: beacon-checker
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: beacon-checker
+    app.kubernetes.io/part-of: beacon
+    backstage.io/kubernetes-id: beacon-checker
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-checker
+  namespace: tenant-acme-co
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: beacon-checker
+  template:
+    metadata:
+      annotations:
+        instrumentation.opentelemetry.io/inject-python: 'false'
+      labels:
+        app: beacon-checker
+        app.kubernetes.io/name: beacon-checker
+        app.kubernetes.io/part-of: beacon
+        backstage.io/kubernetes-id: beacon-checker
+        beacon.arigsela.com/tenant: acme-co
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - env:
+        - name: BEACON_APP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: app-password
+              name: beacon-db-secrets
+        - name: DATABASE_URL
+          value: postgresql://beacon_app:$(BEACON_APP_PASSWORD)@beacon-db-rw.tenant-acme-co.svc.cluster.local:5432/beacon
+        - name: NOTIFIER_URL
+          value: http://beacon-notifier.tenant-acme-co.svc.cluster.local:8080
+        - name: FLAGS_PATH
+          value: /etc/beacon/flags/beacon-flags.json
+        - name: SSRF_SELF_HOSTS
+          value: dex.arigsela.com,beacon.arigsela.com
+        - name: SSRF_EXEMPT_TENANTS
+          value: ''
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://otel-collector.tracing.svc.cluster.local:4318
+        - name: OTEL_TRACES_SAMPLER
+          value: parentbased_traceidratio
+        - name: OTEL_TRACES_SAMPLER_ARG
+          value: '1.0'
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-checker:v0.2.3@sha256:47e84f028fa949692e03d27f96af58541c704c67747fd5e5bf2d5ee4aece55c1
+        name: checker
+        resources:
+          limits:
+            cpu: 300m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /etc/beacon/flags
+          name: flags
+          readOnly: true
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: beacon-checker
+      volumes:
+      - emptyDir:
+          sizeLimit: 64Mi
+        name: tmp
+      - configMap:
+          name: beacon-flags
+        name: flags
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: notifier
+  labels:
+    app: beacon-notifier
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/name: beacon-notifier
+    app.kubernetes.io/part-of: beacon
+    backstage.io/kubernetes-id: beacon-notifier
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-notifier
+  namespace: tenant-acme-co
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: beacon-notifier
+  template:
+    metadata:
+      labels:
+        app: beacon-notifier
+        app.kubernetes.io/name: beacon-notifier
+        app.kubernetes.io/part-of: beacon
+        backstage.io/kubernetes-id: beacon-notifier
+        beacon.arigsela.com/tenant: acme-co
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - env:
+        - name: BEACON_APP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: app-password
+              name: beacon-db-secrets
+        - name: DATABASE_URL
+          value: postgresql://beacon_app:$(BEACON_APP_PASSWORD)@beacon-db-rw.tenant-acme-co.svc.cluster.local:5432/beacon
+        - name: SIGNING_KEY_REF
+          value: /etc/beacon/signing/signing-key
+        - name: FLAGS_PATH
+          value: /etc/beacon/flags/beacon-flags.json
+        - name: SSRF_SELF_HOSTS
+          value: dex.arigsela.com,beacon.arigsela.com
+        - name: SSRF_EXEMPT_TENANTS
+          value: ''
+        - name: BEACON_DB_POOL_MAX
+          value: '4'
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.2.3@sha256:ca852f149c1a408ed9507d9f100c4f123fb89747222709eb1acfc6079f240cb3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 20
+        name: notifier
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 10
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 300m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /etc/beacon/flags
+          name: flags
+          readOnly: true
+        - mountPath: /etc/beacon/signing
+          name: signing
+          readOnly: true
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: beacon-notifier
+      volumes:
+      - emptyDir:
+          sizeLimit: 64Mi
+        name: tmp
+      - configMap:
+          name: beacon-flags
+        name: flags
+      - name: signing
+        secret:
+          defaultMode: 288
+          items:
+          - key: signing-key
+            path: signing-key
+          secretName: beacon-db-secrets
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: generated-secrets
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-db-secrets
+  namespace: tenant-acme-co
+spec:
+  dataFrom:
+  - sourceRef:
+      generatorRef:
+        apiVersion: generators.external-secrets.io/v1alpha1
+        kind: Password
+        name: beacon-db-passwords
+  - sourceRef:
+      generatorRef:
+        apiVersion: generators.external-secrets.io/v1alpha1
+        kind: Password
+        name: beacon-signing-key
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    name: beacon-db-secrets
+    template:
+      data:
+        app-password: '{{ index . "app-password" }}'
+        password: '{{ index . "owner-password" }}'
+        signing-key: '{{ index . "signing-key" }}'
+        username: beacon_owner
+      engineVersion: v2
+      type: kubernetes.io/basic-auth
+---
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: instrumentation
+  labels:
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-python
+  namespace: tenant-acme-co
+spec:
+  exporter:
+    endpoint: http://otel-collector.tracing.svc.cluster.local:4318
+  propagators:
+  - tracecontext
+  - baggage
+  python:
+    env:
+    - name: OTEL_PYTHON_LOG_CORRELATION
+      value: 'true'
+    - name: OTEL_METRICS_EXPORTER
+      value: none
+    - name: OTEL_LOGS_EXPORTER
+      value: none
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b1@sha256:fcfd4588cbf2c68ae6a5b67501d8aa4a1c58c0b89e664c8eee71952ac12430ff
+  sampler:
+    argument: '1.0'
+    type: parentbased_traceidratio
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: init-ad35a0cf
+  labels:
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-init-ad35a0cf
+  namespace: tenant-acme-co
+spec:
+  activeDeadlineSeconds: 1800
+  backoffLimit: 10
+  template:
+    metadata:
+      annotations:
+        instrumentation.opentelemetry.io/inject-python: 'false'
+      labels:
+        app: beacon-init
+        app.kubernetes.io/name: beacon-init
+        app.kubernetes.io/part-of: beacon
+        backstage.io/kubernetes-id: beacon-init
+        beacon.arigsela.com/tenant: acme-co
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - init-tenant-db
+        env:
+        - name: BEACON_APP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: app-password
+              name: beacon-db-secrets
+        - name: DATABASE_URL
+          value: postgresql://beacon_app:$(BEACON_APP_PASSWORD)@beacon-db-rw.tenant-acme-co.svc.cluster.local:5432/beacon
+        - name: TENANT_ID
+          value: 0b5e9d72-1c3a-4f8e-b6d0-9e8f7a6b5c4d
+        - name: TENANT_SLUG
+          value: acme-co
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.3@sha256:ad35a0cfb29ff17fadac7c6fc16c35673ef8f502f7b5159a6ad0be902b1faa33
+        name: init-tenant-db
+        resources:
+          limits:
+            cpu: 300m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+      initContainers:
+      - args:
+        - bootstrap-roles
+        env:
+        - name: PGHOST
+          value: beacon-db-rw.tenant-acme-co.svc.cluster.local
+        - name: PGPORT
+          value: '5432'
+        - name: PGDATABASE
+          value: postgres
+        - name: PGSSLMODE
+          value: require
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: beacon-db-superuser
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: beacon-db-superuser
+        - name: BEACON_OWNER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: beacon-db-secrets
+        - name: BEACON_APP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: app-password
+              name: beacon-db-secrets
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.3@sha256:ad35a0cfb29ff17fadac7c6fc16c35673ef8f502f7b5159a6ad0be902b1faa33
+        name: bootstrap-roles
+        resources:
+          limits:
+            cpu: 300m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+      - args:
+        - migrate
+        env:
+        - name: BEACON_OWNER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: beacon-db-secrets
+        - name: DATABASE_URL
+          value: postgresql://beacon_owner:$(BEACON_OWNER_PASSWORD)@beacon-db-rw.tenant-acme-co.svc.cluster.local:5432/beacon
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.3@sha256:ad35a0cfb29ff17fadac7c6fc16c35673ef8f502f7b5159a6ad0be902b1faa33
+        name: migrate
+        resources:
+          limits:
+            cpu: 300m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      restartPolicy: Never
+      securityContext:
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: beacon-init
+      volumes:
+      - emptyDir:
+          sizeLimit: 16Mi
+        name: tmp
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: offboard-dump
+  labels:
+    app.kubernetes.io/component: backup
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-offboard-dump
+  namespace: tenant-acme-co
+spec:
+  activeDeadlineSeconds: 1800
+  backoffLimit: 4
+  template:
+    metadata:
+      labels:
+        app: beacon-dump
+        app.kubernetes.io/name: beacon-dump
+        app.kubernetes.io/part-of: beacon
+        backstage.io/kubernetes-id: beacon-dump
+        beacon.arigsela.com/tenant: acme-co
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - command:
+        - /bin/sh
+        - -c
+        - 'set -eu
+
+          key="${KEY:-${KEY_PREFIX}$(date -u +%Y-%m-%dT%H%M%SZ).dump}"
+
+          aws s3 cp /dump/beacon.dump "s3://$BUCKET/$key" --only-show-errors
+
+          size=$(aws s3api head-object --bucket "$BUCKET" --key "$key" --query ContentLength
+          --output text)
+
+          test "$size" -gt 0
+
+          echo "dump verified: s3://$BUCKET/$key ($size bytes)"
+
+          '
+        env:
+        - name: BUCKET
+          value: beacon-tenant-acme-co-0b5e9d72
+        - name: KEY
+          value: offboard/beacon.dump
+        - name: AWS_REGION
+          value: us-east-2
+        - name: HOME
+          value: /tmp
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: beacon-s3
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              key: attribute.secret
+              name: beacon-s3
+        image: public.ecr.aws/aws-cli/aws-cli:2.37.13@sha256:d32864c20087d486f5988c3e70817d67a73f584a47535cada9ad97e0ea1e5196
+        name: upload
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /dump
+          name: dump
+          readOnly: true
+        - mountPath: /tmp
+          name: tmp
+      initContainers:
+      - command:
+        - /bin/sh
+        - -c
+        - "set -eu\npg_dump --format=custom --no-owner --file=/dump/beacon.dump\n\
+          # A dump that does not list is not a backup (beacon \xA7V.12).\npg_restore\
+          \ --list /dump/beacon.dump > /dev/null\ntest -s /dump/beacon.dump\n"
+        env:
+        - name: PGHOST
+          value: beacon-db-rw.tenant-acme-co.svc.cluster.local
+        - name: PGPORT
+          value: '5432'
+        - name: PGDATABASE
+          value: beacon
+        - name: PGSSLMODE
+          value: require
+        - name: PGUSER
+          valueFrom:
+            secretKeyRef:
+              key: username
+              name: beacon-db-superuser
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: beacon-db-superuser
+        image: ghcr.io/cloudnative-pg/postgresql:16.4
+        name: pg-dump
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsGroup: 26
+          runAsUser: 26
+        volumeMounts:
+        - mountPath: /dump
+          name: dump
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      restartPolicy: Never
+      securityContext:
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: beacon-dump
+      volumes:
+      - emptyDir:
+          sizeLimit: 1Gi
+        name: dump
+      - emptyDir:
+          sizeLimit: 64Mi
+        name: tmp
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: limits
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: tenant-defaults
+  namespace: tenant-acme-co
+spec:
+  limits:
+  - default:
+      cpu: 200m
+      memory: 256Mi
+    defaultRequest:
+      cpu: 20m
+      memory: 64Mi
+    type: Container
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: namespace
+  labels:
+    app.kubernetes.io/component: namespace
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+    istio.io/dataplane-mode: ambient
+    platform.arigsela.com/defaults: enabled
+    platform.arigsela.com/otel: python
+    platform.arigsela.com/tenant: enterprise
+  name: tenant-acme-co
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: netpol-db-from-operator
+  labels:
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: db-from-cnpg-operator
+  namespace: tenant-acme-co
+spec:
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: cnpg-system
+    ports:
+    - port: 8000
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: beacon-db
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: netpol-db-from-stack
+  labels:
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: db-from-stack
+  namespace: tenant-acme-co
+spec:
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values:
+          - beacon-init
+          - beacon-scheduler
+          - beacon-scheduler-daily
+          - beacon-checker
+          - beacon-notifier
+          - beacon-dump
+    ports:
+    - port: 5432
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: beacon-db
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: netpol-default-deny
+  labels:
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: default-deny-ingress
+  namespace: tenant-acme-co
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: netpol-notifier-from-checker
+  labels:
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: notifier-from-checker
+  namespace: tenant-acme-co
+spec:
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: beacon-checker
+    ports:
+    - port: 8080
+      protocol: TCP
+    - port: 15008
+      protocol: TCP
+  podSelector:
+    matchLabels:
+      app: beacon-notifier
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: netpol-probe-egress
+  labels:
+    app.kubernetes.io/component: network-policy
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: probe-egress
+  namespace: tenant-acme-co
+spec:
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+  - ports:
+    - port: 5432
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          cnpg.io/cluster: beacon-db
+  - ports:
+    - port: 15008
+      protocol: TCP
+    - port: 8080
+      protocol: TCP
+    to:
+    - podSelector:
+        matchLabels:
+          app: beacon-notifier
+  - ports:
+    - port: 4318
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: tracing
+      podSelector:
+        matchLabels:
+          app: otel-collector
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 0.0.0.0/8
+        - 10.0.0.0/8
+        - 100.64.0.0/10
+        - 127.0.0.0/8
+        - 169.254.0.0/16
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values:
+      - beacon-checker
+      - beacon-notifier
+  policyTypes:
+  - Egress
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: gen-db-passwords
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-db-passwords
+  namespace: tenant-acme-co
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 32
+  noUpper: false
+  secretKeys:
+  - owner-password
+  - app-password
+  symbols: 0
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: gen-signing-key
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-signing-key
+  namespace: tenant-acme-co
+spec:
+  allowRepeat: true
+  digits: 8
+  encoding: base64
+  length: 32
+  noUpper: false
+  secretKeys:
+  - signing-key
+  symbols: 0
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: iam-policy
+  labels:
+    app.kubernetes.io/component: iam-policy
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co-s3
+spec:
+  forProvider:
+    description: 'beacon tenant acme-co: its own bucket only'
+    policy: '{"Version": "2012-10-17", "Statement": [{"Sid": "TenantBucket", "Effect":
+      "Allow", "Action": ["s3:ListBucket", "s3:GetObject", "s3:PutObject"], "Resource":
+      ["arn:aws:s3:::beacon-tenant-acme-co-0b5e9d72", "arn:aws:s3:::beacon-tenant-acme-co-0b5e9d72/*"]}]}'
+    tags:
+      Environment: homelab
+      ManagedBy: Crossplane
+      Name: beacon tenant acme-co
+      Project: beacon
+      Purpose: beacon tenant dumps
+      Tenant: acme-co
+  providerConfigRef:
+    name: default
+---
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: vault-push
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-vault-push
+  namespace: tenant-acme-co
+spec:
+  data:
+  - match:
+      remoteRef:
+        property: owner-password
+        remoteKey: tenants/tenant-acme-co/db
+      secretKey: password
+  - match:
+      remoteRef:
+        property: app-password
+        remoteKey: tenants/tenant-acme-co/db
+      secretKey: app-password
+  - match:
+      remoteRef:
+        property: signing-key
+        remoteKey: tenants/tenant-acme-co/signing
+      secretKey: signing-key
+  - match:
+      remoteRef:
+        property: dsn
+        remoteKey: tenants/tenant-acme-co/api
+      secretKey: dsn
+  - match:
+      remoteRef:
+        property: signing_key
+        remoteKey: tenants/tenant-acme-co/api
+      secretKey: signing-key
+  deletionPolicy: Delete
+  refreshInterval: 1h
+  secretStoreRefs:
+  - kind: SecretStore
+    name: vault-backend
+  selector:
+    secret:
+      name: beacon-db-secrets
+  template:
+    data:
+      dsn: postgresql://beacon_app:{{ index . "app-password" }}@beacon-db-rw.tenant-acme-co.svc.cluster.local:5432/beacon
+    engineVersion: v2
+    mergePolicy: Merge
+  updatePolicy: Replace
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: quota
+  labels:
+    app.kubernetes.io/component: quota
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: tenant-quota
+  namespace: tenant-acme-co
+spec:
+  hard:
+    limits.cpu: '2'
+    limits.memory: 2Gi
+    persistentvolumeclaims: '2'
+    pods: '20'
+    requests.cpu: 500m
+    requests.memory: 1Gi
+    requests.storage: 4Gi
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: secretstore
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: vault-backend
+  namespace: tenant-acme-co
+spec:
+  provider:
+    vault:
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: beacon-tenant
+          serviceAccountRef:
+            name: eso-tenant
+      path: k8s-secrets
+      server: http://vault.vault.svc.cluster.local:8200
+      version: v2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: notifier-service
+  labels:
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-notifier
+  namespace: tenant-acme-co
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+  selector:
+    app: beacon-notifier
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: sa-beacon-checker
+  labels:
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-checker
+  namespace: tenant-acme-co
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: sa-beacon-dump
+  labels:
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-dump
+  namespace: tenant-acme-co
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: sa-beacon-init
+  labels:
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-init
+  namespace: tenant-acme-co
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: sa-beacon-notifier
+  labels:
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-notifier
+  namespace: tenant-acme-co
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: sa-beacon-scheduler
+  labels:
+    app.kubernetes.io/component: stack
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-scheduler
+  namespace: tenant-acme-co
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: eso-serviceaccount
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: eso-tenant
+  namespace: tenant-acme-co
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: usage-eso-serviceaccount
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: eso-serviceaccount-outlives-push
+  namespace: tenant-acme-co
+spec:
+  by:
+    apiVersion: external-secrets.io/v1alpha1
+    kind: PushSecret
+    resourceRef:
+      name: beacon-vault-push
+  of:
+    apiVersion: v1
+    kind: ServiceAccount
+    resourceRef:
+      name: eso-tenant
+---
+apiVersion: protection.crossplane.io/v1beta1
+kind: Usage
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: usage-secretstore
+  labels:
+    app.kubernetes.io/component: secrets
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: secretstore-outlives-push
+  namespace: tenant-acme-co
+spec:
+  by:
+    apiVersion: external-secrets.io/v1alpha1
+    kind: PushSecret
+    resourceRef:
+      name: beacon-vault-push
+  of:
+    apiVersion: external-secrets.io/v1
+    kind: SecretStore
+    resourceRef:
+      name: vault-backend
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: User
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: iam-user
+  labels:
+    app.kubernetes.io/component: iam-user
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co
+spec:
+  forProvider:
+    path: /serviceaccounts/
+    tags:
+      Environment: homelab
+      ManagedBy: Crossplane
+      Name: beacon tenant acme-co
+      Project: beacon
+      Purpose: beacon tenant dumps
+      Tenant: acme-co
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: UserPolicyAttachment
+metadata:
+  annotations:
+    crossplane.io/composition-resource-name: iam-attachment
+  labels:
+    app.kubernetes.io/component: iam-policy-attachment
+    app.kubernetes.io/managed-by: crossplane
+    app.kubernetes.io/part-of: beacon
+    beacon.arigsela.com/tenant: acme-co
+  name: beacon-tenant-acme-co-s3
+spec:
+  forProvider:
+    policyArnRef:
+      name: beacon-tenant-acme-co-s3
+    userRef:
+      name: beacon-tenant-acme-co
+  providerConfigRef:
+    name: default
+---
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XTenant
+metadata:
+  name: acme-co
+status:
+  backup: s3://beacon-tenant-acme-co-0b5e9d72/offboard/beacon.dump
+  conditions:
+  - message: 'Unready resources: access-key, bucket, bucket-lifecycle, and 32 more'
+    reason: Creating
+    status: 'False'
+    type: Ready

@@ -273,6 +273,31 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+        # The enterprise tenants' dump uploader (beacon §T.46, composition-tenant.yaml AWS_CLI):
+        # third-party, so it runs on a node here before any tenant needs it (beacon §V.18).
+        - name: aws-cli
+          image: public.ecr.aws/aws-cli/aws-cli:2.37.13@sha256:d32864c20087d486f5988c3e70817d67a73f584a47535cada9ad97e0ea1e5196
+          command: ["/bin/sh", "-c"]
+          args:
+            - aws --version && echo "aws-cli smoke ok"
+          env:
+            - name: HOME
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: tmp
           emptyDir:

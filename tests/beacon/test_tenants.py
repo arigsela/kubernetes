@@ -5,6 +5,7 @@ What the composition renders is tested in tests/composition/test_xtenant_render.
 crossplane CLI); these need nothing but the files: who may delete a tenant, what Crossplane may
 create, and that the Vault role the composition names is the one the script provisions.
 """
+import json
 import re
 
 import yaml
@@ -27,7 +28,8 @@ BASE_GRANTS = {("", "secrets"), ("", "serviceaccounts"), ("", "services"), ("", 
 RESOURCES = {
     "Namespace": ("", "namespaces"), "ResourceQuota": ("", "resourcequotas"),
     "LimitRange": ("", "limitranges"), "ServiceAccount": ("", "serviceaccounts"),
-    "ConfigMap": ("", "configmaps"), "NetworkPolicy": ("networking.k8s.io", "networkpolicies"),
+    "ConfigMap": ("", "configmaps"), "Service": ("", "services"),
+    "NetworkPolicy": ("networking.k8s.io", "networkpolicies"),
     "Deployment": ("apps", "deployments"), "Job": ("batch", "jobs"), "CronJob": ("batch", "cronjobs"),
     "Cluster": ("postgresql.cnpg.io", "clusters"),
     "SecretStore": ("external-secrets.io", "secretstores"),
@@ -136,3 +138,114 @@ def test_v52_composition_authenticates_with_the_provisioned_tenant_role():
     script = VAULT_SCRIPT.read_text()
     assert re.search(r"auth/kubernetes/role/beacon-tenant \\\n\s+bound_service_account_names=eso-tenant", script)
     assert "'bound_service_account_namespaces=tenant-*'" in script
+
+
+# --- the tenant's beacon stack (beacon §T.46, §V.53) -----------------------------------------
+# Read from the committed render of a running tenant (tests/composition/xtenant/running/), which
+# the composition-validate job proves equal to what the composition renders.
+
+RUNNING = REPO / "tests/composition/xtenant/running/expected.yaml"
+STACK = {"beacon-checker": "deployments.yaml", "beacon-notifier": "deployments.yaml",
+         "beacon-scheduler": "cronjobs.yaml", "beacon-scheduler-daily": "cronjobs.yaml"}
+
+
+def _template(d):
+    spec = d["spec"]
+    return spec.get("jobTemplate", {}).get("spec", spec)["template"]
+
+
+def _rendered(name):
+    docs = [d for d in yaml.safe_load_all(RUNNING.read_text()) if d and d["metadata"]["name"] == name
+            and d["kind"] in ("Deployment", "CronJob", "Job")]
+    assert len(docs) == 1, f"{name}: expected one workload in {RUNNING.name}"
+    return docs[0]
+
+
+def _beacons(name):
+    return next(d for d in load(f"base-apps/beacon/{STACK[name]}") if d["metadata"]["name"] == name)
+
+
+def _images_in_composition():
+    return dict(re.findall(r'"(api|scheduler|checker|notifier)": f"\{ECR\}/beacon-[a-z]+:([^"]+)"', _script()))
+
+
+def test_v53_stack_images_match_beacons_digests():
+    """A promotion pins base-apps/beacon and the composition's IMAGES together, so a tenant never
+    runs another release than beacon (base-apps/beacon/runbook.md, "Promote a release")."""
+    pinned = {}
+    for f in ("deployments.yaml", "cronjobs.yaml"):
+        for d in load(f"base-apps/beacon/{f}"):
+            for c in _template(d)["spec"]["containers"]:
+                m = re.fullmatch(r".*/beacon-([a-z]+):(.+)", c["image"])
+                if m:
+                    pinned[m.group(1)] = m.group(2)
+    images = _images_in_composition()
+    assert set(images) == {"api", "scheduler", "checker", "notifier"}
+    for svc, ref in images.items():
+        assert ref == pinned[svc], f"composition IMAGES[{svc!r}] = {ref}, base-apps/beacon pins {pinned[svc]}"
+    for name in STACK:
+        for c in _template(_rendered(name))["spec"]["containers"]:
+            assert c["image"].split(":", 1)[1] in images.values() or "beacon-" not in c["image"], name
+
+
+def test_v53_tenant_workloads_run_like_beacons():
+    """Same pod and container security, nodes, service-account token handling and resources as
+    beacon's own workload of the same name: the tenant's stack is beacon's, not a second variant."""
+    for name in STACK:
+        ours, theirs = _template(_rendered(name))["spec"], _template(_beacons(name))["spec"]
+        for key in ("securityContext", "nodeSelector", "automountServiceAccountToken", "serviceAccountName"):
+            assert ours.get(key) == theirs.get(key), f"{name}: {key} differs from base-apps/beacon"
+        for a, b in zip(ours["containers"], theirs["containers"], strict=True):
+            for key in ("securityContext", "resources", "args", "ports", "livenessProbe", "readinessProbe"):
+                assert a.get(key) == b.get(key), f"{name}/{a['name']}: {key} differs from base-apps/beacon"
+            # Every setting beacon passes, the tenant's passes too (values differ: its own database,
+            # notifier and no SSRF exemption).
+            assert {e["name"] for e in b["env"]} <= {e["name"] for e in a["env"]}, name
+
+
+def test_v39_tenant_secret_volumes_are_readable_by_the_pod_user():
+    checked = 0
+    for d in yaml.safe_load_all(RUNNING.read_text()):
+        if not d or d["kind"] not in ("Deployment", "CronJob", "Job"):
+            continue
+        spec = _template(d)["spec"]
+        sc = spec.get("securityContext", {})
+        for v in spec.get("volumes", []):
+            src = v.get("secret") or v.get("configMap")
+            if src is None or src.get("defaultMode", 0o644) & 0o004:
+                continue
+            checked += 1
+            assert src["defaultMode"] in (0o440, 0o444) and sc.get("fsGroup") == sc.get("runAsGroup"), \
+                f"{d['metadata']['name']}/{v['name']}"
+    assert checked >= 1  # the notifier's signing key
+
+
+def test_v53_tenant_probe_egress_refuses_what_beacons_refuses():
+    ours = next(d for d in yaml.safe_load_all(RUNNING.read_text())
+                if d and d["kind"] == "NetworkPolicy" and d["metadata"]["name"] == "probe-egress")
+    theirs = one("base-apps/beacon/network-policies.yaml", "NetworkPolicy", "probe-egress")
+
+    def blocks(p):
+        return [t["ipBlock"] for r in p["spec"]["egress"] for t in r.get("to", []) if "ipBlock" in t]
+
+    assert blocks(ours) == blocks(theirs), "tenant probes must refuse every private range beacon's do (beacon §V.5)"
+    assert ours["spec"]["podSelector"]["matchExpressions"][0]["values"] == ["beacon-checker", "beacon-notifier"]
+
+
+def test_v18_the_stacks_third_party_images_already_run_on_a_node():
+    """The dump uploader is smoke-run by beacon-smoke; the database image is the pooled cluster's."""
+    aws = re.search(r'AWS_CLI = \("([^"]+)"\s+"([^"]+)"\)', _script())
+    image = aws.group(1) + aws.group(2)
+    smoke = one("base-apps/beacon/jobs.yaml", "Job", "beacon-smoke")["spec"]["template"]["spec"]
+    assert image in [c["image"] for c in smoke["containers"]], "add the dump image to beacon-smoke"
+    pooled = one("base-apps/postgresql/cnpg-cluster.yaml", "Cluster", "postgresql-cluster")["spec"]["imageName"]
+    assert f'PG_IMAGE = "{pooled}"' in _script()
+
+
+def test_v53_tenant_flags_are_beacons_flags_all_off():
+    beacon = json.loads(one("base-apps/beacon/configmaps.yaml", "ConfigMap", "beacon-flags")["data"]["beacon-flags.json"])
+    cm = next(d for d in yaml.safe_load_all(RUNNING.read_text())
+              if d and d["kind"] == "ConfigMap" and d["metadata"]["name"] == "beacon-flags")
+    ours = json.loads(cm["data"]["beacon-flags.json"])["flags"]
+    assert {k: v["variants"] for k, v in ours.items()} == {k: v["variants"] for k, v in beacon["flags"].items()}
+    assert all(v["defaultVariant"] == "off" and "targeting" not in v for v in ours.values())

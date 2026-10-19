@@ -87,12 +87,18 @@ def test_v18_smoke_job_runs_every_image_on_a_node_before_each_sync():
     spec = job["spec"]
     assert spec["backoffLimit"] == 0
     containers = spec["template"]["spec"]["containers"]
-    smoked = {IMAGE_RX.match(c["image"])["svc"] for c in containers if "beacon-" in c["image"]}
+    smoked = {IMAGE_RX.match(c["image"])["svc"] for c in containers if IMAGE_RX.match(c["image"])}
     assert smoked == set(SERVICES)
     # The smoke Job runs exactly the digests that roll out, not some other build.
     rolled = {IMAGE_RX.match(i)["svc"]: i for *_, i in beacon_images()}
     for c in containers:
-        assert c["image"] == rolled[IMAGE_RX.match(c["image"])["svc"]]
+        if IMAGE_RX.match(c["image"]):
+            assert c["image"] == rolled[IMAGE_RX.match(c["image"])["svc"]]
+    # Third-party images beacon §T adds run here too (beacon §V.18, §B.22): each one by name,
+    # pinned by digest. tests/beacon/test_tenants.py checks the dump image is the tenants'.
+    third_party = {c["name"]: c["image"] for c in containers if not IMAGE_RX.match(c["image"])}
+    assert set(third_party) == {"aws-cli"}, third_party
+    assert all("@sha256:" in i for i in third_party.values())
     names = {c["name"]: c for c in containers}
     for svc in ("api", "scheduler", "checker", "notifier", "mcp"):
         assert names[svc].get("args") == ["--self-check"], svc
