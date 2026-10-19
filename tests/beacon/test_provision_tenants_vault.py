@@ -36,6 +36,15 @@ STUB = textwrap.dedent(
         if os.environ.get("STUB_VAULT_NO_K8S_AUTH"):
             print("No value found at sys/auth/kubernetes/", file=sys.stderr); save(); sys.exit(2)
         print(os.environ["STUB_VAULT_ACCESSOR"], end=""); save(); sys.exit(0)
+    if args[0] == "kv":
+        key = [a for a in args[2:] if not a.startswith("-")][0]
+        if args[1] == "get":
+            if key not in db["kv"]:
+                print(f"No value found at k8s-secrets/data/{key}", file=sys.stderr); save(); sys.exit(2)
+            print(json.dumps({"data": {"data": db["kv"][key]}})); save(); sys.exit(0)
+        if args[1] == "put":
+            pairs = dict(a.split("=", 1) for a in args[2:] if not a.startswith("-") and "=" in a)
+            db["kv"][key] = pairs; db["puts"].append(key); save(); sys.exit(0)
     if args[:2] == ["policy", "write"]:
         db["policies"][args[2]] = sys.stdin.read(); save(); sys.exit(0)
     if args[0] == "write" and args[1].startswith("auth/kubernetes/role/"):
@@ -54,7 +63,7 @@ def vault(tmp_path):
     exe.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{bindir / "stub_vault.py"}" "$@"\n')
     exe.chmod(0o755)
     state = tmp_path / "vault.json"
-    state.write_text(json.dumps({"policies": {}, "roles": {}, "calls": []}))
+    state.write_text(json.dumps({"policies": {}, "roles": {}, "calls": [], "kv": {}, "puts": []}))
 
     def run(*args, **env):
         e = {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}", "VAULT_ADDR": "http://127.0.0.1:8200",
@@ -124,7 +133,25 @@ def test_v52_writes_no_secret_values_and_reruns_identically(vault):
     p, again = vault()
     assert p.returncode == 0, p.stderr
     assert again["policies"] == first["policies"] and again["roles"] == first["roles"]
-    assert not any(c[0] == "kv" for c in again["calls"])
+    # The only key it ever writes is the folder marker, once, and it holds no secret.
+    assert again["puts"] == ["tenants/.keep"]
+    assert set(again["kv"]) == {"tenants/.keep"} and set(again["kv"]["tenants/.keep"]) == {"purpose"}
+
+
+def test_b25_the_tenants_folder_exists_before_the_first_tenant(vault):
+    """ESO's find fails on a folder Vault cannot list (beacon §B.25): the script leaves a marker
+    in it, which beacon-tenant-dsns's name filter skips without reading."""
+    import re
+
+    import yaml
+
+    p, db = vault()
+    assert p.returncode == 0, p.stderr
+    assert "tenants/.keep" in db["kv"]
+    es = [d for d in yaml.safe_load_all((REPO / "base-apps/beacon/external-secrets.yaml").read_text())
+          if d and d["metadata"]["name"] == "beacon-tenant-dsns"][0]
+    name = re.compile(es["spec"]["dataFrom"][0]["find"]["name"]["regexp"])
+    assert name.fullmatch("tenants/tenant-demo/api") and not name.fullmatch("tenants/.keep")
 
 
 def test_refuses_without_a_vault_login(vault):

@@ -21,7 +21,9 @@
 # at the mount root would need list on all of k8s-secrets/metadata/*.
 #
 # It writes no secret values. Each tenant's secrets are generated in its namespace by ESO Password
-# generators and pushed to its folder (beacon §V.52).
+# generators and pushed to its folder (beacon §V.52). The one key it writes is a marker,
+# k8s-secrets/tenants/.keep: ESO's find fails on a folder Vault cannot list, and before the first
+# tenant tenants/ would not exist (beacon §B.25). beacon-tenant-dsns's name filter skips it unread.
 #
 #   export VAULT_ADDR=https://vault.arigsela.com   # or a port-forward, http://127.0.0.1:8200
 #   vault login -method=oidc                       # Dex; or export VAULT_TOKEN=<token>
@@ -50,6 +52,10 @@ vault policy write beacon-tenants-read - >/dev/null <<POLICY
 path "$MOUNT/metadata/$FOLDER/*" { capabilities = ["list"] }
 path "$MOUNT/data/$FOLDER/+/api" { capabilities = ["read"] }
 POLICY
+if ! vault kv get -mount="$MOUNT" "$FOLDER/.keep" >/dev/null 2>&1; then
+  vault kv put -mount="$MOUNT" "$FOLDER/.keep" \
+    purpose="keeps k8s-secrets/tenants/ listable before the first tenant (beacon §B.25)" >/dev/null
+fi
 vault write auth/kubernetes/role/beacon-tenant \
   bound_service_account_names=eso-tenant \
   'bound_service_account_namespaces=tenant-*' \
@@ -60,4 +66,4 @@ vault write auth/kubernetes/role/beacon-tenants \
   policies=beacon-tenants-read ttl=1h >/dev/null
 
 echo "beacon tenants: policies beacon-tenant-rw, beacon-tenants-read and roles beacon-tenant, beacon-tenants written"
-echo "  tenant secrets: $MOUNT/$FOLDER/tenant-<slug>/* (generated in each tenant namespace)"
+echo "  tenant secrets: $MOUNT/$FOLDER/tenant-<slug>/* (generated in each tenant namespace); marker $MOUNT/$FOLDER/.keep"
