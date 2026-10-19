@@ -251,7 +251,9 @@ group to the role, and note it in the manifest header's dated list.
 
 ### Symptom: Slack shows `:x: Investigation: Weekly docs check … Failed:`, or no weekly docs check on a Monday
 - **Check:** the alert names the Job (`kubectl -n kagent logs job/<run id>`); every log line is
-  `event: docs-checker-trigger`, and the `error` one says why. Memory was not touched. Common reasons:
+  `event: docs-checker-trigger`, and the `error` one says why. Memory was not touched, except
+  after `the trigger failed: unexpected …` (a bug, or the pod's token or CA missing), where the
+  line's `trace` shows how far the run got. Common reasons:
   - `the task ended TASK_STATE_FAILED: docs-checker failed: timeout`: docs-checker stopped itself
     at 15 minutes. A first run (empty memory) checks every doc and is the slowest; otherwise read
     the actor's log ("`docs-checker` sessions fail at start" above).
@@ -261,8 +263,17 @@ group to the role, and note it in the manifest header's dated list.
     the request's data part, so it treated the empty text as off topic and ran nothing.
   - `cannot read ConfigMap kagent/docs-checker-memory`: Argo CD has not created it yet, or the
     Role `docs-checker-trigger` is missing (`argocd app get kagent-secrets`).
-  - `memory not saved and the delivery not recorded (HTTP 422 …)`: the snapshot no longer fits a
-    ConfigMap (1 MiB); reset the memory (How-to below). The report is in the log, not in Slack.
+  - `the delivery could not be recorded (…), so the report is not posted`: the API server refused
+    even the claim alone (it is down, or the ConfigMap is already over 1 MiB). The report is in the
+    log, not in Slack; run again once the API answers (reset the memory first if it is the size).
+- **Slack shows the report AND `:x: … Failed: memory not saved: …`:** the report was delivered;
+  only docs-checker's new snapshot was dropped. Either it would have taken the ConfigMap's data
+  past its budget (the API server's 1 MiB less a 16 KiB margin; `… bytes of ConfigMap data`), the
+  API server refused it (`HTTP 422`), or it is not a version-1 snapshot with an integer run
+  counter (`snapshot version …`, `run counter …`: docs-checker's memory schema changed, so update
+  `SNAPSHOT_VERSION` in `scripts/docs_checker_trigger.py`). The previous memory is kept, so the
+  next run re-checks what this one learned and costs more. If the size alert repeats, reset the
+  memory (How-to below).
 - **Check, nothing in Slack at all:** `kubectl -n kagent get cronjob docs-checker-trigger` (`LAST
   SCHEDULE`; a run missed by more than an hour is skipped by design) and the Job's log. `report not
   posted: …` means n8n refused the post: the run is recorded as claimed, so the Job's retry posts
@@ -284,7 +295,8 @@ group to the role, and note it in the manifest header's dated list.
   kagent/docs-checker-trigger --context <session from the log> "check <path>"` continues it.
 - **State:** `kubectl -n kagent get cm docs-checker-memory -o jsonpath='{.data.deliveries\.json}'`
   lists the last ten run ids and whether each was posted; `memory.json` is docs-checker's snapshot.
-- **Reset the memory** (garbled snapshot, too large, or to force every doc to be checked):
+- **Reset the memory** (garbled snapshot, a repeated "memory not saved" size alert, or to force
+  every doc to be checked):
   `kubectl -n kagent delete cm docs-checker-memory`, when no run is in progress. Argo CD recreates it
   empty; the next run checks every doc (the slowest and most expensive run, still capped at $1.00).
   It also forgets which runs were delivered, so do not delete it while a Job is retrying.

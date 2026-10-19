@@ -54,7 +54,9 @@ subjects:
 ---
 # docs-checker's long-term memory (design §9: the caller holds it). The trigger writes two keys:
 #   memory.json      the agent's full snapshot (doc and source hashes, past verdicts; <= 512 KiB
-#                    normally), replaced after every completed run;
+#                    normally), replaced after every completed run unless it would take the data
+#                    past 1 MiB (the API server's cap) less 16 KiB: then the old one stays, the
+#                    report still goes out, and an alert says "memory not saved";
 #   deliveries.json  the last 10 run ids it delivered (or claimed), so a retried pod of the same
 #                    Job never posts twice.
 # Git declares NO data on purpose: the kagent-secrets app syncs with ServerSideApply, so Argo CD
@@ -101,7 +103,7 @@ spec:
             # sha256 (first 16 hex) over the docs-checker-trigger-code ConfigMap's values, sorted
             # by key; written by scripts/gen-docs-checker-trigger-configmap.py so a code change is
             # a new pod template (tests/docs_checker_trigger).
-            checksum/code: 4bbb0cd458d16a51
+            checksum/code: 2baff4df8575df1d
         spec:
           serviceAccountName: docs-checker-trigger
           restartPolicy: Never

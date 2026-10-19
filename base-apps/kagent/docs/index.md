@@ -499,6 +499,11 @@ skipped, the Job is killed after 30 minutes, one retry).
   `resourceVersion` it read; on a conflict it re-reads and retries (three writes at most) and
   keeps a snapshot another run saved in between rather than overwrite it. A failed, cancelled,
   paused or timed-out run, or one that completed without a report, leaves the memory untouched.
+  A snapshot that cannot be saved does not cost the report: one that would take the ConfigMap's
+  data past its budget (the API server's 1 MiB cap less a 16 KiB margin, shared with the
+  delivery record), one the API server refuses, or one that is not a version-1 snapshot with an
+  integer run counter is dropped; the run is recorded without it, the old memory stays, the
+  report is posted and a second message says "memory not saved".
   Git declares the ConfigMap with no data: the `kagent-secrets` app syncs with ServerSideApply, so
   Argo CD owns only what git writes and never reverts the trigger's keys. The trigger's Role is
   `get`/`update` on that one ConfigMap and nothing else. An empty ConfigMap (the first run, or
@@ -508,7 +513,8 @@ skipped, the Job is killed after 30 minutes, one retry).
   same payload keys as the dispatcher's findings (CI pins them to `dispatch.py`): Slack shows
   "Investigation: Weekly docs check by `docs-checker`". The full report (every finding with its
   evidence, replacement and evidence hash) is in the Job log, in Loki. A failure posts a
-  `:x: … Failed:` alert naming the reason and the Job, never an empty report.
+  `:x: … Failed:` alert naming the reason and the Job, never an empty report; so does anything
+  the trigger did not foresee (an unexpected exception, a missing token).
 - **At most once per run.** The run id is the Job's name. The trigger records the run in
   `deliveries.json` in the same write as the memory, before it posts, and marks it posted after.
   A retried pod of the same Job that finds its run recorded runs nothing and posts nothing (one
