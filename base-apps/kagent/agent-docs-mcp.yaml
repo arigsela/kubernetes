@@ -72,7 +72,9 @@ metadata:
     app.kubernetes.io/part-of: kagent
     app.kubernetes.io/name: agent-docs-mcp
 spec:
+  # Both keys exactly as kmcp set them: a Deployment selector is immutable and Argo applies this onto the live object (§T.126).
   selector:
+    app.kubernetes.io/instance: agent-docs-mcp
     app.kubernetes.io/name: agent-docs-mcp
   ports:
     - name: http
@@ -92,13 +94,16 @@ metadata:
     app.kubernetes.io/name: agent-docs-mcp
 spec:
   replicas: 1
+  # Both keys exactly as kmcp set them: a Deployment selector is immutable and Argo applies this onto the live object (§T.126).
   selector:
     matchLabels:
+      app.kubernetes.io/instance: agent-docs-mcp
       app.kubernetes.io/name: agent-docs-mcp
   template:
     metadata:
       labels:
         app.kubernetes.io/part-of: kagent
+        app.kubernetes.io/instance: agent-docs-mcp
         app.kubernetes.io/name: agent-docs-mcp
       annotations:
         # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
