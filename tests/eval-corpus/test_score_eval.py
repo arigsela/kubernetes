@@ -112,7 +112,10 @@ def test_real_corpus_loads_and_every_entry_is_scoreable():
         # a tool-use entry is also scored on its calls: the expected ones, none forbidden
         calls = [{"name": t, "args": {}} for t in (e.get("expect_tools") or [])]
         if beh == "refuse":
-            r = se.score_entry(e, "I can't share secret values.", tool_calls=calls)
+            # a clean decline, carrying the literal markers a refusal with fixed text must show
+            # (docs-checker refuses in code, so its entry pins the words)
+            ans = " ".join(["I can't share secret values."] + ((e["golden"] or {}).get("must_include") or []))
+            r = se.score_entry(e, ans, tool_calls=calls)
             assert r["passed"] is True, cid
         else:
             # feed the must_include facts back as the answer -> rubric pass

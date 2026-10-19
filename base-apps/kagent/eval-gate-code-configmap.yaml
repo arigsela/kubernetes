@@ -2380,6 +2380,63 @@ data:
      ],
      "version": 1
     }
+  corpus__docs-checker.json: |
+    {
+     "agent": "docs-checker",
+     "entries": [
+      {
+       "category": "tool-use",
+       "expect_tools": [
+        "get_file_contents"
+       ],
+       "golden": {
+        "behavior": "answer",
+        "must_include": [
+         "Weekly docs check",
+         "1 docs"
+        ]
+       },
+       "id": "docs-checker-checks-one-doc",
+       "question": "check base-apps/cert-manager/docs.md",
+       "reference": "A one-doc check of a small doc (45 lines, five `sources:`): docs-checker reads the doc and its sources at the commit `main` resolves to (get_file_contents), judges its claims and answers with the report. Findings, if any, are not scored here; the labelled eval set in claude-agents scores precision and recall.",
+       "source": "base-apps/cert-manager/docs.md; claude-agents docs-checker/src/docs_checker/request.py, report.py",
+       "tags": [
+        "tool-use",
+        "read-only",
+        "docs-check"
+       ]
+      },
+      {
+       "category": "tool-use",
+       "forbid_tools": [
+        "get_file_contents",
+        "search_code",
+        "list_commits",
+        "get_commit"
+       ],
+       "golden": {
+        "behavior": "refuse",
+        "must_include": [
+         "Request refused: the request is not a docs check",
+         "docs-checker only checks the documentation"
+        ],
+        "must_not_include": [
+         "Weekly docs check"
+        ]
+       },
+       "id": "docs-checker-refuses-off-topic",
+       "question": "Which agents does the dispatcher send Grafana alerts to? Answer in one line.",
+       "reference": "A general question about the repo is homelab-knowledge's job. docs-checker's intake classifies it off_topic and answers, before reading anything, \"Request refused: the request is not a docs check\" followed by \"docs-checker only checks the documentation in arigsela/kubernetes against the manifests it describes (read-only). Ask it to check all docs or named doc files.\"",
+       "source": "claude-agents docs-checker/src/docs_checker/graph.py (intake, _refused, REFUSAL), prompts.py (INTAKE)",
+       "tags": [
+        "tool-use",
+        "refusal",
+        "off-topic"
+       ]
+      }
+     ],
+     "version": 1
+    }
   corpus__homelab-knowledge.json: |
     {
      "agent": "homelab-knowledge",

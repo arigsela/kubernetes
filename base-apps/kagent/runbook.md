@@ -41,6 +41,9 @@ sources:
   - base-apps/postgresql/init-kagent-v1-db.yaml
   - scripts/ask-hk
   - scripts/kagent_a2a.py
+  - base-apps/kagent/docs-checker-trigger.yaml
+  - scripts/docs_checker_trigger.py
+  - docs/docs-checker-dismissed.yaml
   - renovate.json5
   - docs/plans/kagent-1-0-on-k8s-1-37-implementation-plan.md
 ---
@@ -246,7 +249,49 @@ group to the role, and note it in the manifest header's dated list.
   changes only by a new digest: build, push and pin it (admission-policies runbook, "Pin a byo
   image digest"), never a tag in the Harness (the CRD and `agent-capability-runtime` refuse one).
 
+### Symptom: Slack shows `:x: Investigation: Weekly docs check … Failed:`, or no weekly docs check on a Monday
+- **Check:** the alert names the Job (`kubectl -n kagent logs job/<run id>`); every log line is
+  `event: docs-checker-trigger`, and the `error` one says why. Memory was not touched. Common reasons:
+  - `the task ended TASK_STATE_FAILED: docs-checker failed: timeout`: docs-checker stopped itself
+    at 15 minutes. A first run (empty memory) checks every doc and is the slowest; otherwise read
+    the actor's log ("`docs-checker` sessions fail at start" above).
+  - `the A2A call failed: HTTP 403 …` or `401`: the waypoint refused the trigger's token ("ask-hk
+    gets HTTP 403" and "agents unreachable after an identity change" above).
+  - `the task completed without a report (missing …): Request refused …`: docs-checker did not get
+    the request's data part, so it treated the empty text as off topic and ran nothing.
+  - `cannot read ConfigMap kagent/docs-checker-memory`: Argo CD has not created it yet, or the
+    Role `docs-checker-trigger` is missing (`argocd app get kagent-secrets`).
+  - `memory not saved and the delivery not recorded (HTTP 422 …)`: the snapshot no longer fits a
+    ConfigMap (1 MiB); reset the memory (How-to below). The report is in the log, not in Slack.
+- **Check, nothing in Slack at all:** `kubectl -n kagent get cronjob docs-checker-trigger` (`LAST
+  SCHEDULE`; a run missed by more than an hour is skipped by design) and the Job's log. `report not
+  posted: …` means n8n refused the post: the run is recorded as claimed, so the Job's retry posts
+  nothing (at most once per run, V102); the digest and the full report are in that log line.
+- **Fix:** fix the cause, then run it again as a NEW run ("Weekly docs check" How-to). Re-running
+  the same Job never posts.
+
 ## How-to
+
+### Weekly docs check: run it now, read it, reset its memory, dismiss a finding
+- **Run now:** `kubectl -n kagent create job --from=cronjob/docs-checker-trigger
+  docs-checker-trigger-manual-$(date +%s)`. The Job name is the run id, so this is a new run
+  (one paid docs-checker run, at most $1.00).
+- **Read a run:** `kubectl -n kagent logs job/<run id>` (three of each kept; older ones in Loki,
+  `{namespace="kagent"} |= "docs-checker-trigger"`). The line with `report` holds the full
+  Markdown, every finding with its evidence, proposed replacement and evidence hash:
+  `kubectl -n kagent logs job/<run id> | jq -r 'select(.report) | .report'`. The session belongs to
+  the trigger's identity: `scripts/ask-hk --agent kagent/docs-checker --as-serviceaccount
+  kagent/docs-checker-trigger --context <session from the log> "check <path>"` continues it.
+- **State:** `kubectl -n kagent get cm docs-checker-memory -o jsonpath='{.data.deliveries\.json}'`
+  lists the last ten run ids and whether each was posted; `memory.json` is docs-checker's snapshot.
+- **Reset the memory** (garbled snapshot, too large, or to force every doc to be checked):
+  `kubectl -n kagent delete cm docs-checker-memory`, when no run is in progress. Argo CD recreates it
+  empty; the next run checks every doc (the slowest and most expensive run, still capped at $1.00).
+  It also forgets which runs were delivered, so do not delete it while a Job is retrying.
+- **Dismiss a finding:** a PR adding an entry to `docs/docs-checker-dismissed.yaml` (its comment
+  lists the fields; copy `doc`, `claim` and `evidence_hash` from the report). docs-checker drops the
+  finding from the next run on, until its evidence changes. An invalid entry is not applied and the
+  report lists it under "Dismissal errors".
 
 ### Ask an agent
 `scripts/ask-hk "question"` (homelab-knowledge), `--agent kagent/<name>` for another agent

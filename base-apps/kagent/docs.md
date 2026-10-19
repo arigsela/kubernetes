@@ -83,6 +83,12 @@ sources:
   - base-apps/substrate/docs.md
   - scripts/ask-hk
   - scripts/kagent_a2a.py
+  - id: docs-checker-trigger
+    resource: base-apps/kagent/docs-checker-trigger.yaml
+    title: docs-checker weekly trigger (CronJob, memory ConfigMap, RBAC)
+  - scripts/docs_checker_trigger.py
+  - tests/eval-corpus/docs-checker.yaml
+  - docs/docs-checker-dismissed.yaml
   - docs/plans/kagent-1-0-on-k8s-1-37-implementation-plan.md
 ---
 
@@ -177,7 +183,7 @@ group moves all five charts in one PR, and only after approval on the Dependency
 | `dungeon-crawler-carl-agent` | `anthropic-claude-haiku-5-5` | `kagent-chat` | read | `brave-search` (`brave_web_search`) for book facts it is unsure of |
 | `implementer` | `anthropic-claude-sonnet-5-5` | `kagent-stateless` | propose | `implementer` (7 read + the 4 propose tools, ungated: the merge is the gate) and the 8 read tools of `kagent-tool-server` (not `agent-docs` too: a tool name bound twice is refused by the runtime). Opens PRs under GitHub App `arigsela-implementer`; called by a human (ask-hk) or the dispatcher (§T.116) |
 | `restarter` | `anthropic-claude-sonnet-5-5` | `kagent-stateless` | admin | `kagent-tool-server` bound twice: the 8 read tools `requireApproval: false`, and ONLY `k8s_delete_resource` `requireApproval: true`. Restarts the one pod a request names; the dispatcher opens its session after the implementer's `leak` or `rollout-pending` verdict and the owner approves the pending delete on the approvals page `https://dispatcher.arigsela.com/approvals` (Dex login; fallback `ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --task <task> --approve`) (§T.118, §T.119) |
-| `docs-checker` | `anthropic-claude-sonnet-5-5` | `docs-checker` (byo) | read | `agent-docs` (`get_file_contents`, `search_code`, `list_commits`, `get_commit`), nothing else. Finds lines in this repo's docs that no longer match the manifests they describe and proposes the corrected line; it never edits. A LangGraph app on kagent's BYO contract (code in `arigsela/claude-agents` `docs-checker/`) that picks its model per graph node (Haiku 5.5, Sonnet 5.5 to escalate): the ModelConfig decides the key the egress gateway injects, not the model of every call. Ask it `check all` or `check <path>` (§T.131) |
+| `docs-checker` | `anthropic-claude-sonnet-5-5` | `docs-checker` (byo) | read | `agent-docs` (`get_file_contents`, `search_code`, `list_commits`, `get_commit`), nothing else. Finds lines in this repo's docs that no longer match the manifests they describe and proposes the corrected line; it never edits. A LangGraph app on kagent's BYO contract (code in `arigsela/claude-agents` `docs-checker/`) that picks its model per graph node (Haiku 5.5, Sonnet 5.5 to escalate): the ModelConfig decides the key the egress gateway injects, not the model of every call. Ask it `check all` or `check <path>` (§T.131); every Monday the `docs-checker-trigger` CronJob runs it over every doc and posts the findings to Slack (§T.132, "Weekly docs check" below) |
 
 The class label lives on the AgentTemplate and is checked against the capability taxonomy
 (`base-apps/admission-policies/agent-capability-taxonomy.yaml`): a `read` template binds only
@@ -468,6 +474,52 @@ the hash changed since the last scored run, scores **every Agent in the namespac
   later sync scores it clean; `ask-hk` and the UI are not gated. A missing file is unknown, not a
   hold. A regression never fails the sync (exit 0); a run that could not score exits 1 and Argo
   shows the hook failed.
+- **docs-checker's own corpus** (`tests/eval-corpus/docs-checker.yaml`): one `check
+  base-apps/cert-manager/docs.md` that must call `get_file_contents` and return a report, and one
+  off-topic question that must be refused at intake with docs-checker's fixed refusal text and no
+  read. The gate sends text, so a `check …` question is parsed in code and anything else (the
+  shared adversarial sample included) reaches docs-checker's Haiku intake.
+
+## Weekly docs check
+The CronJob `docs-checker-trigger` (`docs-checker-trigger.yaml`, code in the generated
+`docs-checker-trigger-code-configmap.yaml` from `scripts/docs_checker_trigger.py`; §T.132, V102)
+runs docs-checker over every in-scope doc **every Monday at 14:00 UTC**, after Renovate's Monday
+batch (`timeZone: Etc/UTC`, `concurrencyPolicy: Forbid`, a run missed by more than an hour is
+skipped, the Job is killed after 30 minutes, one retry).
+
+- **Request.** One A2A message as service account `kagent/docs-checker-trigger` (projected token,
+  audience `kagent`; the waypoint admits any service-account token on `/agents/*`): a single data
+  part `{"scope": "all", "mode": "scheduled", "memory": <snapshot>}`, no text part (a lost data
+  part is refused, not run as an interactive check). It goes through the controller's JSON-RPC
+  gateway like every other caller; the gateway speaks gRPC to the byo runtime.
+- **Memory.** docs-checker keeps no database: the trigger holds its snapshot in ConfigMap
+  `docs-checker-memory` (`memory.json`; doc and source hashes, past verdicts), sends it with each
+  run and, after every **completed** run, saves the full snapshot docs-checker returns (its run
+  counter changes every run). The write is optimistic: a read-modify-write carrying the
+  `resourceVersion` it read; on a conflict it re-reads and retries (three writes at most) and
+  keeps a snapshot another run saved in between rather than overwrite it. A failed, cancelled,
+  paused or timed-out run, or one that completed without a report, leaves the memory untouched.
+  Git declares the ConfigMap with no data: the `kagent-secrets` app syncs with ServerSideApply, so
+  Argo CD owns only what git writes and never reverts the trigger's keys. The trigger's Role is
+  `get`/`update` on that one ConfigMap and nothing else. An empty ConfigMap (the first run, or
+  after a reset) means docs-checker starts fresh and checks every doc, the most expensive run.
+- **Delivery.** docs-checker's Slack digest (at most 15 findings, 3000 characters, as it renders
+  it) goes to n8n's `agent-findings` webhook, the dispatcher's path to `#oncall-alerts`, with the
+  same payload keys as the dispatcher's findings (CI pins them to `dispatch.py`): Slack shows
+  "Investigation: Weekly docs check by `docs-checker`". The full report (every finding with its
+  evidence, replacement and evidence hash) is in the Job log, in Loki. A failure posts a
+  `:x: … Failed:` alert naming the reason and the Job, never an empty report.
+- **At most once per run.** The run id is the Job's name. The trigger records the run in
+  `deliveries.json` in the same write as the memory, before it posts, and marks it posted after.
+  A retried pod of the same Job that finds its run recorded runs nothing and posts nothing (one
+  whose first pod died before recording runs it again); if a post fails (or the pod dies between
+  the record and the post), that week's message is lost, not doubled: the report stays in the Job
+  log and docs-checker reports still-open findings again next week.
+- **Dismissals** live in git: `docs/docs-checker-dismissed.yaml` (empty to start; the file's
+  comment says how to add one). docs-checker reads it at the commit each run checks and drops a
+  dismissed finding until its evidence changes (or the entry expires).
+- **Cost.** One run is capped by docs-checker's own budget ($1.00 for `all`) and a 15-minute
+  timeout; unchanged docs are skipped from memory, so a quiet week costs little.
 
 ## Gotchas & tribal knowledge
 - **Every alpha bump is a clean-database migration** so far (alpha11 itself needed one):

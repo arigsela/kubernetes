@@ -507,6 +507,24 @@ jobs:
       - name: Check the eval-gate ConfigMap is in sync with the scripts and corpus
         run: python scripts/gen-eval-gate-configmap.py --repo-root . --check
 
+  # The weekly docs-checker trigger (§T.132, §V.102): memory saved by resourceVersion and never on
+  # a failure, at most one Slack post per run id, a visible alert on every failure; its code
+  # ConfigMap must match the tested script. tests/docs_checker_trigger/.
+  docs-checker-trigger-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run docs-checker trigger tests
+        run: python -m pytest tests/docs_checker_trigger/ -q
+      - name: Check the docs-checker trigger ConfigMap is in sync with the scripts
+        run: python scripts/gen-docs-checker-trigger-configmap.py --repo-root . --check
+
   implementer-validate:
     runs-on: ubuntu-latest
     steps:
