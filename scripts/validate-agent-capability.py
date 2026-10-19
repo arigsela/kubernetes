@@ -419,7 +419,7 @@ def check_byo_agents(agents, templates, harnesses, read_only_servers, taxonomy) 
         spec = doc.get("spec") or {}
         ns = _key(doc)[0]
         href = (spec.get("harnessRef") or {}).get("name")
-        tref = (spec.get("templateRef") or {}).get("name")
+        tref = ((spec.get("template") or {}).get("ref") or {}).get("name")
         if (ns, href) not in byo:
             continue
         where = f"Agent {ns}/{_name(doc)} runs on byo Harness {href!r}, so its AgentTemplate {tref!r}"

@@ -111,7 +111,7 @@ def agent(name, inline_template=False, inline_harness=False, harness_ref="kagent
     if inline_template:
         spec["template"] = {"inline": {"modelConfig": {"name": "m"}}}
     else:
-        spec["template"] = {"ref": {"name": name}}
+        spec["template"] = {"ref": {"name": template_ref or name}}
     if inline_harness:
         spec["harness"] = harness("x")["spec"]
     else:
@@ -435,8 +435,9 @@ def _read_template_with_an_admin_twin_in_team_a(tmp_path):
     (_read_template_with_an_admin_twin_in_team_a, 0),
 ], ids=lambda f: f.__name__.strip("_") if callable(f) else str(f))
 def test_byo_refs_resolve_in_the_agents_namespace(tmp_path, build, expect):
-    """An Agent's templateRef/harnessRef and its template's server refs resolve in the Agent's
-    namespace (kagent), never by name alone: a regression to name-only lookup fails here."""
+    """An Agent's spec.template.ref/harnessRef and its template's server refs resolve in the
+    Agent's namespace (kagent), never by name alone: a regression to name-only lookup fails
+    here."""
     assert run_repo(build(tmp_path)) == expect
 
 
