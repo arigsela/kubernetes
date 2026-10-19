@@ -189,8 +189,8 @@ The App token is minted from the Secret `implementer-github-app` (Vault `impleme
 - **Fix:** nothing for the run itself; ask again once the pod is `Running` (about a minute).
   For a repeat OOM, the pod's memory history in Prometheus (`container_memory_working_set_bytes`,
   namespace `kagent`) tells sizing from a leak: steps at moments of use are sizing, a steady
-  climb is a leak. Sizing is the limit in the `MCPServer` manifest (and `NODE_OPTIONS` for a
-  node server); a leak is an image bump.
+  climb is a leak. Sizing is the `mcp-server` container's `resources` in the server's Deployment
+  (`brave-search-mcp.yaml`), and `NODE_OPTIONS` in its env for a node server; a leak is an image bump.
 
 ### Symptom: a `RemoteMCPServer` isn't accepted, or an agent says it lacks a tool
 - **Check:** `kubectl -n kagent get remotemcpservers` (`ACCEPTED`) and
