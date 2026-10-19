@@ -134,7 +134,13 @@ def load_byo_conditions(repo_root: Path) -> tuple[list[str], list[str], list[str
                           f"admits no byo Harness, a missing one is not understood (§V.84)")
             out.append([])
             continue
-        items = json.loads(data[key] or "[]")
+        try:
+            items = json.loads(data[key] or "[]")
+        except json.JSONDecodeError as exc:
+            errors.append(f"taxonomy '{key}' is not valid JSON ({exc}); it must be a JSON list "
+                          f"of strings")
+            out.append([])
+            continue
         if not isinstance(items, list) or not all(isinstance(i, str) for i in items):
             errors.append(f"taxonomy '{key}' must be a JSON list of strings")
             items = []

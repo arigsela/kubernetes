@@ -1,0 +1,19 @@
+# rule 9: byo on the listed repository with a TAG plus a digest. byo-images entries are exact
+# strings (repository@sha256:digest), so a tag in front of the digest is another image: it
+# guards a regression to repository-or-tag prefix matching (the way runtime-images match).
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata:
+  name: bad-byo-tag-and-digest
+  namespace: kagent
+spec:
+  byo: {}
+  workload:
+    image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker:v1@sha256:0000000000000000000000000000000000000000000000000000000000000000
+    command:
+      - /app/.venv/bin/docs-checker
+  substrate:
+    workerPoolRef:
+      name: kagent-default
+    snapshotPolicy:
+      location: s3://ate-snapshots/kagent/
