@@ -57,6 +57,12 @@ commands below only inspect.
 - **In Tempo, but a URL is cut short:** expected. Query strings and the notifier's delivery
   paths are scrubbed (beacon §V.42).
 
+### Symptom: no Gateway or waypoint spans, beacon's own spans fine
+- **Check** the proxy's cluster for the collector: `kubectl -n istio-ingress exec <gateway pod>
+  -c istio-proxy -- pilot-agent request GET clusters | grep 'otel-collector.*4317::.*rq_'`.
+  `rq_error` climbing with `rq_success` 0 means Envoy is not speaking HTTP/2 to it: the
+  collector Service port lost its `appProtocol: grpc` (beacon §B.15, beacon §V.47).
+
 ### Symptom: `otel-collector` CrashLoopBackOff
 - A config error: the collector names the bad key and exits. Run the config locally:
   `otelcol-contrib validate --config=<file>`, or `OTELCOL_BIN=... python -m pytest tests/beacon/test_collector.py`.
