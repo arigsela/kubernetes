@@ -6,7 +6,10 @@
 # Two roles, both provisioned once for every tenant, so no per-tenant Vault step exists:
 #
 #   policy beacon-tenant-rw    templated on the caller's service-account namespace (like the IDP's
-#                              app-namespace-rw): read/write k8s-secrets/tenants/<namespace>/*
+#                              app-namespace-rw): read/write k8s-secrets/tenants/<namespace>/*, the
+#                              metadata included: ESO's PushSecret marks each key it writes with
+#                              custom metadata (managed-by: external-secrets), a PUT on
+#                              metadata/<key> (beacon §B.26)
 #   role   beacon-tenant       kubernetes auth: SA eso-tenant in any namespace matching tenant-*
 #                              (Vault matches the list as globs), policies default,beacon-tenant-rw
 #                              -> each tenant namespace reaches only k8s-secrets/tenants/<itself>/*
@@ -46,7 +49,7 @@ ns="{{identity.entity.aliases.${accessor}.metadata.service_account_namespace}}"
 
 vault policy write beacon-tenant-rw - >/dev/null <<POLICY
 path "$MOUNT/data/$FOLDER/$ns/*" { capabilities = ["create", "read", "update", "patch"] }
-path "$MOUNT/metadata/$FOLDER/$ns/*" { capabilities = ["list", "read", "delete"] }
+path "$MOUNT/metadata/$FOLDER/$ns/*" { capabilities = ["create", "read", "update", "patch", "list", "delete"] }
 POLICY
 vault policy write beacon-tenants-read - >/dev/null <<POLICY
 path "$MOUNT/metadata/$FOLDER/*" { capabilities = ["list"] }
