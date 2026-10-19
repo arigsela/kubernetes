@@ -65,6 +65,33 @@ spec:
         - port: 15008
           protocol: TCP
 ---
+# Prometheus scrapes beacon-waypoint's Envoy stats: istiod annotates the waypoint it generates
+# for scraping on 15020, and default-deny-ingress selects it like any pod here, so without this
+# its target was down from day one (beacon §B.18, beacon §V.48).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-to-waypoint
+  namespace: beacon
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: beacon-waypoint
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 15020
+          protocol: TCP
+        - port: 15008
+          protocol: TCP
+---
 # Any beacon pod reaches the waypoint (it fronts every beacon Service, waypoint.yaml).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
