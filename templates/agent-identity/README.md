@@ -178,4 +178,4 @@ onboarding an agent.
   and both fail closed on an agent manifest they don't understand. The 0.10 leftovers
   were removed: the MCP basic-auth htpasswd (no consumer since the move to Gateway
   API, SPEC T52) and the controller's `kagent-db-credentials` (1.0 reads
-  `kagent-postgres`). See `docs/plans/kagent-1-0-on-k8s-1-37-implementation-plan.md`.
+  `kagent-postgres-owner` and `kagent-postgres-readwrite`). See `docs/plans/kagent-1-0-on-k8s-1-37-implementation-plan.md`.

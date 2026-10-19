@@ -153,7 +153,8 @@ rules:
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "deletecollection"]
   # kagent 1.0's own API (Agents, AgentTemplates, Harnesses, ModelConfigs, RemoteMCPServers),
   # READ-ONLY. On 0.10 the agents lived in kagent.dev, which the list above grants in full
-  # (it now holds only kmcp's MCPServers). The 1.0 group is added deliberately narrower:
+  # (it holds nothing since §T.126/§T.128: kmcp and its MCPServer CRD are gone; the group is kept
+  # in the list only until the grant is narrowed in a follow-up). The 1.0 group is added deliberately narrower:
   # reading lets homelab-knowledge and k8s-reader answer "which agents exist / is X Ready"
   # from live state; writing would let an agent edit AgentTemplates, its own tools and
   # approval gates included. Admission would still judge such an edit, but no agent needs to
