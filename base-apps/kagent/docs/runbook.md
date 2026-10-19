@@ -195,7 +195,8 @@ The App token is minted from the Secret `implementer-github-app` (Vault `impleme
 ### Symptom: a `RemoteMCPServer` isn't accepted, or an agent says it lacks a tool
 - **Check:** `kubectl -n kagent get remotemcpservers` (`ACCEPTED`) and
   `kubectl -n kagent describe remotemcpserver <name>` (`status.discoveredTools`). For `agent-docs`,
-  also the backing pod: `kubectl -n kagent get pods -l app.kubernetes.io/name=agent-docs-mcp`. A server Deployment registers no tools with agents; the `RemoteMCPServer` that points at its Service does. A tool is
+  also the backing pod: `kubectl -n kagent get pods -l app.kubernetes.io/name=agent-docs-mcp`. A server Deployment registers no tools
+  with agents; the `RemoteMCPServer` that points at its Service does. A tool is
   available to an agent only if its AgentTemplate binding lists it.
 - **Fix:** fix the target Service first. A missing tool: add it to the binding's `tools` by PR.
   A tool new to the taxonomy must be classified first (`agent-capability-taxonomy.yaml`), or CI
@@ -317,9 +318,12 @@ Then:
   resolves the Secret for the egress gateway. If calls keep using the old value after the Secret
   changed, restart `deploy/k8s-credential-provider` in `ate-system`.
 - **GitHub token:** restart `deploy/agent-docs-mcp` (env var).
-- **Database password:** 64 hex characters (the connection string doesn't escape it). Force the
-  ExternalSecrets in `postgresql` and `kagent`, sync the `postgresql` app (its init Job sets the
-  new password), then restart `deploy/kagent-controller`. Same procedure as Substrate's
+- **Database password:** 64 hex characters (the connection string doesn't escape it). `kagent_v1`
+  has two: `v1-password` (the owner login, `kagent-postgres-owner`) and `v1-readwrite-password`
+  (the read/write login, `kagent-postgres-readwrite`). Rotate whichever changed, then force-sync
+  `kagent-postgres-owner` and `kagent-postgres-readwrite` in `kagent` and `kagent-v1-db-credentials`
+  in `postgresql` (the annotation above), sync the `postgresql` app once (its init Job sets both
+  passwords), then restart `deploy/kagent-controller`. Same procedure as Substrate's
   (`base-apps/substrate/runbook.md`, "Rotate the database passwords").
 
 A `SecretSyncedError` with Vault **403 permission denied** means the Vault side of the scope is

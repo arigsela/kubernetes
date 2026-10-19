@@ -14,7 +14,8 @@
 # (kmcp rolled the pod through a template checksum). The pod template therefore carries
 # checksum/config = sha256 of the local.yaml text; CI fails when it is stale
 # (tests/agent-identity/test_mcp_server_manifests.py), so every config edit in git rolls the pod.
-# Recompute:  python3 -c 'import sys,yaml,hashlib; d=[x for x in yaml.safe_load_all(open(sys.argv[1])) if x and x["kind"]=="ConfigMap"][0]; print(hashlib.sha256(d["data"]["local.yaml"].encode()).hexdigest())' base-apps/kagent/agent-docs-mcp.yaml
+# Recompute:  python3 -c 'import sys,yaml,hashlib; d=[x for x in yaml.safe_load_all(open(sys.argv[1])) if x and x["kind"]=="ConfigMap"][0]; \
+#   print(hashlib.sha256(d["data"]["local.yaml"].encode()).hexdigest())' base-apps/kagent/agent-docs-mcp.yaml
 # The stdio child inherits the container environment, which is how the token (envFrom the
 # ExternalSecret's Secret) reaches it without appearing in this file.
 apiVersion: v1
