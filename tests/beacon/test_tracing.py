@@ -390,3 +390,12 @@ def test_v9_notifier_manifest_still_carries_no_otel():
     tmpl = notifier["spec"]["template"]
     assert not any(k.startswith("instrumentation.opentelemetry.io") for k in tmpl["metadata"].get("annotations", {}))
     assert not any(e["name"].startswith("OTEL_") for c in tmpl["spec"]["containers"] for e in c.get("env", []))
+
+
+def test_t22_operator_ignores_defaulted_crd_conversion():
+    """beacon §B.16: the API server defaults spec.conversion on the operator's CRDs and
+    cert-manager injects the collector CRD's conversion caBundle; without this the app is never
+    Synced. Same as argo-rollouts and kyverno here."""
+    app = yaml.safe_load(OPERATOR.read_text())
+    assert {"group": "apiextensions.k8s.io", "kind": "CustomResourceDefinition",
+            "jqPathExpressions": [".spec.conversion"]} in app["spec"]["ignoreDifferences"]

@@ -65,6 +65,15 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: opentelemetry-operator-system
+  # The API server defaults spec.conversion ({strategy: None}) on CRDs that do not declare it,
+  # and cert-manager injects the opentelemetrycollectors CRD's conversion caBundle at runtime.
+  # Neither can be reconciled from the chart, so the app sat OutOfSync (beacon §B.16). Same
+  # ignore as argo-rollouts and kyverno.
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jqPathExpressions:
+        - .spec.conversion
   syncPolicy:
     automated:
       prune: true
