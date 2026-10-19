@@ -248,10 +248,15 @@ spec:
   type: ClusterIP
   selector:
     app: otel-collector
+  # appProtocol: Istio picks a port's protocol from it (or a grpc-/http- name prefix). The
+  # Gateway and beacon's waypoint send OTLP gRPC here; without it Istio reads the port as TCP,
+  # Envoy's gRPC client speaks HTTP/1.1 and every export fails (beacon §B.15, beacon §V.47).
   ports:
     - name: otlp-grpc
       port: 4317
       targetPort: otlp-grpc
+      appProtocol: grpc
     - name: otlp-http
       port: 4318
       targetPort: otlp-http
+      appProtocol: http

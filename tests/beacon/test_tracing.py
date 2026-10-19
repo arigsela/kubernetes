@@ -256,7 +256,7 @@ def test_v41_probe_egress_admits_only_the_collector():
     # The collector Service really serves OTLP/HTTP on that port, from those pods.
     svc = one(COLLECTOR, "Service", "otel-collector")
     assert svc["spec"]["selector"] == {"app": "otel-collector"}
-    assert {"name": "otlp-http", "port": 4318, "targetPort": "otlp-http"} in svc["spec"]["ports"]
+    assert {"name": "otlp-http", "port": 4318, "targetPort": "otlp-http", "appProtocol": "http"} in svc["spec"]["ports"]
 
 
 def test_v46_coroot_export_is_uncompressed():
@@ -283,7 +283,7 @@ def test_t20_mesh_has_one_otel_provider_to_the_collector():
     assert providers == [{"name": "otel-tracing", "opentelemetry": {
         "service": "otel-collector.tracing.svc.cluster.local", "port": 4317}}]
     svc = one(COLLECTOR, "Service", "otel-collector")
-    assert {"name": "otlp-grpc", "port": 4317, "targetPort": "otlp-grpc"} in svc["spec"]["ports"]
+    assert {"name": "otlp-grpc", "port": 4317, "targetPort": "otlp-grpc", "appProtocol": "grpc"} in svc["spec"]["ports"]
 
 
 def test_t20_no_default_tracing_provider():
@@ -305,3 +305,12 @@ def test_t20_waypoint_telemetry_targets_beacon_only():
     assert tel["spec"]["targetRefs"] == [
         {"group": "gateway.networking.k8s.io", "kind": "Gateway", "name": "beacon-waypoint"}]
     assert tel["spec"]["tracing"] == [{"providers": [{"name": "otel-tracing"}], "randomSamplingPercentage": 100}]
+
+
+def test_v47_collector_ports_declare_their_protocol():
+    """beacon §B.15: Istio picks a port's protocol from its name prefix or appProtocol. The
+    Gateway and the waypoint send OTLP gRPC here; read as TCP, Envoy's gRPC tracer speaks
+    HTTP/1.1 and every export fails."""
+    ports = {p["port"]: p for p in one(COLLECTOR, "Service", "otel-collector")["spec"]["ports"]}
+    assert ports[4317].get("appProtocol") == "grpc"
+    assert ports[4318].get("appProtocol") == "http"
