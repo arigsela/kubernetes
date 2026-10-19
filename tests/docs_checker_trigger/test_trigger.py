@@ -34,9 +34,10 @@ def encoded(snapshot) -> str:
 class FakeKube:
     """One ConfigMap with the API server's optimistic concurrency: a PUT must carry the current
     resourceVersion (else 409), and a successful PUT bumps it. `before_put` runs before each
-    PUT is judged: a concurrent writer."""
+    PUT is judged: a concurrent writer. `put_status(obj)` -> an HTTP status refuses that PUT
+    (422: too large, 500: the API server failing)."""
 
-    def __init__(self, data=None, rv=41, before_put=None, get_error=None):
+    def __init__(self, data=None, rv=41, before_put=None, get_error=None, put_status=None):
         self.obj = {"apiVersion": "v1", "kind": "ConfigMap",
                     "metadata": {"name": "docs-checker-memory", "namespace": "kagent",
                                  "resourceVersion": str(rv), "labels": {"app": "docs-checker-trigger"},
@@ -46,6 +47,7 @@ class FakeKube:
         self.puts, self.gets, self.events = [], 0, []
         self.before_put = before_put
         self.get_error = get_error
+        self.put_status = put_status
 
     def concurrent_write(self, **data):
         """Another writer saved the ConfigMap: new data keys, new resourceVersion."""
@@ -69,6 +71,9 @@ class FakeKube:
         self.events.append("put")
         if self.before_put:
             self.before_put(self, len(self.puts))
+        status = self.put_status(obj) if self.put_status else None
+        if status:
+            raise tr.KubeError(status, path)
         if obj["metadata"].get("resourceVersion") != self.obj["metadata"]["resourceVersion"]:
             raise tr.KubeError(409, path)
         self.obj = copy.deepcopy(obj)
@@ -298,6 +303,18 @@ def test_conflicts_are_bounded_and_end_in_a_visible_alert_not_a_report():
     assert payload["error"] and "memory" in payload["error"] and payload["text"] is None
 
 
+def test_a_non_conflict_write_error_is_not_retried_and_the_report_is_not_posted():
+    """HTTP 500 on the claim: nothing records the run, so posting could double on the Job's retry."""
+    stored = {"memory.json": encoded(SNAPSHOT_IN)}
+    kube = FakeKube(stored, put_status=lambda obj: 500)
+    rc, _, post, logs = trigger(kube)
+    assert rc == 1 and len(kube.puts) == 1, "only a 409 is retried"
+    (_, payload), = post.posted
+    assert payload["text"] is None and "not posted" in payload["error"] and "Memory not updated" in payload["error"]
+    assert kube.data == stored
+    assert any(x.get("report") == REPORT_MD for x in logs), "the report stays in the job log"
+
+
 def test_the_tool_never_writes_without_a_resource_version():
     kube = FakeKube({"memory.json": encoded(SNAPSHOT_IN)})
     del kube.obj["metadata"]["resourceVersion"]
@@ -345,6 +362,38 @@ def test_failure_posts_a_visible_alert(case):
     assert any(x.get("posted") == "alert" for x in logs)
 
 
+def test_an_alert_is_posted_even_when_its_claim_cannot_be_saved():
+    stored = {"memory.json": encoded(SNAPSHOT_IN)}
+    kube = FakeKube(stored, put_status=lambda obj: 500)
+    rc, _, post, logs = trigger(kube, FakeAgent(**FAILURES["failed"]))
+    assert rc == 1
+    (_, payload), = post.posted
+    assert payload["error"] and payload["text"] is None
+    assert len(kube.puts) == 1, "no mark-posted write after an unrecorded claim"
+    assert kube.data == stored
+    assert any("posting the alert anyway" in str(x.get("warning")) for x in logs)
+
+
+def test_an_unexpected_exception_still_ends_in_a_visible_alert():
+    class Broken(FakeKube):
+        def get(self, path):
+            raise TypeError("a bug nobody foresaw")
+    rc, agent, post, logs = trigger(Broken({"memory.json": encoded(SNAPSHOT_IN)}))
+    assert rc == 1 and agent.sent == []
+    (_, payload), = post.posted
+    assert "unexpected TypeError: a bug nobody foresaw" in payload["error"] and payload["text"] is None
+    assert ENV["RUN_ID"] in payload["error"]
+    assert any("Traceback" in str(x.get("trace")) for x in logs)
+
+
+def test_main_alerts_when_it_cannot_even_build_its_api_client(tmp_path):
+    post, logs = FakePost(), []
+    rc = tr.main({**ENV, "KUBE_TOKEN_FILE": str(tmp_path / "no-token")}, post=post, log=logs.append)
+    assert rc == 1
+    (url, payload), = post.posted
+    assert url == WEBHOOK and "unexpected FileNotFoundError" in payload["error"]
+
+
 def test_an_unreadable_memory_configmap_alerts_before_any_agent_call():
     kube = FakeKube(get_error=403)
     rc, agent, post, _ = trigger(kube)
@@ -359,6 +408,101 @@ def test_a_missing_run_id_alerts_and_runs_nothing():
     assert rc == 1 and agent.sent == [] and kube.puts == []
     (_, payload), = post.posted
     assert "RUN_ID" in payload["error"]
+
+
+# ------------------------------------------------------------------ memory that cannot be saved
+
+def _report_and_alert(post):
+    """The report, then the memory alert: both on the one run id, report first."""
+    (u1, report), (u2, alert) = post.posted
+    assert u1 == u2 == WEBHOOK
+    assert report["text"] == SLACK and report["error"] is None
+    assert alert["text"] is None and alert["error"].startswith("memory not saved: ")
+    return alert["error"]
+
+
+def test_a_snapshot_the_api_server_refuses_still_delivers_the_report_once():
+    """HTTP 422 (data over 1 MiB): the claim is written alone, the old memory is kept, the report
+    goes out with an alert, and the Job's retry posts nothing and pays for no second run."""
+    stored = encoded(SNAPSHOT_IN)
+    kube = FakeKube({"memory.json": stored},
+                    put_status=lambda obj: 422 if obj["data"].get("memory.json") != stored else None)
+    rc, _, post, logs = trigger(kube)
+    assert rc == 0
+    error = _report_and_alert(post)
+    assert "422" in error and ENV["RUN_ID"] in error
+    assert kube.data["memory.json"] == stored, "the old memory stays"
+    assert kube.deliveries()[ENV["RUN_ID"]]["posted"] is True and kube.deliveries()[ENV["RUN_ID"]]["kind"] == "report"
+    assert [p["data"]["memory.json"] != stored for p in kube.puts] == [True, False, False], "refused, claim, mark"
+    assert any(x.get("memory_saved") is False for x in logs)
+    rc2, agent2, post2, _ = trigger(kube)
+    assert rc2 == 0 and agent2.sent == [] and post2.posted == []
+
+
+def test_a_snapshot_over_the_budget_is_never_sent_to_the_api_server():
+    big = {**SNAPSHOT_OUT, "decisions": {"pad": {"last_run": 4, "blob": "x" * tr.CONFIGMAP_LIMIT}}}
+    stored = encoded(SNAPSHOT_IN)
+    kube = FakeKube({"memory.json": stored})
+    rc, _, post, _ = trigger(kube, FakeAgent(reply=task(memory=big)))
+    assert rc == 0
+    assert all(p["data"]["memory.json"] == stored for p in kube.puts), "pre-checked: no PUT carries it"
+    error = _report_and_alert(post)
+    assert f"{tr.MEMORY_BUDGET}-byte budget" in error
+    assert kube.deliveries()[ENV["RUN_ID"]]["posted"] is True
+
+
+def test_the_budget_counts_every_key_not_just_the_snapshot():
+    """deliveries.json and any other key share the 1 MiB with memory.json."""
+    snapshot = {**SNAPSHOT_OUT, "pad": "x" * (tr.MEMORY_BUDGET - 2000)}
+    assert len(encoded(snapshot)) < tr.MEMORY_BUDGET
+    kube = FakeKube({"memory.json": encoded(SNAPSHOT_IN), "other": "y" * 4000})
+    with pytest.raises(tr.TooLarge):
+        tr.save(kube, CM_PATH, tr.Store(kube.get(CM_PATH)), "r1", {"kind": "report", "posted": False},
+                memory=snapshot, claim=True, log=lambda **kw: None)
+    assert kube.puts == []
+    kube2 = FakeKube({"memory.json": encoded(SNAPSHOT_IN)})
+    tr.save(kube2, CM_PATH, tr.Store(kube2.get(CM_PATH)), "r1", {"kind": "report", "posted": False},
+            memory=snapshot, claim=True, log=lambda **kw: None)
+    assert kube2.data["memory.json"] == encoded(snapshot), "the same snapshot fits without the other key"
+
+
+@pytest.mark.parametrize("bad, why", [
+    ({**SNAPSHOT_OUT, "version": 2}, "snapshot version 2"),
+    ({k: v for k, v in SNAPSHOT_OUT.items() if k != "version"}, "snapshot version None"),
+    ({**SNAPSHOT_OUT, "run": "4"}, "run counter '4'"),
+    ({**SNAPSHOT_OUT, "run": True}, "run counter True"),
+    ({**SNAPSHOT_OUT, "run": 4.5}, "run counter 4.5"),
+    ({k: v for k, v in SNAPSHOT_OUT.items() if k != "run"}, "run counter None"),
+])
+def test_a_returned_snapshot_that_is_not_a_snapshot_is_not_saved(bad, why):
+    stored = encoded(SNAPSHOT_IN)
+    kube = FakeKube({"memory.json": stored})
+    rc, _, post, _ = trigger(kube, FakeAgent(reply=task(memory=bad)))
+    assert rc == 0
+    assert why in _report_and_alert(post)
+    assert kube.data["memory.json"] == stored and all(p["data"]["memory.json"] == stored for p in kube.puts)
+
+
+def test_a_whole_number_double_run_counter_is_an_integer():
+    kube = FakeKube({"memory.json": encoded(SNAPSHOT_IN)})
+    out = {**SNAPSHOT_OUT, "run": 4.0}
+    rc, _, post, logs = trigger(kube, FakeAgent(reply=task(memory=out)))
+    assert rc == 0 and len(post.posted) == 1 and kube.data["memory.json"] == encoded(out)
+    assert not any("run counter" in str(x.get("warning")) for x in logs)
+
+
+@pytest.mark.parametrize("stored, returned, warns", [
+    (SNAPSHOT_IN, 4, False),                 # stored run 3 -> 4
+    (SNAPSHOT_IN, 1, True),                  # docs-checker ignored the stored snapshot
+    (None, 1, False),                        # nothing stored -> a fresh run 1
+    (None, 7, True),
+])
+def test_a_run_counter_that_does_not_follow_the_stored_one_is_warned_and_still_saved(stored, returned, warns):
+    kube = FakeKube(None if stored is None else {"memory.json": encoded(stored)})
+    out = {**SNAPSHOT_OUT, "run": returned}
+    rc, _, _, logs = trigger(kube, FakeAgent(reply=task(memory=out)))
+    assert rc == 0 and kube.data["memory.json"] == encoded(out)
+    assert any("started fresh" in str(x.get("warning")) for x in logs) is warns
 
 
 # ------------------------------------------------------------------ at most once per run id

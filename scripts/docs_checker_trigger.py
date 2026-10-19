@@ -25,6 +25,11 @@ gate; its code ConfigMap is generated (scripts/gen-docs-checker-trigger-configma
      delivery; log the full report (the Slack digest points at the job log); post the digest to
      n8n's agent-findings webhook (the dispatcher's path to #oncall-alerts, with the payload keys
      of dispatch.py's _post_finding); then mark the run posted.
+     A snapshot that cannot be saved does not cost the report: one that is not a version-1
+     snapshot with an integer run counter, one that would take the ConfigMap's data past its
+     budget (1 MiB, the API server's cap, less MEMORY_MARGIN), or one the API server refuses
+     (422) is dropped. The claim is then written alone (the old memory stays), the report is
+     posted, and an alert says "memory not saved" (exit 0: the report was delivered).
   4. Anything else (FAILED, CANCELED, paused, no settled task by RUN_TIMEOUT, an A2A error, a
      completed task without those parts): memory.json is NOT touched. The run is claimed as an
      alert and a visible failure is posted (n8n renders ":x: Investigation: Weekly docs check
@@ -43,9 +48,11 @@ doubled: the digest and the report stay in the job log (Loki), the Job ends Fail
 findings come back next week (docs-checker carries open findings in its memory). When the
 ConfigMap cannot be written at all, a report is not posted (nothing would stop a retry posting
 it again) and an alert is; a failure alert is posted even when its claim could not be saved (a
-visible failure beats a silent one).
+visible failure beats a silent one). Anything unexpected (an exception this code did not
+foresee, a missing service-account token) still ends in an alert (V102).
 
-Exit 0 = delivered, or already delivered by an earlier pod of this run; 1 = anything else.
+Exit 0 = the report was delivered (memory saved or not), or already delivered by an earlier pod
+of this run; 1 = anything else.
 
 Environment: RUN_ID (the Job name; the CronJob sets it from the pod label
 batch.kubernetes.io/job-name), KAGENT_A2A_BASE, KAGENT_TOKEN_FILE, AGENT (kagent/docs-checker),
@@ -62,6 +69,7 @@ import os
 import ssl
 import sys
 import time
+import traceback
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -95,6 +103,13 @@ MEMORY_KEY = "memory.json"
 DELIVERIES_KEY = "deliveries.json"
 KEEP_DELIVERIES = 10                       # run ids remembered; a Job's retry comes within minutes
 WRITE_ATTEMPTS = 3
+# The API server refuses a ConfigMap whose data values add up to more than 1 MiB (HTTP 422).
+# memory.json shares that budget with deliveries.json and any other key; a write that would come
+# within MEMORY_MARGIN of the cap is not attempted with the new snapshot.
+CONFIGMAP_LIMIT = 1024 * 1024
+MEMORY_MARGIN = 16 * 1024
+MEMORY_BUDGET = CONFIGMAP_LIMIT - MEMORY_MARGIN
+SNAPSHOT_VERSION = 1                       # docs-checker memory.py SCHEMA_VERSION
 RUN_TIMEOUT = 1200.0                       # docs-checker stops itself at 15 min; the Job dies at 30
 N8N_BASE = "http://n8n.n8n.svc.cluster.local:5678/webhook"
 SA_TOKEN = "/var/run/secrets/kubernetes.io/serviceaccount/token"
@@ -114,6 +129,14 @@ class KubeError(RuntimeError):
     def __init__(self, status: int, path: str):
         super().__init__(f"HTTP {status} for {path}")
         self.status, self.path = status, path
+
+
+class TooLarge(RuntimeError):
+    """The new snapshot would take the ConfigMap's data past MEMORY_BUDGET."""
+
+    def __init__(self, size: int):
+        super().__init__(f"{size} bytes of ConfigMap data, over the {MEMORY_BUDGET}-byte budget")
+        self.size = size
 
 
 class AlreadyClaimed(RuntimeError):
@@ -173,6 +196,30 @@ def encode_ledger(ledger: dict) -> str:
     return json.dumps(dict(newest), sort_keys=True)
 
 
+def data_bytes(data: dict) -> int:
+    """What the API server counts against its 1 MiB cap (the values, in bytes), plus the keys."""
+    return sum(len(k.encode()) + len(str(v).encode()) for k, v in data.items())
+
+
+def snapshot_problem(snapshot) -> str | None:
+    """Why a returned snapshot must not be saved, or None. docs-checker's own reader drops a
+    snapshot that is not this shape, so saving one would only cost the next run its memory.
+    Numbers can arrive as JSON doubles; a whole-number run counter is an integer."""
+    if not isinstance(snapshot, dict):
+        return "the snapshot is not an object"
+    if snapshot.get("version") != SNAPSHOT_VERSION:
+        return f"snapshot version {snapshot.get('version')!r}, expected {SNAPSHOT_VERSION}"
+    run = snapshot.get("run")
+    whole = isinstance(run, int) or (isinstance(run, float) and run.is_integer())
+    if not whole or isinstance(run, bool):
+        return f"run counter {run!r} is not an integer"
+    return None
+
+
+def run_counter(snapshot) -> int | None:
+    return int(snapshot["run"]) if snapshot_problem(snapshot) is None else None
+
+
 @dataclass
 class Store:
     """The memory ConfigMap as read, kept whole: a write modifies this object, nothing else."""
@@ -217,7 +264,8 @@ class Store:
 
 def save(kube, path: str, store: Store, run_id: str, entry: dict, *, memory=_KEEP, claim: bool, log) -> Store:
     """Record this run's delivery `entry` (and, unless _KEEP, the memory snapshot) in the ConfigMap,
-    optimistically (module docstring, "Writes"). Returns the ConfigMap as written."""
+    optimistically (module docstring, "Writes"). Returns the ConfigMap as written. Raises TooLarge,
+    before any PUT, when the new snapshot would take the data past MEMORY_BUDGET."""
     base = store.memory_text
     current = store
     for attempt in range(1, WRITE_ATTEMPTS + 1):
@@ -225,15 +273,19 @@ def save(kube, path: str, store: Store, run_id: str, entry: dict, *, memory=_KEE
         if not (obj.get("metadata") or {}).get("resourceVersion"):
             raise KubeError(0, f"{path} (no resourceVersion to write against)")
         data = dict(obj.get("data") or {})
+        writes_memory = False
         if memory is not _KEEP:
             if data.get(MEMORY_KEY) == base:
                 data[MEMORY_KEY] = encode(memory)
+                writes_memory = True
             else:
                 log(warning=f"{MEMORY_KEY} changed since it was read: another run saved its snapshot; "
                             "kept it, this run's snapshot is not saved")
         ledger = current.deliveries()
         ledger[run_id] = entry
         data[DELIVERIES_KEY] = encode_ledger(ledger)
+        if writes_memory and data_bytes(data) > MEMORY_BUDGET:
+            raise TooLarge(data_bytes(data))
         obj["data"] = data
         try:
             return Store(kube.put(path, obj))
@@ -367,7 +419,33 @@ def post_json(url: str, obj: dict, timeout: float = 30.0) -> None:
         resp.read()
 
 
-def run(env, *, kube, send, wait, post, log, now, clock=time.monotonic) -> int:
+def run(env, *, post, log, **deps) -> int:
+    """One weekly run (module docstring). Whatever goes wrong, the end is visible: an exception
+    nothing below foresaw is logged with its traceback and alerted (V102)."""
+    try:
+        return _run(env, post=post, log=log, **deps)
+    except Exception as err:  # noqa: BLE001 - every failure must reach Slack, not just the log
+        return crashed(env, err, post=post, log=log)
+
+
+def crashed(env, err: BaseException, *, post, log) -> int:
+    """Log and alert an unexpected failure. Nothing is known about how far the run got, so the
+    alert says where to look; it is not claimed (the ConfigMap may be what failed)."""
+    run_id = (env.get("RUN_ID") or "").strip()
+    reason = f"unexpected {type(err).__name__}: {str(err)[:300]}"
+    log({"event": "docs-checker-trigger", "run": run_id or None, "error": reason,
+         "trace": "".join(traceback.format_exception(err))[-2000:]})
+    where = (f" Job log: kubectl -n {env.get('NAMESPACE', NAMESPACE)} logs job/{run_id}" if run_id else "")
+    url = env.get("N8N_WEBHOOK_BASE", N8N_BASE).rstrip("/") + "/agent-findings"
+    try:
+        post(url, finding(run_id=run_id, state=None, session=None,
+                          error=f"the trigger failed: {reason}.{where}"))
+    except Exception as perr:  # noqa: BLE001 - nothing left to try; the log has both
+        log({"event": "docs-checker-trigger", "run": run_id or None, "error": f"alert not posted: {perr}"})
+    return 1
+
+
+def _run(env, *, kube, send, wait, post, log, now, clock=time.monotonic) -> int:
     run_id = (env.get("RUN_ID") or "").strip()
     ns = env.get("NAMESPACE", NAMESPACE)
     name = env.get("MEMORY_CONFIGMAP", MEMORY_CONFIGMAP)
@@ -434,25 +512,50 @@ def run(env, *, kube, send, wait, post, log, now, clock=time.monotonic) -> int:
         return 1
 
     entry = {"kind": "report", "posted": False, "at": now(), "task": out.task_id}
+    snapshot = out.parts[MEMORY]
+    unsaved = snapshot_problem(snapshot)       # why the new snapshot is not saved, or None
+    if unsaved is None:
+        stored = run_counter(memory)
+        expected = 1 if stored is None else stored + 1
+        if run_counter(snapshot) != expected:
+            line(warning=f"memory run counter {snapshot.get('run')} after stored {stored} (expected "
+                         f"{expected}): docs-checker did not use the stored snapshot (invalid, oversize or "
+                         "another schema) and started fresh")
     try:
-        claimed = save(kube, path, store, run_id, entry, memory=out.parts[MEMORY], claim=True, log=line)
+        if unsaved is None:
+            try:
+                claimed = save(kube, path, store, run_id, entry, memory=snapshot, claim=True, log=line)
+            except TooLarge as big:
+                unsaved = f"{big.size} bytes of ConfigMap data, over the {MEMORY_BUDGET}-byte budget"
+            except KubeError as err:
+                if err.status != 422:
+                    raise
+                unsaved = f"the API server refused it ({err}; {len(encode(snapshot).encode())} bytes)"
+        if unsaved is not None:
+            # The report is complete; only the memory is lost. Claim alone, keep the old memory.
+            line(warning=f"memory not saved: {unsaved}; the stored memory is kept, the report still goes out")
+            claimed = save(kube, path, store, run_id, entry, claim=True, log=line)
     except AlreadyClaimed as c:
         line(skipped="claimed by another pod of this run", kind=c.entry.get("kind"))
         return 0 if c.entry.get("posted") and c.entry.get("kind") == "report" else 1
     except KubeError as err:
-        msg = f"memory not saved and the delivery not recorded ({err}), so the report is not posted"
+        msg = f"the delivery could not be recorded ({err}), so the report is not posted"
         line(error=msg, report=out.report, slack=out.parts[SLACK])
         alert(f"{msg}; it is in the job log. Memory not updated. {where}", state=out.state, session=out.session)
         return 1
     # The full report: the digest's footer sends readers here (and to the A2A task).
     line(report=out.report, task=out.task_id, session=out.session, findings=len(out.parts[FINDINGS]),
-         memory_run=out.parts[MEMORY].get("run"))
+         memory_run=snapshot.get("run") if isinstance(snapshot, dict) else None, memory_saved=unsaved is None)
     try:
         post(url, finding(run_id=run_id, state=out.state, session=out.session, text=out.parts[SLACK]))
     except (OSError, ValueError) as err:
         line(error=f"report not posted: {str(err)[:200]}; the delivery is claimed, so no retry posts it "
                    "(at most once per run): the report is in this log", slack=out.parts[SLACK])
         return 1
+    if unsaved is not None:
+        alert(f"memory not saved: {unsaved}. The report was posted; the previous memory is kept, so the "
+              f"next run re-checks what this one learned. Reset if it repeats (kagent runbook). {where}",
+              state=out.state, session=out.session)
     _mark(kube, path, claimed, run_id, entry, line)
     line(posted="report")
     return 0
@@ -471,13 +574,19 @@ def utc_now() -> str:
     return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
 
 
-def main() -> int:
-    env = os.environ
-    kube = Kube(env.get("KUBE_API", "https://kubernetes.default.svc"),
-                Path(env.get("KUBE_TOKEN_FILE", SA_TOKEN)).read_text().strip(),
-                env.get("KUBE_CA_FILE", SA_CA))
-    return run(env, kube=kube, send=send_request, wait=wait_task, post=post_json,
-               log=lambda o: print(json.dumps(o, sort_keys=True), flush=True), now=utc_now)
+def log_line(obj: dict) -> None:
+    print(json.dumps(obj, sort_keys=True), flush=True)
+
+
+def main(env=None, *, post=post_json, log=log_line) -> int:
+    env = os.environ if env is None else env
+    try:
+        kube = Kube(env.get("KUBE_API", "https://kubernetes.default.svc"),
+                    Path(env.get("KUBE_TOKEN_FILE", SA_TOKEN)).read_text().strip(),
+                    env.get("KUBE_CA_FILE", SA_CA))
+    except Exception as err:  # noqa: BLE001 - no token or CA: still a visible failure (V102)
+        return crashed(env, err, post=post, log=log)
+    return run(env, kube=kube, send=send_request, wait=wait_task, post=post, log=log, now=utc_now)
 
 
 if __name__ == "__main__":
