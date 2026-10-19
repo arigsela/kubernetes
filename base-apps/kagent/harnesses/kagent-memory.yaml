@@ -24,11 +24,11 @@ spec:
       modelConfigRef:
         name: embedding-model-config
   workload:
-    # The Go ADK runtime image the kagent 1.0.0-alpha11 chart defaults to
-    # (controller.agentImage, tag = chart version), pinned by its multi-arch index digest. The
+    # The Go ADK runtime image the kagent 1.0.0-alpha14 release names (its own catalog; the
+    # controller refuses a mismatched release), pinned by its multi-arch index digest. The
     # CRD and Substrate both require a digest: changing the image content under a fixed
     # reference would invalidate session snapshots. Bump in lockstep with the kagent chart.
-    image: ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha11@sha256:29409dfe1a030b50da3ff3f72599752cb5824a50f6aa136c16bf2b1678aa89b8
+    image: ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha14@sha256:eb1b0c7f635f31d464cff7cf212275f2642057a629ed20b39661e9f644f71f21
   substrate:
     # The WorkerPool the kagent chart creates (substrateWorkerPool.create, default name
     # kagent-default) in this namespace. A Harness pointing at a missing pool does not compile.

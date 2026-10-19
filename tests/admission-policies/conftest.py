@@ -99,8 +99,9 @@ class Cluster:
         return _docker("exec", "-i", NAME, "kubectl", *args, input=input)
 
     def apply(self, text, server_side=False):
-        # Server-side for the CRDs: the real mcpservers.kagent.dev CRD is ~390 KB, over the
-        # 256 KB limit of client-side apply's last-applied-configuration annotation.
+        # Server-side for the CRDs: the kagent CRDs together exceed the client-side apply's
+        # last-applied-configuration annotation limit (the 390 KB mcpservers.kagent.dev CRD is
+        # gone since alpha14, but the set is still too large for client-side apply).
         extra = ("--server-side",) if server_side else ()
         r = self.kubectl("apply", *extra, "-f", "-", input=text)
         assert r.returncode == 0, r.stdout + r.stderr

@@ -20,7 +20,7 @@ SPEC.loader.exec_module(vac)
 
 API = "api.kagent.dev/v1alpha3"
 REPO = Path(__file__).resolve().parents[2]
-GO_ADK = "ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha11@sha256:" + "0" * 64
+GO_ADK = "ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha14@sha256:" + "0" * 64
 
 TAXONOMY = {
     "read": ["k8s_get_resources", "get_file_contents", "list_pull_requests"],
@@ -257,7 +257,7 @@ def test_foreign_image_harness_is_error(tmp_path):
 def test_unpinned_image_harness_is_error(tmp_path):
     t = [template("reader", "read", tools=["k8s_get_resources"], approval=False)]
     assert run(tmp_path, t, harnesses=[
-        harness("kagent-memory", image="ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha11")]) == 1
+        harness("kagent-memory", image="ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha14")]) == 1
 
 
 # ------------------------------------------------- fail closed (§V.84)

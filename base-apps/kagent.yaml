@@ -1,10 +1,9 @@
-# kagent 1.0.0-alpha11 (plan docs/plans/kagent-1-0-on-k8s-1-37-implementation-plan.md, Task 5.4).
-# Merged at the cutover, AFTER kagent 0.10 is removed (Task 5.3): 0.10 and 1.x cannot share a
-# cluster, and there is no in-place upgrade or conversion (SPEC §R.44). Needs, already in place:
+# kagent 1.0.0-alpha14 (§T.128; plan docs/superpowers/plans/2026-10-18-kagent-alpha14-migration.md).
+# Needs, already in place:
 #   * Agent Substrate (base-apps/substrate*.yaml): agents run as Substrate actors.
-#   * database kagent_v1 and Secret kagent-postgres (base-apps/postgresql/init-kagent-v1-db.yaml,
-#     base-apps/kagent/kagent-postgres-external-secret.yaml).
-#   * kagent-crds 1.0.0-alpha11 (base-apps/kagent-crds.yaml), which also carries the kmcp CRDs.
+#   * database kagent_v1 and Secrets kagent-postgres-owner / kagent-postgres-readwrite
+#     (base-apps/postgresql/init-kagent-v1-db.yaml, base-apps/kagent/kagent-postgres-{owner,readwrite}-external-secret.yaml).
+#   * kagent-crds 1.0.0-alpha14 (base-apps/kagent-crds.yaml). The kmcp subchart is gone since alpha14.
 # The agents themselves (AgentTemplates, Harnesses, Agents, ModelConfigs) live in
 # base-apps/kagent/ and are synced by the kagent-secrets app; none is rendered by this chart.
 #
@@ -25,49 +24,56 @@ spec:
   source:
     chart: kagent
     repoURL: ghcr.io/kagent-dev/kagent/helm
-    targetRevision: 1.0.0-alpha11
+    targetRevision: 1.0.0-alpha14
     helm:
       valuesObject:
-        # Database: kagent_v1 on the shared pgvector Postgres. 1.0 removed url/urlFile; the
-        # connection string comes from Secret kagent-postgres (key connectionString). The
-        # controller assumes role kagent_owner and works in schema kagent; pgvector is
-        # pre-installed in schema extensions (the controller checks, and refuses to start if
-        # it is missing). The 0.10 database `kagent` is the read-only archive.
+        # Two logins since alpha14 (kagent#3160): the owner migrates at startup and owns the
+        # schema; the read/write login serves every runtime query. Both Secrets come from the
+        # same scoped Vault key (kagent-postgres-{owner,readwrite}-external-secret.yaml).
+        # The roles, schema and pgvector location live under config.database below.
+        # pgvector is pre-installed in schema extensions (the controller checks, and refuses to
+        # start if it is missing). The 0.10 database `kagent` is the read-only archive.
         database:
           postgres:
-            connectionStringSecretRef:
-              name: kagent-postgres
-              key: connectionString
-            role: kagent_owner
+            ownerConnectionStringSecretRef:
+              name: kagent-postgres-owner
+              key: ownerConnectionString
+            readWriteConnectionStringSecretRef:
+              name: kagent-postgres-readwrite
+              key: readWriteConnectionString
+
+        # Application settings (alpha13, kagent#3153): rendered into the mounted
+        # /etc/kagent/controller.yaml; nothing is read from env any more. Durations are seconds.
+        config:
+          server:
+            auth:
+              # Callers as principals (V91): the mesh is the identity authority. The waypoint in
+              # base-apps/kagent/ verifies every caller's token and sets x-user-id from the claim;
+              # the controller reads that header, so `insecure` here is exact, not an omission.
+              # `trusted-proxy` would need every caller, the UI included, to carry a JWT: that is
+              # the UI-login follow-up (oauth2-proxy + Dex).
+              mode: insecure
+          database:
+            owner:
+              role: kagent_owner
+            readWrite:
+              role: kagent_readwrite
             schema: kagent
             vectorSchema: extensions
             vectorEnabled: true
-
-        controller:
-          # Callers as principals (V91): the mesh is the identity authority. The waypoint in
-          # base-apps/kagent/ verifies every caller's token and sets x-user-id from the claim;
-          # the controller reads that header, so `insecure` here is exact, not an omission.
-          # `trusted-proxy` would need every caller, the UI included, to carry a JWT: that is
-          # the UI-login follow-up (oauth2-proxy + Dex).
-          auth:
-            mode: insecure
-          image:
-            tag: "1.0.0-alpha11@sha256:ae898c7e84c4adeaff7f1f5c1a6ad1a418dd3266e42cf11083b465c1010ab512"
-          # Default agent image. Each Harness names its own (golang-adk, by digest), so this is a
-          # fallback; pinned the same way so nothing runs by tag.
-          agentImage:
-            tag: "1.0.0-alpha11@sha256:29409dfe1a030b50da3ff3f72599752cb5824a50f6aa136c16bf2b1678aa89b8"
-          # The A2A base advertised in agent cards (JSON-RPC <url>/agents/<ns>/<name>, gRPC <url>)
-          # and the push-notification JWT issuer. External clients ("ask hk", Backstage) reach the
-          # agents through the kagent-mcp HTTPRoute (/agents/kagent/ -> kagent-controller:8083),
-          # behind the IP allow-list. Agent pods do not use this: the controller injects the
-          # in-cluster http://kagent-controller.kagent:8083 into them.
-          a2aGatewayUrl: https://kagent-mcp.arigsela.com
-          # Sessions idle for 30 days are deleted (chart default 7 days). A homelab agent is often
-          # picked up again weeks later, and an idle session costs only rows in kagent_v1: its
-          # actor is suspended and its snapshot sits in rustfs. Running tasks and turns waiting
-          # for approval never expire; audit history and memory are kept either way.
-          sessionIdleTTL: "720h"
+          gateway:
+            # The A2A base advertised in agent cards (JSON-RPC <url>/agents/<ns>/<name>, gRPC <url>)
+            # and the push-notification JWT issuer. External clients ("ask hk", Backstage) reach the
+            # agents through the kagent-mcp HTTPRoute (/agents/kagent/ -> kagent-controller:8083),
+            # behind the IP allow-list. Agent pods do not use this: the controller injects the
+            # in-cluster http://kagent-controller.kagent:8083 into them.
+            publicUrl: https://kagent-mcp.arigsela.com
+          sessions:
+            # Sessions idle for 30 days are deleted (chart default 7 days). A homelab agent is often
+            # picked up again weeks later, and an idle session costs only rows in kagent_v1: its
+            # actor is suspended and its snapshot sits in rustfs. Running tasks and turns waiting
+            # for approval never expire; audit history and memory are kept either way.
+            idleTtl: 2592000s
           # Agents run as Agent Substrate actors (base-apps/substrate.yaml). These are the names
           # the substrate release (named `substrate`, in ate-system) renders; `kagent install`
           # uses the same two values.
@@ -75,9 +81,39 @@ spec:
           # Standalone sandboxes (workspaces outside an agent) stay off: they need
           # sandbox.guestImage.digest, left empty on purpose. Nothing here uses them.
           substrate:
+            apiEndpoint: dns:///api.ate-system.svc:443
+            routerUrl: http://atenet-router.ate-system.svc:80
+          # OpenTelemetry → Coroot's OTLP receiver (gRPC 4317; http:// = no TLS). Metrics stay with
+          # Prometheus; Coroot does not take OTLP metrics here. The same targets for the agent
+          # runtimes (runtimeDefaults), which on alpha11 inherited the single otel block.
+          telemetry:
+            traces:
+              endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
+              protocol: grpc
+            logs:
+              endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
+              protocol: grpc
+          runtimeDefaults:
+            telemetry:
+              traces:
+                endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
+                protocol: grpc
+              logs:
+                endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
+                protocol: grpc
+
+        controller:
+          image:
+            tag: "1.0.0-alpha14@sha256:7f9958d696623b04332519e2a0a22c756724539c9e269f6ee626e0aeb102cd42"
+          # alpha11's `controller.substrate.enabled: true` did two things: configure the
+          # Substrate endpoints (now config.substrate above) AND project the Substrate
+          # ServiceDNS trust bundle and the PodIdentity certificate into the controller
+          # (/run/substrate-servicedns, /run/substrate-podidentity). alpha14 splits the
+          # second half into this switch, default false. Without it the controller has no
+          # client certificate for ate-api-server and every agent run fails (Codex review
+          # of this plan, 2026-10-18; chart templates/controller-deployment.yaml).
+          substrateClientCertificate:
             enabled: true
-            ateApiEndpoint: dns:///api.ate-system.svc:443
-            atenetRouterURL: http://atenet-router.ate-system.svc:80
 
         # The WorkerPool every Harness references (substrate.workerPoolRef: kagent-default).
         # ate-controller runs it as a Deployment of gVisor workers in `kagent` (UID 0, 13
@@ -88,6 +124,8 @@ spec:
         # of up to 2 CPU / 4Gi each cover several concurrent sessions, and idle actors are
         # suspended to free their worker. Workers cannot run on k3s-control-01 (tainted, no
         # toleration), so they spread over the two workers. Revisit after the Phase 5 acceptance.
+        # Since alpha12 the chart also creates the ServiceAccount `kagent-default` for the worker
+        # pods (kagent#3067); nothing binds it.
         substrateWorkerPool:
           create: true
           name: kagent-default
@@ -105,7 +143,7 @@ spec:
 
         ui:
           image:
-            tag: "1.0.0-alpha11@sha256:fd26a91bfa3b4dacaf92bc6affa4f67bf21d71b04536d7a999653dfcad519606"
+            tag: "1.0.0-alpha14@sha256:3795ceebd70e3e17d2fb6500ffab1eb8d1f366c4c605ba90d90c9f811ef0344d"
 
         # The chart ALWAYS renders `default-model-config`: Argo drops a `null` value, so
         # `providers: null` left the chart default in place (OpenAI gpt-4.1-mini, no key) on
@@ -119,10 +157,6 @@ spec:
             model: claude-haiku-5-5
             apiKeySecretRef: kagent-anthropic
             apiKeySecretKey: ANTHROPIC_API_KEY
-
-        kmcp:
-          image:
-            tag: "0.4.0@sha256:18caabf70adbba87519f2ec64f2834f9f355f046fa72b7f7351d770bcc7c0583"
 
         # The tool server's RBAC is NOT the chart's. rbac.create=false keeps the kagent-tools
         # ServiceAccount and drops the chart's `*` ClusterRole and binding;
@@ -140,21 +174,6 @@ spec:
         # `logging`) and nothing binds it.
         grafana-mcp:
           enabled: false
-
-        # OpenTelemetry → Coroot's OTLP receiver (gRPC 4317; http:// = no TLS). 1.0 replaced
-        # otel.tracing/logging with one exporter and per-signal switches. Metrics stay with
-        # Prometheus; Coroot does not take OTLP metrics here.
-        otel:
-          exporter:
-            otlp:
-              endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
-              protocol: grpc
-          traces:
-            enabled: true
-          logs:
-            enabled: true
-          metrics:
-            enabled: false
 
   destination:
     server: https://kubernetes.default.svc
