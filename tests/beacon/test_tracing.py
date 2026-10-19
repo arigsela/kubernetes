@@ -447,3 +447,22 @@ def test_v44_map_skips_istiod_objects_and_scopes_to_opted_in_namespaces():
     assert any("gateway.istio.io/managed" in c["expression"] for c in spec["matchConditions"])
     waypoint = one("base-apps/beacon/waypoint.yaml", "Gateway", "beacon-waypoint")
     assert waypoint["spec"]["gatewayClassName"] == "istio-waypoint"  # istiod generates its Deployment
+
+
+def test_v48_prometheus_may_reach_every_beacon_scrape_target():
+    """beacon §B.18: default-deny ingress selects every pod in the namespace, the waypoint istiod
+    generates included. Each scrape target needs its own allow from Prometheus."""
+    targets = {"beacon-api": 8080}  # its own opt-in (deployments.yaml)
+    targets["beacon-waypoint"] = 15020  # istiod annotates the waypoint for scraping on 15020
+    prom = {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "logging"}},
+            "podSelector": {"matchLabels": {"app": "prometheus"}}}
+    allowed = {}
+    for pol in load("base-apps/beacon/network-policies.yaml"):
+        sel = pol["spec"]["podSelector"]
+        for rule in pol["spec"].get("ingress", []):
+            if prom in rule.get("from", []):
+                pods = sel.get("matchLabels", {})
+                key = pods.get("app") or pods.get("gateway.networking.k8s.io/gateway-name")
+                allowed.setdefault(key, set()).update(p["port"] for p in rule["ports"])
+    for target, port in targets.items():
+        assert {port, 15008} <= allowed.get(target, set()), f"Prometheus cannot reach {target}:{port}"
