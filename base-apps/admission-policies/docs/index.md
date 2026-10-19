@@ -126,8 +126,8 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   **Enforcing from the start**, not shadow first: the byo exception depends on it in the same
   change (§V.84), and an inventory of every writer (live `managedFields`, RBAC, the kagent
   alpha14 source; SPEC §T.130) found no legitimate one it blocks. Break glass: runbook. To
-  soak it instead: `failurePolicy: Ignore` at `agent-definitions-from-git.yaml:62` and
-  `validationActions: [Warn, Audit]` at `:103` (hand-written, no generator), **only while
+  soak it instead: `failurePolicy: Ignore` and `validationActions: [Warn, Audit]` on the two
+  lines of `agent-definitions-from-git.yaml` marked `# enforcing` (hand-written, no generator), **only while
   `byo-images` holds no pinned digest and before any byo Agent syncs**: the byo admission
   depends on git being the only writer (runbook, "Break glass").
 - Five **audit-only** workload-hygiene policies, one file each. They are `[Warn, Audit]` and

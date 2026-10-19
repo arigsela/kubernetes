@@ -54,8 +54,10 @@ locals {
     "beacon-web"       = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
 
     # docs-checker (kagent BYO agent; code in arigsela/claude-agents, docs-checker/):
-    # IMMUTABLE because the Agent pins the image by digest. keep_tagged = 10 so a
-    # reverted pin stays pullable. The push role is created next to the app, not here.
+    # IMMUTABLE because the Harness pins the image by digest. keep_tagged = 10 so a
+    # reverted pin stays pullable. Pushed by hand from arigsela/claude-agents (no CI
+    # build, so no push role here or next to the app); pulls use the docs-checker-pull
+    # user (docs-checker-pull-iam.tf).
     "docs-checker" = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
   }
 
