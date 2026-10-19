@@ -62,10 +62,10 @@ spec:
           # updates both (base-apps/beacon/runbook.md, "Promote a release");
           # tests/beacon/test_tenants.py fails while they differ.
           IMAGES = {
-              "api": f"{ECR}/beacon-api:v0.2.3@sha256:ad35a0cfb29ff17fadac7c6fc16c35673ef8f502f7b5159a6ad0be902b1faa33",
-              "scheduler": f"{ECR}/beacon-scheduler:v0.2.3@sha256:70cfb48e9a22f255dff7d9d13bc404eac359b3282e265d13ad8998c75f5ac431",
-              "checker": f"{ECR}/beacon-checker:v0.2.3@sha256:47e84f028fa949692e03d27f96af58541c704c67747fd5e5bf2d5ee4aece55c1",
-              "notifier": f"{ECR}/beacon-notifier:v0.2.3@sha256:ca852f149c1a408ed9507d9f100c4f123fb89747222709eb1acfc6079f240cb3",
+              "api": f"{ECR}/beacon-api:v0.3.0@sha256:b0f291037c23dae671d59c64482e9f9acc2fc44d996559888421751447a7e550",
+              "scheduler": f"{ECR}/beacon-scheduler:v0.3.0@sha256:230c73a6dc6e3b01cdff9cd7e7e1caa57820452d57f4d6789bb643d33ef41d21",
+              "checker": f"{ECR}/beacon-checker:v0.3.0@sha256:6f33631de90e28387e77ef09b843c905f7bf2a584c0e27668dc817f7e768d6f4",
+              "notifier": f"{ECR}/beacon-notifier:v0.3.0@sha256:79db1a801dc89aeddd8adf22effd981d7664d3717e27d38f964ab9d64ee6203d",
           }
           # Uploads the database dumps; smoke-run on a node by beacon-smoke (beacon §V.18).
           AWS_CLI = ("public.ecr.aws/aws-cli/aws-cli:2.37.13"
