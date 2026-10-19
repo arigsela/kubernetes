@@ -44,6 +44,7 @@ spec:
 
         # Application settings (alpha13, kagent#3153): rendered into the mounted
         # /etc/kagent/controller.yaml; nothing is read from env any more. Durations are seconds.
+        # Standalone sandboxes (config.sandboxes.guestImage) stay unset on purpose: nothing here uses them.
         config:
           server:
             auth:
@@ -77,9 +78,6 @@ spec:
           # Agents run as Agent Substrate actors (base-apps/substrate.yaml). These are the names
           # the substrate release (named `substrate`, in ate-system) renders; `kagent install`
           # uses the same two values.
-          #
-          # Standalone sandboxes (workspaces outside an agent) stay off: they need
-          # sandbox.guestImage.digest, left empty on purpose. Nothing here uses them.
           substrate:
             apiEndpoint: dns:///api.ate-system.svc:443
             routerUrl: http://atenet-router.ate-system.svc:80

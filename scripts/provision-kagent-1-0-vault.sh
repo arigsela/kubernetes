@@ -2,7 +2,7 @@
 # kagent 1.0 + Agent Substrate — Vault provisioning (idempotent, safe to re-run)
 #
 # Creates the Vault side of base-apps/substrate/, base-apps/postgresql/init-{kagent-v1,substrate}-db.yaml
-# and base-apps/kagent/kagent-postgres-external-secret.yaml:
+# and base-apps/kagent/kagent-postgres-{owner,readwrite}-external-secret.yaml:
 #
 #   k8s-secrets/kagent-db     EXISTING key (kagent 0.10's). Adds v1-db-name, v1-user, v1-password,
 #                             v1-readwrite-user, v1-readwrite-password (kagent >= alpha14, kagent#3160).

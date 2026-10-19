@@ -1,12 +1,12 @@
 ---
 type: "Kubernetes App Guide"
 title: "kagent"
-description: "kagent 1.0.0-alpha11: Kubernetes-native AI agents (AgentTemplate + Harness + Agent, api.kagent.dev/v1alpha3) running as gVisor actors on Agent Substrate, with MCP tool servers"
+description: "kagent 1.0.0-alpha14: Kubernetes-native AI agents (AgentTemplate + Harness + Agent, api.kagent.dev/v1alpha3) running as gVisor actors on Agent Substrate, with MCP tool servers"
 app: kagent
 catalog_entity: kagent
 kind: docs
 namespace: kagent
-last_reviewed: 2026-10-11
+last_reviewed: 2026-10-18
 status: stable
 tags: [ai-agent, kagent, mcp, anthropic, substrate]
 sources:
@@ -55,7 +55,6 @@ sources:
   - base-apps/kagent/implementer-mcp-secret-store.yaml
   - base-apps/kagent/eso-implementer-mcp-serviceaccount.yaml
   - base-apps/kagent/implementer-mcp-external-secret.yaml
-  - base-apps/kagent/kagent-postgres-external-secret.yaml
   - base-apps/kagent/kagent-postgres-owner-external-secret.yaml
   - base-apps/kagent/kagent-postgres-readwrite-external-secret.yaml
   - base-apps/kagent/kagent-anthropic-external-secret.yaml
@@ -87,8 +86,8 @@ sources:
 # kagent
 
 ## What it is
-kagent is a Kubernetes-native AI agent platform. This cluster runs **kagent 1.0.0-alpha11**
-(since 2026-10-11, replacing 0.10.3 in place) on **Agent Substrate 0.5.0-alpha2**, the actor
+kagent is a Kubernetes-native AI agent platform. This cluster runs **kagent 1.0.0-alpha14**
+(alpha11 from 2026-10-11 until §T.128, replacing 0.10.3 in place) on **Agent Substrate 0.5.0-alpha2**, the actor
 runtime that kagent 1.0 requires (`base-apps/substrate/docs.md`). Both are alphas, pinned by
 version and image digest, and move only together.
 
@@ -111,23 +110,32 @@ next message restores it, possibly on the other node. The controller serves ever
 endpoint itself.
 
 ## Three Argo CD apps, one namespace
-- **`kagent-crds`** (`base-apps/kagent-crds.yaml`, wave -1): chart `kagent-crds` 1.0.0-alpha11
-  from `oci://ghcr.io/kagent-dev/kagent/helm`. It installs the `api.kagent.dev` CRDs (Agent,
-  AgentTemplate, Harness, ModelConfig, ModelProviderConfig, RemoteMCPServer, SandboxTemplate) and,
-  until §T.128 lands, `mcpservers.kagent.dev` from the kmcp subchart, which nothing uses since §T.126.
-- **`kagent`** (`base-apps/kagent.yaml`, wave 0): chart `kagent` 1.0.0-alpha11, Helm values only
+- **`kagent-crds`** (`base-apps/kagent-crds.yaml`, wave -1): chart `kagent-crds` 1.0.0-alpha14
+  from `oci://ghcr.io/kagent-dev/kagent/helm`. It installs seven `api.kagent.dev` CRDs (Agent,
+  AgentTemplate, Harness, ModelConfig, ModelProviderConfig, RemoteMCPServer, SandboxTemplate). No
+  kmcp CRD: alpha14 dropped the kmcp subchart (§T.128).
+- **`kagent`** (`base-apps/kagent.yaml`, wave 0): chart `kagent` 1.0.0-alpha14, Helm values only
   (no `path:`, so no directory-exclude concern). It renders the controller, UI,
   the `kagent-tools` tool server, the `kagent-builtin-prompts` ConfigMap, the RemoteMCPServers
   `kagent-tool-server` and `kagent-api`, the WorkerPool `kagent-default` and the chart's
-  `default-model-config`. It renders **no agents**: kagent 1.0 ships none bundled. Notable values,
-  each explained in a comment beside it:
-  - `database.postgres`: Secret `kagent-postgres` (key `connectionString`), role `kagent_owner`,
-    schema `kagent`, pgvector in schema `extensions`. 1.0 removed `url`/`urlFile`.
-  - `controller.substrate`: `ateApiEndpoint: dns:///api.ate-system.svc:443` and
-    `atenetRouterURL: http://atenet-router.ate-system.svc:80`, the names the Substrate release
+  `default-model-config`. It renders **no agents**: kagent 1.0 ships none bundled. Since alpha13
+  the application settings live under `config.*` (rendered into the mounted
+  `/etc/kagent/controller.yaml`; durations are seconds). Notable values, each explained in a
+  comment beside it:
+  - `database.postgres`: Secrets `kagent-postgres-owner` (migrates, owns the schema) and
+    `kagent-postgres-readwrite` (every runtime query), both from one scoped Vault key.
+    `config.database`: roles `kagent_owner` and `kagent_readwrite`, schema `kagent`, pgvector in
+    schema `extensions`. 1.0 removed `url`/`urlFile`.
+  - `config.server.auth.mode: insecure`: the mesh is the identity authority. The waypoint verifies
+    every caller's token and sets `x-user-id` (V91).
+  - `config.substrate`: `apiEndpoint: dns:///api.ate-system.svc:443` and
+    `routerUrl: http://atenet-router.ate-system.svc:80`, the names the Substrate release
     (`substrate` in `ate-system`) renders.
-  - `controller.a2aGatewayUrl: https://kagent-mcp.arigsela.com`: the base advertised in agent cards.
-  - `controller.sessionIdleTTL: 720h`: idle sessions are deleted after 30 days (chart default 7).
+  - `controller.substrateClientCertificate.enabled: true` projects the Substrate ServiceDNS trust
+    bundle and PodIdentity certificate (alpha11 did that through `controller.substrate.enabled`);
+    without it no agent can run.
+  - `config.gateway.publicUrl: https://kagent-mcp.arigsela.com`: the base advertised in agent cards.
+  - `config.sessions.idleTtl: 2592000s`: idle sessions are deleted after 30 days (chart default 7).
     Running turns and turns waiting for approval never expire.
   - `substrateWorkerPool`: `kagent-default`, 2 replicas, `sandboxClass: gvisor`, worker image
     `ateom-gvisor` by digest, 250m/1Gi requested and 2 CPU/4Gi limit per worker. A worker's
@@ -137,10 +145,12 @@ endpoint itself.
     reviewed, working model. No agent in git uses it; it is the default for agents created in
     the UI.
   - `kagent-tools.rbac.create: false` (see *Tool server RBAC*), `grafana-mcp.enabled: false`, and
-    OpenTelemetry traces and logs to Coroot (`otel.exporter.otlp`, gRPC 4317; metrics off).
-  - Every image (controller, default agent image, UI, tools, worker) is pinned by digest
-    through its `tag`, because the chart's image helpers take no digest key. Renovate can't see
-    these (Helm `valuesObject`).
+    `config.telemetry` + `config.runtimeDefaults.telemetry`: traces and logs to Coroot (gRPC 4317;
+    metrics off).
+  - Every image (controller, UI, tools, worker) is pinned by digest through its `tag`, because
+    the chart's image helpers take no digest key. Renovate can't see these (Helm `valuesObject`).
+    The golang-adk image is pinned in each Harness (the chart's `config.harnessImages` catalog
+    would otherwise choose it).
 - **`kagent-secrets`** (`base-apps/kagent-secrets.yaml`, wave -1, `path: base-apps/kagent`,
   `directory.recurse: true`): everything in this directory, meaning the AgentTemplates, Harnesses,
   Agents, ModelConfigs, MCP servers, routes, certificates and the `SecretStore`/`ExternalSecret`s.
@@ -189,7 +199,7 @@ Its manifests, database, Vault keys and roles, and ECR repository are gone.
 
 ## Harnesses (the runtime)
 All three Harnesses use the Go ADK (`spec.kagent`), image
-`ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha11` by digest, WorkerPool `kagent-default`, and
+`ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha14` by digest, WorkerPool `kagent-default`, and
 snapshot location `s3://ate-snapshots/kagent/`. They differ only in `spec.kagent`:
 
 | Harness | Memory | Compaction | Used by |
@@ -281,7 +291,6 @@ destroyed monolithic `kagent` key.
 | `agent-docs-github-mcp-token` | `vault-agent-docs-mcp` | `eso-agent-docs-mcp` | `kagent-agent-docs-mcp` | `kagent-agent-docs-mcp` (`github-token`) |
 | `brave-search-mcp-api-key` | `vault-brave-search-mcp` | `eso-brave-search-mcp` | `kagent-brave-search-mcp` | `brave-search-mcp` (`api-key`); `scripts/provision-brave-search-vault.sh` |
 | `backstage-mcp-token` | `vault-backstage-mcp` | `eso-backstage-mcp` | `backstage-mcp` | `kagent-backstage-mcp` (`token`) |
-| `kagent-postgres` (retired by §T.128) | `vault-kagent-db` | `eso-kagent-db` | `kagent-db` | `kagent-db` (`v1-user`, `v1-password`, `v1-db-name`) |
 | `kagent-postgres-owner` | `vault-kagent-db` | `eso-kagent-db` | `kagent-db` | `kagent-db` (`v1-user`, `v1-password`, `v1-db-name`) |
 | `kagent-postgres-readwrite` | `vault-kagent-db` | `eso-kagent-db` | `kagent-db` | `kagent-db` (`v1-readwrite-user`, `v1-readwrite-password`, `v1-db-name`) |
 | `kagent-anthropic` (`kagent-anthropic-secrets`) | `vault-kagent-anthropic` | `eso-kagent-anthropic` | `kagent-anthropic` | `kagent-anthropic` (`anthropic-api-key`) |
@@ -297,9 +306,8 @@ does: database `kagent_v1`, NOLOGIN roles `kagent_owner` (migrates, owns the sch
 `kagent_readwrite` (serves every runtime query, cannot change the schema), each with a NOINHERIT
 login (`v1-user`, `v1-readwrite-user`, Vault `kagent-db`), schema `kagent` owned by `kagent_owner`,
 and pgvector in schema `extensions`. The controller runs its migrations as `kagent_owner` in schema
-`kagent` and refuses to start without pgvector. kagent 1.0 (alpha14+) reads two connection strings,
-`kagent-postgres-owner` and `kagent-postgres-readwrite`; the alpha11 controller still reads
-`kagent-postgres` once, at startup, until §T.128. Sessions, tasks,
+`kagent` and refuses to start without pgvector. The controller reads both connection strings,
+`kagent-postgres-owner` and `kagent-postgres-readwrite`, once at startup. Sessions, tasks,
 events (A2A protobuf), approvals and memory all live there; that is what the agent audit reads
 (`--source v1`).
 
