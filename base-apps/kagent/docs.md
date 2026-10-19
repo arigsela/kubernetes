@@ -28,6 +28,7 @@ sources:
   - id: restarter
     resource: base-apps/kagent/agent-templates/restarter.yaml
     title: restarter AgentTemplate (class admin; one gated pod delete for the dispatcher's leak verdict)
+  - base-apps/kagent/agent-templates/docs-checker.yaml
   - base-apps/kagent/agents/homelab-knowledge.yaml
   - base-apps/kagent/agents/k8s-reader.yaml
   - base-apps/kagent/agents/k8s-agent.yaml
@@ -37,9 +38,11 @@ sources:
   - base-apps/kagent/agents/dungeon-crawler-carl-agent.yaml
   - base-apps/kagent/agents/implementer.yaml
   - base-apps/kagent/agents/restarter.yaml
+  - base-apps/kagent/agents/docs-checker.yaml
   - base-apps/kagent/harnesses/kagent-memory.yaml
   - base-apps/kagent/harnesses/kagent-stateless.yaml
   - base-apps/kagent/harnesses/kagent-chat.yaml
+  - base-apps/kagent/harnesses/docs-checker.yaml
   - id: sonnet-config
     resource: base-apps/kagent/model-configs/anthropic-claude-sonnet-5-5.yaml
     title: Sonnet 5.5 ModelConfig (maxTokens, prompt caching)
@@ -174,6 +177,7 @@ group moves all five charts in one PR, and only after approval on the Dependency
 | `dungeon-crawler-carl-agent` | `anthropic-claude-haiku-5-5` | `kagent-chat` | read | `brave-search` (`brave_web_search`) for book facts it is unsure of |
 | `implementer` | `anthropic-claude-sonnet-5-5` | `kagent-stateless` | propose | `implementer` (7 read + the 4 propose tools, ungated: the merge is the gate) and the 8 read tools of `kagent-tool-server` (not `agent-docs` too: a tool name bound twice is refused by the runtime). Opens PRs under GitHub App `arigsela-implementer`; called by a human (ask-hk) or the dispatcher (§T.116) |
 | `restarter` | `anthropic-claude-sonnet-5-5` | `kagent-stateless` | admin | `kagent-tool-server` bound twice: the 8 read tools `requireApproval: false`, and ONLY `k8s_delete_resource` `requireApproval: true`. Restarts the one pod a request names; the dispatcher opens its session after the implementer's `leak` or `rollout-pending` verdict and the owner approves the pending delete on the approvals page `https://dispatcher.arigsela.com/approvals` (Dex login; fallback `ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --task <task> --approve`) (§T.118, §T.119) |
+| `docs-checker` | `anthropic-claude-sonnet-5-5` | `docs-checker` (byo) | read | `agent-docs` (`get_file_contents`, `search_code`, `list_commits`, `get_commit`), nothing else. Finds lines in this repo's docs that no longer match the manifests they describe and proposes the corrected line; it never edits. A LangGraph app on kagent's BYO contract (code in `arigsela/claude-agents` `docs-checker/`) that picks its model per graph node (Haiku 5.5, Sonnet 5.5 to escalate): the ModelConfig decides the key the egress gateway injects, not the model of every call. Ask it `check all` or `check <path>` (§T.131) |
 
 The class label lives on the AgentTemplate and is checked against the capability taxonomy
 (`base-apps/admission-policies/agent-capability-taxonomy.yaml`): a `read` template binds only
@@ -195,10 +199,12 @@ rejects a sub-agent that has sub-agents of its own.
 
 `homelab-agent`, a LangGraph BYO agent that duplicated `homelab-knowledge`, was retired on
 2026-10-11: `kagent-langgraph` doesn't implement kagent 1.0's BYO contract (gRPC A2A, TaskStore).
-Its manifests, database, Vault keys and roles, and ECR repository are gone.
+Its manifests, database, Vault keys and roles, and ECR repository are gone. `docs-checker` is a
+LangGraph agent that does meet the contract (A2A over gRPC, the controller's TaskStore), built
+on published libraries rather than `kagent-langgraph`; it is the one `byo` runtime here.
 
 ## Harnesses (the runtime)
-All three Harnesses use the Go ADK (`spec.kagent`), image
+The three `kagent`-runtime Harnesses use the Go ADK (`spec.kagent`), image
 `ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha14` by digest, WorkerPool `kagent-default`, and
 snapshot location `s3://ate-snapshots/kagent/`. They differ only in `spec.kagent`:
 
@@ -215,12 +221,14 @@ both require a digest (changing the content under a fixed reference would invali
 snapshots), and the digest moves only in lockstep with the kagent chart.
 
 The one exception is a `byo` runtime on an image the taxonomy lists **exactly** in `byo-images`
-(today only docs-checker, pinned by digest once pushed), and CI admits an Agent on it only with a
-class `read` template that binds only `read-only-servers` (`agent-docs`), with read tools and no
-subAgent (SPEC §V.101; `admission-policies` docs). Agents, AgentTemplates, Harnesses and
-RemoteMCPServers reach the cluster only from git: the `agent-definitions-from-git` admission
-policy denies a `kubectl` edit and the kagent UI's create or edit of them (break glass:
-`admission-policies` runbook).
+(today only docs-checker: Harness `docs-checker`, `harnesses/docs-checker.yaml`, its ECR image by
+digest with `workload.command` `/app/.venv/bin/docs-checker`, no env, the same pool and snapshot
+location; atelet pulls it with the ECR credential provider, `base-apps/substrate/docs.md`), and
+CI admits an Agent on it only with a class `read` template that binds only `read-only-servers`
+(`agent-docs`), with read tools and no subAgent (SPEC §V.101; `admission-policies` docs).
+Agents, AgentTemplates, Harnesses and RemoteMCPServers reach the cluster only from git: the
+`agent-definitions-from-git` admission policy denies a `kubectl` edit and the kagent UI's
+create or edit of them (break glass: `admission-policies` runbook).
 
 Go ADK behaviour that matters here:
 - **Thinking is dropped.** The Claude 5.5 models think by default; the Go adapter maps only
@@ -258,7 +266,7 @@ In v1alpha3 an AgentTemplate MCP binding accepts only a same-namespace `RemoteMC
 
 | RemoteMCPServer | Points at | Tools bound |
 |---|---|---|
-| `agent-docs` (`agent-docs-mcp-remote.yaml`) | `http://agent-docs-mcp.kagent:3000/mcp`, the read-only GitHub MCP server behind the plain Deployment `agent-docs-mcp` (`agent-docs-mcp.yaml`: agentgateway 0.9.0 wrapping the stdio server, served on :3000) (`ghcr.io/github/github-mcp-server`, `--read-only --toolsets repos`, token from Secret `agent-docs-github-mcp-token`) | `get_file_contents`, `search_code` |
+| `agent-docs` (`agent-docs-mcp-remote.yaml`) | `http://agent-docs-mcp.kagent:3000/mcp`, the read-only GitHub MCP server behind the plain Deployment `agent-docs-mcp` (`agent-docs-mcp.yaml`: agentgateway 0.9.0 wrapping the stdio server, served on :3000) (`ghcr.io/github/github-mcp-server`, `--read-only --toolsets repos`, token from Secret `agent-docs-github-mcp-token`). The one server a byo agent may bind (taxonomy `read-only-servers`): a byo runtime can reach every tool it has, so it must stay read-only on the server side | `get_file_contents`, `search_code`; docs-checker also `list_commits`, `get_commit` |
 | `brave-search` (`brave-search-mcp-remote.yaml`) | `http://brave-search-mcp.kagent:3000/mcp`, the official Brave Search MCP server behind the plain Deployment `brave-search-mcp` (`brave-search-mcp.yaml`: agentgateway 0.9.0 wrapping the stdio server, served on :3000) (`docker.io/mcp/brave-search`, digest-pinned; key from Secret `brave-search-mcp-api-key`; only 2 of its 8 tools enabled). Web results are untrusted text, so it is bound to read-class agents only, never to the operator agents | `brave_web_search`, `brave_news_search` |
 | `backstage-catalog` (`backstage-catalog-mcp.yaml`) | Backstage's MCP actions endpoint, `http://backstage.backstage.svc.cluster.local/api/mcp-actions/v1/catalog`; the `Authorization` header comes from Secret `backstage-mcp-token` and is injected by Substrate's egress gateway | `get-catalog-entity` |
 | `kagent-tool-server` (chart) | `http://kagent-tools.kagent:8084/mcp`, the `kagent-tools` Deployment | read: `k8s_get_resources`, `k8s_get_resource_yaml`, `k8s_get_pod_logs`, `k8s_describe_resource`, `k8s_get_events`, `k8s_get_cluster_configuration`, `k8s_get_available_api_resources`, `k8s_check_service_connectivity`; the admin agents add the write/destructive tools in a gated binding |

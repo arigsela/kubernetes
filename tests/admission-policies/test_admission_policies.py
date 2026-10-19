@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from conftest import (ARGO, FIXTURES, REPO, _wait, api_server_panics, expected_pull_secrets,
-                      policy_docs, policy_files, real_kagent_files)
+                      policy_docs, policy_files, real_kagent_files, unpinned_images)
 
 SUITES = sorted(p.name for p in FIXTURES.iterdir() if p.is_dir() and p.name != "crds")
 GOOD = sorted(FIXTURES.glob("*/good/*.yaml"))
@@ -50,18 +50,21 @@ def test_real_kagent_manifests_update_without_warnings(cluster, path):
 
 
 def test_real_kagent_manifests_are_all_there():
-    """The harness must exercise the real agents, not a subset: eight Agents and their eight
-    AgentTemplates. A glob that silently found nothing would make the test above vacuous."""
+    """The harness must exercise the real agents, not a subset: ten Agents and their ten
+    AgentTemplates, and the one byo Harness (docs-checker's, the object the byo exception of
+    agent-capability-runtime admits; SPEC §V.101). A glob that silently found nothing would make
+    the test above vacuous."""
     kinds = {}
     for p in real_kagent_files():
         for d in yaml.safe_load_all(p.read_text()):
             if d:
                 kinds.setdefault(d["kind"], set()).add(d["metadata"]["name"])
     want = {"homelab-knowledge", "k8s-reader", "k8s-agent", "istio-agent", "build-orchestrator",
-            "skill-suggester", "dungeon-crawler-carl-agent", "implementer", "restarter"}
+            "skill-suggester", "dungeon-crawler-carl-agent", "implementer", "restarter",
+            "docs-checker"}
     assert kinds.get("Agent") == want, kinds.get("Agent")
     assert kinds.get("AgentTemplate") == want, kinds.get("AgentTemplate")
-    assert kinds.get("Harness"), "no Harness found"
+    assert "docs-checker" in kinds.get("Harness", set()), kinds.get("Harness")
 
 
 @pytest.mark.parametrize("path", MUTATE, ids=_id)
@@ -360,6 +363,20 @@ def test_byo_fixture_images_are_listed():
     for p in byo:
         image = yaml.safe_load(p.read_text())["spec"]["workload"]["image"]
         assert image in _byo_images(), f"{_id(p)}: {image} is not in byo-images"
+
+
+def test_placeholder_check_reads_the_image_not_the_comments(tmp_path):
+    """The session's red-until-pinned gate (conftest `cluster`) must clear once the digest is
+    pinned. The comments that explain the placeholder name it too and stay after the pin, so
+    only the image itself counts."""
+    harness = ("# {note}\napiVersion: api.kagent.dev/v1alpha3\nkind: Harness\n"
+               "metadata:\n  name: h\nspec:\n  byo: {{}}\n  workload:\n"
+               "    image: r.example/docs-checker@sha256:{digest}\n")
+    pinned, unpinned = tmp_path / "pinned.yaml", tmp_path / "unpinned.yaml"
+    pinned.write_text(harness.format(note="REPLACE_WITH_DIGEST is the pre-push placeholder",
+                                     digest="c" * 64))
+    unpinned.write_text(harness.format(note="no image yet", digest="REPLACE_WITH_DIGEST"))
+    assert unpinned_images([pinned, unpinned]) == [unpinned]
 
 
 def test_every_policy_has_a_message():

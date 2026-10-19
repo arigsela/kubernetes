@@ -22,6 +22,8 @@ sources:
   - base-apps/kagent/harnesses/kagent-memory.yaml
   - base-apps/kagent/harnesses/kagent-stateless.yaml
   - base-apps/kagent/harnesses/kagent-chat.yaml
+  - base-apps/kagent/harnesses/docs-checker.yaml
+  - base-apps/kagent/agents/docs-checker.yaml
   - base-apps/kagent/model-configs/anthropic-claude-sonnet-5-5.yaml
   - base-apps/kagent/model-configs/anthropic-claude-haiku-5-5.yaml
   - base-apps/kagent/embedding-model-config.yaml
@@ -231,10 +233,24 @@ probably new: the role names non-core groups explicitly. Check with
 `kubectl auth can-i <verb> <resource> --as=system:serviceaccount:kagent:kagent-tools`, add the
 group to the role, and note it in the manifest header's dated list.
 
+### Symptom: `docs-checker` sessions fail at start (the one `byo` agent)
+- **Check:** the image pull first. atelet pulls the docs-checker image itself, with the ECR
+  credential provider, not the cluster's `ecr-registry` secret (`base-apps/substrate/runbook.md`,
+  "an actor using the docs-checker image never starts").
+- **Check:** the actor's output: stdout of the `kagent-default` worker pods (and Loki), lines
+  labelled `ate.template.name: docs-checker-<hash>`. `KAGENT_CONFIG_JSON is not a kagent
+  v1.0.0-alpha14 ADKConfig` means the controller is not on alpha14: the image speaks alpha14's
+  runtime contract only (§T.128), so a kagent rollback below alpha14 breaks this agent, and only
+  this one. Substrate waits up to 30 s for its `GET /readyz` on 8081 before the first message.
+- **Fix:** where the fault lives: the Substrate pull key, or the kagent version. The image itself
+  changes only by a new digest: build, push and pin it (admission-policies runbook, "Pin a byo
+  image digest"), never a tag in the Harness (the CRD and `agent-capability-runtime` refuse one).
+
 ## How-to
 
 ### Ask an agent
-`scripts/ask-hk "question"` (homelab-knowledge), `--agent kagent/<name>` for another agent,
+`scripts/ask-hk "question"` (homelab-knowledge), `--agent kagent/<name>` for another agent
+(`docs-checker` takes `check all` or `check <path>[, <path>...]`, optionally `at <ref>`),
 `--context <id>` to continue (the id is printed after each answer). Exit 0 answered, 2 waiting for
 an approval or an answer, 1 failed. The UI is `https://kagent.arigsela.com`.
 
