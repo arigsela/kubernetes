@@ -83,7 +83,7 @@ sessions run as gVisor actors. Substrate itself is in `ate-system`
 ### Symptom: a turn is stuck waiting for approval
 A call through a `requireApproval: true` binding (only `k8s-agent` and `istio-agent` have one,
 directly or as `build-orchestrator`'s sub-agents) pauses the turn in `TASK_STATE_INPUT_REQUIRED`.
-It never expires: `sessionIdleTTL` skips turns waiting for approval.
+It never expires: `config.sessions.idleTtl` skips turns waiting for approval.
 - **Check:** `scripts/ask-hk` exits 2 and prints what the agent is waiting on. In the UI
   (`https://kagent.arigsela.com`) the session shows the pending tool call. A session belongs to
   the `X-User-Id` that started it (`scripts/ask-hk` defaults to `admin@kagent.dev`, Backstage
@@ -242,7 +242,7 @@ From Claude Code every message goes through `ask-hk` (`--context <id>` for follo
 `kagent` MCP server was retired on 2026-10-13 (the endpoint needs a bearer token Claude Code
 cannot mint).
 Start a new conversation after an AgentTemplate change (a Session is pinned to the revision it
-was created from) and after 30 idle days (`sessionIdleTTL: 720h` in `base-apps/kagent.yaml`;
+was created from) and after 30 idle days (`config.sessions.idleTtl: 2592000s`, 30 days, in `base-apps/kagent.yaml`;
 the Session is deleted, memory is kept).
 
 ### Read, re-run or reset the evaluation gate
