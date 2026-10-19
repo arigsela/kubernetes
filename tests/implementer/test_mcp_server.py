@@ -3,27 +3,34 @@
 named read tools, under GitHub App auth, and nothing that merges, reviews or deletes."""
 from conftest import (IMPLEMENTER_PROPOSE_TOOLS, IMPLEMENTER_READ_TOOLS, KNOWN_SERVER_TOOLS,
                       NEVER_LOADED, REPO, one, taxonomy)
+import yaml
 
 MCP = "base-apps/kagent/implementer-mcp.yaml"
 
 
+def stdio_target() -> dict:
+    cfg = yaml.safe_load(one(MCP, "ConfigMap", "implementer-mcp")["data"]["local.yaml"])
+    return cfg["binds"][0]["listeners"][0]["routes"][0]["backends"][0]["mcp"]["targets"][0]["stdio"]
+
+
+def main_container() -> dict:
+    return one(MCP, "Deployment", "implementer-mcp")["spec"]["template"]["spec"]["containers"][0]
+
+
 def loaded_tools() -> list[str]:
-    args = one(MCP, "MCPServer", "implementer-mcp")["spec"]["deployment"]["args"]
+    args = stdio_target()["args"]
     return args[args.index("--tools") + 1].split(",")
 
 
 def test_server_is_the_pinned_github_mcp_server_in_stdio_mode():
-    spec = one(MCP, "MCPServer", "implementer-mcp")["spec"]
-    assert spec["transportType"] == "stdio"
-    dep = spec["deployment"]
-    assert dep["image"].startswith("ghcr.io/github/github-mcp-server:v1.14.0@sha256:")
-    assert dep["cmd"] == "./github-mcp-server" and dep["args"][0] == "stdio"
-    assert "--read-only" not in dep["args"] and "--toolsets" not in dep["args"]
+    assert main_container()["image"].startswith("ghcr.io/github/github-mcp-server:v1.14.0@sha256:")
+    target = stdio_target()
+    assert target["cmd"] == "./github-mcp-server" and target["args"][0] == "stdio"
+    assert "--read-only" not in target["args"] and "--toolsets" not in target["args"]
 
 
 def test_server_authenticates_as_the_github_app_from_the_vault_backed_secret():
-    dep = one(MCP, "MCPServer", "implementer-mcp")["spec"]["deployment"]
-    assert [s["name"] for s in dep["secretRefs"]] == ["implementer-github-app"]
+    assert main_container()["envFrom"] == [{"secretRef": {"name": "implementer-github-app"}}]
     es = one("base-apps/kagent/implementer-mcp-external-secret.yaml", "ExternalSecret", "implementer-github-app")
     assert es["spec"]["target"]["name"] == "implementer-github-app"
     assert es["spec"]["dataFrom"] == [{"extract": {"key": "implementer-github-app"}}]
@@ -45,11 +52,10 @@ def test_propose_tools_loaded_equal_the_taxonomy_propose_list():
 
 
 def test_nothing_that_merges_reviews_or_deletes_is_loaded():
-    """Checked on the parsed spec: the header comment names these tools to say why they are absent."""
-    import yaml
-    spec = yaml.safe_dump(one(MCP, "MCPServer", "implementer-mcp")["spec"])
+    """Checked on the parsed config: the header comment names these tools to say why they are absent."""
+    text = yaml.safe_dump(stdio_target())
     for name in NEVER_LOADED:
-        assert name not in spec, name
+        assert name not in text, name
 
 
 def test_every_loaded_tool_name_is_a_known_server_tool():

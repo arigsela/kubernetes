@@ -10,8 +10,70 @@
 # list. No toolset is enabled, so merge_pull_request, update_pull_request (it can close or
 # retarget any PR), the review tools, delete_file and the repository tools never exist here
 # (tests/implementer/test_mcp_server.py). A misspelt name fails the server at startup, by design.
-apiVersion: kagent.dev/v1alpha1
-kind: MCPServer
+#
+# A plain Deployment since §T.126. Until then kmcp's MCPServer CR rendered exactly this shape:
+# an init container copies the agentgateway binary into an emptyDir, and the main container
+# runs agentgateway, which starts the stdio server as its child and serves it as Streamable
+# HTTP on :3000 (/mcp and /sse). kagent 1.0.0-alpha14 removed kmcp (kagent#3223), so the shape
+# is declared here instead. The names kmcp used (Deployment, Service, ServiceAccount,
+# ConfigMap, container `mcp-server`) are kept: the RemoteMCPServer `implementer`
+# (implementer-mcp-remote.yaml) binds http://implementer-mcp.kagent:3000/mcp, and the Grafana
+# memory alerts key on the container name.
+#
+# agentgateway reads local.yaml once at start, and a ConfigMap change alone restarts nothing
+# (kmcp rolled the pod through a template checksum). The pod template therefore carries
+# checksum/config = sha256 of the local.yaml text; CI fails when it is stale
+# (tests/agent-identity/test_mcp_server_manifests.py), so every config edit in git rolls the pod.
+# Recompute:  python3 -c 'import sys,yaml,hashlib; d=[x for x in yaml.safe_load_all(open(sys.argv[1])) if x and x["kind"]=="ConfigMap"][0]; print(hashlib.sha256(d["data"]["local.yaml"].encode()).hexdigest())' base-apps/kagent/implementer-mcp.yaml
+# The stdio child inherits the container environment, which is how the GitHub App credentials
+# (envFrom the ExternalSecret's Secret) reach it without appearing in this file.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: implementer-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: implementer-mcp
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: implementer-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: implementer-mcp
+data:
+  local.yaml: |
+    binds:
+      - port: 3000
+        listeners:
+          - name: default
+            protocol: HTTP
+            routes:
+              - name: mcp
+                matches:
+                  - path:
+                      pathPrefix: /sse
+                  - path:
+                      pathPrefix: /mcp
+                backends:
+                  - weight: 100
+                    mcp:
+                      targets:
+                        - name: implementer-mcp
+                          stdio:
+                            cmd: ./github-mcp-server
+                            args:
+                              - stdio
+                              - --tools
+                              - get_file_contents,search_code,list_commits,get_commit,list_branches,list_pull_requests,pull_request_read,create_branch,create_or_update_file,push_files,create_pull_request
+    config: {}
+---
+apiVersion: v1
+kind: Service
 metadata:
   name: implementer-mcp
   namespace: kagent
@@ -19,28 +81,91 @@ metadata:
     app.kubernetes.io/part-of: kagent
     app.kubernetes.io/name: implementer-mcp
 spec:
-  transportType: stdio
-  deployment:
-    image: ghcr.io/github/github-mcp-server:v1.14.0@sha256:7aaeeec9ae4fe9a736d100c1ff0798f3c219b5009e05f5d3945fcacb13cc196b
-    cmd: ./github-mcp-server
-    args:
-      - stdio
-      - --tools
-      - get_file_contents,search_code,list_commits,get_commit,list_branches,list_pull_requests,pull_request_read,create_branch,create_or_update_file,push_files,create_pull_request
-    secretRefs:
-      - name: implementer-github-app
-    resources:
-      requests:
-        cpu: 50m
-        # Raised 64Mi -> 96Mi with the limit, same 1:4 ratio (alert "Container near memory limit", 2026-10-18).
-        memory: 96Mi
-      limits:
-        cpu: 200m
-        # Raised 256Mi -> 384Mi (alert "Container near memory limit", 2026-10-18): 92% of the
-        # limit in steady use, no OOMKilled, 0 restarts.
-        memory: 384Mi
-    nodeSelector:
-      node.kubernetes.io/workload: infrastructure
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        effect: NoSchedule
+  # Both keys exactly as kmcp set them: a Deployment selector is immutable and Argo applies this onto the live object (§T.126).
+  selector:
+    app.kubernetes.io/instance: implementer-mcp
+    app.kubernetes.io/name: implementer-mcp
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+      # What kmcp set; the waypoint has served it under this value since 2026-10-11.
+      appProtocol: kgateway.dev/mcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: implementer-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: implementer-mcp
+spec:
+  replicas: 1
+  # Both keys exactly as kmcp set them: a Deployment selector is immutable and Argo applies this onto the live object (§T.126).
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: implementer-mcp
+      app.kubernetes.io/name: implementer-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: kagent
+        app.kubernetes.io/instance: implementer-mcp
+        app.kubernetes.io/name: implementer-mcp
+      annotations:
+        # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
+        checksum/config: "2f1fc6c4871d7f7c00ca575fdd77581ad53d2bca2bcce3f9128702721f24a147"
+    spec:
+      serviceAccountName: implementer-mcp
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      initContainers:
+        - name: copy-binary
+          image: ghcr.io/agentgateway/agentgateway:0.9.0-musl@sha256:aa375451b6f925f6b260fe33cbe237555efd322f14f3b5e0c717628a069cfb0a
+          args: ["--copy-self", "/adapterbin/agentgateway"]
+          volumeMounts:
+            - name: binary
+              mountPath: /adapterbin
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+      containers:
+        - name: mcp-server
+          image: ghcr.io/github/github-mcp-server:v1.14.0@sha256:7aaeeec9ae4fe9a736d100c1ff0798f3c219b5009e05f5d3945fcacb13cc196b
+          command: ["/adapterbin/agentgateway"]
+          args: ["-f", "/config/local.yaml"]
+          ports:
+            - name: http
+              containerPort: 3000
+          # Injects GITHUB_APP_ID / GITHUB_APP_INSTALLATION_ID / GITHUB_APP_PRIVATE_KEY (implementer-mcp-external-secret.yaml).
+          envFrom:
+            - secretRef:
+                name: implementer-github-app
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: binary
+              mountPath: /adapterbin
+          # Thin stdio proxy plus the GitHub server. Sized 2026-10-18: requests 50m/96Mi, limits
+          # 200m/384Mi. The memory limit was raised 256Mi -> 384Mi (alert "Container near memory
+          # limit", 2026-10-18): 92% of the limit in steady use, no OOMKilled, 0 restarts. The
+          # request was raised 64Mi -> 96Mi with it, keeping the 1:4 ratio.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 200m
+              memory: 384Mi
+      volumes:
+        - name: config
+          configMap:
+            name: implementer-mcp
+        - name: binary
+          emptyDir: {}
