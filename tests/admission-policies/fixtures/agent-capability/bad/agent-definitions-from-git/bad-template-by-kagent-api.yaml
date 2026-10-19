@@ -1,0 +1,22 @@
+# The kagent UI/API creates templates on a caller's behalf as the controller's service account
+# (kagent-writer-role). That is the git bypass this policy closes. Otherwise a valid read template.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: bad-template-by-kagent-api
+  namespace: kagent
+  labels:
+    capability.homelab/class: read
+  annotations:
+    test.homelab/as-user: system:serviceaccount:kagent:kagent-controller
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: agent-docs
+        tools:
+          - get_file_contents

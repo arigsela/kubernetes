@@ -16,6 +16,13 @@ The verdict is mode-agnostic, so the same fixtures keep passing when a binding m
 [Warn, Audit] to [Deny], with one rule: a bad fixture must violate ONLY its own policy. In
 warn mode every violated policy is reported; with [Deny] the API server reports just the first
 policy that denies, so a fixture that also broke another policy would be credited to it.
+
+WHO SUBMITS: in production every manifest reaches the API server through Argo CD's application
+controller, and agent-definitions-from-git admits agent definitions from nobody else. So the
+harness acts as Argo CD: fixtures and the real kagent objects are submitted impersonating it,
+unless a fixture names another principal in the annotations test.homelab/as-user and
+test.homelab/as-groups (comma-separated). RBAC is not under test: the harness binds
+cluster-admin to every authenticated identity, so admission alone decides.
 """
 import json
 import re
@@ -39,6 +46,30 @@ NAMESPACES = ["kagent", "team-a", "postgresql", "admission-test",
               "ate-system", "podcertificate-controller-system"]
 NOT_MANIFESTS = {"catalog-info.yaml", "mkdocs.yml"}
 EXPECT = "test.homelab/expect-pull-secrets"
+# The identity Argo CD syncs with (in-cluster destination, the pod's own projected token; no
+# cluster Secret), and the one agent-definitions-from-git exempts. Checked against the policy
+# by test_harness_argo_identity_is_the_policys.
+ARGO = "system:serviceaccount:argo-cd:argocd-application-controller"
+AS_USER = "test.homelab/as-user"
+AS_GROUPS = "test.homelab/as-groups"
+# Harness only: every identity is cluster-admin, so a verdict is admission's alone.
+HARNESS_RBAC = """\
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: harness-every-identity-is-admin
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: cluster-admin}
+subjects: [{apiGroup: rbac.authorization.k8s.io, kind: Group, name: "system:authenticated"}]
+"""
+
+
+def principal(text):
+    """(user, groups) a manifest is submitted as: Argo CD, unless its first document names
+    another identity in test.homelab/as-user / test.homelab/as-groups."""
+    doc = next((d for d in yaml.safe_load_all(text) if d), {})
+    ann = (doc.get("metadata") or {}).get("annotations") or {}
+    groups = tuple(g for g in ann.get(AS_GROUPS, "").split(",") if g)
+    return ann.get(AS_USER, ARGO), groups
 
 
 def docker_available() -> bool:
@@ -95,8 +126,11 @@ def _docker(*args, input=None):
 
 
 class Cluster:
-    def kubectl(self, *args, input=None):
-        return _docker("exec", "-i", NAME, "kubectl", *args, input=input)
+    def kubectl(self, *args, input=None, as_user=None, as_groups=()):
+        """kubectl in the harness, as its admin (system:masters) or, given as_user, as that
+        identity by impersonation."""
+        who = (f"--as={as_user}", *(f"--as-group={g}" for g in as_groups)) if as_user else ()
+        return _docker("exec", "-i", NAME, "kubectl", *who, *args, input=input)
 
     def apply(self, text, server_side=False):
         # Server-side for the CRDs: the kagent CRDs together exceed the client-side apply's
@@ -114,7 +148,7 @@ class Cluster:
         failure is final."""
         deadline = time.time() + timeout
         while True:
-            r = self.kubectl("apply", "-f", "-", input=text)
+            r = self.kubectl("apply", "-f", "-", input=text, as_user=ARGO)
             if r.returncode == 0:
                 return
             assert "not yet synced" in r.stderr and time.time() < deadline, r.stdout + r.stderr
@@ -122,9 +156,16 @@ class Cluster:
 
     def verdict(self, text, update=False):
         """(verdict, {policy names that fired}, raw output) for a server-side dry run: a
-        create, or with update=True an apply over the existing object (the UPDATE path)."""
+        create, or with update=True an apply over the existing object (the UPDATE path),
+        submitted as the manifest's principal (Argo CD unless it names another)."""
         verb = ("apply",) if update else ("create",)
-        r = self.kubectl(*verb, "--dry-run=server", "-f", "-", input=text)
+        user, groups = principal(text)
+        return self.verdict_of(*verb, "--dry-run=server", "-f", "-", input=text,
+                               as_user=user, as_groups=groups)
+
+    def verdict_of(self, *args, input=None, as_user=None, as_groups=()):
+        """(verdict, {policy names that fired}, raw output) for any kubectl call."""
+        r = self.kubectl(*args, input=input, as_user=as_user, as_groups=as_groups)
         out = r.stdout + r.stderr
         fired = set(re.findall(r"ValidatingAdmissionPolicy '([^']+)'", out))
         if r.returncode != 0:
@@ -198,6 +239,7 @@ def cluster():
         _wait(lambda: c.kubectl("get", "--raw", "/readyz").stdout.strip() == "ok", 180, "API server ready")
         for ns in NAMESPACES:
             c.apply(f"apiVersion: v1\nkind: Namespace\nmetadata:\n  name: {ns}\n")
+        c.apply(HARNESS_RBAC)
         # A Pod is admitted only once its namespace's default ServiceAccount exists; the
         # controller creates it a moment after the namespace.
         for ns in NAMESPACES + ["default", "kube-system"]:

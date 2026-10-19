@@ -19,19 +19,32 @@ against the manifests in git:
                         template that needs both binds the server twice.
   4. No escalation      for every subAgent, the subagent template's effective class is
                         <= this template's class. Effective capability is transitive.
-  5. Refs only          every Agent references an AgentTemplate and a Harness by name; an
-                        inline spec.template / spec.harness would bypass 1-4 and 6.
+  5. Refs only          every Agent references an AgentTemplate and a Harness by name, both in
+                        git; an inline spec.template / spec.harness would bypass 1-4, 6 and 7.
   6. Trusted runtime    every Harness uses the `kagent` runtime and an image from the
-                        taxonomy's runtime-images. 1-3 are enforced INSIDE the runtime (tool
-                        selection, the approval pause); byo/claude/codex need not honour them.
+                        taxonomy's runtime-images, or the `byo` runtime on an image that is
+                        EXACTLY an entry of byo-images (repository@sha256:digest). 1-3 are
+                        enforced INSIDE kagent's runtimes (tool selection, the approval pause);
+                        byo/claude/codex need not honour them. claude and codex: never.
+  7. BYO conditions     every Agent whose harnessRef names a byo Harness lives in `kagent` and
+                        uses an AgentTemplate of class `read` whose every tool entry is an MCP
+                        binding of a RemoteMCPServer in the taxonomy's read-only-servers (the
+                        ones in `kagent`), binding only `read` tools (no subAgent). Egress opens per ORIGIN, so a byo runtime
+                        can call any tool a bound server has: the servers must be read-only on
+                        the server side (tests/agent-capability proves it per server). Every
+                        byo-images entry is a real sha256 digest (REPLACE_WITH_DIGEST fails),
+                        and every read-only server exists in git.
 
 This is the authoritative gate. The native admission policies
-(base-apps/admission-policies/agent-capability.yaml) enforce 1-3, 5, 6 and one hop of 4;
-the transitive closure of 4 needs the whole graph, so CI is where it is decided.
+(base-apps/admission-policies/agent-capability.yaml) enforce 1-3, 5, 6 and one hop of 4.
+The transitive closure of 4 and all of 7 span several objects, so CI is where they are
+decided; agent-definitions-from-git.yaml makes git the only way in, so what CI saw is what
+runs (SPEC §V.101).
 
 FAIL CLOSED (SPEC §V.84): a kagent manifest of a kind/version this script does not
-understand (e.g. the 0.10 kagent.dev/v1alpha2 Agent), an unparsable kagent file, or zero
-AgentTemplates is an error, never a vacuous pass.
+understand (e.g. the 0.10 kagent.dev/v1alpha2 Agent), an unparsable kagent file, zero
+AgentTemplates, a missing byo-images or read-only-servers key, or an Agent whose Harness is
+not in git is an error, never a vacuous pass.
 
 Exit 0 clean, 1 on any error.
 """
@@ -39,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -74,18 +88,29 @@ KNOWN_KAGENT = {
 KAGENT_GROUPS = ("kagent.dev", "api.kagent.dev")
 RUNTIMES = ("kagent", "byo", "claude", "codex")
 
+# A byo-images entry: repository@sha256:<64 lowercase hex>. The repository has no tag (no ':'
+# after its last '/'); a registry port before it is fine.
+BYO_IMAGE = re.compile(r"[^\s@]+/[^\s@:/]+@sha256:[a-f0-9]{64}")
+# Where byo Agents live and read-only-servers are defined (and proved read-only).
+BYO_NAMESPACE = "kagent"
+DIGEST_PLACEHOLDER = "REPLACE_WITH_DIGEST"
+PIN_HOWTO = ("push the image, then pin its digest: admission-policies runbook, "
+             "'Pin a byo image digest'")
+
 
 def _name(doc: dict) -> str:
     return (doc.get("metadata") or {}).get("name", "<unnamed>")
 
 
-def load_taxonomy(repo_root: Path) -> tuple[dict[str, str], list[str]]:
-    """({tool_name: classification}, runtime image repositories). Same content the
-    admission policy embeds."""
+def _key(doc: dict) -> tuple[str, str]:
+    meta = doc.get("metadata") or {}
+    return meta.get("namespace", ""), meta.get("name", "<unnamed>")
+
+
+def _taxonomy_data(repo_root: Path) -> dict:
     path = repo_root / TAXONOMY_PATH
     if not path.exists():
         raise SystemExit(f"taxonomy not found: {TAXONOMY_PATH}")
-
     cm = next(
         (d for d in yaml.safe_load_all(path.read_text())
          if isinstance(d, dict) and d.get("kind") == "ConfigMap"),
@@ -93,7 +118,42 @@ def load_taxonomy(repo_root: Path) -> tuple[dict[str, str], list[str]]:
     )
     if cm is None:
         raise SystemExit(f"no ConfigMap in {TAXONOMY_PATH}")
-    data = cm.get("data") or {}
+    return cm.get("data") or {}
+
+
+def load_byo_conditions(repo_root: Path) -> tuple[list[str], list[str], list[str]]:
+    """(byo-images, read-only-servers, errors) from the taxonomy. Both keys are required (an
+    empty list `[]` admits no byo Harness); every byo-images entry must be an exact
+    repository@sha256:digest, never a repository, a tag or the pre-push placeholder."""
+    data = _taxonomy_data(repo_root)
+    out: list[list[str]] = []
+    errors: list[str] = []
+    for key in ("byo-images", "read-only-servers"):
+        if key not in data:
+            errors.append(f"taxonomy missing '{key}' key ({TAXONOMY_PATH}); an empty list [] "
+                          f"admits no byo Harness, a missing one is not understood (§V.84)")
+            out.append([])
+            continue
+        items = json.loads(data[key] or "[]")
+        if not isinstance(items, list) or not all(isinstance(i, str) for i in items):
+            errors.append(f"taxonomy '{key}' must be a JSON list of strings")
+            items = []
+        out.append(items)
+    for entry in out[0]:
+        if entry.endswith("@sha256:" + DIGEST_PLACEHOLDER):
+            errors.append(f"byo-images entry {entry!r} still carries the placeholder "
+                          f"{DIGEST_PLACEHOLDER}, so nothing can deploy on it yet: {PIN_HOWTO}")
+        elif not BYO_IMAGE.fullmatch(entry):
+            errors.append(f"byo-images entry {entry!r} is not repository@sha256:<digest>. Entries "
+                          f"are exact images, never a repository (it would admit every digest "
+                          f"pushed there later) or a tag (it moves)")
+    return out[0], out[1], errors
+
+
+def load_taxonomy(repo_root: Path) -> tuple[dict[str, str], list[str]]:
+    """({tool_name: classification}, runtime image repositories). Same content the
+    admission policy embeds."""
+    data = _taxonomy_data(repo_root)
 
     tool_class: dict[str, str] = {}
     for classification in ("read", "propose", "write", "destructive"):
@@ -274,10 +334,11 @@ def check_no_escalation(templates) -> list[str]:
     return errors
 
 
-def check_refs_only(agents, templates) -> list[str]:
+def check_refs_only(agents, templates, harnesses) -> list[str]:
     """Invariant 5."""
     errors = []
     known = {_name(doc) for _, doc in templates}
+    known_harnesses = {_key(doc) for _, doc in harnesses}
     for path, doc in agents:
         spec = doc.get("spec") or {}
         tpl = spec.get("template") or {}
@@ -294,21 +355,35 @@ def check_refs_only(agents, templates) -> list[str]:
         if "harness" in spec:
             errors.append(f"Agent {_name(doc)} ({path}): inline spec.harness. Reference a Harness "
                           f"by name; an inline harness bypasses the capability checks.")
+        href = (spec.get("harnessRef") or {}).get("name")
+        if "harness" not in spec and (_key(doc)[0], href) not in known_harnesses:
+            errors.append(f"Agent {_name(doc)}: harnessRef {href!r} is not a Harness in git in "
+                          f"its namespace, so its runtime (and whether invariant 7 applies) is "
+                          f"unknown")
     return errors
 
 
-def check_runtime(harnesses, images) -> list[str]:
+def check_runtime(harnesses, images, byo_images) -> list[str]:
     """Invariant 6."""
     errors = []
     for path, doc in harnesses:
         spec = doc.get("spec") or {}
         runtimes = [r for r in RUNTIMES if r in spec]
+        image = (spec.get("workload") or {}).get("image") or ""
+        if runtimes == ["byo"]:
+            # Exact string equality: no prefix, no repository, no tag (Codex C#3).
+            if image not in byo_images:
+                errors.append(
+                    f"Harness {_name(doc)} ({path}): byo runtime on image {image!r}, which is "
+                    f"not exactly an entry of the taxonomy's byo-images {byo_images}. A byo "
+                    f"runtime need not honour tool selection or requireApproval, so only a "
+                    f"reviewed image pinned by digest runs as byo.")
+            continue
         if runtimes != ["kagent"]:
             errors.append(
-                f"Harness {_name(doc)} ({path}): runtime {runtimes or 'none'}; must be exactly "
-                f"`kagent`. Tool selection and requireApproval are enforced inside kagent's "
-                f"ADK runtimes only.")
-        image = (spec.get("workload") or {}).get("image") or ""
+                f"Harness {_name(doc)} ({path}): runtime {runtimes or 'none'}; must be `kagent`, "
+                f"or `byo` on a byo-images entry. Tool selection and requireApproval are "
+                f"enforced inside kagent's ADK runtimes only.")
         if not any(image.startswith(r + "@") or image.startswith(r + ":") for r in images):
             errors.append(
                 f"Harness {_name(doc)} ({path}): image {image!r} is not one of the taxonomy's "
@@ -316,6 +391,60 @@ def check_runtime(harnesses, images) -> list[str]:
         elif "@sha256:" not in image:
             errors.append(f"Harness {_name(doc)} ({path}): image {image!r} is not pinned by "
                           f"digest.")
+    return errors
+
+
+def check_read_only_servers_exist(read_only_servers, servers) -> list[str]:
+    """Invariant 7: a listed server is a RemoteMCPServer in git, in BYO_NAMESPACE, where its
+    url is reviewed and its server-side read-only proof applies."""
+    in_git = {name for ns, name in (_key(doc) for _, doc in servers) if ns == BYO_NAMESPACE}
+    return [f"read-only-servers lists {s!r}, which is not a RemoteMCPServer in namespace "
+            f"{BYO_NAMESPACE} in git" for s in read_only_servers if s not in in_git]
+
+
+def check_byo_agents(agents, templates, harnesses, read_only_servers, taxonomy) -> list[str]:
+    """Invariant 7: every Agent on a byo Harness lives in BYO_NAMESPACE and runs a `read`
+    template that binds only read-only servers, with only read tools and no subAgent. An
+    Agent's refs resolve in its own namespace."""
+    errors = []
+    byo = {_key(doc) for _, doc in harnesses if "byo" in (doc.get("spec") or {})}
+    by_key = {_key(doc): doc for _, doc in templates}
+    for _path, doc in agents:
+        spec = doc.get("spec") or {}
+        ns = _key(doc)[0]
+        href = (spec.get("harnessRef") or {}).get("name")
+        tref = (spec.get("templateRef") or {}).get("name")
+        if (ns, href) not in byo:
+            continue
+        where = f"Agent {ns}/{_name(doc)} runs on byo Harness {href!r}, so its AgentTemplate {tref!r}"
+        if ns != BYO_NAMESPACE:
+            errors.append(f"Agent {ns}/{_name(doc)} runs on byo Harness {href!r} outside namespace "
+                          f"{BYO_NAMESPACE}, where read-only-servers are defined and proved.")
+            continue
+        tpl = by_key.get((ns, tref))
+        if tpl is None:
+            errors.append(f"{where} is not in git in namespace {ns}.")
+            continue
+        cls = _template_class(tpl)
+        if cls != "read":
+            errors.append(f"{where} must be class 'read', not {cls!r}: a byo runtime need not "
+                          f"honour per-binding tool selection or requireApproval.")
+        for tool in (tpl.get("spec") or {}).get("tools") or []:
+            if "mcp" not in tool:
+                errors.append(f"{where} may bind only MCP servers, not {sorted(tool)}: a "
+                              f"subAgent is compiled into the byo runtime with its own bindings.")
+                continue
+            binding = tool.get("mcp") or {}
+            server = binding.get("server") or {}
+            if server.get("kind") != "RemoteMCPServer" or server.get("name") not in read_only_servers:
+                errors.append(
+                    f"{where} binds server {server.get('kind')}/{server.get('name')}, which is not "
+                    f"in the taxonomy's read-only-servers {read_only_servers}. Egress opens per "
+                    f"origin, so the runtime could call every tool that server has.")
+            for name in binding.get("tools") or []:
+                if taxonomy.get(name) != "read":
+                    errors.append(f"{where} binds {taxonomy.get(name) or 'unclassified'} tool "
+                                  f"{name!r}; only read tools.")
     return errors
 
 
@@ -332,9 +461,12 @@ def main(argv=None) -> int:
     repo_root = args.repo_root
 
     taxonomy, images = load_taxonomy(repo_root)
-    by_kind, errors = collect(repo_root)
+    byo_images, read_only_servers, errors = load_byo_conditions(repo_root)
+    by_kind, collect_errors = collect(repo_root)
+    errors += collect_errors
     templates = by_kind.get("AgentTemplate", [])
     agents = by_kind.get("Agent", [])
+    harnesses = by_kind.get("Harness", [])
 
     if not templates:
         errors.append("no AgentTemplate manifests found under base-apps/ — a guardrail that "
@@ -343,8 +475,11 @@ def main(argv=None) -> int:
     errors += check_declared_class(templates)
     errors += check_tools_within_class(templates, taxonomy)
     errors += check_no_escalation(templates)
-    errors += check_refs_only(agents, templates)
-    errors += check_runtime(by_kind.get("Harness", []), images)
+    errors += check_refs_only(agents, templates, harnesses)
+    errors += check_runtime(harnesses, images, byo_images)
+    errors += check_read_only_servers_exist(read_only_servers,
+                                            by_kind.get("RemoteMCPServer", []))
+    errors += check_byo_agents(agents, templates, harnesses, read_only_servers, taxonomy)
 
     print(
         f"agent-capability: {len(templates)} templates, {len(agents)} agents, "

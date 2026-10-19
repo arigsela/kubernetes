@@ -6,16 +6,19 @@ app: admission-policies
 catalog_entity: admission-policies
 kind: runbook
 namespace: kube-system
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-19
 status: stable
 tags: [admission, cel, policy, security]
 sources:
   - base-apps/admission-policies/agent-identity.yaml
   - base-apps/admission-policies/agent-capability.yaml
   - base-apps/admission-policies/agent-capability-taxonomy.yaml
+  - base-apps/admission-policies/agent-definitions-from-git.yaml
   - base-apps/admission-policies/inject-ecr-pull-secret.yaml
   - base-apps/admission-policies/kyverno-reports-rbac.yaml
   - scripts/gen-agent-capability-policy.py
+  - scripts/gen-agent-audit-cronjob.py
+  - scripts/validate-agent-capability.py
   - tests/admission-policies/test_admission_policies.py
 ---
 
@@ -35,6 +38,29 @@ sources:
 - **Emergency (a policy blocks everything and git can't sync):**
   `kubectl delete validatingadmissionpolicybinding <name>`. That disables the policy at once,
   and Argo re-creates it at the next sync, so fix git first.
+
+### Symptom: denied by `agent-definitions-from-git`: "`<Kind> '<name>' was created|changed directly by '<user>'`"
+- An `Agent`, `AgentTemplate`, `Harness` or `RemoteMCPServer` was written by someone other than
+  Argo CD's application controller: `kubectl apply/edit/patch` (x509 admin or Dex login), the
+  kagent UI or API (they write as `kagent-controller`), or the Argo CD UI's live edit
+  (`argocd-server`). That is the policy working: agent definitions come only from git, where CI
+  checks what admission cannot (SPEC §V.101).
+- **Fix:** make the change in git. In an emergency, break glass (How-to below).
+- **If an Argo CD sync of `kagent-secrets` or `kagent` is denied** with this message, Argo CD is
+  writing under another identity than `system:serviceaccount:argo-cd:argocd-application-controller`
+  (the message names it). Today it syncs with its pod's own token: sync impersonation is off
+  (`application.sync.impersonation.enabled` in `argocd-cm`) and there is no in-cluster cluster
+  Secret (`kubectl -n argo-cd get secrets -l argocd.argoproj.io/secret-type=cluster`). If either
+  changed, change the username in `agent-definitions-from-git.yaml` and `ARGO` in
+  `tests/admission-policies/conftest.py` together.
+- An update that changes only finalizers or ownerReferences (the garbage collector in a
+  foreground prune) is never denied by it. An object stuck `Terminating` has another cause.
+
+### Symptom: a byo `Harness` is denied by `agent-capability-runtime` ("not exactly an entry of the taxonomy's byo-images")
+- Its `workload.image` must equal an entry of `byo-images` in
+  `agent-capability-taxonomy.yaml` character for character: the same registry, repository and
+  digest, no tag. A new image build is a new digest, so it needs a new entry: "Pin a byo image
+  digest" below.
 
 ### Symptom: an AgentTemplate write is denied with `failed to configure binding: paramKind ... not yet synced`
 - `agent-capability-delegation` could not evaluate yet: the API server has not synced its
@@ -88,7 +114,8 @@ sources:
   The controller's log names the missing permission (`requires permissions get,list,watch for
   resource …`).
 - **Also check** the policy carries `reports.kyverno.io/enabled: "true"` (docs.md,
-  "Reporting"). `agent-capability-delegation` deliberately does not, so it never appears.
+  "Reporting"). `agent-capability-delegation` and `agent-definitions-from-git` deliberately do
+  not, so they never appear.
 
 ### Symptom: a policy silently never fires
 - **Check:** `kubectl get validatingadmissionpolicy <name> -o jsonpath='{.status.typeChecking}'`.
@@ -105,6 +132,55 @@ sources:
 - `kubectl get policyreports -A`: native results carry `source: ValidatingAdmissionPolicy`.
   A policy appears there only if labelled `reports.kyverno.io/enabled: "true"`; a new or
   changed policy triggers a rescan of all resources.
+
+### Break glass: write an agent definition directly
+`agent-definitions-from-git` admits a direct write from an identity in the group
+`homelab:kagent-break-glass`. No credential carries it; you join it for one command by
+impersonation, which only cluster-admin may do (the x509 admin kubeconfig, or the Dex login
+`oidc:arigsela`). Each such request is an impersonated one, so it is visible as such in the
+API server's audit trail when auditing is on.
+```bash
+# x509 admin context (the default):
+kubectl --as=system:admin --as-group=system:masters --as-group=homelab:kagent-break-glass \
+  apply -f base-apps/kagent/agent-templates/<name>.yaml
+# Dex context:
+kubectl --context homelab-oidc --as=oidc:arigsela --as-group=homelab:kagent-break-glass apply -f ...
+```
+Argo CD's `selfHeal` puts git's version back at its next sync of `kagent-secrets`, so land the
+same change in git (or pause auto-sync on that app) before the edit is reverted. If the policy
+itself is broken: `kubectl delete validatingadmissionpolicybinding agent-definitions-from-git`
+(Argo re-creates it at the next sync, so fix git first).
+
+### Pin a byo image digest (or admit another byo image)
+A `byo` runtime is admitted only on an image listed **exactly** in `byo-images`
+(`agent-capability-taxonomy.yaml`, SPEC §V.101). Until the docs-checker image is pushed, its
+entry ends in `@sha256:REPLACE_WITH_DIGEST`: the CRD rejects that, and
+`scripts/validate-agent-capability.py` fails on it, so CI is red and nothing deploys on it.
+1. Build and push the image (`arigsela/claude-agents` `docs-checker/`) to
+   `852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker`, then read its digest:
+   `aws ecr describe-images --region us-east-2 --repository-name docs-checker --query 'imageDetails[].[imageDigest,imageTags]'`.
+2. Put the digest in the image string in the taxonomy, the good fixture and the docs-checker
+   Harness once it exists (`test_byo_fixture_images_are_listed` and the validator check that
+   they agree):
+   ```bash
+   D=<64 hex chars, without the sha256: prefix>
+   sed -i '' "s/docs-checker@sha256:REPLACE_WITH_DIGEST/docs-checker@sha256:$D/" \
+     base-apps/admission-policies/agent-capability-taxonomy.yaml \
+     tests/admission-policies/fixtures/agent-capability/good/good-byo-docs-checker.yaml \
+     base-apps/kagent/harnesses/<the docs-checker Harness>.yaml
+   ```
+3. Regenerate what embeds the taxonomy, then validate:
+   ```bash
+   python3 scripts/gen-agent-capability-policy.py --repo-root .
+   python3 scripts/gen-agent-audit-cronjob.py --repo-root .
+   python3 scripts/validate-agent-capability.py --repo-root .
+   python3 -m pytest tests/agent-capability/ tests/admission-policies/ -q
+   ```
+A later image is a NEW entry (keep the old one until no Harness runs it), never a repository or
+a tag: a repository would admit every digest pushed there later. Every entry is a reviewed
+image, and the Agents on it still have to satisfy invariant 7 in CI (class `read`, only
+`read-only-servers`, only read tools). Adding a server to `read-only-servers` needs a
+server-side read-only proof in `tests/agent-capability` (`READ_ONLY_PROOFS`).
 
 ### Add or change a policy
 1. Write the policy and binding in `base-apps/admission-policies/`. New policies start in

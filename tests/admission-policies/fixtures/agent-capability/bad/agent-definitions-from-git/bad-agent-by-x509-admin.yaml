@@ -1,0 +1,15 @@
+# A direct create with the x509 admin kubeconfig (system:masters, the owner's default context):
+# cluster-admin in RBAC, still not git. Otherwise a valid Agent.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Agent
+metadata:
+  name: bad-agent-by-x509-admin
+  namespace: kagent
+  annotations:
+    test.homelab/as-user: system:admin
+    test.homelab/as-groups: system:masters
+spec:
+  templateRef:
+    name: k8s-reader
+  harnessRef:
+    name: kagent-stateless

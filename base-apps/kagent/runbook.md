@@ -297,7 +297,10 @@ Agents are three files: the AgentTemplate (`agent-templates/`), the Agent (`agen
 the template and a Harness), and, rarely, a new Harness (`harnesses/`). Run
 `scripts/validate-agent-identity.py --repo-root .` and `scripts/validate-agent-capability.py --repo-root .`
 before the PR. Chart values are in `base-apps/kagent.yaml`. Argo CD (`kagent`, `kagent-crds`,
-`kagent-secrets`, all `prune`/`selfHeal`) syncs on merge. After a prompt or tool change, ask the
+`kagent-secrets`, all `prune`/`selfHeal`) syncs on merge. Git is the only way in: a direct
+`kubectl apply/edit` of an Agent, AgentTemplate, Harness or RemoteMCPServer, or a create or edit
+in the kagent UI, is denied by `agent-definitions-from-git` (break glass: `admission-policies`
+runbook). After a prompt or tool change, ask the
 agent a **multi-step tool question**, not a one-liner: tool-loop failures only show from the second
 model request on.
 

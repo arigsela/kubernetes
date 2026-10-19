@@ -1,0 +1,23 @@
+# Break glass: an identity that joins homelab:kagent-break-glass (by impersonation, which only
+# cluster-admin may do) may write an agent definition directly. A valid read template.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: good-template-break-glass
+  namespace: kagent
+  labels:
+    capability.homelab/class: read
+  annotations:
+    test.homelab/as-user: oidc:arigsela
+    test.homelab/as-groups: homelab:kagent-break-glass
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: agent-docs
+        tools:
+          - get_file_contents

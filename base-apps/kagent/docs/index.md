@@ -214,6 +214,14 @@ checks the image pin, and the `agent-capability-runtime` admission policy allows
 both require a digest (changing the content under a fixed reference would invalidate session
 snapshots), and the digest moves only in lockstep with the kagent chart.
 
+The one exception is a `byo` runtime on an image the taxonomy lists **exactly** in `byo-images`
+(today only docs-checker, pinned by digest once pushed), and CI admits an Agent on it only with a
+class `read` template that binds only `read-only-servers` (`agent-docs`), with read tools and no
+subAgent (SPEC §V.101; `admission-policies` docs). Agents, AgentTemplates, Harnesses and
+RemoteMCPServers reach the cluster only from git: the `agent-definitions-from-git` admission
+policy denies a `kubectl` edit and the kagent UI's create or edit of them (break glass:
+`admission-policies` runbook).
+
 Go ADK behaviour that matters here:
 - **Thinking is dropped.** The Claude 5.5 models think by default; the Go adapter maps only
   text and tool-use blocks, so reasoning isn't carried between tool calls (kagent#3026).

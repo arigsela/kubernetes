@@ -75,11 +75,17 @@ NATIVE_HEADER = """\
 #                                   capability is checked on AgentTemplates. (alpha14 has no inline
 #                                   Harness any more — kagent#3080 — so the runtime check on Harnesses
 #                                   cannot be bypassed from an Agent.)
-#   agent-capability-runtime     9. a Harness that is not the `kagent` runtime, or whose image
-#                                   is not one of the taxonomy's runtime-images. 1-7 are
-#                                   enforced INSIDE the runtime (tool selection and the
-#                                   approval pause); byo/claude/codex or a foreign image need
-#                                   not honour them.
+#   agent-capability-runtime     9. a Harness that is not the `kagent` runtime on one of the
+#                                   taxonomy's runtime-images. 1-7 are enforced INSIDE that
+#                                   runtime (tool selection and the approval pause);
+#                                   byo/claude/codex or a foreign image need not honour them.
+#                                   ONE exception (SPEC §V.101): `byo` on an image EQUAL to an
+#                                   entry of the taxonomy's byo-images (repository@sha256:digest,
+#                                   never a repository or a tag). Its other conditions (every
+#                                   Agent on it runs a `read` template binding only
+#                                   read-only-servers) span objects, so CI decides them
+#                                   (scripts/validate-agent-capability.py, invariant 7), and
+#                                   agent-definitions-from-git.yaml makes git the only way in.
 #
 # Rules 6-7 close a privilege-escalation path: an agent's effective capability is its own
 # tools UNION everything its subagents hold. (A 1.0 subAgent is compiled INTO the parent's
@@ -157,7 +163,7 @@ def _policy(name: str, resource: str, variables: list[dict], validations: list[d
 
 
 def build_native(read: list[str], propose: list[str], write: list[str], destructive: list[str],
-                 runtime_images: list[str]) -> list[dict]:
+                 runtime_images: list[str], byo_images: list[str]) -> list[dict]:
     classified = read + propose + write + destructive
     mutating = write + destructive
     tpl = "\"AgentTemplate '\" + object.metadata.name + \"' "
@@ -259,18 +265,26 @@ def build_native(read: list[str], propose: list[str], write: list[str], destruct
         "agent-capability-runtime", "harnesses",
         variables=[
             {"name": "images", "expression": _cel_list(runtime_images)},
+            # Exact images, compared with `in` (string equality), never as prefixes.
+            {"name": "byoImages", "expression": _cel_list(byo_images)},
             {"name": "image", "expression": "object.spec.?workload.?image.orValue('')"},
         ],
         validations=[
-            _deny("has(object.spec.kagent)",
+            _deny("has(object.spec.kagent) || has(object.spec.byo)",
                   harness + "must use the kagent runtime (spec.kagent). Per-binding tool "
                   "selection and requireApproval are enforced inside kagent's ADK runtimes; a "
-                  "byo, claude or codex runtime need not honour them.\""),
-            _deny("variables.images.exists(r, variables.image.startsWith(r + '@') || "
-                  "variables.image.startsWith(r + ':'))",
+                  "claude or codex runtime need not honour them. The one exception is byo on an "
+                  "image listed in the taxonomy's byo-images.\""),
+            _deny("!has(object.spec.kagent) || variables.images.exists(r, "
+                  "variables.image.startsWith(r + '@') || variables.image.startsWith(r + ':'))",
                   harness + "runs image '\" + variables.image + \"', which is not a kagent ADK "
                   "runtime. Allowed repositories are the taxonomy's runtime-images "
                   "(base-apps/admission-policies/agent-capability-taxonomy.yaml).\""),
+            _deny("!has(object.spec.byo) || variables.image in variables.byoImages",
+                  harness + "is a byo runtime on image '\" + variables.image + \"', which is "
+                  "not exactly an entry of the taxonomy's byo-images. A byo runtime need not "
+                  "honour tool selection or requireApproval, so only a reviewed image pinned by "
+                  "digest runs as byo (SPEC V.101).\""),
         ],
     )
 
@@ -289,22 +303,21 @@ def build_native(read: list[str], propose: list[str], write: list[str], destruct
 
 
 def render_native(repo: Path) -> str:
-    read, propose, write, destructive, runtime_images = load_taxonomy(repo)
     return NATIVE_HEADER + yaml.safe_dump_all(
-        build_native(read, propose, write, destructive, runtime_images),
+        build_native(*load_taxonomy(repo)),
         sort_keys=False, width=10_000, default_flow_style=False,
     )
 
 
-def load_taxonomy(repo: Path) -> tuple[list[str], list[str], list[str], list[str], list[str]]:
+def load_taxonomy(repo: Path) -> tuple[list[str], ...]:
+    """(read, propose, write, destructive, runtime-images, byo-images). A missing key fails
+    (KeyError): the CI validator names it. Entry shapes are the validator's job too."""
     cm = next(
         d for d in yaml.safe_load_all((repo / TAXONOMY).read_text())
         if d and d.get("kind") == "ConfigMap"
     )
-    out = []
-    for key in ("read", "propose", "write", "destructive", "runtime-images"):
-        out.append(json.loads(cm["data"][key]))
-    return tuple(out)  # type: ignore[return-value]
+    keys = ("read", "propose", "write", "destructive", "runtime-images", "byo-images")
+    return tuple(json.loads(cm["data"][key]) for key in keys)
 
 
 def main(argv=None) -> int:
