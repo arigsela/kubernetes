@@ -75,6 +75,18 @@ def test_serviceaccount_mounts_no_token(name):
 
 
 @pytest.mark.parametrize("name", sorted(SERVERS))
+def test_deployment_selector_is_the_immutable_pair_kmcp_set(name):
+    """kmcp's Deployments select on instance+name. A selector is immutable, so the manifest that
+    Argo applies onto the live object must carry exactly that pair or the hand-over is rejected."""
+    want = {"app.kubernetes.io/instance": name, "app.kubernetes.io/name": name}
+    dep = one(name, "Deployment")
+    assert dep["spec"]["selector"]["matchLabels"] == want
+    labels = dep["spec"]["template"]["metadata"]["labels"]
+    assert all(labels.get(k) == v for k, v in want.items())
+    assert one(name, "Service")["spec"]["selector"] == want
+
+
+@pytest.mark.parametrize("name", sorted(SERVERS))
 def test_pod_template_checksum_matches_the_config(name):
     """agentgateway reads local.yaml once at start. kmcp rolled the pod on config changes through
     a template checksum; here the checksum is written by hand and this test keeps it honest, so a
