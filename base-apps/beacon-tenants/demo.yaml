@@ -1,0 +1,11 @@
+# base-apps/beacon-tenants/demo.yaml — beacon enterprise tenant `demo` (beacon §T.26)
+# Signed up as enterprise in beacon on 2026-10-19; this file is the whole tenant (beacon §V.11).
+# Prune=false,Delete=false until its offboarding PR (beacon §V.12, base-apps/beacon-tenants/runbook.md).
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XTenant
+metadata:
+  name: demo
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  tenantId: 98c9d7d1-7725-44a4-9cb1-6a339be454f7
