@@ -69,13 +69,15 @@ spec:
     - name: namespaceLabels
       expression: >-
         has(namespaceObject.metadata.labels) ? namespaceObject.metadata.labels : {}
+    # string() on every value: a CEL map literal needs one static value type, and in a policy
+    # that matches several kinds `object` is dyn while namespaceObject is typed (beacon §B.17).
     - name: wantLabels
       expression: >-
         {
-          'app.kubernetes.io/part-of': namespaceObject.metadata.name,
-          'backstage.io/kubernetes-id': object.metadata.name,
+          'app.kubernetes.io/part-of': string(namespaceObject.metadata.name),
+          'backstage.io/kubernetes-id': string(object.metadata.name),
           'platform.arigsela.com/team': 'platform.arigsela.com/team' in variables.namespaceLabels
-            ? variables.namespaceLabels['platform.arigsela.com/team'] : 'platform'
+            ? string(variables.namespaceLabels['platform.arigsela.com/team']) : 'platform'
         }
     - name: wantAnnotations
       expression: >-
