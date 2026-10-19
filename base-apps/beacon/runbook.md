@@ -6,7 +6,7 @@ app: beacon
 catalog_entity: beacon-db
 kind: runbook
 namespace: beacon
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-19
 status: draft
 tags: [uptime, runbook]
 sources:
@@ -18,6 +18,7 @@ sources:
   - base-apps/beacon/network-policies.yaml
   - base-apps/postgresql/init-beacon-roles.yaml
   - scripts/provision-beacon-vault.sh
+  - scripts/provision-beacon-tenants-vault.sh
 ---
 
 # Beacon — Runbook
@@ -59,6 +60,19 @@ then picks up the new commit.
    `beacon` (smoke, migrate, workloads) independently; `beacon` retries until the roles and
    the database exist.
 3. The listener, allow-list and DNS come after (beacon §T.16).
+
+### Provision the enterprise-tenant Vault roles (once, beacon §T.42)
+`scripts/provision-beacon-tenants-vault.sh`, once, BEFORE the beacon §T.45 PR merges and before
+the first `XTenant`: both add SecretStores whose roles it writes, and a SecretStore with no
+Vault role fails its app's sync. It writes two policies (one templated per tenant namespace, one
+read-only for beacon-api) and two roles, and no secret values:
+
+- `beacon-tenant` (SA `eso-tenant`, namespaces `tenant-*`): each tenant namespace reads and
+  writes only `k8s-secrets/tenants/<its namespace>/*`. ESO generates and pushes its secrets there.
+- `beacon-tenants` (SA `eso-beacon-tenants` in `beacon`): beacon-api lists `k8s-secrets/tenants/`
+  and reads only `tenants/<ns>/api` (DSN + signing key), never a tenant's DB passwords.
+
+Re-running it changes nothing. There is no per-tenant Vault step (beacon §V.52).
 
 ### Inject or clear a fault
 Change one `defaultVariant` in `configmaps.yaml` (`beacon-flags`) in a PR; clear it with
