@@ -250,7 +250,7 @@ spec:
   - name: images
     expression: '["ghcr.io/kagent-dev/kagent/golang-adk", "ghcr.io/kagent-dev/kagent/kagent-adk"]'
   - name: byoImages
-    expression: '["852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker@sha256:3022c72f683b66aa8534a314e96fc9075c1e5f35609b6f090d7221393e1fdae0"]'
+    expression: '["852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker@sha256:3022c72f683b66aa8534a314e96fc9075c1e5f35609b6f090d7221393e1fdae0", "852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker@sha256:1a2a11aaf0197dad6248d8fff5df248b87eafd33accf879edf33b02496604558"]'
   - name: image
     expression: object.spec.?workload.?image.orValue('')
   validations:
