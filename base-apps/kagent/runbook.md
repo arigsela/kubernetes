@@ -365,8 +365,9 @@ a routine Renovate merge. Sessions and long-term memory reset.
    `substrate-crds`, `substrate-podcert`, `substrate`) to the versions the kagent release names;
    re-pin **every** digest in the values of `base-apps/kagent.yaml` (controller, UI, tools,
    `substrateWorkerPool.workerImage`), `substrate-podcert.yaml` and `substrate.yaml`
-   (plus the component digests in its header); the golang-adk `workload.image` in **all three**
-   Harnesses (identical); and the CRD fixture under `tests/admission-policies/fixtures/crds/`.
+   (plus the component digests in its header); the golang-adk `workload.image` in the **three**
+   `kagent`-runtime Harnesses (identical); and the CRD fixture under
+   `tests/admission-policies/fixtures/crds/`.
    Re-render both charts with `helm template --kube-version` and read the release notes for
    CRD and value changes. Read `helm show values` for the moved `config.*` keys. Before the
    Application moves, run `KAGENT_CHART_VERSION=<new> python3 -m pytest
@@ -374,6 +375,15 @@ a routine Renovate merge. Sessions and long-term memory reset.
    `test_kagent_chart_config.py` renders the Application's own `targetRevision`, so run it once
    the Application names the new chart. Renovate groups the Harness image with the charts (`renovate.json5`,
    group `kagent-substrate`), so it never arrives as a Harness-only PR.
+   **docs-checker** (the `byo` Harness) is not in that group: its image implements kagent's
+   runtime contract itself. Read the release for changes to that contract (the
+   `KAGENT_CONFIG_JSON` `ADKConfig` shape, the `kagent.runtime.v1` TaskStore service, the A2A and
+   `/readyz` ports), rebuild the image (`arigsela/claude-agents` `docs-checker/`) against the
+   matching `kagent-core`, push it, and pin the new digest **in the same PR**: the taxonomy's
+   `byo-images` entry, the good fixture and `harnesses/docs-checker.yaml` (the `sed` in the
+   admission-policies runbook, "Pin a byo image digest", with the old digest in place of
+   `REPLACE_WITH_DIGEST`). The image checks the config shape at startup and refuses one it does
+   not know, as it refused alpha11's.
 2. **Run the guardrails** against the new CRDs: `python -m pytest tests/admission-policies -q`,
    the identity and capability validators, and `tests/agent-capability`.
 3. **Archive the record:** take a final audit export
@@ -386,8 +396,10 @@ a routine Renovate merge. Sessions and long-term memory reset.
    `init-kagent-v1-db` also recreates the read/write login.
 5. **Merge**, then restart `kagent-controller` and Substrate's `ate-api-server` if they don't roll
    on their own.
-6. **Accept:** 9 Agents `Ready`; each answers a multi-step tool question; `k8s-agent` pauses a
-   delete for approval (reject keeps the object); `scripts/ask-hk` works; run
+6. **Accept:** 10 Agents `Ready`; each Go ADK agent answers a multi-step tool question;
+   docs-checker returns a report for one `check <path>` call
+   (`scripts/ask-hk --agent kagent/docs-checker "check base-apps/vault/docs.md"`); `k8s-agent`
+   pauses a delete for approval (reject keeps the object); `scripts/ask-hk` works; run
    `agent-audit-ungated` once by hand and read its line. Expect the eval gate to re-score every
    agent (the Harness digest is in each definition hash) and to hold `homelab-knowledge` on the
    memory entry until it is reseeded (see *Read, re-run or reset the evaluation gate*).
