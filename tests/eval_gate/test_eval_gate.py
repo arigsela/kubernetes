@@ -71,7 +71,7 @@ class FakeKube:
 
 def objects(prompt="v1"):
     return {"agenttemplates": {"homelab-knowledge": {"systemPrompt": prompt}},
-            "agents": {"homelab-knowledge": {"templateRef": {"name": "homelab-knowledge"},
+            "agents": {"homelab-knowledge": {"template": {"ref": {"name": "homelab-knowledge"}},
                                              "harnessRef": {"name": "kagent-memory"},
                                              "modelConfigRef": {"name": "sonnet"}}},
             "harnesses": {"kagent-memory": {"a": 1}, "kagent-chat": {"b": 2}},

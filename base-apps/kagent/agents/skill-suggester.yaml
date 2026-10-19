@@ -28,7 +28,8 @@ metadata:
     backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/skill-suggester.yaml
     backstage.io/owner: group:default/platform-engineering
 spec:
-  templateRef:
-    name: skill-suggester
+  template:
+    ref:
+      name: skill-suggester
   harnessRef:
     name: kagent-chat

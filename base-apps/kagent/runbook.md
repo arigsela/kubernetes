@@ -56,7 +56,7 @@ sessions run as gVisor actors. Substrate itself is in `ate-system`
 ### Symptom: an `Agent` is not `Ready` (chat and A2A calls fail)
 - **Check:** `kubectl -n kagent get agents,agenttemplates,harnesses,modelconfigs,remotemcpservers`,
   then `kubectl -n kagent describe agent <name>` for the condition and reason. An Agent needs its
-  `templateRef` (AgentTemplate) and `harnessRef` (Harness) to exist; the template's
+  `template.ref` (AgentTemplate) and `harnessRef` (Harness) to exist; the template's
   `modelConfig`, the Harness's memory `modelConfigRef` (`embedding-model-config`) and every bound
   `RemoteMCPServer` must exist and be accepted; and the Harness's WorkerPool must exist
   (`kubectl -n kagent get workerpools`: a Harness pointing at a missing pool doesn't compile).

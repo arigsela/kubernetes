@@ -28,7 +28,8 @@ metadata:
     backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/homelab-knowledge.yaml
     backstage.io/owner: group:default/platform-engineering
 spec:
-  templateRef:
-    name: homelab-knowledge
+  template:
+    ref:
+      name: homelab-knowledge
   harnessRef:
     name: kagent-memory

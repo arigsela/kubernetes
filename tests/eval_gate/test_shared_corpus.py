@@ -22,7 +22,7 @@ def two_agents():
     o["agenttemplates"]["homelab-knowledge"]["tools"] = [{"mcp": {"server": {"name": "kagent-tool-server"},
                                                                    "tools": sorted(TOOLS)}}]
     o["agenttemplates"]["k8s-reader"] = {"systemPrompt": "reader"}
-    o["agents"]["k8s-reader"] = {"templateRef": {"name": "k8s-reader"}, "harnessRef": {"name": "kagent-chat"},
+    o["agents"]["k8s-reader"] = {"template": {"ref": {"name": "k8s-reader"}}, "harnessRef": {"name": "kagent-chat"},
                                  "modelConfigRef": {"name": "haiku"}}
     return o
 
@@ -39,11 +39,18 @@ def test_targets_every_agent_once_a_shared_corpus_exists():
 def test_template_tools_include_bindings_and_one_hop_of_sub_agents():
     o = two_agents()
     o["agenttemplates"]["orchestrator"] = {"subAgents": [{"name": "homelab-knowledge"}]}
-    o["agents"]["orchestrator"] = {"templateRef": {"name": "orchestrator"}}
+    o["agents"]["orchestrator"] = {"template": {"ref": {"name": "orchestrator"}}}
     surf = eg.surface(FakeKube(o))
     assert eg.template_tools(surf, "homelab-knowledge") == TOOLS
     assert eg.template_tools(surf, "k8s-reader") == set()
     assert eg.template_tools(surf, "orchestrator") == TOOLS, "a sub-agent's tools are reachable"
+
+
+def test_legacy_templateref_agent_still_resolves_its_template():
+    """A stored surface from before alpha14 names the template under spec.templateRef."""
+    spec = {"templateRef": {"name": "k8s-reader"}}
+    assert eg._template_of({"agenttemplates": [{"name": "k8s-reader", "spec": {"systemPrompt": "r"}}],
+                            "agents": [{"name": "k8s-reader", "spec": spec}]}, "k8s-reader") == {"systemPrompt": "r"}
 
 
 def test_applicable_shared_filters_by_tools_and_samples_deterministically():

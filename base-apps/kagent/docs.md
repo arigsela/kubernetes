@@ -97,7 +97,7 @@ The API is `api.kagent.dev/v1alpha3`. An agent is three objects:
 |---|---|---|
 | `AgentTemplate` | **what**: model, system prompt, tools, sub-agents, and the `capability.homelab/class` label the guardrails check | `agent-templates/` |
 | `Harness` | **how**: the runtime (`spec.kagent`, the Go ADK), its image by digest, memory and compaction, the Substrate worker pool and snapshot location | `harnesses/` |
-| `Agent` | the object users chat with: `templateRef` + `harnessRef`, plus the Backstage annotations | `agents/` |
+| `Agent` | the object users chat with: `template.ref` + `harnessRef`, plus the Backstage annotations | `agents/` |
 
 An `Agent` with an inline `spec.template` or `spec.harness` is denied at admission and in CI
 (`agent-capability-refs`): the capability and runtime checks live on the referenced objects.

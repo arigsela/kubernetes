@@ -14,7 +14,7 @@ agent and credential is held to all three:
      (chart-rendered configs exempt — see below).
   3. Capability surface: every AgentTemplate MCP binding names a RemoteMCPServer in
      git and lists its tools explicitly (an empty list is a bind-all); every subAgent,
-     Agent templateRef and Agent harnessRef resolves to an object in git; no Agent
+     Agent template.ref and Agent harnessRef resolves to an object in git; no Agent
      carries an inline template or harness, which would bypass the checks above.
 
 FAIL CLOSED (SPEC §V.84). kagent 1.0 moved the agent API from kagent.dev/v1alpha2
@@ -254,18 +254,25 @@ def check_capability_surface(by_kind) -> list[str]:
     for _path, doc in by_kind.get("Agent", []):
         name = _name(doc)
         spec = doc.get("spec") or {}
-        for inline, ref_field, known, what in (
-                ("template", "templateRef", templates, "AgentTemplate"),
-                ("harness", "harnessRef", harnesses, "Harness")):
-            if inline in spec:
-                errors.append(
-                    f"Agent {name}: inline spec.{inline}. Reference a {what} with "
-                    f"spec.{ref_field}: the contract is checked on {what}s, so an inline "
-                    f"{inline} would bypass it.")
-                continue
-            ref = (spec.get(ref_field) or {}).get("name")
-            if ref not in known:
-                errors.append(f"Agent {name}: spec.{ref_field} {ref!r} is not a {what} in git")
+        # alpha14 (kagent#3080): spec.template is required and holds exactly one of ref (an
+        # AgentTemplate by name) or inline; an inline template or harness bypasses the checks.
+        tpl = spec.get("template") or {}
+        if "inline" in tpl:
+            errors.append(
+                f"Agent {name}: inline spec.template is not allowed; reference an AgentTemplate "
+                f"with spec.template.ref: the contract is checked on AgentTemplates, so an "
+                f"inline template would bypass it.")
+        else:
+            ref = (tpl.get("ref") or {}).get("name")
+            if ref not in templates:
+                errors.append(f"Agent {name}: spec.template.ref {ref!r} is not an AgentTemplate in git")
+        if "harness" in spec:
+            errors.append(
+                f"Agent {name}: inline spec.harness. Reference a Harness with spec.harnessRef: "
+                f"the contract is checked on Harnesses, so an inline harness would bypass it.")
+        ref = (spec.get("harnessRef") or {}).get("name")
+        if ref not in harnesses:
+            errors.append(f"Agent {name}: spec.harnessRef {ref!r} is not a Harness in git")
     return errors
 
 
