@@ -95,6 +95,10 @@ data:
 
       # The span-count pipeline keeps only service.name, so the metric's labels stay bounded
       # (beacon §V.29).
+      # The count connector emits deltas and the Prometheus exporter shows only the latest one;
+      # this keeps a running total, so rate() and absence alerts mean something (beacon §B.14).
+      deltatocumulative: {}
+
       transform/count:
         error_mode: ignore
         trace_statements:
@@ -117,8 +121,11 @@ data:
         endpoint: tempo.tracing.svc.cluster.local:4317
         tls:
           insecure: true
+      # Uncompressed: Coroot's OTLP gRPC receiver has no gzip decompressor and refuses every
+      # gzipped batch, which is this exporter's default (beacon §B.13, beacon §V.46).
       otlp/coroot:
         endpoint: coroot-coroot.coroot.svc.cluster.local:4317
+        compression: none
         tls:
           insecure: true
       prometheus:
@@ -140,6 +147,7 @@ data:
           exporters: [count]
         metrics/count:
           receivers: [count]
+          processors: [deltatocumulative]
           exporters: [prometheus]
 ---
 apiVersion: apps/v1
@@ -164,7 +172,7 @@ spec:
       annotations:
         # sha256 of otel-collector-config's `data` (json.dumps, sort_keys); the collector reads
         # its config only at startup. tests/beacon/test_tracing.py fails if it is stale.
-        checksum/config: 67f25a6178b2b078677fb3dff5c53bb37a63346fca3d62fb376142efe513b1fd
+        checksum/config: 116487844a111138c4363635df4636245ca5aae9136fdf19c14e9e8d1194bfe5
         # Only the span-count exporter: one series per service (beacon §V.29).
         prometheus.io/scrape: "true"
         prometheus.io/port: "8889"

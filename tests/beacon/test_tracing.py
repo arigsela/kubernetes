@@ -257,3 +257,15 @@ def test_v41_probe_egress_admits_only_the_collector():
     svc = one(COLLECTOR, "Service", "otel-collector")
     assert svc["spec"]["selector"] == {"app": "otel-collector"}
     assert {"name": "otlp-http", "port": 4318, "targetPort": "otlp-http"} in svc["spec"]["ports"]
+
+
+def test_v46_coroot_export_is_uncompressed():
+    """beacon §B.13: Coroot's OTLP gRPC receiver has no gzip decompressor, and the otlp
+    exporter gzips by default, so every batch was refused."""
+    assert collector_config()["exporters"]["otlp/coroot"]["compression"] == "none"
+
+
+def test_v9_span_count_pipeline_accumulates():
+    """beacon §B.14: cumulative before the Prometheus exporter (run for real in test_collector.py)."""
+    count = collector_config()["service"]["pipelines"]["metrics/count"]
+    assert count["processors"] == ["deltatocumulative"] and count["exporters"] == ["prometheus"]
