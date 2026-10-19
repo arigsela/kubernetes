@@ -338,8 +338,8 @@ Postgres, and agents reconcile again once it is back. Verify with `kubectl -n ka
 After a restart a few `RemoteMCPServer` reconcile errors can appear until each target answers.
 
 ### Bump kagent and Substrate (every alpha bump is a clean-database migration)
-kagent 1.0 is built against one Substrate version (1.0.0-alpha11 ↔ 0.5.0-alpha2, from kagent's
-`go.mod`). Every alpha so far has needed empty databases, so treat a bump as a migration, never as
+kagent 1.0 is built against one Substrate version (1.0.0-alpha14 ↔ 0.5.0-alpha2, from kagent's
+`go.mod`; alpha11 pinned the same Substrate). Every alpha so far has needed empty databases, so treat a bump as a migration, never as
 a routine Renovate merge. Sessions and long-term memory reset.
 1. **Prepare one PR** (Renovate opens it as `kagent-substrate` only after you tick it on the
    Dependency Dashboard, labelled `clean-db-migration`): the five charts (`kagent-crds`, `kagent`,
