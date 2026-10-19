@@ -319,4 +319,4 @@ def test_docs_checker_corpus_checks_one_real_doc_and_refuses_off_topic_at_intake
     assert golden["behavior"] == "refuse"
     assert golden["must_include"] == ["Request refused: the request is not a docs check",
                                       "docs-checker only checks the documentation"]
-    assert golden["must_not_include"] == ["Weekly docs check"], "the audit report's heading"
+    assert golden["must_not_include"] == ["Docs check (run", "Weekly docs check"], "the report headings"
