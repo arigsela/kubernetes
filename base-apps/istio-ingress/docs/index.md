@@ -92,6 +92,13 @@ stripped (`%REQ_WITHOUT_QUERY%`), set in `meshConfig.accessLogFormat` in
 `base-apps/istio-istiod.yaml`: URLs carry search text and OAuth codes, and these
 lines live in Loki for 30 days. `tests/istio_logging/` pins it.
 
+The same `telemetry.yaml` also traces every request through the Gateway (beacon §T.20) to
+the `otel-tracing` provider (`base-apps/istio-istiod.yaml`), i.e. the OpenTelemetry Collector
+in `tracing`. Sampling is 100% on purpose: the Gateway's decision travels downstream and apps
+that follow it would lose their own traces; the collector samples instead (beacon §V.43). Envoy's
+span `http.url` keeps the query string the access log strips, so the collector scrubs it
+before Tempo or Coroot sees it (beacon §V.42, `base-apps/tracing/docs.md`).
+
 ## Access control
 
 `authorizationpolicy.yaml` is **the security boundary**. Istio ALLOW policies are

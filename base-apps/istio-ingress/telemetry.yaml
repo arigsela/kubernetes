@@ -16,6 +16,14 @@
 # and OAuth codes and these lines live in Loki for 30 days. Keep the provider the
 # built-in `envoy` with no LogFormat of its own, or that format is bypassed
 # (tests/istio_logging/ checks both).
+#
+# TRACING (beacon §T.20): the same resource, not a second namespace-wide Telemetry (two would
+# conflict). Every host on the Gateway is traced, to the `otel-tracing` provider
+# (base-apps/istio-istiod.yaml). 100%, deliberately (beacon §V.43): the Gateway's sampling
+# decision travels downstream in `traceparent`, and an app that follows its parent's decision
+# (kagent, Substrate) would silently lose the unsampled share of its own traces. The collector
+# samples instead, and strips query strings first: Envoy's `http.url` keeps them, which this
+# access log's format deliberately does not (beacon §V.42, beacon §R.42).
 apiVersion: telemetry.istio.io/v1
 kind: Telemetry
 metadata:
@@ -25,3 +33,7 @@ spec:
   accessLogging:
     - providers:
         - name: envoy
+  tracing:
+    - providers:
+        - name: otel-tracing
+      randomSamplingPercentage: 100

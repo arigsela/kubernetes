@@ -35,6 +35,16 @@ spec:
             "%REQ(X-REQUEST-ID)%" "%REQ(:AUTHORITY)%" "%UPSTREAM_HOST%" %UPSTREAM_CLUSTER_RAW%
             %UPSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_LOCAL_ADDRESS% %DOWNSTREAM_REMOTE_ADDRESS%
             %REQUESTED_SERVER_NAME% %ROUTE_NAME%
+          # Tracing provider (beacon §T.20). Defining a provider traces nothing by itself: only
+          # a Telemetry that names it does (the ingress Gateway, base-apps/istio-ingress/
+          # telemetry.yaml, and beacon's waypoint, base-apps/beacon/waypoint-telemetry.yaml).
+          # OTLP gRPC to the platform collector, which scrubs URLs and samples before anything
+          # is stored (base-apps/tracing/collector.yaml, beacon §V.42, beacon §V.43).
+          extensionProviders:
+            - name: otel-tracing
+              opentelemetry:
+                service: otel-collector.tracing.svc.cluster.local
+                port: 4317
         pilot:
           nodeSelector:
             node.kubernetes.io/workload: infrastructure
