@@ -1,0 +1,20 @@
+# base-apps/beacon/waypoint-telemetry.yaml (beacon §T.20)
+# Traces beacon's waypoint: its only traffic is east-west, checker -> notifier (beacon §V.8), so
+# the notifier's server span sits under a waypoint span inside the checker's trace (beacon §V.6).
+# Scoped to this one waypoint by targetRef; nothing here touches the ingress path, and the
+# namespace keeps no istio.io/ingress-use-waypoint (beacon §V.8). 100% like the Gateway: the
+# checker's own sampler decides (beacon §V.41), the collector samples (beacon §V.43).
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: beacon-waypoint-tracing
+  namespace: beacon
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: beacon-waypoint
+  tracing:
+    - providers:
+        - name: otel-tracing
+      randomSamplingPercentage: 100

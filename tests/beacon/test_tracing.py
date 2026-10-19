@@ -269,3 +269,39 @@ def test_v9_span_count_pipeline_accumulates():
     """beacon §B.14: cumulative before the Prometheus exporter (run for real in test_collector.py)."""
     count = collector_config()["service"]["pipelines"]["metrics/count"]
     assert count["processors"] == ["deltatocumulative"] and count["exporters"] == ["prometheus"]
+
+
+# --- beacon §T.20: mesh tracing ----------------------------------------------------------------
+
+def istiod_mesh_config() -> dict:
+    app = yaml.safe_load((REPO / "base-apps" / "istio-istiod.yaml").read_text())
+    return yaml.safe_load(app["spec"]["source"]["helm"]["values"])["meshConfig"]
+
+
+def test_t20_mesh_has_one_otel_provider_to_the_collector():
+    providers = istiod_mesh_config()["extensionProviders"]
+    assert providers == [{"name": "otel-tracing", "opentelemetry": {
+        "service": "otel-collector.tracing.svc.cluster.local", "port": 4317}}]
+    svc = one(COLLECTOR, "Service", "otel-collector")
+    assert {"name": "otlp-grpc", "port": 4317, "targetPort": "otlp-grpc"} in svc["spec"]["ports"]
+
+
+def test_t20_no_default_tracing_provider():
+    """A provider traces nothing until a Telemetry names it; a mesh-wide default would trace
+    every waypoint in the cluster (beacon §V.25)."""
+    assert "defaultProviders" not in istiod_mesh_config()
+
+
+def test_v43_gateway_samples_everything():
+    tel = one("base-apps/istio-ingress/telemetry.yaml", "Telemetry", "gateway-access-logs")
+    assert tel["spec"]["tracing"] == [{"providers": [{"name": "otel-tracing"}], "randomSamplingPercentage": 100}]
+    # Still the one namespace-wide Telemetry there: a second would conflict.
+    assert "selector" not in tel["spec"] and "targetRefs" not in tel["spec"]
+
+
+def test_t20_waypoint_telemetry_targets_beacon_only():
+    tel = one("base-apps/beacon/waypoint-telemetry.yaml", "Telemetry", "beacon-waypoint-tracing")
+    assert tel["metadata"]["namespace"] == "beacon"
+    assert tel["spec"]["targetRefs"] == [
+        {"group": "gateway.networking.k8s.io", "kind": "Gateway", "name": "beacon-waypoint"}]
+    assert tel["spec"]["tracing"] == [{"providers": [{"name": "otel-tracing"}], "randomSamplingPercentage": 100}]

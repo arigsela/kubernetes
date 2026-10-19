@@ -18,6 +18,7 @@ sources:
   - base-apps/beacon/services.yaml
   - base-apps/beacon/configmaps.yaml
   - base-apps/beacon/waypoint.yaml
+  - base-apps/beacon/waypoint-telemetry.yaml
   - base-apps/beacon/authorization-policy.yaml
   - base-apps/beacon/network-policies.yaml
   - base-apps/tracing/collector.yaml
@@ -81,7 +82,9 @@ bare `§T.n` (that would be this repo's own SPEC.md).
 api, checker and both scheduler CronJobs export over OTLP/HTTP to
 `otel-collector.tracing.svc.cluster.local:4318` with an explicit sampler (100% of their own
 root traces; the collector samples, beacon §V.43). The collector scrubs URLs before anything
-is stored (beacon §V.42). See `base-apps/tracing/docs.md`. Every log line carries
+is stored (beacon §V.42). See `base-apps/tracing/docs.md`. The ingress Gateway traces every
+request (`base-apps/istio-ingress/telemetry.yaml`), and `waypoint-telemetry.yaml` traces the
+waypoint, so checker -> notifier shows a waypoint span between the two (beacon §V.6). Every log line carries
 `trace_id=<32 hex>`, which Grafana links to the trace (beacon §T.43). The notifier carries no
 OTel variable: it is traced only through the platform (beacon §V.9, beacon §T.22).
 
