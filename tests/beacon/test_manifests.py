@@ -174,6 +174,19 @@ def test_v37_a_git_change_reruns_the_role_hook():
     assert "any merged change under" not in runbook
 
 
+def test_v38_objects_that_depend_on_other_apps_go_last():
+    """beacon §V.38 (§B.9): the HTTPRoute was Degraded until the shared Gateway had its
+    listener, and in wave 0 that stopped the sync before migrate and every workload. Objects
+    whose health another app decides go after the workloads."""
+    for kind, name in (("HTTPRoute", "beacon"), ("Certificate", "beacon-tls"),
+                       ("ReferenceGrant", "gateway-to-beacon-tls")):
+        ann = by_name(kind, name)["metadata"].get("annotations") or {}
+        assert ann.get("argocd.argoproj.io/sync-wave") == "3", f"{kind}/{name}"
+    waves = {d["metadata"]["name"]: int((d["metadata"].get("annotations") or {}).get("argocd.argoproj.io/sync-wave", "0"))
+             for _, d in app_docs() if d["kind"] in ("Deployment", "CronJob")}
+    assert max(waves.values()) < 3, waves
+
+
 # --- tracing (beacon §V.8, §V.9, §V.32) -----------------------------------------------------
 
 

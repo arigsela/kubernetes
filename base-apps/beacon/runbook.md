@@ -80,6 +80,13 @@ hold the old password. The signing key is never rotated this way (see "Webhook s
 - **`notifier-no-otel` failed:** an OpenTelemetry distribution reached the notifier image
   (beacon §V.9). Same: do not promote.
 
+### Symptom: the beacon sync stops before `beacon-migrate`, nothing rolls out
+- **Check:** `kubectl -n argo-cd get application beacon -o jsonpath='{.status.operationState.syncResult.resources}'`
+  for a resource whose `hookPhase` is `Failed`.
+- A Degraded object in an earlier wave stops the whole sync. Objects whose health another
+  app decides (HTTPRoute, Certificate, ReferenceGrant) are in the last wave for that reason
+  (beacon §B.9); keep anything like them there.
+
 ### Symptom: `beacon-migrate` fails, Deployments never appear
 - **Check:** `kubectl -n beacon logs job/beacon-migrate`.
 - `role "beacon_owner" does not exist` / `database "beacon" does not exist`: the postgresql

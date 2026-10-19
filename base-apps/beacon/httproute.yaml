@@ -9,6 +9,11 @@ kind: HTTPRoute
 metadata:
   name: beacon
   namespace: beacon
+  annotations:
+    # Last wave, after the workloads (beacon §V.38, beacon §B.9): its health is decided by
+    # another app (the shared Gateway, ACME), and a Degraded object in an earlier wave stops
+    # the whole sync, migrate and rollout included.
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   parentRefs:
     - name: main
