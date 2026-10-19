@@ -52,6 +52,11 @@ locals {
     "beacon-notifier"  = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
     "beacon-scheduler" = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
     "beacon-web"       = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
+
+    # docs-checker (kagent BYO agent; code in arigsela/claude-agents, docs-checker/):
+    # IMMUTABLE because the Agent pins the image by digest. keep_tagged = 10 so a
+    # reverted pin stays pullable. The push role is created next to the app, not here.
+    "docs-checker" = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
   }
 
   # Repositories on their way out (step 1 above). Same settings as before the
