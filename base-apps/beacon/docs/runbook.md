@@ -78,7 +78,10 @@ read-only for beacon-api) and two roles, and no secret values:
 - `beacon-tenants` (SA `eso-beacon-tenants` in `beacon`): beacon-api lists `k8s-secrets/tenants/`
   and reads only `tenants/<ns>/api` (DSN + signing key), never a tenant's DB passwords.
 
-Re-running it changes nothing. There is no per-tenant Vault step (beacon §V.52).
+It also writes one non-secret marker, `k8s-secrets/tenants/.keep`: before the first tenant the
+`tenants/` folder would not exist, and ESO's `find` in `beacon-tenant-dsns` fails on a folder Vault
+cannot list (beacon §B.25). Re-running it changes nothing. There is no per-tenant Vault step
+(beacon §V.52).
 
 ### Inject or clear a fault
 Change one `defaultVariant` in `configmaps.yaml` (`beacon-flags`) in a PR; clear it with
@@ -174,7 +177,8 @@ is unreadable and those deliveries fail. Restore Vault from its backup
 beacon-api has no database file for it. `kubectl -n beacon get externalsecret beacon-tenant-dsns`
 (Ready?) and `kubectl -n beacon exec deploy/beacon-api -- ls /etc/beacon/tenants` (names only).
 An `invalid role name` on store `vault-beacon-tenants` means `scripts/provision-beacon-tenants-vault.sh`
-was never run. A file appears about a minute after the tenant's PushSecret wrote its Vault key; the
+was never run; `Secret does not exist` on `beacon-tenant-dsns` means it ran before the folder
+marker existed (beacon §B.25): run it again. A file appears about a minute after the tenant's PushSecret wrote its Vault key; the
 api picks it up without a restart. 409 instead means the tenant is still `pending`: its own database
 has no tenant row yet (its init Job, `base-apps/beacon-tenants/runbook.md`).
 
