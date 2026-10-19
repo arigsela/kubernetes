@@ -7,8 +7,11 @@
 # runs inside the parent's runtime and gets no runtime policy of its own, so this Harness is
 # what applies to them there.
 #
-# The three Harnesses in this directory differ ONLY in spec.kagent. Keep image, worker pool and
-# snapshot location identical across them; tests/agent-capability checks the image pin.
+# The three `kagent`-runtime Harnesses in this directory (kagent-memory, kagent-stateless,
+# kagent-chat) differ ONLY in spec.kagent. Keep image, worker pool and snapshot location identical
+# across them; tests/agent-capability checks the image pin. The fourth, docs-checker.yaml, is the
+# one `byo` runtime: its own image by digest (the taxonomy's byo-images), on the same worker pool
+# and snapshot location.
 apiVersion: api.kagent.dev/v1alpha3
 kind: Harness
 metadata:

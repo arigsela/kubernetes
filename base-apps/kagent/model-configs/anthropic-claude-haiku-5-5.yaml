@@ -1,9 +1,11 @@
 # Claude Haiku 5.5 for the agents that need speed over depth
 # (k8s-reader, skill-suggester, dungeon-crawler-carl-agent).
 #
-# kagent 1.0 (api.kagent.dev/v1alpha3). Every agent runs the Go ADK (the `kagent` runtime of
-# the Harnesses in ../harnesses/), which maps only text and tool_use blocks: a 5.x model's
-# thinking is dropped rather than replayed (kagent#3026, open; SPEC §R.45).
+# kagent 1.0 (api.kagent.dev/v1alpha3). Every agent on this config runs the Go ADK (the `kagent`
+# runtime of the Harnesses in ../harnesses/), which maps only text and tool_use blocks: a 5.x
+# model's thinking is dropped rather than replayed (kagent#3026, open; SPEC §R.45). docs-checker
+# also calls Haiku 5.5, from its own byo runtime under the Sonnet config
+# (anthropic-claude-sonnet-5-5.yaml), not this one.
 #
 # maxTokens: the Go adapter's default is 8192 (defaultAnthropicMaxTokens in
 # go/adk/pkg/models/anthropic_adk.go). It caps thinking plus answer together and a truncated

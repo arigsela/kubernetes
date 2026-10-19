@@ -286,15 +286,16 @@ def test_claude_and_codex_harnesses_are_error(tmp_path, runtime):
 
 def byo_repo(tmp_path, *, cls="read", tools=DOCS_CHECKER_TOOLS, server="agent-docs",
              image=DOCS_CHECKER, subagents=None, taxonomy=None, servers=None,
-             extra_templates=()):
+             extra_templates=(), template_ref=None):
     """docs-checker as it ships (K4): a byo Harness on the listed digest, a read template
     binding agent-docs with the four read tools, and an Agent joining them, next to an
-    ordinary kagent agent."""
+    ordinary kagent agent. template_ref points the Agent at another template."""
     templates = [template("docs-checker", cls, tools=tools, approval=False, server=server,
                           subagents=subagents),
                  template("reader", "read", tools=["k8s_get_resources"], approval=False),
                  *extra_templates]
-    agents = [agent("docs-checker", harness_ref="docs-checker"), agent("reader")]
+    agents = [agent("docs-checker", harness_ref="docs-checker", template_ref=template_ref),
+              agent("reader")]
     harnesses = [harness("kagent-memory"), harness("docs-checker", runtime="byo", image=image)]
     kw = {"taxonomy": taxonomy}
     if servers is not None:
@@ -308,6 +309,23 @@ def run_repo(repo) -> int:
 
 def test_byo_on_a_listed_digest_with_a_read_template_on_read_only_servers_passes(tmp_path):
     assert run_repo(byo_repo(tmp_path)) == 0
+
+
+@pytest.mark.parametrize("referenced, namesake, expect", [
+    ("admin", "read", 1),  # the ref names an admin template; a read one only shares the name
+    ("read", "admin", 0),  # the inverse
+], ids=["ref-admin_namesake-read", "ref-read_namesake-admin"])
+def test_byo_check_follows_the_agents_template_ref(tmp_path, capsys, referenced, namesake, expect):
+    """Invariant 7 judges the template the Agent REFERENCES (spec.template.ref, alpha14), never
+    the one that merely shares the Agent's name: every other byo case names both alike."""
+    other = template("checker-template", referenced, tools=DOCS_CHECKER_TOOLS, approval=False,
+                     server="agent-docs")
+    repo = byo_repo(tmp_path, cls=namesake, template_ref="checker-template",
+                    extra_templates=[other])
+    assert run_repo(repo) == expect
+    if expect:
+        assert ("AgentTemplate 'checker-template' must be class 'read', not 'admin'"
+                in capsys.readouterr().err)
 
 
 def test_byo_harness_no_agent_uses_passes(tmp_path):
