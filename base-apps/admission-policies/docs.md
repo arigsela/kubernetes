@@ -6,7 +6,7 @@ app: admission-policies
 catalog_entity: admission-policies
 kind: docs
 namespace: kube-system
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-19
 status: stable
 tags: [admission, cel, policy, security]
 sources:
@@ -14,6 +14,7 @@ sources:
   - base-apps/admission-policies/agent-identity.yaml
   - base-apps/admission-policies/agent-capability.yaml
   - base-apps/admission-policies/agent-capability-taxonomy.yaml
+  - base-apps/admission-policies/agent-definitions-from-git.yaml
   - base-apps/admission-policies/disallow-latest-tag.yaml
   - base-apps/admission-policies/disallow-privileged-containers.yaml
   - base-apps/admission-policies/require-resource-limits.yaml
@@ -22,6 +23,7 @@ sources:
   - base-apps/admission-policies/inject-ecr-pull-secret.yaml
   - base-apps/admission-policies/kyverno-reports-rbac.yaml
   - scripts/gen-agent-capability-policy.py
+  - scripts/validate-agent-capability.py
   - tests/admission-policies/conftest.py
   - tests/admission-policies/test_admission_policies.py
 ---
@@ -62,8 +64,11 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   ValidatingAdmissionPolicy`), but **only for policies labelled
   `reports.kyverno.io/enabled: "true"`**. That is opt-in, the reverse of Kyverno's own
   policies, and the Kyverno docs do not mention it; found in the v1.19.1 source. Every policy
-  carries the label except `agent-capability-delegation`: it is parameterised, and Kyverno's
-  engine mis-evaluates parameterised policies. `test_kyverno_reporting_opt_in` enforces both.
+  carries the label except two. `agent-capability-delegation` is parameterised, and Kyverno's
+  engine mis-evaluates parameterised policies. `agent-definitions-from-git` depends on the
+  request (who sent it, CREATE or UPDATE, the old object), and a background scan has no
+  request, so it would report every agent definition as a violation.
+  `test_kyverno_reporting_opt_in` enforces all three cases.
   Kyverno's end state is reporting only.
 
 ## Where config lives
@@ -93,10 +98,34 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
     other checks.
   - `agent-capability-runtime` (rule 9): a `Harness` must use the `kagent` runtime on an image
     from the taxonomy's `runtime-images` list; rules 1-7 are enforced inside that runtime.
+    **One exception** (SPEC §V.101): the `byo` runtime on an image that is exactly an entry of
+    the taxonomy's `byo-images` (`repository@sha256:digest`; never a repository, which would
+    admit every digest pushed later, and never a tag). `claude` and `codex` are never admitted.
+    The exception's other conditions span objects, so CI decides them
+    (`scripts/validate-agent-capability.py`, invariant 7): every Agent on a byo Harness lives in
+    `kagent` and runs a class `read` AgentTemplate whose every binding is a `RemoteMCPServer` in
+    the taxonomy's `read-only-servers`, with only read tools and no subAgent. A byo runtime reaches a bound
+    server's whole origin, so a server is listed only if it is read-only on the server side
+    (`agent-docs`: `github-mcp-server --read-only`), proved per server in `tests/agent-capability`.
 
   **Enforcing** (`[Deny]`, `failurePolicy: Fail`); the Kyverno ClusterPolicy is deleted. The
   0.10 versions ran in shadow first and were replayed against every live object before the
   flip; the v1alpha3 versions shipped in the same sync as the new CRDs (SPEC §V.84).
+- `agent-definitions-from-git.yaml` (hand-written, SPEC §V.101): denies CREATE and UPDATE of
+  `Agent`, `AgentTemplate`, `Harness` and `RemoteMCPServer`, in every namespace (the kagent
+  controller watches all of them), by anyone except Argo CD's application controller
+  (`system:serviceaccount:argo-cd:argocd-application-controller`, the identity that syncs git)
+  and the break-glass group `homelab:kagent-break-glass`. What CI checks in git is then what
+  runs: the byo conditions above and the transitive delegation closure. It matches main
+  resources only, so the kagent controller's status writes pass, and an UPDATE that leaves
+  spec, labels and annotations unchanged passes for anyone: the garbage collector's finalizer
+  removal in Argo's foreground prune (§B.18), a no-op storage migration, and
+  `scripts/hop-verify.sh` re-applying a live template. Denied by design: `kubectl apply/edit`
+  on these kinds with the x509 admin or Dex login, the kagent UI's create and edit (the
+  controller's own service account), and the Argo CD UI's live edit (`argocd-server`).
+  **Enforcing from the start**, not shadow first: the byo exception depends on it in the same
+  change (§V.84), and an inventory of every writer (live `managedFields`, RBAC, the kagent
+  alpha14 source; SPEC §T.130) found no legitimate one it blocks. Break glass: runbook.
 - Five **audit-only** workload-hygiene policies, one file each. They are `[Warn, Audit]` and
   `failurePolicy: Ignore` **permanently**; they report, never block:
   - `disallow-latest-tag` flags an image with no tag or `:latest` (a digest counts as pinned).
@@ -127,8 +156,11 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   `fixtures/<suite>/good/*.yaml` (must pass clean against EVERY policy) and
   `fixtures/<suite>/bad/<policy>/*.yaml` (must be flagged by that policy). Mutation fixtures,
   `fixtures/<suite>/mutate/<policy>/*.yaml`, are created as **real Pods**, and their admitted
-  `imagePullSecrets` must equal the `test.homelab/expect-pull-secrets` annotation. CI job
-  `admission-policies-validate`.
+  `imagePullSecrets` must equal the `test.homelab/expect-pull-secrets` annotation. The harness
+  submits everything **as Argo CD's application controller** (impersonation), as production
+  does, unless a fixture names another identity in `test.homelab/as-user` /
+  `test.homelab/as-groups`; RBAC is opened to every authenticated identity so only admission
+  decides. CI job `admission-policies-validate`.
 
 ## Gotchas & tribal knowledge
 - **Test against a real API server.** kubeconform skips v1 MutatingAdmissionPolicy files

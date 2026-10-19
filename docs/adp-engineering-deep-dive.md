@@ -194,8 +194,8 @@ Three things about these rules are the real engineering story:
    template graph is in Git. **Two gates, deliberately** — CI is authoritative for
    delegation; the API server catches out-of-band applies.
 
-### Rules 8–9 — policies `agent-capability-refs` and `agent-capability-runtime` (new in 1.0)
-Rules 1–7 check AgentTemplates, so two more close the ways around them:
+### Rules 8–10 — `agent-capability-refs`, `agent-capability-runtime` (new in 1.0) and `agent-definitions-from-git`
+Rules 1–7 check AgentTemplates, so three more close the ways around them:
 
 8. **`agent-capability-refs`** matches `Agent`: `!has(object.spec.template)` and
    `!has(object.spec.harness)`. An Agent must name an AgentTemplate (`templateRef`) and a
@@ -205,7 +205,18 @@ Rules 1–7 check AgentTemplates, so two more close the ways around them:
    (`has(object.spec.kagent)`), on an image from the taxonomy's `runtime-images`
    (`golang-adk` or `kagent-adk`). Tool selection and the approval pause are enforced
    *inside* kagent's ADK runtimes; a `byo`, `claude` or `codex` runtime, or a foreign
-   image, need not honour rules 1–7 at all.
+   image, need not honour rules 1–7 at all. **One exception** (2026-10-19, SPEC §V.101):
+   `byo` on an image that is *exactly* an entry of the taxonomy's `byo-images`
+   (`repository@sha256:digest`, never a repository: that would admit every digest pushed
+   later). The rest of that exception spans objects, so CI decides it: every Agent on a byo
+   Harness runs a `read` template binding only `read-only-servers`, servers that are
+   read-only on the server side, because a byo runtime reaches a bound server's whole origin.
+10. **`agent-definitions-from-git`** (hand-written) makes CI's verdict the one that counts:
+   it denies CREATE and UPDATE of Agents, AgentTemplates, Harnesses and RemoteMCPServers by
+   anyone but Argo CD's application controller and a break-glass group. Main resources only
+   (the controller's status writes pass), and an update that changes neither spec, labels nor
+   annotations passes for anyone, so the garbage collector's finalizer removal in a
+   foreground prune never hangs.
 
 ### The unifying idea
 The taxonomy ConfigMap is the **single source of truth** consumed by three things

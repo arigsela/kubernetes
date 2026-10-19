@@ -38,6 +38,10 @@
 # classified here first. If a sync fails with "tool not in taxonomy", that is
 # the control working, not a bug.
 #
+# Three more lists are not tool classes: runtime-images, byo-images and read-only-servers
+# (at the bottom) decide which runtimes run at all, and the one exception for a `byo`
+# runtime (SPEC §V.101).
+#
 # The lists are JSON arrays (a Kyverno parse_json() legacy); the generator, the CI
 # validator and the agent-audit scripts all json.loads() them.
 apiVersion: v1
@@ -167,11 +171,48 @@ data:
   # enforced INSIDE the runtime: the per-binding tool selection and requireApproval gate are
   # honoured by kagent's own ADK runtimes, and a byo/claude/codex Harness or any other image
   # may expose a whole MCP server and never pause (SPEC §R.45). So a Harness must use the
-  # `kagent` runtime and one of these repositories (pin by digest, the CRD requires it).
+  # `kagent` runtime and one of these repositories (pin by digest, the CRD requires it), or
+  # be the byo exception below.
   #   golang-adk  the Go ADK, the chart's default runtime (harnesses/*.yaml)
   #   kagent-adk  the Python ADK, the documented fallback via a workload.command override
   runtime-images: |
     [
       "ghcr.io/kagent-dev/kagent/golang-adk",
       "ghcr.io/kagent-dev/kagent/kagent-adk"
+    ]
+
+  # --------------------------------------------------------- byo images (1)
+  # Not a tool class: the EXACT images (repository@sha256:digest) a `byo` Harness may run
+  # (SPEC §V.101, §T.130). A byo runtime need not honour tool selection or requireApproval,
+  # so the exception is narrow, and it is held in two places:
+  #   admission  agent-capability-runtime admits spec.byo only on an image EQUAL to an entry.
+  #              Never a repository or a tag: that would admit every digest pushed later.
+  #   CI         scripts/validate-agent-capability.py (invariant 7): every Agent on a byo
+  #              Harness uses a class `read` AgentTemplate that binds only read-only-servers,
+  #              with only read tools and no subAgent. Admission sees one object at a time and
+  #              cannot check that; agent-definitions-from-git.yaml makes git, where CI runs,
+  #              the only way these objects reach the cluster.
+  # Each entry is a reviewed image. A new digest is a new entry in a reviewed change: the
+  # admission-policies runbook, "Pin a byo image digest". An entry ending in
+  # @sha256:REPLACE_WITH_DIGEST is an image not pushed yet: the CRD rejects it and the
+  # validator fails on it, so nothing deploys on it.
+  #   docs-checker  the stale-docs checker (LangGraph on kagent 1.0's byo contract), built in
+  #                 arigsela/claude-agents docs-checker/; repository terraform ecr.tf
+  byo-images: |
+    [
+      "852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker@sha256:REPLACE_WITH_DIGEST"
+    ]
+
+  # -------------------------------------------------- read-only servers (1)
+  # Not a tool class: the RemoteMCPServers a byo agent may bind, by name in namespace kagent
+  # (where byo Agents must live). Egress opens per ORIGIN, not per tool, so a byo runtime can
+  # call EVERY tool a bound server has, whatever its binding lists. A server belongs here only
+  # if it is read-only ON THE SERVER SIDE, proved per server in tests/agent-capability
+  # (test_real_read_only_servers_are_read_only_on_the_server_side). Changing such a server's
+  # url, or the Deployment behind it, is a security change.
+  #   agent-docs  github-mcp-server --read-only --toolsets repos (agent-docs-mcp.yaml)
+  # Never kagent-tool-server (write tools, no auth) or kagent-api (invoke_session).
+  read-only-servers: |
+    [
+      "agent-docs"
     ]

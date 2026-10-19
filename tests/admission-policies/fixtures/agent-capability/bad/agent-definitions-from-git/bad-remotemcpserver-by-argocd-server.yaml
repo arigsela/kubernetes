@@ -1,0 +1,14 @@
+# argocd-server is Argo CD's API/UI, not the controller that syncs git: its patch rights serve the
+# UI's live "edit". Repointing a server's url (here: kagent-tool-server's) is how a read-only
+# binding would silently gain write tools. Otherwise a valid RemoteMCPServer, in another namespace:
+# the controller watches every namespace, so the policy is cluster-wide.
+apiVersion: api.kagent.dev/v1alpha3
+kind: RemoteMCPServer
+metadata:
+  name: bad-remotemcpserver-by-argocd-server
+  namespace: team-a
+  annotations:
+    test.homelab/as-user: system:serviceaccount:argo-cd:argocd-server
+spec:
+  description: fixture
+  url: http://kagent-tools.kagent:8084/mcp

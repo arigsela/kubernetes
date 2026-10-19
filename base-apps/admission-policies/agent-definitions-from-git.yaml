@@ -1,0 +1,98 @@
+# Agent definitions come only from git (SPEC §V.101, §T.130; docs-checker design K1, Codex C#3).
+#
+# WHY: agent-capability-runtime admits one byo runtime, on an exact image digest
+# (agent-capability.yaml, rule 9). The rest of that exception (every Agent on the byo Harness
+# runs a `read` AgentTemplate binding only read-only servers) spans several objects, and
+# admission sees one object at a time. CI checks it in git (scripts/validate-agent-capability.py,
+# invariant 7), as it does the transitive delegation closure. Both hold only if what runs is what
+# CI saw. So this policy denies CREATE and UPDATE of Agents, AgentTemplates, Harnesses and
+# RemoteMCPServers by anyone but Argo CD's application controller, the identity that syncs git,
+# and a break-glass group. (Repointing a RemoteMCPServer's url is how a read-only binding would
+# quietly gain write tools: a byo runtime reaches the whole origin.)
+#
+# WHO WRITES THESE KINDS (inventory 2026-10-19: live managedFields and RBAC, kagent
+# v1.0.0-alpha14 source; the inventory is in SPEC §T.130):
+#   argocd-application-controller  every main-resource write today (server-side apply, manager
+#                                  argocd-controller). EXEMPT.
+#   kagent-controller              status subresource only (Agent, ModelConfig, RemoteMCPServer),
+#                                  which is a separate resource, not matched. Its API (the UI,
+#                                  gRPC) also creates and updates these kinds for a caller, as
+#                                  this service account: DENIED, that is the git bypass.
+#   generic-garbage-collector      finalizers / ownerReferences in a foreground prune or an
+#                                  orphaning. ALLOWED by shape (below), whoever sends it.
+#   storage-version-migrator       no-op patches. ALLOWED by shape.
+#   argocd-server                  the Argo CD UI's live "edit" (patch). DENIED.
+#   cluster-admin                  the x509 admin kubeconfig (system:masters) and oidc:arigsela.
+#                                  DENIED unless they break glass.
+#   eval-gate, backstage, kagent-tools, kyverno's reports controller: read only.
+#
+# SHAPE: an UPDATE that leaves spec, labels and annotations unchanged is allowed to anyone. It
+# changes nothing an agent does (finalizers, ownerReferences, managedFields), and denying it
+# would hang Argo's foreground prune on the garbage collector's finalizer removal (§B.18,
+# §V.77) and fail scripts/hop-verify.sh, which re-applies a live template unchanged.
+#
+# SCOPE: main resources only, every namespace. The kagent controller watches all namespaces
+# (KAGENT_WATCH_NAMESPACES is empty), so an Agent created anywhere runs.
+#
+# BREAK GLASS: the group homelab:kagent-break-glass. No credential carries it. You join it for
+# one command by impersonation, which only cluster-admin may do (Argo's controller can too, and
+# is exempt anyway):
+#   kubectl --as=system:admin --as-group=system:masters --as-group=homelab:kagent-break-glass ...
+#   kubectl --context homelab-oidc --as=oidc:arigsela --as-group=homelab:kagent-break-glass ...
+# Argo's selfHeal reverts the edit at its next sync unless git changes too (runbook).
+#
+# NOT REPORTED to Kyverno (no reports.kyverno.io/enabled label): the verdict depends on the
+# request (who, CREATE or UPDATE, the old object), and a background scan has no request, so it
+# would report every agent definition as a violation (§V.76).
+#
+# ROLLOUT STATE: ENFORCING from the start ([Deny], failurePolicy Fail), not shadow first as the
+# runbook prescribes for a new policy: the byo exception depends on it in the same change
+# (§V.84), and the inventory above found no legitimate writer it blocks. Tested against a real
+# API server, per principal: tests/admission-policies/. Emergency: delete the binding (runbook).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: agent-definitions-from-git
+spec:
+  failurePolicy: Fail   # enforcing: an evaluation error denies
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["api.kagent.dev"]
+        apiVersions: ["v1alpha3"]
+        # Main resources only: agents/status etc. are separate resources, never listed here.
+        resources: ["agents", "agenttemplates", "harnesses", "remotemcpservers"]
+        operations: ["CREATE", "UPDATE"]
+  # The two exempt identities: for them the policy does not apply at all.
+  matchConditions:
+    - name: not-argo-cd
+      expression: >-
+        request.userInfo.username != 'system:serviceaccount:argo-cd:argocd-application-controller'
+    - name: not-break-glass
+      expression: >-
+        !('homelab:kagent-break-glass' in request.userInfo.groups)
+  variables:
+    - name: definitionUnchanged
+      expression: >-
+        request.operation == 'UPDATE'
+        && has(object.spec) == has(oldObject.spec)
+        && (!has(object.spec) || object.spec == oldObject.spec)
+        && object.metadata.?labels.orValue({}) == oldObject.metadata.?labels.orValue({})
+        && object.metadata.?annotations.orValue({}) == oldObject.metadata.?annotations.orValue({})
+  validations:
+    - expression: variables.definitionUnchanged
+      messageExpression: >-
+        request.kind.kind + " '" + object.metadata.name + "' was "
+        + (request.operation == 'CREATE' ? "created" : "changed") + " directly by '"
+        + request.userInfo.username + "'. Agent definitions (Agent, AgentTemplate, Harness,
+        RemoteMCPServer) reach the cluster only from git, through Argo CD, so CI has checked what
+        admission cannot (scripts/validate-agent-capability.py). Change git instead; to break
+        glass, see the admission-policies runbook."
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: agent-definitions-from-git
+spec:
+  policyName: agent-definitions-from-git
+  validationActions: [Deny]   # enforcing

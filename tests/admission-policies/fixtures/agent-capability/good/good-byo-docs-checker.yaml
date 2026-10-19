@@ -1,0 +1,21 @@
+# The byo exception (SPEC §V.101): docs-checker's Harness on the EXACT image the taxonomy's
+# byo-images lists. Its image must equal that entry (test_byo_fixture_images_are_listed), so
+# pinning a digest changes both (admission-policies runbook, "Pin a byo image digest"). While the
+# entry still carries the pre-push placeholder REPLACE_WITH_DIGEST, the CRD's digest pattern
+# rejects this fixture: it fails on purpose until the image is pushed and pinned.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata:
+  name: good-byo-docs-checker
+  namespace: kagent
+spec:
+  byo: {}
+  workload:
+    image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker@sha256:REPLACE_WITH_DIGEST
+    command:
+      - /app/.venv/bin/docs-checker
+  substrate:
+    workerPoolRef:
+      name: kagent-default
+    snapshotPolicy:
+      location: s3://ate-snapshots/kagent/

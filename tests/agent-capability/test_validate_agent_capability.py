@@ -9,6 +9,7 @@ from pathlib import Path
 import importlib.util
 import json
 
+import pytest
 import yaml
 
 SPEC = importlib.util.spec_from_file_location(
@@ -21,20 +22,29 @@ SPEC.loader.exec_module(vac)
 API = "api.kagent.dev/v1alpha3"
 REPO = Path(__file__).resolve().parents[2]
 GO_ADK = "ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha14@sha256:" + "0" * 64
+# A byo image as the taxonomy lists it: repository@sha256:digest, exact (SPEC §V.101).
+DOCS_CHECKER_REPO = "852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker"
+DOCS_CHECKER = DOCS_CHECKER_REPO + "@sha256:" + "a" * 64
+DOCS_CHECKER_TOOLS = ["get_file_contents", "search_code", "list_commits", "get_commit"]
 
 TAXONOMY = {
-    "read": ["k8s_get_resources", "get_file_contents", "list_pull_requests"],
+    "read": ["k8s_get_resources", "get_file_contents", "list_pull_requests", "search_code",
+             "list_commits", "get_commit"],
     "propose": ["create_pull_request", "push_files"],
     "write": ["k8s_patch_resource"],
     "destructive": ["k8s_delete_resource", "k8s_execute_command"],
     "runtime-images": ["ghcr.io/kagent-dev/kagent/golang-adk"],
+    "byo-images": [DOCS_CHECKER],
+    "read-only-servers": ["agent-docs"],
 }
 
 
 def make_repo(tmp_path: Path, templates: list[dict], agents: list[dict] | None = None,
-              harnesses: list[dict] | None = None) -> Path:
+              harnesses: list[dict] | None = None, taxonomy: dict | None = None,
+              servers=("agent-docs", "kagent-tool-server")) -> Path:
     """Build a throwaway repo: the taxonomy ConfigMap + the given kagent docs. Every template
-    gets an Agent and the repo one Harness unless given explicitly."""
+    gets an Agent and the repo one Harness unless given explicitly, and the RemoteMCPServers
+    `servers` exist."""
     tax_dir = tmp_path / "base-apps" / "admission-policies"
     tax_dir.mkdir(parents=True)
     (tax_dir / "agent-capability-taxonomy.yaml").write_text(
@@ -43,7 +53,7 @@ def make_repo(tmp_path: Path, templates: list[dict], agents: list[dict] | None =
                 "apiVersion": "v1",
                 "kind": "ConfigMap",
                 "metadata": {"name": "agent-capability-taxonomy"},
-                "data": {k: json.dumps(v) for k, v in TAXONOMY.items()},
+                "data": {k: json.dumps(v) for k, v in (taxonomy or TAXONOMY).items()},
             }
         )
     )
@@ -58,16 +68,25 @@ def make_repo(tmp_path: Path, templates: list[dict], agents: list[dict] | None =
         (kd / "agents" / f"{doc['metadata']['name']}.yaml").write_text(yaml.safe_dump(doc))
     for doc in harnesses if harnesses is not None else [harness("kagent-memory")]:
         (kd / "harnesses" / f"{doc['metadata']['name']}.yaml").write_text(yaml.safe_dump(doc))
+    for name in servers:
+        (kd / f"{name}-remote.yaml").write_text(yaml.safe_dump(remote_server(name)))
     return tmp_path
 
 
-def template(name, cls, tools=None, approval=None, gated=None, subagents=None):
+def remote_server(name):
+    return {"apiVersion": API, "kind": "RemoteMCPServer",
+            "metadata": {"name": name, "namespace": "kagent"},
+            "spec": {"description": name, "url": f"http://{name}.kagent:3000/mcp"}}
+
+
+def template(name, cls, tools=None, approval=None, gated=None, subagents=None,
+             server="kagent-tool-server"):
     """Build an AgentTemplate. tools go in one binding with requireApproval=approval (omitted
     when None); gated adds a second, requireApproval: true binding. cls=None omits the
     class label."""
     bindings = []
     if tools:
-        mcp = {"server": {"kind": "RemoteMCPServer", "name": "kagent-tool-server"},
+        mcp = {"server": {"kind": "RemoteMCPServer", "name": server},
                "tools": tools}
         if approval is not None:
             mcp["requireApproval"] = approval
@@ -86,7 +105,8 @@ def template(name, cls, tools=None, approval=None, gated=None, subagents=None):
             "spec": {"modelConfig": {"name": "m"}, "tools": bindings}}
 
 
-def agent(name, inline_template=False, inline_harness=False):
+def agent(name, inline_template=False, inline_harness=False, harness_ref="kagent-memory",
+          template_ref=None):
     spec: dict = {}
     if inline_template:
         spec["template"] = {"inline": {"modelConfig": {"name": "m"}}}
@@ -95,7 +115,7 @@ def agent(name, inline_template=False, inline_harness=False):
     if inline_harness:
         spec["harness"] = harness("x")["spec"]
     else:
-        spec["harnessRef"] = {"name": "kagent-memory"}
+        spec["harnessRef"] = {"name": harness_ref}
     return {"apiVersion": API, "kind": "Agent",
             "metadata": {"name": name, "namespace": "kagent"}, "spec": spec}
 
@@ -250,9 +270,184 @@ def test_inline_harness_agent_is_error(tmp_path):
 
 # ------------------------------------- invariant 6: trusted runtime
 
-def test_byo_harness_is_error(tmp_path):
+def test_byo_harness_on_an_unlisted_image_is_error(tmp_path):
+    """A byo runtime on a kagent ADK image is still not admitted: only byo-images entries."""
     t = [template("reader", "read", tools=["k8s_get_resources"], approval=False)]
     assert run(tmp_path, t, harnesses=[harness("kagent-memory", runtime="byo")]) == 1
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_claude_and_codex_harnesses_are_error(tmp_path, runtime):
+    t = [template("reader", "read", tools=["k8s_get_resources"], approval=False)]
+    assert run(tmp_path, t, harnesses=[harness("kagent-memory", runtime=runtime)]) == 1
+
+
+# ------------------------------------- invariant 7: BYO only under exact conditions
+
+def byo_repo(tmp_path, *, cls="read", tools=DOCS_CHECKER_TOOLS, server="agent-docs",
+             image=DOCS_CHECKER, subagents=None, taxonomy=None, servers=None,
+             extra_templates=()):
+    """docs-checker as it ships (K4): a byo Harness on the listed digest, a read template
+    binding agent-docs with the four read tools, and an Agent joining them, next to an
+    ordinary kagent agent."""
+    templates = [template("docs-checker", cls, tools=tools, approval=False, server=server,
+                          subagents=subagents),
+                 template("reader", "read", tools=["k8s_get_resources"], approval=False),
+                 *extra_templates]
+    agents = [agent("docs-checker", harness_ref="docs-checker"), agent("reader")]
+    harnesses = [harness("kagent-memory"), harness("docs-checker", runtime="byo", image=image)]
+    kw = {"taxonomy": taxonomy}
+    if servers is not None:
+        kw["servers"] = servers
+    return make_repo(tmp_path, templates, agents=agents, harnesses=harnesses, **kw)
+
+
+def run_repo(repo) -> int:
+    return vac.main(["--repo-root", str(repo)])
+
+
+def test_byo_on_a_listed_digest_with_a_read_template_on_read_only_servers_passes(tmp_path):
+    assert run_repo(byo_repo(tmp_path)) == 0
+
+
+def test_byo_harness_no_agent_uses_passes(tmp_path):
+    """Admission admits it by digest alone; with no Agent on it, nothing runs."""
+    repo = make_repo(tmp_path, [template("reader", "read", tools=["k8s_get_resources"])],
+                     harnesses=[harness("kagent-memory"),
+                                harness("docs-checker", runtime="byo", image=DOCS_CHECKER)])
+    assert run_repo(repo) == 0
+
+
+def test_byo_foreign_digest_is_error(tmp_path):
+    """The repository is listed, this digest is not: every digest pushed there is NOT
+    admitted (Codex C#3: a repository allow-list admits whatever is pushed later)."""
+    assert run_repo(byo_repo(tmp_path, image=DOCS_CHECKER_REPO + "@sha256:" + "b" * 64)) == 1
+
+
+@pytest.mark.parametrize("image", [
+    DOCS_CHECKER_REPO + "-fork@sha256:" + "a" * 64,          # lookalike repository
+    "evil.example/" + DOCS_CHECKER_REPO + "@sha256:" + "a" * 64,
+    DOCS_CHECKER_REPO + ":v1@sha256:" + "a" * 64,            # tag + digest is another string
+])
+def test_byo_image_must_equal_a_listed_entry(tmp_path, image):
+    assert run_repo(byo_repo(tmp_path, image=image)) == 1
+
+
+@pytest.mark.parametrize("cls", ["propose", "write", "admin"])
+def test_byo_agent_on_a_non_read_template_is_error(tmp_path, cls):
+    """Even binding only read tools: the class is the declared ceiling, and a byo runtime
+    need not honour any per-binding gate."""
+    assert run_repo(byo_repo(tmp_path, cls=cls)) == 1
+
+
+def test_byo_agent_binding_a_server_outside_read_only_servers_is_error(tmp_path):
+    """kagent-tool-server serves write tools on the same origin: byo egress opens per origin,
+    not per tool, so binding even its read tools hands the runtime its write tools."""
+    assert run_repo(byo_repo(tmp_path, tools=["k8s_get_resources"],
+                             server="kagent-tool-server")) == 1
+
+
+def test_byo_agent_binding_a_non_read_tool_is_error(tmp_path):
+    assert run_repo(byo_repo(tmp_path, tools=["get_file_contents", "push_files"])) == 1
+
+
+def test_byo_agent_with_a_subagent_is_error(tmp_path):
+    """A subAgent is compiled into the byo runtime too; its bindings are not this template's."""
+    assert run_repo(byo_repo(tmp_path, subagents=["reader"])) == 1
+
+
+def test_byo_agent_outside_the_kagent_namespace_is_error(tmp_path):
+    """read-only-servers are the RemoteMCPServers in `kagent`, where their server-side
+    read-only proof applies. A same-named server in another namespace could point anywhere."""
+    repo = byo_repo(tmp_path)
+    kd = repo / "base-apps" / "kagent"
+    elsewhere = repo / "base-apps" / "team-a"
+    elsewhere.mkdir()
+    for sub, name in (("agent-templates", "docs-checker"), ("agents", "docs-checker"),
+                      ("harnesses", "docs-checker")):
+        doc = yaml.safe_load((kd / sub / f"{name}.yaml").read_text())
+        doc["metadata"]["namespace"] = "team-a"
+        (elsewhere / f"{sub}-{name}.yaml").write_text(yaml.safe_dump(doc))
+        (kd / sub / f"{name}.yaml").unlink()
+    server = remote_server("agent-docs")
+    server["metadata"]["namespace"] = "team-a"
+    server["spec"]["url"] = "http://kagent-tools.kagent:8084/mcp"
+    (elsewhere / "agent-docs-remote.yaml").write_text(yaml.safe_dump(server))
+    assert run_repo(repo) == 1
+
+
+def test_byo_refs_resolve_in_the_agents_namespace(tmp_path):
+    """A same-named read template in `kagent` must not stand in for the byo Agent's own,
+    which lives in its namespace and is class admin. (Its files sort BEFORE kagent's, so a
+    name-only index would keep the kagent template.)"""
+    repo = byo_repo(tmp_path)
+    kd = repo / "base-apps" / "kagent"
+    elsewhere = repo / "base-apps" / "a-team"
+    elsewhere.mkdir()
+    tpl = template("docs-checker", "admin", tools=DOCS_CHECKER_TOOLS, approval=False,
+                   server="agent-docs")
+    tpl["metadata"]["namespace"] = "team-a"
+    (elsewhere / "template.yaml").write_text(yaml.safe_dump(tpl))
+    for sub in ("agents", "harnesses"):
+        doc = yaml.safe_load((kd / sub / "docs-checker.yaml").read_text())
+        doc["metadata"]["namespace"] = "team-a"
+        (elsewhere / f"{sub}.yaml").write_text(yaml.safe_dump(doc))
+        (kd / sub / "docs-checker.yaml").unlink()
+    assert run_repo(repo) == 1
+
+
+def test_agent_with_an_unknown_harness_ref_is_error(tmp_path):
+    """Fail closed: a Harness that is not in git has an unknown runtime."""
+    t = [template("reader", "read", tools=["k8s_get_resources"], approval=False)]
+    assert run(tmp_path, t, agents=[agent("reader", harness_ref="not-in-git")]) == 1
+
+
+@pytest.mark.parametrize("entry", [
+    DOCS_CHECKER_REPO,                                       # a repository: a prefix in disguise
+    DOCS_CHECKER_REPO + ":v1",                               # a tag moves
+    DOCS_CHECKER_REPO + "@sha256:" + "a" * 63,               # not a sha256 digest
+    DOCS_CHECKER_REPO + "@sha256:" + "A" * 64,               # digests are lowercase hex
+])
+def test_byo_images_entry_must_be_repository_at_sha256_digest(tmp_path, entry):
+    """C#3: exact repository@sha256:digest entries, never a prefix or a tag. The image itself
+    matches, so only the entry's shape can fail here."""
+    tax = dict(TAXONOMY, **{"byo-images": [entry]})
+    assert run_repo(byo_repo(tmp_path, image=entry, taxonomy=tax)) == 1
+
+
+def test_byo_images_placeholder_digest_is_error_and_says_how_to_pin(tmp_path, capsys):
+    """Until the docs-checker image is pushed, the entry carries REPLACE_WITH_DIGEST: nothing
+    can deploy by accident, and the error says what to do."""
+    entry = DOCS_CHECKER_REPO + "@sha256:REPLACE_WITH_DIGEST"
+    tax = dict(TAXONOMY, **{"byo-images": [entry]})
+    repo = make_repo(tmp_path, [template("reader", "read", tools=["k8s_get_resources"])],
+                     taxonomy=tax)
+    assert run_repo(repo) == 1
+    err = capsys.readouterr().err
+    assert "REPLACE_WITH_DIGEST" in err and "runbook" in err
+
+
+def test_read_only_server_missing_from_git_is_error(tmp_path):
+    """A listed server must exist as a RemoteMCPServer in git, where its url is reviewed."""
+    tax = dict(TAXONOMY, **{"read-only-servers": ["agent-docs", "ghost"]})
+    assert run_repo(byo_repo(tmp_path, taxonomy=tax)) == 1
+
+
+@pytest.mark.parametrize("key", ["byo-images", "read-only-servers"])
+def test_taxonomy_without_a_byo_key_is_error(tmp_path, key):
+    """Fail closed (§V.84): a missing list is not an empty one. `[]` admits no byo."""
+    tax = {k: v for k, v in TAXONOMY.items() if k != key}
+    repo = make_repo(tmp_path, [template("reader", "read", tools=["k8s_get_resources"])],
+                     taxonomy=tax)
+    assert run_repo(repo) == 1
+
+
+def test_empty_byo_lists_admit_no_byo(tmp_path):
+    tax = dict(TAXONOMY, **{"byo-images": [], "read-only-servers": []})
+    repo = make_repo(tmp_path, [template("reader", "read", tools=["k8s_get_resources"])],
+                     taxonomy=tax)
+    assert run_repo(repo) == 0
+    assert run_repo(byo_repo(tmp_path / "with-byo", taxonomy=tax)) == 1
 
 
 def test_foreign_image_harness_is_error(tmp_path):
@@ -301,14 +496,47 @@ def test_templates_found_by_kind_not_directory(tmp_path):
 
 
 def test_real_harnesses_share_one_pinned_runtime_image():
-    """The Harnesses differ only in spec.kagent (memory, compaction). One runtime image, pinned
-    by digest, so a chart bump moves every agent at once and no Harness is left behind on an
-    old runtime."""
-    harnesses = vac.collect(REPO)[0].get("Harness", [])
-    assert harnesses, "no Harness in the repo"
+    """The kagent-runtime Harnesses differ only in spec.kagent (memory, compaction). One runtime
+    image, pinned by digest, so a chart bump moves every agent at once and no Harness is left
+    behind on an old runtime. (A byo Harness runs its own image, from byo-images.)"""
+    harnesses = [(p, d) for p, d in vac.collect(REPO)[0].get("Harness", [])
+                 if "kagent" in d["spec"]]
+    assert harnesses, "no kagent-runtime Harness in the repo"
     images = {(d["spec"].get("workload") or {}).get("image") for _, d in harnesses}
     assert len(images) == 1, images
     assert "@sha256:" in images.pop()
+
+
+# A byo runtime reaches a bound server's whole ORIGIN (egress is per origin, not per tool), so
+# a server earns a place in read-only-servers only by being read-only on the server side. One
+# proof per listed server; a server listed without one fails here.
+def _agent_docs_is_read_only_server_side():
+    """RemoteMCPServer agent-docs -> Service agent-docs-mcp -> agentgateway running
+    github-mcp-server with --read-only and only the repos toolset."""
+    kd = REPO / "base-apps" / "kagent"
+    remote = yaml.safe_load((kd / "agent-docs-mcp-remote.yaml").read_text())
+    assert remote["spec"]["url"] == "http://agent-docs-mcp.kagent:3000/mcp", remote["spec"]["url"]
+    cm = next(d for d in yaml.safe_load_all((kd / "agent-docs-mcp.yaml").read_text())
+              if d and d.get("kind") == "ConfigMap")
+    gateway = yaml.safe_load(next(iter(cm["data"].values())))
+    targets = [t for b in gateway["binds"] for l in b["listeners"] for r in l["routes"]
+               for be in r["backends"] for t in be["mcp"]["targets"]]
+    assert len(targets) == 1, targets
+    args = targets[0]["stdio"]["args"]
+    assert "--read-only" in args, args
+    assert args[args.index("--toolsets") + 1] == "repos", args
+
+
+READ_ONLY_PROOFS = {"agent-docs": _agent_docs_is_read_only_server_side}
+
+
+def test_real_read_only_servers_are_read_only_on_the_server_side():
+    servers = vac.load_byo_conditions(REPO)[1]
+    assert servers, "read-only-servers is empty"
+    for server in servers:
+        assert server in READ_ONLY_PROOFS, (
+            f"{server} is in read-only-servers with no server-side read-only proof here")
+        READ_ONLY_PROOFS[server]()
 
 
 # ------------------------------------------- class propose (branches and PRs only)
