@@ -1,0 +1,68 @@
+# base-apps/crossplane-compositions/xrd-tenant.yaml
+# XTenant — one beacon enterprise tenant (beacon §I.crd, §V.11). One cluster-scoped XR per
+# tenant, committed in base-apps/beacon-tenants/<slug>.yaml, composes everything the tenant
+# gets: namespace tenant-<slug>, quota, network policies, its own CNPG database, an S3 bucket
+# with an IAM user, generated secrets pushed to Vault, and (beacon §T.46) its own beacon
+# scheduler, checker and notifier. Nobody writes any of that by hand.
+#
+# Cluster scope (not the Namespaced default of xapplications) because a tenant composes a
+# Namespace and cluster-scoped AWS managed resources (beacon §R.24).
+#
+# The XR's name IS the tenant slug: beacon §V.30 (^[a-z][a-z0-9-]{2,30}$) is enforced on create
+# by base-apps/admission-policies/xtenant-guard.yaml, which also refuses any delete that has no
+# verified backup (beacon §V.12).
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: xtenants.platform.arigsela.com
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    # Deleting the XRD deletes its CRD and, with it, every XTenant without asking any admission
+    # policy, and Crossplane then garbage-collects each tenant's namespace and database. So Argo
+    # CD never prunes or cascade-deletes it (beacon §V.12).
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  scope: Cluster
+  group: platform.arigsela.com
+  names:
+    kind: XTenant
+    plural: xtenants
+  defaultCompositionRef:
+    name: tenant
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [tenantId]
+              properties:
+                tenantId:
+                  type: string
+                  description: >-
+                    The tenant's id in beacon's pooled database (the pending row its signup
+                    created). The bucket name carries its first 8 hex digits (beacon §V.49).
+                  pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: tenantId is immutable
+                offboard:
+                  type: boolean
+                  default: false
+                  description: >-
+                    true starts offboarding (beacon §T.27): the tenant's workers stop and its
+                    database is dumped to its bucket and verified; status.backup records it.
+                    Only then may the XR be deleted.
+            status:
+              type: object
+              properties:
+                backup:
+                  type: string
+                  description: >-
+                    s3:// URI of the verified offboarding dump. Set by the composition from the
+                    offboard Job, read by the delete guard.

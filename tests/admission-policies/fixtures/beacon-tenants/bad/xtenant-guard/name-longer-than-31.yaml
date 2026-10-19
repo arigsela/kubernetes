@@ -1,0 +1,7 @@
+# XTenant name longer than 31 characters: not a tenant slug (beacon §V.30).
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XTenant
+metadata:
+  name: a234567890123456789012345678901x
+spec:
+  tenantId: 3f1c2a9e-7b4d-4e2a-9c1f-0a2b3c4d5e6f

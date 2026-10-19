@@ -58,3 +58,38 @@ rules:
       - externalsecrets
       - externalsecrets/status
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+# Tenant composition (beacon §T.25, composition-tenant.yaml): every kind it composes that the
+# chart's own `crossplane` ClusterRole does not grant (it already covers Secrets,
+# ServiceAccounts, Services, ConfigMaps, Deployments, Crossplane's APIs and the providers'
+# managed resources). Listed here in full rather than leaning on the application role above,
+# and nothing beyond what the composition emits (tests/beacon/test_tenants.py
+# test_v50_rbac_covers_only_composed_kinds).
+#
+# Blast radius: namespaces and NetworkPolicies cluster-wide. The composition only ever names
+# tenant-<slug>, which tests/composition/test_xtenant_render.py checks for every rendered tenant.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crossplane:compositions:tenant
+  labels:
+    rbac.crossplane.io/aggregate-to-crossplane: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "resourcequotas", "limitranges"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters", "clusters/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["secretstores", "secretstores/status", "externalsecrets", "externalsecrets/status",
+                "pushsecrets", "pushsecrets/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["generators.external-secrets.io"]
+    resources: ["passwords"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

@@ -22,6 +22,7 @@ sources:
   - base-apps/admission-policies/disallow-default-namespace.yaml
   - base-apps/admission-policies/inject-ecr-pull-secret.yaml
   - base-apps/admission-policies/workload-defaults.yaml
+  - base-apps/admission-policies/xtenant-guard.yaml
   - base-apps/admission-policies/kyverno-reports-rbac.yaml
   - scripts/gen-agent-capability-policy.py
   - scripts/validate-agent-capability.py
@@ -166,6 +167,12 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   Operator (beacon §V.9). Objects istiod generates (`gateway.istio.io/managed`, a waypoint's
   Deployment) are never touched. CREATE and UPDATE, so a sync keeps the defaults; a change
   reaches a running workload on its next rollout. Fail-open.
+- `xtenant-guard.yaml` (beacon §T.25): an enforcing **ValidatingAdmissionPolicy** on beacon's
+  enterprise tenants (`XTenant`, `base-apps/beacon-tenants/`) and nothing else. On CREATE the
+  name must be a tenant slug (`^[a-z][a-z0-9-]{2,30}$`, beacon §V.30). On DELETE, which takes the
+  tenant's namespace and database with it, only an offboarded tenant (`spec.offboard: true`)
+  whose `status.backup` names a verified `s3://` dump gets through (beacon §V.12), Argo CD's
+  prune included. failurePolicy Fail.
 - Tests: `tests/admission-policies/` boots a real k3s of the cluster's version in Docker,
   installs the kagent CRDs from `fixtures/crds/`, creates the cluster's real kagent objects
   (every AgentTemplate, Harness and Agent in `base-apps/kagent/`: the AgentTemplates are the

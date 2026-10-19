@@ -1,0 +1,7 @@
+# tests/composition/xtenant/xr-demo.yaml — a freshly onboarded tenant (beacon §T.25 render case)
+apiVersion: platform.arigsela.com/v1alpha1
+kind: XTenant
+metadata:
+  name: demo
+spec:
+  tenantId: 3f1c2a9e-7b4d-4e2a-9c1f-0a2b3c4d5e6f

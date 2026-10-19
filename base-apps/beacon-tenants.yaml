@@ -1,0 +1,32 @@
+# base-apps/beacon-tenants.yaml (beacon §T.25)
+# beacon's enterprise tenants: one XTenant XR per file in base-apps/beacon-tenants/
+# (base-apps/crossplane-compositions/xrd-tenant.yaml composes everything the tenant gets).
+# Opened by the owner from the Backstage XTenant form after a signup is approved (beacon
+# §V.54); one PR = one tenant (beacon §V.11).
+#
+# NO resources-finalizer, on purpose: deleting this Application must never cascade to the
+# tenants. Each XR also carries Delete=false (Application delete) and Prune=false (file removed)
+# until its offboarding PR, and the xtenant-guard policy refuses any delete without a verified
+# backup (beacon §V.12, §R.18).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: beacon-tenants
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/beacon-tenants
+    directory:
+      # The agent-docs contract: catalog-info.yaml and the generated mkdocs.yml are not manifests.
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
+  destination:
+    server: https://kubernetes.default.svc
+    # XTenants are cluster-scoped; every namespaced object is composed into tenant-<slug>.
+    namespace: beacon
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
