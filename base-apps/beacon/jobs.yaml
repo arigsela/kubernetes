@@ -41,7 +41,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: cpu
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.1@sha256:cd12e6976e21e0f43ae40349f3ba33ff51d490f8484dab2cd1e982e505642791
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.2@sha256:2f9c37b78551a153444bba277014731be16508d1d40f09503ccbf2dc89890ad7
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -61,7 +61,7 @@ spec:
             capabilities:
               drop: ["ALL"]
         - name: api
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.1@sha256:cd12e6976e21e0f43ae40349f3ba33ff51d490f8484dab2cd1e982e505642791
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.2@sha256:2f9c37b78551a153444bba277014731be16508d1d40f09503ccbf2dc89890ad7
           args: ["--self-check"]
           resources:
             requests:
@@ -79,7 +79,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: scheduler
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.2.1@sha256:28443c46e6c99e6497adf115150aa58257ddd027d52cb93b585b5934f751c286
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.2.2@sha256:98f28fbd8f5f03e12e0591f02d6a5ce7f5b05d148303c2808892ca22dcc8f170
           args: ["--self-check"]
           resources:
             requests:
@@ -97,7 +97,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: checker
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-checker:v0.2.1@sha256:af6b6ce01f98d29381f0bf8782b57f3eb0d34736d088d4a5eb5deb3960e4b734
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-checker:v0.2.2@sha256:0472b0c251862cd0bb9f2a10e1779ea48aa3563cba6dd1986e1a73f748bbade8
           args: ["--self-check"]
           resources:
             requests:
@@ -115,7 +115,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: notifier
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.2.1@sha256:8f89a2fd50b781cec1bde6f50e86812761a88c8b87db3093db563c97aa47e117
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.2.2@sha256:fb6bc08cf624b45ff2dfb0f35a169a6fcce41a6f0036b684fe052154a65afb92
           args: ["--self-check"]
           resources:
             requests:
@@ -133,7 +133,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: mcp
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-mcp:v0.2.1@sha256:e232e8b4c28508aff2f3a686d6424c91ebd7ffc9245fe2252af1ee1c82ee849a
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-mcp:v0.2.2@sha256:e2ea780503afcb723065abc2cb4fc157a44030035eff9d7b73bc8ee3a230c061
           args: ["--self-check"]
           resources:
             requests:
@@ -152,7 +152,7 @@ spec:
               mountPath: /tmp
         # beacon §V.9 on the image that actually ships: no opentelemetry distribution.
         - name: notifier-no-otel
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.2.1@sha256:8f89a2fd50b781cec1bde6f50e86812761a88c8b87db3093db563c97aa47e117
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.2.2@sha256:fb6bc08cf624b45ff2dfb0f35a169a6fcce41a6f0036b684fe052154a65afb92
           command: ["python", "-c"]
           args:
             - |
@@ -176,7 +176,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: web
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-web:v0.2.1@sha256:347784875aa6b5ba5cdf3ae91d2e9aee8cd4402fcbcfbd8078150afc00335594
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-web:v0.2.2@sha256:e5a9cf3c5d9dad965ac3cf27b751384b18563566504113628b2ce22ee2fdb5ef
           command: ["/bin/sh", "-c"]
           args:
             - nginx -t && test -s /usr/share/nginx/html/index.html && echo "web smoke ok"
@@ -240,7 +240,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: migrate
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.1@sha256:cd12e6976e21e0f43ae40349f3ba33ff51d490f8484dab2cd1e982e505642791
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.2@sha256:2f9c37b78551a153444bba277014731be16508d1d40f09503ccbf2dc89890ad7
           args: ["migrate"]
           env:
             - name: DATABASE_URL
@@ -303,7 +303,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: seed
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.1@sha256:cd12e6976e21e0f43ae40349f3ba33ff51d490f8484dab2cd1e982e505642791
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.2.2@sha256:2f9c37b78551a153444bba277014731be16508d1d40f09503ccbf2dc89890ad7
           args: ["seed-tenant"]
           env:
             - name: DATABASE_URL
