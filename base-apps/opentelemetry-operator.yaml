@@ -1,0 +1,75 @@
+# base-apps/opentelemetry-operator.yaml (beacon §T.22)
+# The OpenTelemetry Operator, for one job: Python auto-instrumentation of pods whose namespace
+# opts in with `platform.arigsela.com/otel: python` (today: beacon). That is how beacon-notifier,
+# which has no tracing code at all, gets traced (beacon §G proof 1, beacon §V.9).
+#
+# Scope (beacon §V.25): the pod-mutating webhook is limited to opted-in namespaces. The chart's
+# default selector is {}, which would send every pod creation in the cluster through this
+# operator. It stays fail-open (failurePolicy Ignore): if the operator is down a pod starts
+# untraced instead of not starting. The alert for that case is beacon §V.9's. The webhooks for
+# the operator's own CRs (Instrumentation, OpenTelemetryCollector) fail closed, as the chart
+# ships them; they only see those kinds.
+#
+# Images: pinned by the digests base-apps/tracing/smoke-job.yaml runs on a node first
+# (beacon §V.18; tests/beacon/test_tracing.py checks they match). The chart's helm-test pods
+# default to busybox:latest; they reuse the busybox-based autoinstrumentation image instead.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: opentelemetry-operator
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-operator
+    targetRevision: 0.126.0
+    helm:
+      values: |
+        manager:
+          image:
+            repository: ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator
+            tag: "0.161.0@sha256:76ac4fa40512b60f85ff236c60c075ca3407858efe72e22d2e96a9cf1bc82dc2"
+          # Only used if someone creates an OpenTelemetryCollector CR (nothing does: the
+          # collector is base-apps/tracing/collector.yaml). Pinned anyway, to the same image.
+          collectorImage:
+            repository: otel/opentelemetry-collector-contrib
+            tag: "0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6"
+          autoInstrumentationImage:
+            python:
+              repository: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python
+              tag: "0.66b1@sha256:fcfd4588cbf2c68ae6a5b67501d8aa4a1c58c0b89e664c8eee71952ac12430ff"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+        nodeSelector:
+          node.kubernetes.io/workload: application
+        admissionWebhooks:
+          certManager:
+            enabled: true
+          pods:
+            failurePolicy: Ignore
+            namespaceSelector:
+              matchLabels:
+                platform.arigsela.com/otel: python
+        testFramework:
+          image:
+            repository: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python
+            tag: "0.66b1@sha256:fcfd4588cbf2c68ae6a5b67501d8aa4a1c58c0b89e664c8eee71952ac12430ff"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: opentelemetry-operator-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The CRDs are larger than the client-side last-applied annotation allows.
+      - ServerSideApply=true

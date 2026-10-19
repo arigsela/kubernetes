@@ -19,6 +19,7 @@ sources:
   - base-apps/beacon/configmaps.yaml
   - base-apps/beacon/waypoint.yaml
   - base-apps/beacon/waypoint-telemetry.yaml
+  - base-apps/beacon/instrumentation.yaml
   - base-apps/beacon/authorization-policy.yaml
   - base-apps/beacon/network-policies.yaml
   - base-apps/tracing/collector.yaml
@@ -86,7 +87,10 @@ is stored (beacon §V.42). See `base-apps/tracing/docs.md`. The ingress Gateway 
 request (`base-apps/istio-ingress/telemetry.yaml`), and `waypoint-telemetry.yaml` traces the
 waypoint, so checker -> notifier shows a waypoint span between the two (beacon §V.6). Every log line carries
 `trace_id=<32 hex>`, which Grafana links to the trace (beacon §T.43). The notifier carries no
-OTel variable: it is traced only through the platform (beacon §V.9, beacon §T.22).
+OTel variable: it is traced only through the platform (beacon §V.9): the OpenTelemetry
+Operator instruments any beacon pod annotated `inject-python: "true"` as
+`instrumentation.yaml` says (beacon §T.22), and the platform's defaulting policy adds that
+annotation to the notifier (beacon §T.23).
 
 ## Data
 - Database `beacon` on the shared CNPG `postgresql-cluster` (`base-apps/postgresql/`). Row-
