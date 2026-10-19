@@ -56,6 +56,41 @@ spec:
               "requests.storage": "4Gi",
           }
 
+          # --- the tenant's own beacon stack (beacon §T.46) -------------------------------------
+          ECR = "852893458518.dkr.ecr.us-east-2.amazonaws.com"
+          # beacon's release, exactly as base-apps/beacon pins it (beacon §V.53). The promotion PR
+          # updates both (base-apps/beacon/runbook.md, "Promote a release");
+          # tests/beacon/test_tenants.py fails while they differ.
+          IMAGES = {
+              "api": f"{ECR}/beacon-api:v0.2.3@sha256:ad35a0cfb29ff17fadac7c6fc16c35673ef8f502f7b5159a6ad0be902b1faa33",
+              "scheduler": f"{ECR}/beacon-scheduler:v0.2.3@sha256:70cfb48e9a22f255dff7d9d13bc404eac359b3282e265d13ad8998c75f5ac431",
+              "checker": f"{ECR}/beacon-checker:v0.2.3@sha256:47e84f028fa949692e03d27f96af58541c704c67747fd5e5bf2d5ee4aece55c1",
+              "notifier": f"{ECR}/beacon-notifier:v0.2.3@sha256:ca852f149c1a408ed9507d9f100c4f123fb89747222709eb1acfc6079f240cb3",
+          }
+          # Uploads the database dumps; smoke-run on a node by beacon-smoke (beacon §V.18).
+          AWS_CLI = ("public.ecr.aws/aws-cli/aws-cli:2.37.13"
+                     "@sha256:d32864c20087d486f5988c3e70817d67a73f584a47535cada9ad97e0ea1e5196")
+          PY_LAYER = ("ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b1"
+                      "@sha256:fcfd4588cbf2c68ae6a5b67501d8aa4a1c58c0b89e664c8eee71952ac12430ff")
+          OTEL = "http://otel-collector.tracing.svc.cluster.local:4318"
+          SELF_HOSTS = "dex.arigsela.com,beacon.arigsela.com"
+          # beacon's fault flags (beacon §I.flags), every one off: faults are injected on homelab only.
+          FLAGS = {
+              "checkerSlowProbe": {"off": 0.0, "slow": 5.0},
+              "checkerFalseDown": {"off": False, "on": True},
+              "notifierReceiverFail": {"off": False, "on": True},
+              "apiDbPoolExhaust": {"off": False, "on": True},
+              "apiSlowQuery": {"off": 0.0, "slow": 2.0},
+              "tenantFloodIngest": {"off": 0.0, "flood": 10.0},
+              "schedulerStall": {"off": False, "on": True},
+          }
+          POD_SECURITY = {"runAsNonRoot": True, "runAsUser": 10001, "runAsGroup": 10001,
+                          "seccompProfile": {"type": "RuntimeDefault"}}
+          CONTAINER_SECURITY = {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+                                "capabilities": {"drop": ["ALL"]}}
+          NODES = {"node.kubernetes.io/workload": "application"}
+          PG_UID = 26  # the postgres user of the CNPG image
+
 
           class Tenant:
               def __init__(self, xr):
@@ -285,7 +320,337 @@ spec:
                                "providerConfigRef": {"name": "default"}}}
 
 
-          def desired(t):
+          # --- the tenant's beacon stack -----------------------------------------------------------
+
+          def secret_env(name, secret, key):
+              return {"name": name, "valueFrom": {"secretKeyRef": {"name": secret, "key": key}}}
+
+
+          def dsn_env(t, role, password_var):
+              # Kubernetes expands $(VAR) from the variables before it; generated passwords are alphanumeric.
+              return {"name": "DATABASE_URL",
+                      "value": f"postgresql://{role}:$({password_var})@{DB}-rw.{t.ns}.svc.cluster.local:5432/beacon"}
+
+
+          def superuser_env(t, database):
+              return [{"name": "PGHOST", "value": f"{DB}-rw.{t.ns}.svc.cluster.local"},
+                      {"name": "PGPORT", "value": "5432"},
+                      {"name": "PGDATABASE", "value": database},
+                      {"name": "PGSSLMODE", "value": "require"},
+                      secret_env("PGUSER", f"{DB}-superuser", "username"),
+                      secret_env("PGPASSWORD", f"{DB}-superuser", "password")]
+
+
+          def otel_env():
+              return [{"name": "OTEL_EXPORTER_OTLP_ENDPOINT", "value": OTEL},
+                      {"name": "OTEL_TRACES_SAMPLER", "value": "parentbased_traceidratio"},
+                      {"name": "OTEL_TRACES_SAMPLER_ARG", "value": "1.0"}]
+
+
+          def pod_labels(t, app, name=None):
+              return {"app": app, "app.kubernetes.io/name": name or app, "app.kubernetes.io/part-of": "beacon",
+                      "backstage.io/kubernetes-id": name or app, "beacon.arigsela.com/tenant": t.slug}
+
+
+          def container(name, image, env, requests, limits, mounts=(), **extra):
+              c = {"name": name, "image": image, "env": env,
+                   "resources": {"requests": requests, "limits": limits},
+                   "securityContext": dict(CONTAINER_SECURITY),
+                   "volumeMounts": [{"name": "tmp", "mountPath": "/tmp"}] + list(mounts)}
+              c.update(extra)
+              return c
+
+
+          FLAGS_MOUNT = {"name": "flags", "mountPath": "/etc/beacon/flags", "readOnly": True}
+          SIGNING_MOUNT = {"name": "signing", "mountPath": "/etc/beacon/signing", "readOnly": True}
+
+
+          def volumes(tmp="64Mi", flags=True, signing=False):
+              v = [{"name": "tmp", "emptyDir": {"sizeLimit": tmp}}]
+              if flags:
+                  v.append({"name": "flags", "configMap": {"name": "beacon-flags"}})
+              if signing:
+                  # Only the signing key, group-readable: fsGroup makes the group 10001 (beacon §V.39).
+                  v.append({"name": "signing", "secret": {"secretName": SECRETS, "defaultMode": 0o440,
+                                                          "items": [{"key": "signing-key", "path": "signing-key"}]}})
+              return v
+
+
+          def pod_spec(sa, containers, vols, fs_group=False, restart=None, init=None):
+              sec = dict(POD_SECURITY)
+              if fs_group:
+                  sec["fsGroup"] = 10001
+              spec = {"serviceAccountName": sa, "automountServiceAccountToken": False, "nodeSelector": dict(NODES),
+                      "securityContext": sec, "containers": containers, "volumes": vols}
+              if restart:
+                  spec["restartPolicy"] = restart
+              if init:
+                  spec["initContainers"] = init
+              return spec
+
+
+          def sdk_annotations():
+              # SDK services trace themselves; the operator instruments only the notifier (beacon §V.32, §V.9).
+              return {"instrumentation.opentelemetry.io/inject-python": "false"}
+
+
+          def service_account(t, name):
+              return {"apiVersion": "v1", "kind": "ServiceAccount", "metadata": t.meta(name, "stack"),
+                      "automountServiceAccountToken": False}
+
+
+          def flags_configmap(t):
+              import json
+              flags = {name: {"state": "ENABLED", "variants": variants, "defaultVariant": "off"}
+                       for name, variants in FLAGS.items()}
+              return {"apiVersion": "v1", "kind": "ConfigMap", "metadata": t.meta("beacon-flags", "stack"),
+                      "data": {"beacon-flags.json": json.dumps(
+                          {"$schema": "https://flagd.dev/schema/v0/flags.json", "flags": flags}, indent=2)}}
+
+
+          def instrumentation(t):
+              return {"apiVersion": "opentelemetry.io/v1alpha1", "kind": "Instrumentation",
+                      "metadata": t.meta("beacon-python", "stack"),
+                      "spec": {"exporter": {"endpoint": OTEL}, "propagators": ["tracecontext", "baggage"],
+                               "sampler": {"type": "parentbased_traceidratio", "argument": "1.0"},
+                               "python": {"image": PY_LAYER, "env": [
+                                   {"name": "OTEL_PYTHON_LOG_CORRELATION", "value": "true"},
+                                   {"name": "OTEL_METRICS_EXPORTER", "value": "none"},
+                                   {"name": "OTEL_LOGS_EXPORTER", "value": "none"}]}}}
+
+
+          def digest8(image):
+              return image.rsplit(":", 1)[1][:8]
+
+
+          def init_job(t):
+              """Roles, schema, then the tenant's own `tenants` row: one Job per beacon-api release (Jobs
+              are immutable), so a promotion migrates the tenant's database before its workers move."""
+              api = IMAGES["api"]
+              owner = [secret_env("BEACON_OWNER_PASSWORD", SECRETS, "password")]
+              app = [secret_env("BEACON_APP_PASSWORD", SECRETS, "app-password")]
+              small = ({"cpu": "50m", "memory": "64Mi"}, {"cpu": "300m", "memory": "256Mi"})
+              roles = container("bootstrap-roles", api, superuser_env(t, "postgres") + owner + app, *small,
+                                args=["bootstrap-roles"])
+              migrate = container("migrate", api, owner + [dsn_env(t, "beacon_owner", "BEACON_OWNER_PASSWORD")],
+                                  *small, args=["migrate"])
+              tenant_row = container("init-tenant-db", api,
+                                     app + [dsn_env(t, "beacon_app", "BEACON_APP_PASSWORD"),
+                                            {"name": "TENANT_ID", "value": t.id},
+                                            {"name": "TENANT_SLUG", "value": t.slug}],
+                                     *small, args=["init-tenant-db"])
+              name = f"beacon-init-{digest8(api)}"
+              return {"apiVersion": "batch/v1", "kind": "Job", "metadata": t.meta(name, "stack"),
+                      "spec": {"backoffLimit": 10, "activeDeadlineSeconds": 1800, "template": {
+                          "metadata": {"labels": pod_labels(t, "beacon-init"), "annotations": sdk_annotations()},
+                          "spec": pod_spec("beacon-init", [tenant_row], volumes(tmp="16Mi", flags=False),
+                                           restart="Never", init=[roles, migrate])}}}
+
+
+          def checker(t, image, replicas):
+              env = [secret_env("BEACON_APP_PASSWORD", SECRETS, "app-password"),
+                     dsn_env(t, "beacon_app", "BEACON_APP_PASSWORD"),
+                     {"name": "NOTIFIER_URL", "value": f"http://beacon-notifier.{t.ns}.svc.cluster.local:8080"},
+                     {"name": "FLAGS_PATH", "value": "/etc/beacon/flags/beacon-flags.json"},
+                     {"name": "SSRF_SELF_HOSTS", "value": SELF_HOSTS},
+                     # Explicitly empty: unset means `homelab`. A tenant's probes are never exempt (beacon §V.5).
+                     {"name": "SSRF_EXEMPT_TENANTS", "value": ""}] + otel_env()
+              c = container("checker", image, env, {"cpu": "50m", "memory": "128Mi"},
+                            {"cpu": "300m", "memory": "256Mi"}, [FLAGS_MOUNT])
+              return deployment(t, "beacon-checker", replicas, sdk_annotations(),
+                                pod_spec("beacon-checker", [c], volumes()))
+
+
+          def notifier(t, image, replicas):
+              env = [secret_env("BEACON_APP_PASSWORD", SECRETS, "app-password"),
+                     dsn_env(t, "beacon_app", "BEACON_APP_PASSWORD"),
+                     {"name": "SIGNING_KEY_REF", "value": "/etc/beacon/signing/signing-key"},
+                     {"name": "FLAGS_PATH", "value": "/etc/beacon/flags/beacon-flags.json"},
+                     {"name": "SSRF_SELF_HOSTS", "value": SELF_HOSTS},
+                     {"name": "SSRF_EXEMPT_TENANTS", "value": ""},
+                     {"name": "BEACON_DB_POOL_MAX", "value": "4"}]
+              c = container("notifier", image, env, {"cpu": "50m", "memory": "128Mi"},
+                            {"cpu": "300m", "memory": "256Mi"}, [FLAGS_MOUNT, SIGNING_MOUNT],
+                            ports=[{"name": "http", "containerPort": 8080}],
+                            livenessProbe={"httpGet": {"path": "/healthz", "port": "http"}, "periodSeconds": 20},
+                            readinessProbe={"httpGet": {"path": "/readyz", "port": "http"}, "periodSeconds": 10,
+                                            "timeoutSeconds": 3})
+              # No inject-python annotation: the namespace's workload defaults add "true" (beacon §V.9).
+              return deployment(t, "beacon-notifier", replicas, None,
+                                pod_spec("beacon-notifier", [c], volumes(signing=True), fs_group=True))
+
+
+          def deployment(t, name, replicas, annotations, spec):
+              tmpl = {"metadata": {"labels": pod_labels(t, name)}, "spec": spec}
+              if annotations:
+                  tmpl["metadata"]["annotations"] = annotations
+              return {"apiVersion": "apps/v1", "kind": "Deployment",
+                      "metadata": {**t.meta(name, "stack"), "labels": {**t.labels("stack"), **pod_labels(t, name)}},
+                      "spec": {"replicas": replicas, "selector": {"matchLabels": {"app": name}}, "template": tmpl}}
+
+
+          def notifier_service(t):
+              return {"apiVersion": "v1", "kind": "Service", "metadata": t.meta("beacon-notifier", "stack"),
+                      "spec": {"selector": {"app": "beacon-notifier"},
+                               "ports": [{"name": "http", "port": 8080, "targetPort": "http"}]}}
+
+
+          def scheduler(t, image, daily, suspend):
+              name = "beacon-scheduler-daily" if daily else "beacon-scheduler"
+              env = [secret_env("BEACON_APP_PASSWORD", SECRETS, "app-password"),
+                     dsn_env(t, "beacon_app", "BEACON_APP_PASSWORD"),
+                     {"name": "FLAGS_PATH", "value": "/etc/beacon/flags/beacon-flags.json"}] + otel_env()
+              if daily:
+                  env.insert(2, {"name": "BEACON_RETENTION_DAYS", "value": "30"})
+              extra = {"args": ["--daily"]} if daily else {}
+              c = container("scheduler", image, env, {"cpu": "50m", "memory": "96Mi"},
+                            {"cpu": "300m", "memory": "256Mi"}, [FLAGS_MOUNT], **extra)
+              job = {"backoffLimit": 0, "activeDeadlineSeconds": 300 if not daily else 1800,
+                     "ttlSecondsAfterFinished": 600, "template": {
+                         "metadata": {"labels": pod_labels(t, name, "beacon-scheduler"),
+                                      "annotations": sdk_annotations()},
+                         "spec": pod_spec("beacon-scheduler", [c], volumes(tmp="16Mi"), restart="Never")}}
+              return {"apiVersion": "batch/v1", "kind": "CronJob", "metadata": t.meta(name, "stack"),
+                      "spec": {"schedule": "17 3 * * *" if daily else "* * * * *", "suspend": suspend,
+                               "concurrencyPolicy": "Forbid", "startingDeadlineSeconds": 50,
+                               "successfulJobsHistoryLimit": 1, "failedJobsHistoryLimit": 3, "jobTemplate": {"spec": job}}}
+
+
+          DUMP_SCRIPT = """set -eu
+          pg_dump --format=custom --no-owner --file=/dump/beacon.dump
+          # A dump that does not list is not a backup (beacon §V.12).
+          pg_restore --list /dump/beacon.dump > /dev/null
+          test -s /dump/beacon.dump
+          """
+          # KEY is fixed (offboarding) or derived here from KEY_PREFIX (nightly): Kubernetes leaves an
+          # unknown $(...) in an env value as literal text, so the date cannot come from the manifest.
+          UPLOAD_SCRIPT = """set -eu
+          key="${KEY:-${KEY_PREFIX}$(date -u +%Y-%m-%dT%H%M%SZ).dump}"
+          aws s3 cp /dump/beacon.dump "s3://$BUCKET/$key" --only-show-errors
+          size=$(aws s3api head-object --bucket "$BUCKET" --key "$key" --query ContentLength --output text)
+          test "$size" -gt 0
+          echo "dump verified: s3://$BUCKET/$key ($size bytes)"
+          """
+
+
+          def dump_pod(t, key_env):
+              """pg_dump as the superuser (row-level security is FORCEd for every beacon role), checked with
+              pg_restore --list, then uploaded to the tenant's bucket and checked again there."""
+              dump = {"name": "pg-dump", "image": PG_IMAGE, "command": ["/bin/sh", "-c", DUMP_SCRIPT],
+                      "env": superuser_env(t, "beacon"),
+                      "resources": {"requests": {"cpu": "50m", "memory": "64Mi"}, "limits": {"cpu": "500m", "memory": "256Mi"}},
+                      "securityContext": {**CONTAINER_SECURITY, "runAsUser": PG_UID, "runAsGroup": PG_UID},
+                      "volumeMounts": [{"name": "dump", "mountPath": "/dump"}]}
+              upload = {"name": "upload", "image": AWS_CLI, "command": ["/bin/sh", "-c", UPLOAD_SCRIPT],
+                        "env": [{"name": "BUCKET", "value": t.bucket}, key_env,
+                                {"name": "AWS_REGION", "value": REGION}, {"name": "HOME", "value": "/tmp"},
+                                secret_env("AWS_ACCESS_KEY_ID", "beacon-s3", "username"),
+                                secret_env("AWS_SECRET_ACCESS_KEY", "beacon-s3", "attribute.secret")],
+                        "resources": {"requests": {"cpu": "50m", "memory": "128Mi"}, "limits": {"cpu": "500m", "memory": "256Mi"}},
+                        "securityContext": dict(CONTAINER_SECURITY),
+                        "volumeMounts": [{"name": "dump", "mountPath": "/dump", "readOnly": True},
+                                         {"name": "tmp", "mountPath": "/tmp"}]}
+              spec = pod_spec("beacon-dump", [upload], [{"name": "dump", "emptyDir": {"sizeLimit": "1Gi"}},
+                                                        {"name": "tmp", "emptyDir": {"sizeLimit": "64Mi"}}],
+                              restart="Never", init=[dump])
+              return {"metadata": {"labels": pod_labels(t, "beacon-dump")}, "spec": spec}
+
+
+          def nightly_dump(t, suspend):
+              return {"apiVersion": "batch/v1", "kind": "CronJob", "metadata": t.meta("beacon-dump-nightly", "backup"),
+                      "spec": {"schedule": "40 2 * * *", "suspend": suspend, "concurrencyPolicy": "Forbid",
+                               "successfulJobsHistoryLimit": 1, "failedJobsHistoryLimit": 3,
+                               "jobTemplate": {"spec": {"backoffLimit": 2, "activeDeadlineSeconds": 1800,
+                                                        "template": dump_pod(t, {"name": "KEY_PREFIX", "value": "nightly/"})}}}}
+
+
+          OFFBOARD_KEY = "offboard/beacon.dump"
+
+
+          def offboard_dump(t):
+              return {"apiVersion": "batch/v1", "kind": "Job", "metadata": t.meta("beacon-offboard-dump", "backup"),
+                      "spec": {"backoffLimit": 4, "activeDeadlineSeconds": 1800, "template": dump_pod(t, {"name": "KEY", "value": OFFBOARD_KEY})}}
+
+
+          def stack_netpols(t):
+              def pol(name, selector, ingress=None, egress=None):
+                  spec = {"podSelector": selector, "policyTypes": []}
+                  if ingress is not None:
+                      spec["policyTypes"].append("Ingress"); spec["ingress"] = ingress
+                  if egress is not None:
+                      spec["policyTypes"].append("Egress"); spec["egress"] = egress
+                  return {"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
+                          "metadata": t.meta(name, "network-policy"), "spec": spec}
+
+              stack = {"matchExpressions": [{"key": "app", "operator": "In",
+                                             "values": ["beacon-init", "beacon-scheduler", "beacon-scheduler-daily",
+                                                        "beacon-checker", "beacon-notifier", "beacon-dump"]}]}
+              probes = {"matchExpressions": [{"key": "app", "operator": "In",
+                                              "values": ["beacon-checker", "beacon-notifier"]}]}
+              tcp = lambda *ports: [{"port": p, "protocol": "TCP"} for p in ports]
+              yield "netpol-db-from-stack", pol("db-from-stack", {"matchLabels": {"cnpg.io/cluster": DB}},
+                                                ingress=[{"from": [{"podSelector": stack}], "ports": tcp(5432)}])
+              yield "netpol-notifier-from-checker", pol(
+                  "notifier-from-checker", {"matchLabels": {"app": "beacon-notifier"}},
+                  ingress=[{"from": [{"podSelector": {"matchLabels": {"app": "beacon-checker"}}}],
+                            "ports": tcp(8080, 15008)}])
+              # beacon's probe-egress (base-apps/beacon/network-policies.yaml), with the database and the
+              # notifier in this namespace: tenant-supplied URLs reach no private address (beacon §V.5).
+              yield "netpol-probe-egress", pol("probe-egress", probes, egress=[
+                  {"to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
+                           "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}}}],
+                   "ports": [{"port": 53, "protocol": "UDP"}, {"port": 53, "protocol": "TCP"}]},
+                  {"to": [{"podSelector": {"matchLabels": {"cnpg.io/cluster": DB}}}], "ports": tcp(5432)},
+                  {"to": [{"podSelector": {"matchLabels": {"app": "beacon-notifier"}}}], "ports": tcp(15008, 8080)},
+                  {"to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "tracing"}},
+                           "podSelector": {"matchLabels": {"app": "otel-collector"}}}], "ports": tcp(4318)},
+                  {"to": [{"ipBlock": {"cidr": "0.0.0.0/0", "except": [
+                      "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
+                      "172.16.0.0/12", "192.168.0.0/16"]}}]}])
+
+
+          def job_succeeded(obs):
+              return bool(obs) and (obs.get("status", {}).get("succeeded") or 0) >= 1
+
+
+          def observed_image(obs):
+              """The image a workload runs now, so a release reaches it only after its init Job."""
+              spec = (obs or {}).get("spec", {})
+              spec = spec.get("jobTemplate", {}).get("spec", spec)
+              cs = spec.get("template", {}).get("spec", {}).get("containers", [])
+              return cs[0]["image"] if cs else None
+
+
+          def stack(t, observed):
+              """Ordered by what is observed: the init Job once the database is Ready, the workers once
+              their release's init Job succeeded. Anything already composed stays composed."""
+              db_ready = is_ready("Cluster", observed.get("database"))
+              init_key = f"init-{digest8(IMAGES['api'])}"
+              yield "flags", flags_configmap(t)
+              yield "instrumentation", instrumentation(t)
+              for sa in ("beacon-init", "beacon-scheduler", "beacon-checker", "beacon-notifier", "beacon-dump"):
+                  yield f"sa-{sa}", service_account(t, sa)
+              yield "notifier-service", notifier_service(t)
+              yield from stack_netpols(t)
+              if db_ready or init_key in observed:
+                  yield init_key, init_job(t)
+              released = job_succeeded(observed.get(init_key))
+              workers = ("checker", "notifier", "scheduler", "scheduler-daily")
+              if released or any(w in observed for w in workers):
+                  def image(svc, key):
+                      return IMAGES[svc] if released else (observed_image(observed.get(key)) or IMAGES[svc])
+                  replicas = 0 if t.offboard else 1
+                  yield "checker", checker(t, image("checker", "checker"), replicas)
+                  yield "notifier", notifier(t, image("notifier", "notifier"), replicas)
+                  yield "scheduler", scheduler(t, image("scheduler", "scheduler"), False, t.offboard)
+                  yield "scheduler-daily", scheduler(t, image("scheduler", "scheduler-daily"), True, t.offboard)
+              if db_ready or "dump-nightly" in observed:
+                  yield "dump-nightly", nightly_dump(t, t.offboard)
+              if t.offboard and (db_ready or "offboard-dump" in observed):
+                  yield "offboard-dump", offboard_dump(t)
+
+
+          def desired(t, observed):
               yield "namespace", namespace(t)
               yield "quota", quota(t)
               yield "limits", limits(t)
@@ -309,6 +674,7 @@ spec:
               yield "iam-policy", iam_policy(t)
               yield "iam-attachment", iam_attachment(t)
               yield "access-key", access_key(t)
+              yield from stack(t, observed)
 
 
           def condition(obj, kind="Ready"):
@@ -328,13 +694,21 @@ spec:
                   return condition(obs)
               if kind in ("SecretStore", "ExternalSecret", "PushSecret", "Usage") or "upbound.io" in obs.get("apiVersion", ""):
                   return condition(obs)
-              return True  # ResourceQuota, LimitRange, NetworkPolicy, ServiceAccount, Password: existing is ready
+              if kind == "Job":
+                  return job_succeeded(obs)
+              if kind == "Deployment":
+                  want = obs.get("spec", {}).get("replicas", 1)
+                  return want == 0 or (obs.get("status", {}).get("availableReplicas") or 0) >= want
+              return True  # quota, LimitRange, NetworkPolicy, ServiceAccount, Password, ConfigMap, CronJob, ...
 
 
           def compose(req, rsp):
               t = Tenant(resource.struct_to_dict(req.observed.composite.resource))
               observed = {name: resource.struct_to_dict(r.resource) for name, r in req.observed.resources.items()}
-              for name, obj in desired(t):
+              # The delete guard (xtenant-guard) reads this: only a dump the offboard Job verified counts.
+              if t.offboard and job_succeeded(observed.get("offboard-dump")):
+                  resource.update(rsp.desired.composite, {"status": {"backup": f"s3://{t.bucket}/{OFFBOARD_KEY}"}})
+              for name, obj in desired(t, observed):
                   resource.update(rsp.desired.resources[name], obj)
                   rsp.desired.resources[name].ready = (
                       fnv1.READY_TRUE if is_ready(obj["kind"], observed.get(name)) else fnv1.READY_FALSE)

@@ -4,7 +4,7 @@
 
 `test_xtenant_render.py` renders every XTenant with the pinned `crossplane` CLI and
 function-python: the fixtures in `xtenant/` and every tenant committed in
-`base-apps/beacon-tenants/`. Each render must match its golden (`xtenant/expected-<case>.yaml`),
+`base-apps/beacon-tenants/`. Each render must match its golden (`xtenant/<case>/expected.yaml`; cases `fresh`, `running`, `offboarding`, each with optional observed state in `observed.yaml`),
 keep the tenant's Namespace, CNPG Cluster and Bucket under the names the XR implies, and put
 every namespaced object in `tenant-<slug>`. CI's `composition-validate` job runs it.
 

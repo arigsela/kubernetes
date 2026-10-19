@@ -15,6 +15,7 @@ sources:
   - base-apps/crossplane-compositions/composition-tenant.yaml
   - base-apps/crossplane-compositions/composition-rbac.yaml
   - base-apps/admission-policies/xtenant-guard.yaml
+  - base-apps/beacon/jobs.yaml
   - scripts/provision-beacon-tenants-vault.sh
   - tests/composition/test_xtenant_render.py
   - tests/beacon/test_tenants.py
@@ -51,9 +52,15 @@ composes, for each one:
 | ESO `Password` generators → Secret `beacon-db-secrets` (created once) | `tenant-<slug>` |
 | PushSecret → Vault `k8s-secrets/tenants/tenant-<slug>/{db,signing,api}` | `tenant-<slug>` |
 | S3 bucket `beacon-tenant-<slug>-<first 8 hex of tenantId>` (Orphan), IAM user + policy + key → Secret `beacon-s3` | AWS |
+| beacon's own stack, at the release `base-apps/beacon` runs: `beacon-scheduler` (+ `-daily`) CronJobs, `beacon-checker`, `beacon-notifier` (+ Service), flags (all off), an OTel `Instrumentation` | `tenant-<slug>` |
+| Job `beacon-init-<api digest>`: roles (as the CNPG superuser), migrations, the tenant's own `tenants` row | `tenant-<slug>` |
+| `probe-egress` (beacon's, with this namespace's database and notifier), checker → notifier, stack → database | `tenant-<slug>` |
+| CronJob `beacon-dump-nightly`: `pg_dump` → `s3://<bucket>/nightly/` (kept 14 days), checked before and after the upload | `tenant-<slug>` |
 
-The tenant's own scheduler, checker and notifier on that database come with beacon §T.46,
-and beacon-api's route to it with beacon §T.45.
+The stack starts in order, from what the composition observes: the init Job once the database
+is Ready, the workers once that release's init Job succeeded. A promotion (`base-apps/beacon/runbook.md`)
+moves every tenant: a new init Job migrates its database first, and the workers keep their old
+images until it succeeds. beacon-api's route to the tenant's database comes with beacon §T.45.
 
 ## Safety
 
@@ -65,7 +72,7 @@ and beacon-api's route to it with beacon §T.45.
   keeps the tenant row as a tombstone) and the bucket name carries the tenant id (beacon §V.49).
 - **One Composition renders every tenant**, and a change reaches all of them at once. CI renders
   every committed XTenant and each fixture with the pinned `crossplane` CLI and function-python
-  and compares it with `tests/composition/xtenant/expected-*.yaml`; a Namespace, CNPG Cluster or
+  and compares it with `tests/composition/xtenant/<case>/expected.yaml`; a Namespace, CNPG Cluster or
   Bucket that disappears or is renamed fails the build (beacon §V.50).
 - **Vault**: one role for every tenant, `beacon-tenant` (SA `eso-tenant` in `tenant-*`), reaching
   only `k8s-secrets/tenants/<its namespace>/*`. Provisioned once by
@@ -82,7 +89,9 @@ At most 2 enterprise tenants while beacon runs on the homelab (beacon §V.51). E
 
 ## Known limits
 
-- The database is one instance on local-path storage. Nightly `pg_dump`s to the bucket
-  (beacon §T.46) are the backup; a node loss loses at most a day.
+- The database is one instance on local-path storage. Nightly `pg_dump`s to the bucket are the
+  backup; a node loss loses at most a day. Channel secrets in a dump are sealed with the
+  tenant's signing key, which offboarding deletes from Vault: a restored dump keeps its monitors
+  and history, but its webhook channels need their secrets again.
 - A new namespace receives the `ecr-registry` pull secret on the next `ecr-auth` run (≤ 15 min),
   so the tenant's first image pulls may back off for a while.

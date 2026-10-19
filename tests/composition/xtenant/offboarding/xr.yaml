@@ -1,4 +1,4 @@
-# tests/composition/xtenant/xr-offboarding.yaml — a tenant being offboarded (beacon §T.27 render case)
+# a tenant being offboarded whose dump Job verified the dump: workers at 0, status.backup set
 apiVersion: platform.arigsela.com/v1alpha1
 kind: XTenant
 metadata:

@@ -1,0 +1,16 @@
+# Observed state: running (database Ready, init Job succeeded) and the offboard dump Job done.
+- name: database
+  apiVersion: postgresql.cnpg.io/v1
+  kind: Cluster
+  metadataName: beacon-db
+  status: {conditions: [{type: Ready, status: "True"}]}
+- name: "{init}"
+  apiVersion: batch/v1
+  kind: Job
+  metadataName: "{init_job}"
+  status: {succeeded: 1}
+- name: offboard-dump
+  apiVersion: batch/v1
+  kind: Job
+  metadataName: beacon-offboard-dump
+  status: {succeeded: 1}

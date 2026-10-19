@@ -41,8 +41,9 @@ commands below only inspect.
 ### Offboard a tenant (beacon §T.27)
 Two PRs, never one: the first sets `spec.offboard: true` and drops the `Prune=false,Delete=false`
 annotation; the tenant's workers stop, its database is dumped to its bucket under `offboard/`,
-verified, and the XR's `status.backup` is set. Only then does the second PR, deleting the file,
-get past `xtenant-guard`. The offboarding dump Job lands with beacon §T.46.
+verified, and the XR's `status.backup` is set (Job `beacon-offboard-dump` in `tenant-<slug>`).
+Only then does the second PR, deleting the file, get past `xtenant-guard`. The full procedure
+comes with beacon §T.27.
 
 ## Failure modes
 
@@ -56,6 +57,17 @@ get past `xtenant-guard`. The offboarding dump Job lands with beacon §T.46.
 the Namespace and SecretStore first (a SecretStore error `invalid role name` means the Vault
 script was never run), then the generated secret, then the CNPG Cluster (a few minutes), then
 the AWS resources (the bucket and IAM user take about a minute each).
+
+### Symptom: the tenant's checker/notifier never appear
+They are composed only after Job `beacon-init-<digest>` succeeded:
+`kubectl -n tenant-<slug> logs job/beacon-init-<digest> --all-containers`. Its first container
+waits for the database's superuser secret (the CNPG Cluster must be Ready); `migrate` needs the
+roles; `init-tenant-db` needs a beacon-api that has the command (v0.3.0 or later).
+
+### Symptom: a nightly dump failed
+`kubectl -n tenant-<slug> logs job/<beacon-dump-nightly-…> --all-containers`. `pg-dump` stops
+if the dump does not list (`pg_restore --list`); `upload` stops if the object is missing or
+empty after the upload. A bucket/IAM problem shows as `AccessDenied` in `upload`.
 
 ### Symptom: a namespace `tenant-<slug>` is stuck Terminating
 The PushSecret's finalizer deletes the tenant's Vault keys and needs its SecretStore and

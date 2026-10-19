@@ -1,4 +1,4 @@
-# tests/composition/xtenant/xr-demo.yaml — a freshly onboarded tenant (beacon §T.25 render case)
+# a tenant just merged: nothing composed is observed yet, so only what needs nothing else is emitted
 apiVersion: platform.arigsela.com/v1alpha1
 kind: XTenant
 metadata:
