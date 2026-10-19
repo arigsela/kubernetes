@@ -4,7 +4,8 @@
 # Creates the Vault side of base-apps/substrate/, base-apps/postgresql/init-{kagent-v1,substrate}-db.yaml
 # and base-apps/kagent/kagent-postgres-external-secret.yaml:
 #
-#   k8s-secrets/kagent-db     EXISTING key (kagent 0.10's). Adds v1-db-name, v1-user, v1-password.
+#   k8s-secrets/kagent-db     EXISTING key (kagent 0.10's). Adds v1-db-name, v1-user, v1-password,
+#                             v1-readwrite-user, v1-readwrite-password (kagent >= alpha14, kagent#3160).
 #                             The 0.10 properties are never touched. No new role: the existing
 #                             `kagent-db` role/policy already reads this key from kagent + postgresql.
 #   k8s-secrets/substrate-db  db-name, owner-user, owner-password, readwrite-user, readwrite-password
@@ -246,6 +247,12 @@ have "$KAGENT_PATH" v1-user || pend v1-user "$(literal kv1user kagent_v1_user)" 
 if ! have "$KAGENT_PATH" v1-password; then
   gen_password "$WORK/kagent-v1-password"
   pend v1-password "$WORK/kagent-v1-password" "<64 hex, generated, redacted>"
+fi
+# kagent ≥ 1.0.0-alpha14 (kagent#3160): a second, read/write login beside the owner login.
+have "$KAGENT_PATH" v1-readwrite-user || pend v1-readwrite-user "$(literal kv1rw kagent_v1_readwrite_user)" "kagent_v1_readwrite_user"
+if ! have "$KAGENT_PATH" v1-readwrite-password; then
+  gen_password "$WORK/kagent-v1-readwrite-password"
+  pend v1-readwrite-password "$WORK/kagent-v1-readwrite-password" "<64 hex, generated, redacted>"
 fi
 flush "$KAGENT_PATH" existing
 

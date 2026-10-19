@@ -45,7 +45,7 @@ Three Jobs create databases on the plain instance, each with the root user from 
 
 | Job | Creates | Credential Secret (Vault key) |
 |---|---|---|
-| `init-kagent-v1-db` | `kagent_v1`, role `kagent_owner`, schema `kagent`, pgvector in `extensions` (kagent 1.0) | `kagent-v1-db-credentials` (`kagent-db`, `v1-*`) |
+| `init-kagent-v1-db` | `kagent_v1`, roles `kagent_owner` (owner login) and `kagent_readwrite` (read/write login), schema `kagent`, pgvector in `extensions` (kagent 1.0) | `kagent-v1-db-credentials` (`kagent-db`, `v1-*`) |
 | `init-substrate-db` | `substrate`, its roles and schema (Agent Substrate) | `substrate-db-credentials` (`substrate-db`) |
 | `init-kagent-db` | the `kagent` owner role, and the database only if missing (the 0.10 archive) | `kagent-db-credentials` (`kagent-db`) |
 

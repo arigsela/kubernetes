@@ -56,6 +56,8 @@ sources:
   - base-apps/kagent/eso-implementer-mcp-serviceaccount.yaml
   - base-apps/kagent/implementer-mcp-external-secret.yaml
   - base-apps/kagent/kagent-postgres-external-secret.yaml
+  - base-apps/kagent/kagent-postgres-owner-external-secret.yaml
+  - base-apps/kagent/kagent-postgres-readwrite-external-secret.yaml
   - base-apps/kagent/kagent-anthropic-external-secret.yaml
   - base-apps/kagent/kagent-anthropic-secret-store.yaml
   - base-apps/kagent/eso-kagent-anthropic-serviceaccount.yaml
@@ -279,7 +281,9 @@ destroyed monolithic `kagent` key.
 | `agent-docs-github-mcp-token` | `vault-agent-docs-mcp` | `eso-agent-docs-mcp` | `kagent-agent-docs-mcp` | `kagent-agent-docs-mcp` (`github-token`) |
 | `brave-search-mcp-api-key` | `vault-brave-search-mcp` | `eso-brave-search-mcp` | `kagent-brave-search-mcp` | `brave-search-mcp` (`api-key`); `scripts/provision-brave-search-vault.sh` |
 | `backstage-mcp-token` | `vault-backstage-mcp` | `eso-backstage-mcp` | `backstage-mcp` | `kagent-backstage-mcp` (`token`) |
-| `kagent-postgres` | `vault-kagent-db` | `eso-kagent-db` | `kagent-db` | `kagent-db` (`v1-user`, `v1-password`, `v1-db-name`) |
+| `kagent-postgres` (retired by §T.128) | `vault-kagent-db` | `eso-kagent-db` | `kagent-db` | `kagent-db` (`v1-user`, `v1-password`, `v1-db-name`) |
+| `kagent-postgres-owner` | `vault-kagent-db` | `eso-kagent-db` | `kagent-db` | `kagent-db` (`v1-user`, `v1-password`, `v1-db-name`) |
+| `kagent-postgres-readwrite` | `vault-kagent-db` | `eso-kagent-db` | `kagent-db` | `kagent-db` (`v1-readwrite-user`, `v1-readwrite-password`, `v1-db-name`) |
 | `kagent-anthropic` (`kagent-anthropic-secrets`) | `vault-kagent-anthropic` | `eso-kagent-anthropic` | `kagent-anthropic` | `kagent-anthropic` (`anthropic-api-key`) |
 
 Each Vault policy grants `read` on exactly one path (`k8s-secrets/data/<key>`). Substrate's CA
@@ -289,10 +293,13 @@ pools and database credentials are Substrate's (Vault keys `substrate-cas`, `sub
 **Database.** kagent 1.0 uses database **`kagent_v1`** on the shared pgvector Postgres
 (`postgresql.postgresql.svc.cluster.local:5432`, the plain Deployment, not CNPG). The controller
 neither creates its database nor installs pgvector; `base-apps/postgresql/init-kagent-v1-db.yaml`
-does: database `kagent_v1`, NOLOGIN role `kagent_owner` with the login user (Vault
-`kagent-db`/`v1-user`) as a NOINHERIT member, schema `kagent` owned by `kagent_owner`, and pgvector
-in schema `extensions`. The controller runs its migrations as `kagent_owner` in schema `kagent` and
-refuses to start without pgvector. It reads `kagent-postgres` once, at startup. Sessions, tasks,
+does: database `kagent_v1`, NOLOGIN roles `kagent_owner` (migrates, owns the schema) and
+`kagent_readwrite` (serves every runtime query, cannot change the schema), each with a NOINHERIT
+login (`v1-user`, `v1-readwrite-user`, Vault `kagent-db`), schema `kagent` owned by `kagent_owner`,
+and pgvector in schema `extensions`. The controller runs its migrations as `kagent_owner` in schema
+`kagent` and refuses to start without pgvector. kagent 1.0 (alpha14+) reads two connection strings,
+`kagent-postgres-owner` and `kagent-postgres-readwrite`; the alpha11 controller still reads
+`kagent-postgres` once, at startup, until §T.128. Sessions, tasks,
 events (A2A protobuf), approvals and memory all live there; that is what the agent audit reads
 (`--source v1`).
 

@@ -15,8 +15,9 @@ metadata:
   name: init-agent-audit-web-role
   namespace: postgresql
   annotations:
-    # After init-kagent-db (which creates the kagent database this role reads).
-    argocd.argoproj.io/sync-wave: "1"
+    # After init-kagent-db AND init-kagent-v1-db, wave 1 (the kagent_v1 grants below need the
+    # database and its schema to exist; in the same wave, a clean-database sync could skip them).
+    argocd.argoproj.io/sync-wave: "2"
     # Sync hook, not a desired-state resource — same rationale as
     # init-kagent-db: a self-deleting Job in desired state leaves the app
     # permanently OutOfSync/Missing between syncs.

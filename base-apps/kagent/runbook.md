@@ -306,7 +306,8 @@ reading a per-consumer Vault key. Rotate at that consumer's path:
 |---|---|---|
 | `agent-docs-github-mcp-token` | `vault-agent-docs-mcp` | `k8s-secrets/kagent-agent-docs-mcp` (`github-token`) |
 | `backstage-mcp-token` | `vault-backstage-mcp` | `k8s-secrets/kagent-backstage-mcp` (`token`) |
-| `kagent-postgres` | `vault-kagent-db` | `k8s-secrets/kagent-db` (`v1-password`; also see the postgresql app below) |
+| `kagent-postgres-owner` | `vault-kagent-db` | `k8s-secrets/kagent-db` (`v1-password`; also see the postgresql app below) |
+| `kagent-postgres-readwrite` | `vault-kagent-db` | `k8s-secrets/kagent-db` (`v1-readwrite-password`; also see the postgresql app below) |
 | `kagent-anthropic` (`kagent-anthropic-secrets`) | `vault-kagent-anthropic` | `k8s-secrets/kagent-anthropic` (`anthropic-api-key`) |
 
 Update the value in Vault (`vault kv patch`, never in git). ESO picks it up within the 1h
