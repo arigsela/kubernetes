@@ -112,9 +112,9 @@ endpoint itself.
 - **`kagent-crds`** (`base-apps/kagent-crds.yaml`, wave -1): chart `kagent-crds` 1.0.0-alpha11
   from `oci://ghcr.io/kagent-dev/kagent/helm`. It installs the `api.kagent.dev` CRDs (Agent,
   AgentTemplate, Harness, ModelConfig, ModelProviderConfig, RemoteMCPServer, SandboxTemplate) and,
-  through its kmcp subchart, `mcpservers.kagent.dev` (v1alpha1).
+  until §T.128 lands, `mcpservers.kagent.dev` from the kmcp subchart, which nothing uses since §T.126.
 - **`kagent`** (`base-apps/kagent.yaml`, wave 0): chart `kagent` 1.0.0-alpha11, Helm values only
-  (no `path:`, so no directory-exclude concern). It renders the controller, UI, kmcp controller,
+  (no `path:`, so no directory-exclude concern). It renders the controller, UI,
   the `kagent-tools` tool server, the `kagent-builtin-prompts` ConfigMap, the RemoteMCPServers
   `kagent-tool-server` and `kagent-api`, the WorkerPool `kagent-default` and the chart's
   `default-model-config`. It renders **no agents**: kagent 1.0 ships none bundled. Notable values,
@@ -136,7 +136,7 @@ endpoint itself.
     the UI.
   - `kagent-tools.rbac.create: false` (see *Tool server RBAC*), `grafana-mcp.enabled: false`, and
     OpenTelemetry traces and logs to Coroot (`otel.exporter.otlp`, gRPC 4317; metrics off).
-  - Every image (controller, default agent image, UI, kmcp, tools, worker) is pinned by digest
+  - Every image (controller, default agent image, UI, tools, worker) is pinned by digest
     through its `tag`, because the chart's image helpers take no digest key. Renovate can't see
     these (Helm `valuesObject`).
 - **`kagent-secrets`** (`base-apps/kagent-secrets.yaml`, wave -1, `path: base-apps/kagent`,
@@ -238,14 +238,14 @@ In v1alpha3 an AgentTemplate MCP binding accepts only a same-namespace `RemoteMC
 
 | RemoteMCPServer | Points at | Tools bound |
 |---|---|---|
-| `agent-docs` (`agent-docs-mcp-remote.yaml`) | `http://agent-docs-mcp.kagent:3000/mcp`, the read-only GitHub MCP server that the kmcp `MCPServer` `agent-docs-mcp` deploys (`ghcr.io/github/github-mcp-server`, `--read-only --toolsets repos`, token from Secret `agent-docs-github-mcp-token`) | `get_file_contents`, `search_code` |
-| `brave-search` (`brave-search-mcp-remote.yaml`) | `http://brave-search-mcp.kagent:3000/mcp`, the official Brave Search MCP server that the kmcp `MCPServer` `brave-search-mcp` deploys (`docker.io/mcp/brave-search`, digest-pinned; key from Secret `brave-search-mcp-api-key`; only 2 of its 8 tools enabled). Web results are untrusted text, so it is bound to read-class agents only, never to the operator agents | `brave_web_search`, `brave_news_search` |
+| `agent-docs` (`agent-docs-mcp-remote.yaml`) | `http://agent-docs-mcp.kagent:3000/mcp`, the read-only GitHub MCP server behind the plain Deployment `agent-docs-mcp` (`agent-docs-mcp.yaml`: agentgateway 0.9.0 wrapping the stdio server, served on :3000) (`ghcr.io/github/github-mcp-server`, `--read-only --toolsets repos`, token from Secret `agent-docs-github-mcp-token`) | `get_file_contents`, `search_code` |
+| `brave-search` (`brave-search-mcp-remote.yaml`) | `http://brave-search-mcp.kagent:3000/mcp`, the official Brave Search MCP server behind the plain Deployment `brave-search-mcp` (`brave-search-mcp.yaml`: agentgateway 0.9.0 wrapping the stdio server, served on :3000) (`docker.io/mcp/brave-search`, digest-pinned; key from Secret `brave-search-mcp-api-key`; only 2 of its 8 tools enabled). Web results are untrusted text, so it is bound to read-class agents only, never to the operator agents | `brave_web_search`, `brave_news_search` |
 | `backstage-catalog` (`backstage-catalog-mcp.yaml`) | Backstage's MCP actions endpoint, `http://backstage.backstage.svc.cluster.local/api/mcp-actions/v1/catalog`; the `Authorization` header comes from Secret `backstage-mcp-token` and is injected by Substrate's egress gateway | `get-catalog-entity` |
 | `kagent-tool-server` (chart) | `http://kagent-tools.kagent:8084/mcp`, the `kagent-tools` Deployment | read: `k8s_get_resources`, `k8s_get_resource_yaml`, `k8s_get_pod_logs`, `k8s_describe_resource`, `k8s_get_events`, `k8s_get_cluster_configuration`, `k8s_get_available_api_resources`, `k8s_check_service_connectivity`; the admin agents add the write/destructive tools in a gated binding |
 | `implementer` (`implementer-mcp-remote.yaml`) | `http://implementer-mcp.kagent:3000/mcp`, a second GitHub MCP server (`implementer-mcp.yaml`) under GitHub App auth (Secret `implementer-github-app`, Vault `implementer-github-app`), `--tools` naming 11 tools and no toolset; merge, update (close/retarget), review and delete tools are never loaded | the 7 read and 4 propose tools listed in `tests/implementer/conftest.py` |
 | `kagent-api` (chart) | the controller's own `/mcp` | none |
 
-The kmcp `MCPServer` only deploys a server and its Service; it registers no tools with agents.
+A server Deployment registers no tools with agents; the `RemoteMCPServer` that points at its Service does.
 An agent initializes every `RemoteMCPServer` its template binds at the start of each run and
 fails the run if one does not answer (`agent run failed: … failed to init MCP session … Service
 Unavailable`). A tool server that is restarting therefore fails every agent bound to it, not only

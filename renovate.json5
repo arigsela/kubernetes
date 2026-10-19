@@ -165,6 +165,13 @@
       automerge: false,
     },
     {
+      description: 'The agentgateway adapter the three stdio MCP servers run under (§T.126) moves in one PR: one binary, three Deployments.',
+      matchManagers: ['kubernetes'],
+      matchPackageNames: ['ghcr.io/agentgateway/agentgateway'],
+      matchFileNames: ['base-apps/kagent/agent-docs-mcp.yaml', 'base-apps/kagent/brave-search-mcp.yaml', 'base-apps/kagent/implementer-mcp.yaml'],
+      groupName: 'mcp-adapter',
+    },
+    {
       description: 'An alpha/beta kagent or Substrate bump is a clean-database migration, not an upgrade (every kagent 1.0 alpha so far required one).',
       matchManagers: ['argocd'],
       matchFileNames: [
