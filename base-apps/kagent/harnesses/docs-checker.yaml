@@ -1,0 +1,49 @@
+# Harness = HOW an agent runs (kagent 1.0, api.kagent.dev/v1alpha3). See kagent-memory.yaml.
+#
+# docs-checker: the one `byo` runtime (SPEC §V.101, §T.131). A LangGraph app that finds lines in
+# this repo's docs that no longer match the manifests they describe, built in
+# arigsela/claude-agents docs-checker/ to kagent's BYO contract: A2A v1 over gRPC on the runtime
+# port, GET /readyz on 8081, task state in the controller's TaskStore. Written for kagent
+# 1.0.0-alpha14 (§T.128): the image reads KAGENT_CONFIG_JSON as alpha14's ADKConfig and the
+# `kagent.runtime.v1` TaskStore, and refuses to start on alpha11's bare agent config.
+#
+# A byo runtime need not honour per-binding tool selection or requireApproval, so the guardrail
+# is around it, not in it: admission (agent-capability-runtime) admits this Harness only because
+# its image EQUALS an entry of the taxonomy's byo-images, and CI (validate-agent-capability.py,
+# invariant 7) admits an Agent on it only with a class `read` template that binds only the
+# taxonomy's read-only-servers (../agent-templates/docs-checker.yaml). Its one Agent is
+# ../agents/docs-checker.yaml.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Harness
+metadata:
+  name: docs-checker
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: docs-checker
+spec:
+  byo: {}
+  workload:
+    # The ECR repository `docs-checker` (terraform/roots/asela-cluster/ecr.tf), pinned by digest.
+    # This string must EQUAL the taxonomy's byo-images entry: one sed pins both (admission-policies
+    # runbook, "Pin a byo image digest"). REPLACE_WITH_DIGEST is the pre-push placeholder: the CRD
+    # rejects it and the validator fails on it, so nothing deploys until the image is pushed and
+    # pinned. atelet pulls it itself with the ECR credential provider (base-apps/substrate.yaml,
+    # §T.129); the cluster's `ecr-registry` pull secret does not reach Substrate.
+    image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker@sha256:REPLACE_WITH_DIGEST
+    # A byo Harness must name its entrypoint (CRD rule). This is the console script in the image's
+    # uv-managed venv (docs-checker README, "Container").
+    command:
+      - /app/.venv/bin/docs-checker
+  # No env. A Harness may carry literal values only (alpha14 has no secret-backed env), and the
+  # code defaults are the reviewed settings: the one repository arigsela/kubernetes, the per-node
+  # models (Haiku 5.5, Sonnet 5.5 to escalate), the run budgets (docs-checker README,
+  # "Configuration"). Secrets never enter the sandbox: the model key and any Secret-backed MCP
+  # header hold a placeholder, and Substrate's egress gateway injects the real value.
+  substrate:
+    workerPoolRef:
+      name: kagent-default
+    snapshotPolicy:
+      # MUST match the Substrate install's RustFS bucket: see kagent-memory.yaml. On alpha14 a
+      # snapshot keeps only /data, where docs-checker keeps its LangGraph checkpoints.
+      location: s3://ate-snapshots/kagent/

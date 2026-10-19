@@ -1,0 +1,40 @@
+# docs-checker — the stale-docs checker, the one agent on a `byo` runtime (SPEC §V.101, §T.131).
+#
+# kagent 1.0 (api.kagent.dev/v1alpha3) splits an agent in three. This Agent only binds:
+#   WHAT  AgentTemplate docs-checker (../agent-templates/docs-checker.yaml): model, the agent-docs
+#         binding, and the capability.homelab/class label (`read`)
+#   HOW   Harness docs-checker (../harnesses/docs-checker.yaml): the byo image by digest, Substrate
+# Written for kagent 1.0.0-alpha14 (§T.128): the template is referenced as spec.template.ref
+# (alpha11's spec.templateRef is gone). An inline spec.template.inline is denied at admission and
+# in CI: it would bypass the checks on AgentTemplates. It must live in namespace `kagent`, where
+# the read-only servers are defined and proved (invariant 7).
+#
+# Ask it with text (`check all`, `check <path>[, <path>...]`, optionally `at <ref>`):
+#   scripts/ask-hk --agent kagent/docs-checker "check base-apps/vault/docs.md"
+# A weekly trigger that keeps its memory snapshot is a separate change (docs-checker design §10).
+#
+# The Backstage annotations live here, on the object users chat with.
+apiVersion: api.kagent.dev/v1alpha3
+kind: Agent
+metadata:
+  name: docs-checker
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/managed-by: kagent
+    app.kubernetes.io/name: docs-checker
+    app: kagent
+    arigsela.com/idp-managed: "true"
+  annotations:
+    terasky.backstage.io/add-to-catalog: "true"
+    terasky.backstage.io/component-type: kagent-agent
+    # The entity's Kubernetes tab: the Agent, its AgentTemplate and its Harness carry this label.
+    terasky.backstage.io/kubernetes-label-selector: app.kubernetes.io/name=docs-checker
+    backstage.io/managed-by-location: url:https://github.com/arigsela/kubernetes/blob/main/base-apps/kagent/agents/docs-checker.yaml
+    backstage.io/owner: group:default/platform-engineering
+spec:
+  template:
+    ref:
+      name: docs-checker
+  harnessRef:
+    name: docs-checker

@@ -1,0 +1,54 @@
+# docs-checker — finds lines in this repo's docs that no longer match the manifests they
+# describe, and proposes the corrected line. Read-only: it reports, it never edits.
+#
+# AgentTemplate = WHAT (api.kagent.dev/v1alpha3); its Agent (../agents/docs-checker.yaml) runs it
+# on ../harnesses/docs-checker.yaml, the one `byo` Harness (a LangGraph app built in
+# arigsela/claude-agents docs-checker/). For a byo runtime, kagent compiles this template into
+# KAGENT_CONFIG_JSON (model, MCP bindings with their URLs and tool filters) and the runtime
+# decides what to do with it, so the conditions below are what keep it read-only (SPEC §V.101,
+# validate-agent-capability.py invariant 7):
+#   * class `read`, and every tool entry is an MCP binding of a RemoteMCPServer in the taxonomy's
+#     read-only-servers (only `agent-docs`), binding only `read` tools, with no subAgent;
+#   * egress opens per ORIGIN, not per tool, so the runtime can call every tool agent-docs has,
+#     whatever the list below says. That is why agent-docs must be read-only on the server side:
+#     github-mcp-server --read-only --toolsets repos (agent-docs-mcp.yaml), proved in
+#     tests/agent-capability. The image also refuses any tool outside these four.
+#
+# No systemPrompt: the runtime does not read the compiled instruction. Its prompts are per graph
+# node and ship in the image (docs-checker/src/docs_checker/prompts.py).
+#
+# Contract: templates/agent-identity/README.md (identity) and the capability taxonomy at
+# base-apps/admission-policies/agent-capability-taxonomy.yaml.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: docs-checker
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: docs-checker
+    arigsela.com/idp-managed: "true"
+    # Binds only read-classified tools of a server that is read-only on the server side. A byo
+    # Agent on any other class fails CI (invariant 7).
+    capability.homelab/class: read
+spec:
+  description: Finds lines in the arigsela/kubernetes docs that no longer match the manifests they describe, and proposes the corrected line. Read-only.
+  # The model the template compiles to and, through the ModelConfig's Secret kagent-anthropic, the
+  # key Substrate's egress gateway injects into the runtime's Anthropic calls. The runtime picks
+  # the model per graph node itself (Haiku 5.5, escalating to Sonnet 5.5; only those two are
+  # allowed in its code) and reads this config's prompt caching settings.
+  modelConfig:
+    name: anthropic-claude-sonnet-5-5
+  tools:
+    # The repo at one commit per run: read a file, list and read the commits that touched it, and
+    # search code (bound, but the runtime leaves its search fallback off by default: GitHub does
+    # not index this repo). Every tool here is classified `read` in the taxonomy.
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: agent-docs
+        tools:
+          - get_file_contents
+          - search_code
+          - list_commits
+          - get_commit

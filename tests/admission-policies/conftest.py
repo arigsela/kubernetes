@@ -223,10 +223,34 @@ def _wait(cond, timeout, what, soft=False):
         raise AssertionError(f"timed out waiting for {what}")
 
 
+DIGEST_PLACEHOLDER = "REPLACE_WITH_DIGEST"
+
+
+def unpinned_images(paths):
+    """The files among `paths` whose workload image still ends in the pre-push placeholder digest
+    (a byo image not pushed yet, SPEC §V.101). Read from the parsed image, never the text: the
+    comments that explain the placeholder name it too, and they stay after the pin."""
+    def image(doc):
+        return str(((doc.get("spec") or {}).get("workload") or {}).get("image") or "")
+    return [p for p in paths
+            if any(image(d).endswith("@sha256:" + DIGEST_PLACEHOLDER)
+                   for d in yaml.safe_load_all(p.read_text()) if d)]
+
+
 @pytest.fixture(scope="session")
 def cluster():
     if not docker_available():
         pytest.skip("needs a running Docker daemon for the real-API-server harness")
+    # Every real kagent object is created below, and the CRD rejects a placeholder digest with a
+    # bare pattern error, so the whole session would error on it anyway. Fail first, by name, and
+    # without booting a cluster: this is the agreed red-until-pinned gate, not a harness fault.
+    unpinned = unpinned_images(real_kagent_files())
+    if unpinned:
+        pytest.fail(f"{', '.join(str(p.relative_to(REPO)) for p in unpinned)}: the image still "
+                    f"carries the placeholder {DIGEST_PLACEHOLDER}. It is not pushed yet, the CRD "
+                    f"rejects it, and every test here needs the real kagent objects. Push the "
+                    f"image and pin its digest: admission-policies runbook, 'Pin a byo image "
+                    f"digest'.", pytrace=False)
     _docker("rm", "-fv", NAME)
     r = _docker("run", "-d", "--name", NAME, "--privileged", K3S_IMAGE, "server",
                 "--disable", "traefik", "--disable", "metrics-server",

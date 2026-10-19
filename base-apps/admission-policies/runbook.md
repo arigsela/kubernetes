@@ -20,6 +20,7 @@ sources:
   - scripts/gen-agent-audit-cronjob.py
   - scripts/validate-agent-capability.py
   - tests/admission-policies/test_admission_policies.py
+  - base-apps/kagent/harnesses/docs-checker.yaml
 ---
 
 # admission-policies — Runbook
@@ -166,19 +167,20 @@ Agent syncs, so in practice land the policy on its own before the byo change. Th
 A `byo` runtime is admitted only on an image listed **exactly** in `byo-images`
 (`agent-capability-taxonomy.yaml`, SPEC §V.101). Until the docs-checker image is pushed, its
 entry ends in `@sha256:REPLACE_WITH_DIGEST`: the CRD rejects that, and
-`scripts/validate-agent-capability.py` fails on it, so CI is red and nothing deploys on it.
+`scripts/validate-agent-capability.py` fails on it, so CI is red and nothing deploys on it. The
+admission suite (`tests/admission-policies`) creates every real kagent object, the docs-checker
+Harness included, so until the pin its whole session fails at setup, naming the placeholder.
 1. Build and push the image (`arigsela/claude-agents` `docs-checker/`) to
    `852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker`, then read its digest:
    `aws ecr describe-images --region us-east-2 --repository-name docs-checker --query 'imageDetails[].[imageDigest,imageTags]'`.
 2. Put the digest in the image string in the taxonomy, the good fixture and the docs-checker
-   Harness once it exists (`test_byo_fixture_images_are_listed` and the validator check that
-   they agree):
+   Harness (`test_byo_fixture_images_are_listed` and the validator check that they agree):
    ```bash
    D=<64 hex chars, without the sha256: prefix>
    sed -i '' "s/docs-checker@sha256:REPLACE_WITH_DIGEST/docs-checker@sha256:$D/" \
      base-apps/admission-policies/agent-capability-taxonomy.yaml \
      tests/admission-policies/fixtures/agent-capability/good/good-byo-docs-checker.yaml \
-     base-apps/kagent/harnesses/<the docs-checker Harness>.yaml
+     base-apps/kagent/harnesses/docs-checker.yaml
    ```
 3. Regenerate what embeds the taxonomy, then validate:
    ```bash
