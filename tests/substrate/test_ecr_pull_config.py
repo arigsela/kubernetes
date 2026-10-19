@@ -8,6 +8,7 @@ rules before Argo does. They also pin the two security properties the spike foun
 """
 import posixpath
 import re
+import unicodedata
 
 from conftest import (CONTAINER_BIN_DIR, PLAYBOOK, SCRIPT, TERRAFORM, playbook_vars, provider_config,
                       provider_env, rendered, substrate_app, substrate_values, the_provider)
@@ -36,6 +37,17 @@ SDK_CREDENTIAL_OR_ENDPOINT = {"AWS_ACCESS_KEY_ID", "AWS_ACCESS_KEY", "AWS_SECRET
                               "AWS_PROFILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_CONFIG_FILE",
                               "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_ROLE_ARN",
                               "AWS_CONTAINER_CREDENTIALS_FULL_URI", "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"}
+# The two the config sets on purpose: the key comes only from this file, under this profile.
+SET_ON_PURPOSE = {"AWS_SHARED_CREDENTIALS_FILE", "AWS_PROFILE"}
+# Blanked whether or not the chart passes them today: keys and endpoint (rustfs's, inherited now), and
+# the web-identity/config-file routes that would otherwise rank above or beside the shared credentials
+# file (aws-sdk-go-v2 config/resolve_credentials.go: env keys, then web identity, then the profile).
+ALWAYS_BLANK = {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_ENDPOINT_URL",
+                "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_ROLE_ARN", "AWS_CONFIG_FILE"}
+
+# IAM's tagValueType: [\p{L}\p{Z}\p{N}_.:/=+\-@]* (letters, separators, numbers and these). Anything else
+# fails CreateUser/TagUser at apply time; terraform validate and tflint do not check it.
+TAG_VALUE_EXTRA = set("_.:/=+-@")
 
 # Host paths a worker pod or a sandbox can reach (workerpool_apply.go: /var/lib/ate read-write in every
 # worker pod) or that other pods share (kubelet plugins with CSI drivers; /dev). The credentials file
@@ -105,13 +117,24 @@ def test_every_inherited_credential_or_endpoint_variable_is_overridden():
         inherited |= INHERITED_WITH_RUSTFS
     inherited |= {e["name"] for e in values["atelet"].get("extraEnv", []) if e["name"].startswith("AWS_")}
     env = provider_env()
-    for name in sorted(inherited & SDK_CREDENTIAL_OR_ENDPOINT):
-        assert name in env, f"{name} is inherited from atelet and must be overridden in the provider env"
-    # Blank, not re-pointed: the keys come only from the shared credentials file.
-    for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_ENDPOINT_URL"):
+    for name in sorted((inherited & SDK_CREDENTIAL_OR_ENDPOINT) - SET_ON_PURPOSE):
+        # Blank, not re-pointed: present-but-inherited would still win, and any other value is a new route.
+        assert env.get(name) == "", f"{name} is inherited from atelet: the provider env must set it to \"\""
+    for name in sorted(ALWAYS_BLANK):
         assert env.get(name) == "", f"{name} must be set to the empty string (unset to the SDK)"
     assert env.get("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS") == "true"
     assert env.get("AWS_EC2_METADATA_DISABLED") == "true", "not EC2: fail fast instead of probing IMDS"
+
+
+def test_the_playbooks_verify_seeds_what_atelet_passes_down():
+    """The per-worker verify starts from a stand-in for atelet's own env (rustfs's variables, with dummy keys
+    and an unreachable endpoint), then applies the config's env on top, as exec.go does. A blank the config
+    lost would leave a dummy in place and fail the verify with the real binary on every worker."""
+    seeded = rendered(playbook_vars()["ate_cp_inherited_env"])
+    assert set(seeded) >= INHERITED_WITH_RUSTFS
+    for name in INHERITED_WITH_RUSTFS & SDK_CREDENTIAL_OR_ENDPOINT:
+        assert seeded[name], f"{name}: the stand-in must be non-empty, or a missing override goes unnoticed"
+    assert seeded["AWS_ENDPOINT_URL"].startswith("http://127.0.0.1:"), "an endpoint nothing answers on"
 
 
 def test_the_keys_come_from_the_file_the_playbook_writes():
@@ -167,6 +190,20 @@ def test_the_iam_user_can_only_pull_the_docs_checker_repository():
     assert star and re.findall(r'"(ecr:[A-Za-z]+)"', star.group(1)) == ["ecr:GetAuthorizationToken"]
     # The key is made by the provisioning script, never by Terraform (it would be in the state bucket).
     assert not re.search(r'resource "aws_iam_access_key"', tf)
+
+
+def test_every_iam_tag_value_is_one_iam_accepts():
+    """A tag value outside IAM's tagValueType fails CreateUser at rollout step 1 (Atlantis apply)."""
+    tf = TERRAFORM.read_text()
+    blocks = re.findall(r"tags\s*=\s*\{([^}]*)\}", tf)
+    assert blocks, "the user carries tags"
+    values = [v for block in blocks for v in re.findall(r'^\s*\w+\s*=\s*"([^"]*)"', block, re.M)]
+    assert values
+    for value in values:
+        assert len(value) <= 256, value
+        bad = [c for c in value
+               if unicodedata.category(c)[0] not in "LZN" and c not in TAG_VALUE_EXTRA]
+        assert not bad, f"tag value {value!r}: IAM rejects {bad}"
 
 
 def test_the_script_and_terraform_name_the_same_user_and_vault_key():

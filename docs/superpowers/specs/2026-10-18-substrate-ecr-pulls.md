@@ -97,8 +97,14 @@ environment, which carries rustfs's `AWS_*` variables, and those beat the creden
   `AWS_EC2_METADATA_DISABLED=true`: the nodes are not EC2, so this fails fast instead of probing IMDS.
   The profile is named (`AWS_PROFILE=docs-checker-pull`), so a missing or mis-written file fails
   with "profile not found" instead of falling through the chain. The region comes from the image
-  host (`us-east-2`) and overrides the inherited `AWS_REGION`. `tests/substrate/` pins all of this
-  (§V.100).
+  host (`us-east-2`) and overrides the inherited `AWS_REGION`.
+- The config also blanks `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_ROLE_ARN` and `AWS_CONFIG_FILE`. atelet
+  does not pass these today, but a web-identity token ranks above the shared profile in the chain,
+  and a config file could re-point the profile.
+- `tests/substrate/` pins all of this (§V.100). The playbook's per-worker verify reproduces it with
+  the real binary: it seeds a stand-in for atelet's environment (a dummy key, and an endpoint at
+  `http://127.0.0.1:9` that nothing answers), then applies the config's env on top, the last value
+  winning as in exec.go. If a blank were ever lost, every worker's verify would fail.
 
 ## Q3. Can atelet see a host file, and can the sandboxes **not** see it?
 
@@ -113,11 +119,13 @@ node runs no actors. The directory must exist on every node atelet runs on (k3s-
 atelet does not tolerate the control plane's taint, `base-apps/substrate/docs.md`) **before** the
 chart change syncs.
 
-**Sandboxes cannot, as long as gVisor holds.** The boundary has three layers:
+**Sandboxes cannot, as long as gVisor holds.** The boundary has three layers. The last row of the
+table is the host side, outside the sandbox boundary:
 
 | layer | sees | source |
 |---|---|---|
 | atelet container | `/var/lib/ate` (rw), `/var/lib/kubelet/{plugins,device-plugins}`, `/dev` (ro), the bin dir (ro), the config | chart:templates/atelet.yaml:209-267 |
+| *not a sandbox path:* root on the node, and privileged pods that mount the host root | everything, the key file included. For example, Alloy (`logging`) is privileged, runs as UID 0 and mounts host `/` read-only at `/host/root`. Anyone with node root or `pods/exec` into such a pod can read the key, as they can read any host file | `base-apps/logging/alloy-daemonset.yaml` |
 | ateom worker pod (runsc's host side, in `kagent`) | `/var/lib/ate` only (rw, `HostToContainer`), plus projected certs; a micro-VM pool would add `/dev/net/tun` | src:cmd/atecontroller/internal/controllers/workerpool_apply.go:169-204, 427-465 |
 | the sandbox (gVisor guest) | its OCI rootfs plus bind mounts whose sources are all per-actor dirs under `/var/lib/ate/actors/<uid>/` (durable dir, CSI volume, system-info, image volume), plus `/etc/resolv.conf` read-only | src:internal/ocispec/ocispec.go:175-196, src:internal/ocispec/gvisor.go:64-80 |
 
@@ -133,7 +141,9 @@ chart change syncs.
   (workerpool_apply.go:342-416). From there a node escape is plausible. The credentials file is then
   readable, but so is everything else on the node (kubelet credentials, every pod's mounted Secrets).
   What the file adds is a key that can pull **one** repository, read-only. Today's `ecr-registry`
-  Secret, readable in every namespace, pulls **all** of them.
+  Secret, readable in every namespace, pulls **all** of them. The same holds on the host side:
+  node root and host-root pods such as Alloy can read the file (table, last row), the same exposure
+  every other host file has.
 - **Who can use the pull without reading the file.** Anyone who can make atelet pull an image that
   matches: the kagent controller, and anyone holding a ServiceAccount token for the audience
   `api.ate-system.svc`. ate-api-server authenticates those tokens but does no authorization yet
@@ -157,10 +167,10 @@ chart change syncs.
 | piece | where | what |
 |---|---|---|
 | IAM user | `terraform/roots/asela-cluster/docs-checker-pull-iam.tf` | `system/docs-checker-pull`: `ecr:GetAuthorizationToken` on `*` (the action has no resource-level permissions), `ecr:BatchGetImage` and `ecr:GetDownloadUrlForLayer` on the `docs-checker` repository ARN only. **No access key in Terraform**: it would land in the state bucket (the `crossplane-admin` precedent in `iam.tf`) |
-| keys | `scripts/provision-docs-checker-pull.sh` | creates the access key with the AWS CLI and writes it to Vault `k8s-secrets/docs-checker-pull` (`aws-access-key-id`, `aws-secret-access-key`, `aws-region`, the property names `ecr-auth` uses). The values go through stdin and pipes only, never argv or output. If the Vault write fails, the new key is deleted. `--rotate` adds a second key, `--retire-old` deletes the other one, `--check` previews |
-| host files | `ansible/playbooks/ate-image-credentials.yml`, run by the script | on `k3s_workers`: `/opt/ate-image-credential-provider/` root 0700, `ecr-credential-provider` 0755 (cloud-provider-aws **v1.37.0** linux/amd64, `get_url` with sha256 `842e0fd8159f5ed8df2f38e6521e1e4f0a1ee80cf1e1ac119bbf20bf9c20681c`, the value published at `<url>.sha256`; checked independently on 2026-10-19), and `aws-credentials` 0600 (profile `[docs-checker-pull]`, written with `no_log`). It then runs the provider on each worker with `env -i` and the config's variables, and checks that it returns credentials for the registry. The token goes through a pipe, never into Ansible's output |
+| keys | `scripts/provision-docs-checker-pull.sh` | creates the access key with the AWS CLI and writes it to Vault `k8s-secrets/docs-checker-pull` (`aws-access-key-id`, `aws-secret-access-key`, `aws-region`, the property names `ecr-auth` uses). The values go through stdin and pipes only, never argv or output. If the Vault write fails, the new key is deleted. `--rotate` adds a second key. `--retire-old` first re-places and verifies Vault's key on **every** worker, and deletes the other key only if that succeeds on all of them. Neither takes `--limit`. `--check` previews |
+| host files | `ansible/playbooks/ate-image-credentials.yml`, run by the script | on `k3s_workers`: `/opt/ate-image-credential-provider/` root 0700, `ecr-credential-provider` 0755 (cloud-provider-aws **v1.37.0** linux/amd64, `get_url` with sha256 `842e0fd8159f5ed8df2f38e6521e1e4f0a1ee80cf1e1ac119bbf20bf9c20681c`, the value published at `<url>.sha256`; checked independently on 2026-10-19), and `aws-credentials` 0600 (profile `[docs-checker-pull]`, written with `no_log`). It then runs the provider on each worker under `env -i`, with a stand-in for atelet's inherited variables (dummy key, unreachable endpoint) and the config's variables on top, and checks that it returns credentials for the registry. The token goes through a pipe, never into Ansible's output |
 | chart values | `base-apps/substrate.yaml` | `atelet.imageCredentialProviderBinDir: /opt/ate-image-credential-provider` and `atelet.imageCredentialProviderConfigYAML` (see the note below), with one provider: `matchImages: [852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker]` and the Q2 env |
-| guards | `tests/substrate/`, `tests/ansible/test_ate_image_credentials.py` | the config passes atelet's own rules (strict fields, required fields, literal env); the inherited `AWS_*` are blanked; the bin dir is outside the shared paths; values, playbook and script agree on dir, file and profile names; the script runs end to end against stub `vault`, `aws` and `ansible-playbook`, and never prints or passes a secret on argv; the playbook runs against the test node with a fake provider |
+| guards | `tests/substrate/`, `tests/ansible/test_ate_image_credentials.py` | the config passes atelet's own rules (strict fields, required fields, literal env); the inherited `AWS_*` and the web-identity/config-file variables are set to `""`; IAM tag values match IAM's `tagValueType`; the bin dir is outside the shared paths; values, playbook and script agree on dir, file and profile names; the script runs end to end against stub `vault`, `aws` and `ansible-playbook`, and never prints or passes a secret on argv; the playbook runs against the test node with a fake provider |
 
 **Why `…ConfigYAML` and not `atelet.imageCredentialProviderConfig`** (the value the plan names): in
 this chart, `imageCredentialProviderConfig` is a **host path** to a config file. That would put the
@@ -215,8 +225,13 @@ while true; do
   for p in /opt/ate-image-credential-provider /run/image-credential-provider; do
     if [ -e "$p" ]; then echo "PROBE FOUND $p"; else echo "PROBE absent $p"; fi
   done
-  hits=$(find / -xdev -type f -size -1024k 2>/dev/null | grep -v '^/probe.sh$' | xargs grep -l 'docs-checker-pull' 2>/dev/null)
+  # Every filesystem the sandbox has (bind-mounted volumes included), minus the kernel's virtual ones.
+  hits=$(find / \( -path /proc -o -path /sys -o -path /dev \) -prune -o -type f -size -1024k -print 2>/dev/null \
+    | grep -v '^/probe.sh$' | xargs grep -l 'docs-checker-pull' 2>/dev/null)
   echo "PROBE files naming the profile: ${hits:-none}"
+  aws=$(env | grep AWS_ | tr '\n' ' ')
+  echo "PROBE AWS variables: ${aws:-none}"
+  echo "PROBE pid 1: $(tr '\0' ' ' < /proc/1/cmdline)"
   sleep 30
 done
 EOF
@@ -276,7 +291,10 @@ snapshotConfig: {onCommit: SNAPSHOT_CONTENT_SCOPE_FULL, storageLocation: "s3://a
 **B. A pull after key rotation.**
 1. `scripts/provision-docs-checker-pull.sh --rotate`. The new key goes to Vault and both workers, and
    the playbook's verify passes with it on each. The old key stays active.
-2. `scripts/provision-docs-checker-pull.sh --retire-old`. Every key except Vault's is deleted.
+2. `scripts/provision-docs-checker-pull.sh --retire-old`. It first re-places Vault's key on both
+   workers and verifies it on each. Only if that passes everywhere does it delete every other key.
+   Then `aws iam list-access-keys --user-name docs-checker-pull` must list exactly one key, and it
+   must be Vault's (`vault kv get -field=aws-access-key-id k8s-secrets/docs-checker-pull`).
 3. `kubectl -n ate-system rollout restart ds/atelet && kubectl -n ate-system rollout status ds/atelet`.
    This drops the token cached from the old key (about 6 h otherwise).
 4. Push a new probe digest (new `STAMP`, tag `pull-probe-2`), then create template `probe-2` with it.
@@ -295,8 +313,14 @@ snapshotConfig: {onCommit: SNAPSHOT_CONTENT_SCOPE_FULL, storageLocation: "s3://a
     shows only `proc`, `tmpfs`, `sysfs`, `/etc/resolv.conf` and paths under `/var/lib/ate/`.
 - *C2, from inside a sandbox:* `kubectl ate create actor probe-1a --template probe-1 -a ecr-probe`, then
   `kubectl ate resume actor probe-1a -a ecr-probe` and `kubectl ate logs actors probe-1a -a ecr-probe`.
-  Every round must print `PROBE absent /opt/ate-image-credential-provider`,
-  `PROBE absent /run/image-credential-provider` and `PROBE files naming the profile: none`.
+  Every round must print:
+  - `PROBE absent /opt/ate-image-credential-provider`;
+  - `PROBE absent /run/image-credential-provider`;
+  - `PROBE files naming the profile: none`;
+  - `PROBE AWS variables: none` (atelet's environment does not reach the actor);
+  - for `PROBE pid 1:`, the sandbox's own process: the probe's `/bin/sh /probe.sh`, or Substrate's
+    pause process. A host process such as `/sbin/init` or `systemd` would mean the sandbox sees the
+    host's PID namespace.
 
 **Cleanup.** `kubectl ate delete actor probe-1a -a ecr-probe --any-state`,
 `kubectl ate delete actor-template probe-1 -a ecr-probe` (and `probe-2`), then
@@ -305,6 +329,19 @@ and `rm /tmp/ate-token`.
 
 ## Rotation (steady state)
 
-This is the same sequence as acceptance B, steps 1 to 3. The playbook's verify proves the new key from
-each worker before anything is deleted. A worker added or rebuilt later needs
+This is the same sequence as acceptance B, steps 1 to 3. The playbook's verify proves the new key on
+each worker in `--rotate`, and again in `--retire-old` before anything is deleted. `--retire-old`
+re-places the key itself, so a `--rotate` that failed part-way cannot leave a worker on the key being
+deleted. Neither step takes `--limit`. A worker added or rebuilt later needs
 `scripts/provision-docs-checker-pull.sh --limit <host>` before atelet can start there (Q3).
+
+## Follow-ups (not in this change)
+
+- **Rotation cadence.** Nothing schedules a rotation. A rotation is the three steps above; doing it
+  every 90 days would match common practice.
+- **Key-age alert.** Nothing warns when the key gets old or stops being used. Candidates are the IAM
+  credential report or `aws iam list-access-keys` (`CreateDate`), and
+  `get-access-key-last-used`, polled into a Grafana rule.
+- **`aws:SourceIp` on the policy.** This would tie the key to the homelab's WAN address. That address
+  is dynamic (see `tests/wan_ip`, the WAN-IP monitor), so a static condition would break pulls when
+  it changes unless the condition is kept in sync with it.

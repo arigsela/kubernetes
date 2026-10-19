@@ -35,6 +35,8 @@ VAULT_STUB = textwrap.dedent(
                 print("Error making API request. Code: 403. permission denied", file=sys.stderr); save(); sys.exit(2)
             if key not in db["kv"]:
                 print(f"No value found at {flags['-mount']}/data/{key}", file=sys.stderr); save(); sys.exit(2)
+            if os.environ.get("STUB_VAULT_WARN"):  # the CLI prints warnings on stderr even on success
+                print("WARNING! The following warnings were returned from Vault: deprecated", file=sys.stderr)
             print(json.dumps({"data": {"data": db["kv"][key]}})); save(); sys.exit(0)
         if args[1] == "put":
             if os.environ.get("STUB_VAULT_WRITE_ERROR"):
@@ -90,7 +92,9 @@ ANSIBLE_STUB = textwrap.dedent(
     path = os.environ["STUB_ANSIBLE_DB"]
     db = json.load(open(path))
     secret = os.environ.get("DOCS_CHECKER_PULL_AWS_SECRET_ACCESS_KEY")
-    db["runs"].append({"argv": sys.argv[1:], "cwd": os.getcwd(),
+    # The IAM keys that existed while Ansible ran: proves placement happened before any deletion.
+    aws_keys = [k["id"] for k in json.load(open(os.environ["STUB_AWS_DB"]))["keys"]]
+    db["runs"].append({"argv": sys.argv[1:], "cwd": os.getcwd(), "aws_keys_during": aws_keys,
                        "key_id": os.environ.get("DOCS_CHECKER_PULL_AWS_ACCESS_KEY_ID"),
                        "secret_sha": hashlib.sha256(secret.encode()).hexdigest() if secret else None})
     json.dump(db, open(path, "w"))
@@ -261,15 +265,43 @@ def test_a_failed_placement_fails_the_run_and_deletes_nothing(env):
     assert len(env.state("aws")["keys"]) == 2 and env.state("aws")["deleted"] == []
 
 
-def test_retire_old_deletes_every_key_but_vaults_and_places_nothing(env):
+def seed_rotated(env):
+    """Mid-rotation: the old key and the new one on the user, Vault holding the new one."""
     env.seed_aws_key()
     env.seed_aws_key(kid="AKIANEWNEWNEWNEWNEW2", secret="n" * 40)
     env.seed_vault(kid="AKIANEWNEWNEWNEWNEW2", secret="n" * 40)
+
+
+def test_retire_old_first_places_vaults_key_on_every_worker_then_deletes_the_rest(env):
+    """A key is deleted only after its successor works on every worker: --retire-old re-runs the
+    (idempotent, verifying) placement on all workers itself, so a failed or --limit-ed --rotate earlier
+    cannot leave a worker on the key being deleted."""
+    seed_rotated(env)
     p = env.run("--retire-old")
     assert p.returncode == 0, p.stderr
+    [run] = env.state("ansible")["runs"]
+    assert run["argv"] == ["playbooks/ate-image-credentials.yml"], "all workers, for real: no --limit, no --check"
+    assert run["key_id"] == "AKIANEWNEWNEWNEWNEW2"
+    assert sorted(run["aws_keys_during"]) == ["AKIANEWNEWNEWNEWNEW2", "AKIAOLDOLDOLDOLDOLD1"], "placed before deleting"
     assert [k["id"] for k in env.state("aws")["keys"]] == ["AKIANEWNEWNEWNEWNEW2"]
     assert env.state("aws")["deleted"] == ["AKIAOLDOLDOLDOLDOLD1"]
-    assert env.state("ansible")["runs"] == [] and env.state("vault")["writes"] == []
+    assert env.state("vault")["writes"] == []
+
+
+def test_retire_old_deletes_nothing_when_a_worker_fails_the_placement(env):
+    seed_rotated(env)
+    p = env.run("--retire-old", STUB_ANSIBLE_FAIL="1")
+    assert p.returncode != 0
+    assert env.state("aws")["deleted"] == [] and len(env.state("aws")["keys"]) == 2
+
+
+def test_retire_old_with_nothing_to_retire_places_nothing(env):
+    env.seed_aws_key()
+    env.seed_vault()
+    p = env.run("--retire-old")
+    assert p.returncode == 0, p.stderr
+    assert "nothing to retire" in p.stdout
+    assert env.state("ansible")["runs"] == [] and env.state("aws")["deleted"] == []
 
 
 def test_retire_old_refuses_when_vaults_key_is_not_on_the_user(env):
@@ -303,7 +335,19 @@ def test_limit_is_passed_to_ansible(env):
     assert argv[argv.index("--limit") + 1] == "k3s-worker-02"
 
 
-@pytest.mark.parametrize("args", [["--rotate", "--retire-old"], ["--rotate", "--check"], ["--bogus"]])
+def test_a_vault_warning_on_stderr_does_not_corrupt_the_key(env):
+    """The CLI can print warnings on stderr with a successful read; only stdout is the JSON."""
+    env.seed_aws_key()
+    env.seed_vault()
+    p = env.run(STUB_VAULT_WARN="1")
+    assert p.returncode == 0, p.stderr
+    assert env.state("ansible")["runs"][0]["key_id"] == "AKIAOLDOLDOLDOLDOLD1"
+
+
+@pytest.mark.parametrize("args", [["--rotate", "--retire-old"], ["--rotate", "--check"], ["--bogus"],
+                                  # a rotation step on one worker would let --retire-old strand the others
+                                  ["--rotate", "--limit", "k3s-worker-01"],
+                                  ["--limit", "k3s-worker-01", "--retire-old"]])
 def test_conflicting_or_unknown_options_are_refused(env, args):
     p = env.run(*args)
     assert p.returncode == 2

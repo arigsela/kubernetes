@@ -186,7 +186,9 @@ workers (`ansible/README.md`). Every run that places the key also checks it from
 - **Rotate:**
   1. `--rotate`. This adds a second key, stores it, places it and checks it on every worker. The
      old key stays active.
-  2. `--retire-old`. This deletes every key except Vault's.
+  2. `--retire-old`. This first re-places Vault's key on every worker and verifies it on each, then
+     deletes every other key. Nothing is deleted if any worker fails. Neither step takes `--limit`.
+     Afterwards, `aws iam list-access-keys --user-name docs-checker-pull` should list only Vault's key.
   3. `kubectl -n ate-system rollout restart ds/atelet`. This drops tokens cached from the old key.
   4. `aws iam get-access-key-last-used --access-key-id <new id>` should show `ecr` after the next pull.
 - **Bump the provider binary:** in `ansible/playbooks/ate-image-credentials.yml`, set

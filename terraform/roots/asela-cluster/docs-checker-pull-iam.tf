@@ -22,11 +22,13 @@ resource "aws_iam_user" "docs_checker_pull" {
   name = "docs-checker-pull"
   path = "/system/"
 
+  # Tag values must match IAM's tagValueType ([\p{L}\p{Z}\p{N}_.:/=+\-@]*): no apostrophes or commas,
+  # or CreateUser fails at apply (tests/substrate checks it; validate and tflint do not).
   tags = {
     Name        = "docs-checker-pull"
     Purpose     = "Substrate-ECR-Pull"
     ManagedBy   = "Terraform"
-    Description = "Pull-only key for the docs-checker image, used by Substrate's atelet on the k3s workers"
+    Description = "Pull-only key for the docs-checker image used by the Substrate atelet on the k3s workers"
   }
 }
 

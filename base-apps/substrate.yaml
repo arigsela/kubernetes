@@ -116,7 +116,8 @@ spec:
         #     `kubectl -n ate-system rollout restart ds/atelet`.
         #   * env takes literals only, and is ADDED to atelet's own env, which carries rustfs's AWS_* keys and
         #     endpoint (rustfs, above). In the AWS SDK, env keys beat the credentials file, and AWS_ENDPOINT_URL
-        #     would send the ECR call to rustfs. So those are blanked here (an empty value is "unset").
+        #     would send the ECR call to rustfs. So those are blanked here (an empty value is "unset"), with the
+        #     web-identity and config-file routes, which atelet does not pass today but would also bypass the file.
         atelet:
           imageCredentialProviderBinDir: /opt/ate-image-credential-provider
           imageCredentialProviderConfigYAML: |
@@ -141,6 +142,12 @@ spec:
                   - name: AWS_SECRET_ACCESS_KEY
                     value: ""
                   - name: AWS_ENDPOINT_URL
+                    value: ""
+                  - name: AWS_WEB_IDENTITY_TOKEN_FILE
+                    value: ""
+                  - name: AWS_ROLE_ARN
+                    value: ""
+                  - name: AWS_CONFIG_FILE
                     value: ""
                   - name: AWS_IGNORE_CONFIGURED_ENDPOINT_URLS
                     value: "true"

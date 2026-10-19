@@ -124,8 +124,10 @@ Nothing runs privileged, but Substrate is not a hardened workload:
   `/var/lib/ate`, `/var/lib/kubelet/{plugins,device-plugins}` and `/dev`, and binds hostPorts
   8085 (gRPC) and 9090 (metrics). It also mounts `/opt/ate-image-credential-provider` read-only,
   which holds the docs-checker pull key. That directory is outside `/var/lib/ate` on purpose: worker
-  pods mount `/var/lib/ate`, and sandbox mounts all come from it (§V.100). Only a gVisor escape
-  followed by a node escape reaches the key, and the key can pull one repository.
+  pods mount `/var/lib/ate`, and sandbox mounts all come from it (§V.100). From a sandbox, only a
+  gVisor escape followed by a node escape reaches the key. On the host, the key is as exposed as any
+  host file: node root can read it, and so can privileged pods that mount the host root (Alloy mounts
+  `/` at `/host/root`). The key can pull one repository.
 - Worker pods (in `kagent`) run as UID 0 with 13 capabilities and seccomp and AppArmor Unconfined:
   gVisor's own sandbox is the isolation boundary.
 - k8s-credential-provider has cluster-wide `get` on Secrets, limited by its namespace policy.
