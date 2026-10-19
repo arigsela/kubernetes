@@ -35,11 +35,17 @@ spec:
     # uv-managed venv (docs-checker README, "Container").
     command:
       - /app/.venv/bin/docs-checker
-  # No env. A Harness may carry literal values only (alpha14 has no secret-backed env), and the
-  # code defaults are the reviewed settings: the one repository arigsela/kubernetes, the per-node
-  # models (Haiku 5.5, Sonnet 5.5 to escalate), the run budgets (docs-checker README,
-  # "Configuration"). Secrets never enter the sandbox: the model key and any Secret-backed MCP
-  # header hold a placeholder, and Substrate's egress gateway injects the real value.
+  # Literal env only (alpha14 has no secret-backed env). Everything not set here keeps the code
+  # defaults, the reviewed settings: the one repository arigsela/kubernetes, the per-node models
+  # (Haiku 5.5, Sonnet 5.5 to escalate), the run budgets (docs-checker README, "Configuration").
+  # Secrets never enter the sandbox: the model key and any Secret-backed MCP header hold a
+  # placeholder, and Substrate's egress gateway injects the real value.
+  env:
+    # Model calls per doc. The default (12) judged about 11 claims, and every live check came
+    # back incomplete (kagent docs: 5, vault docs: 9 and 13 claims unjudged). Spend stays capped
+    # by the run budgets ($0.10 for one doc, $1.00 for `check all`); a doc has cost about $0.01.
+    - name: DOCS_CHECKER_MAX_CALLS_PER_DOC
+      value: "40"
   substrate:
     workerPoolRef:
       name: kagent-default
