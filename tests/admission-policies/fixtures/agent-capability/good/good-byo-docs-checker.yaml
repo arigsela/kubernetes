@@ -11,7 +11,7 @@ metadata:
 spec:
   byo: {}
   workload:
-    image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker@sha256:REPLACE_WITH_DIGEST
+    image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/docs-checker@sha256:3022c72f683b66aa8534a314e96fc9075c1e5f35609b6f090d7221393e1fdae0
     command:
       - /app/.venv/bin/docs-checker
   substrate:
