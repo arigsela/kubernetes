@@ -1,5 +1,5 @@
 # tests/beacon/test_manifests.py
-"""beacon §T.14, §T.15, §T.41: the deployment keeps the invariants beacon's SPEC.md states."""
+"""beacon §T.14, beacon §T.15, beacon §T.41: the deployment keeps the invariants beacon's SPEC.md states."""
 import json
 import re
 from pathlib import Path
@@ -63,7 +63,7 @@ def env(container):
     return {e["name"]: e for e in container.get("env", [])}
 
 
-# --- images (beacon §V.17, §V.18, §T.41) ---------------------------------------------------
+# --- images (beacon §V.17, beacon §V.18, beacon §T.41) ---------------------------------------------------
 
 
 def test_v17_every_beacon_image_is_ecr_digest_pinned_and_from_one_release():
@@ -94,7 +94,7 @@ def test_v18_smoke_job_runs_every_image_on_a_node_before_each_sync():
     for c in containers:
         if IMAGE_RX.match(c["image"]):
             assert c["image"] == rolled[IMAGE_RX.match(c["image"])["svc"]]
-    # Third-party images beacon §T adds run here too (beacon §V.18, §B.22): each one by name,
+    # Third-party images beacon §T adds run here too (beacon §V.18, beacon §B.22): each one by name,
     # pinned by digest. tests/beacon/test_tenants.py checks the dump image is the tenants'.
     third_party = {c["name"]: c["image"] for c in containers if not IMAGE_RX.match(c["image"])}
     assert set(third_party) == {"aws-cli"}, third_party
@@ -154,7 +154,7 @@ def test_role_init_hook_runs_beacons_own_sql_as_the_cnpg_superuser():
 
 
 def test_v37_role_hook_runs_in_wave_zero_and_skips_without_inputs():
-    """beacon §V.37 (§B.7): in the shared postgresql app a Degraded neighbour in an earlier
+    """beacon §V.37 (beacon §B.7): in the shared postgresql app a Degraded neighbour in an earlier
     wave halts every later wave. agent-audit-risk exits 1 by design whenever it finds a
     high-risk session, so a wave-1 hook simply never ran. Wave 0, and never fail or hang on
     beacon's own missing inputs."""
@@ -168,7 +168,7 @@ def test_v37_role_hook_runs_in_wave_zero_and_skips_without_inputs():
 
 
 def test_v37_a_git_change_reruns_the_role_hook():
-    """beacon §V.37 (§B.8): hooks run only inside a sync, and Argo auto-syncs only on a
+    """beacon §V.37 (beacon §B.8): hooks run only inside a sync, and Argo auto-syncs only on a
     desired-state diff. A hook's own annotations and *.md files are not desired state, so
     #866 (wave 1 -> 0) merged without running anything. A counter on a real resource of the
     postgresql app is the trigger; the runbook names it."""
@@ -181,7 +181,7 @@ def test_v37_a_git_change_reruns_the_role_hook():
 
 
 def test_v38_objects_that_depend_on_other_apps_go_last():
-    """beacon §V.38 (§B.9): the HTTPRoute was Degraded until the shared Gateway had its
+    """beacon §V.38 (beacon §B.9): the HTTPRoute was Degraded until the shared Gateway had its
     listener, and in wave 0 that stopped the sync before migrate and every workload. Objects
     whose health another app decides go after the workloads."""
     for kind, name in (("HTTPRoute", "beacon"), ("Certificate", "beacon-tls"),
@@ -194,7 +194,7 @@ def test_v38_objects_that_depend_on_other_apps_go_last():
 
 
 def test_v39_mounted_secrets_and_configmaps_are_readable_by_the_pod_user():
-    """beacon §V.39 (§B.10): kubelet makes Secret/ConfigMap volume files root-owned. With
+    """beacon §V.39 (beacon §B.10): kubelet makes Secret/ConfigMap volume files root-owned. With
     defaultMode 0400 and no fsGroup the signing key was unreadable to uid 10001, and api and
     notifier crash-looped on their first rollout."""
     checked = 0
@@ -217,7 +217,7 @@ def test_v39_mounted_secrets_and_configmaps_are_readable_by_the_pod_user():
     assert checked >= 2  # the api's and the notifier's signing key
 
 
-# --- tracing (beacon §V.8, §V.9, §V.32) -----------------------------------------------------
+# --- tracing (beacon §V.8, beacon §V.9, beacon §V.32) -----------------------------------------------------
 
 
 def test_v8_nothing_opts_ingress_into_the_waypoint():
@@ -248,7 +248,7 @@ def test_v32_sdk_services_opt_out_of_operator_injection():
         assert ann.get("instrumentation.opentelemetry.io/inject-python") == "false", name
 
 
-# --- network (beacon §V.5, §V.31) -----------------------------------------------------------
+# --- network (beacon §V.5, beacon §V.31) -----------------------------------------------------------
 
 
 def test_v31_every_ingress_allow_in_the_ambient_namespace_admits_hbone():
@@ -328,7 +328,10 @@ def test_flags_are_all_present_and_all_off():
 
 
 def test_secret_stores_and_keys_match_the_provision_script():
-    script = (REPO / "scripts/provision-beacon-vault.sh").read_text()
+    # beacon's own keys come from provision-beacon-vault.sh; the enterprise tenants' read role
+    # from provision-beacon-tenants-vault.sh (beacon §T.42).
+    script = (REPO / "scripts/provision-beacon-vault.sh").read_text() + (
+        REPO / "scripts/provision-beacon-tenants-vault.sh").read_text()
     stores = {d["metadata"]["name"]: d for _, d in app_docs() if d["kind"] == "SecretStore"}
     stores["postgresql/vault-beacon-db"] = one("base-apps/postgresql/beacon-db-secret-store.yaml", "SecretStore", "vault-beacon-db")
     for s in stores.values():
@@ -337,7 +340,7 @@ def test_secret_stores_and_keys_match_the_provision_script():
         assert f"bound_service_account_names={auth['serviceAccountRef']['name']}" in script
     ess = [d for _, d in app_docs() if d["kind"] == "ExternalSecret"] + load("base-apps/postgresql/external-secrets-beacon-db.yaml")
     for es in ess:
-        for item in es["spec"]["data"]:
+        for item in es["spec"].get("data", []):  # beacon-tenant-dsns uses dataFrom.find
             key, prop = item["remoteRef"]["key"], item["remoteRef"]["property"]
             assert key in ("beacon", "beacon-db")
             assert re.search(rf"\b{re.escape(prop)}\b", script), f"{es['metadata']['name']}: {key}/{prop}"
@@ -358,12 +361,33 @@ def test_application_excludes_the_catalog_and_creates_the_namespace_first():
 BARE = re.compile(r"(?<!beacon )§[TVRIB]\.\d+")
 
 
-@pytest.mark.parametrize("path", sorted(
-    [p.relative_to(REPO).as_posix() for p in APP.glob("*.yaml")]
-    + [p.relative_to(REPO).as_posix() for p in APP.glob("*.md")]
-    + ["base-apps/beacon.yaml", INIT, "base-apps/postgresql/beacon-database.yaml",
-       "base-apps/postgresql/beacon-db-secret-store.yaml", "base-apps/postgresql/external-secrets-beacon-db.yaml",
-       "base-apps/postgresql/eso-beacon-db-serviceaccount.yaml"]))
+# Every beacon-owned file in this repo, wherever it lives (beacon §B.24: the test once covered
+# base-apps/beacon/ only, and lists whose later items lacked "beacon" crept in elsewhere). Shared files that
+# also cite this repo's own SPEC.md keep their bare § for that, and are not listed here.
+BEACON_OWNED = re.compile(
+    r"^(base-apps/beacon(-tenants|-aws-infrastructure)?(\.yaml|/)|appsets/managed-apps/beacon-|"
+    r"base-apps/postgresql/[^/]*beacon|base-apps/crossplane-compositions/[^/]*tenant|"
+    r"base-apps/admission-policies/xtenant-guard\.yaml|scripts/provision-beacon|tests/beacon/|"
+    r"tests/composition/(test_xtenant_render\.py|xtenant/)|tests/admission-policies/fixtures/beacon-tenants/)")
+
+
+def beacon_owned_files():
+    files = [p.relative_to(REPO).as_posix() for p in REPO.rglob("*")
+             if p.is_file() and p.suffix in {".yaml", ".yml", ".md", ".py", ".sh", ".json"}
+             and ".git" not in p.parts]
+    return sorted(f for f in files if BEACON_OWNED.match(f))
+
+
+def test_v27_covers_every_beacon_file():
+    owned = beacon_owned_files()
+    for must in ("base-apps/beacon/deployments.yaml", "base-apps/beacon-tenants.yaml",
+                 "base-apps/crossplane-compositions/composition-tenant.yaml",
+                 "base-apps/postgresql/init-beacon-roles.yaml", "scripts/provision-beacon-tenants-vault.sh",
+                 "tests/beacon/test_tenants.py", "tests/composition/test_xtenant_render.py"):
+        assert must in owned, must
+
+
+@pytest.mark.parametrize("path", beacon_owned_files())
 def test_v27_beacon_files_cite_beacon_sections_only(path):
     text = Path(REPO / path).read_text()
     # A line break between "beacon" and "§" reads the same to a human; fold it first.

@@ -74,6 +74,9 @@ spec:
               value: /etc/beacon/flags/beacon-flags.json
             - name: SIGNING_KEY_REF
               value: /etc/beacon/signing/signing-key
+            # Enterprise tenants' own databases (beacon §T.45, beacon §V.55): one file per tenant.
+            - name: TENANT_DSN_DIR
+              value: /etc/beacon/tenants
             # Slugs nobody may sign up as (the platform seeds homelab, beacon §T.17).
             - name: SSRF_EXEMPT_TENANTS
               value: homelab
@@ -126,6 +129,9 @@ spec:
             - name: signing
               mountPath: /etc/beacon/signing
               readOnly: true
+            - name: tenant-dsns
+              mountPath: /etc/beacon/tenants
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir:
@@ -139,6 +145,13 @@ spec:
             # Group-readable, and the pod's fsGroup makes the group 10001: kubelet makes
             # volume files root-owned, so 0400 alone is unreadable to this non-root user
             # (beacon §V.39, beacon §B.10). Nobody else in the pod exists to read it.
+            defaultMode: 0440
+        - name: tenant-dsns
+          secret:
+            secretName: beacon-tenant-dsns
+            # Optional: until the first enterprise tenant (or if its store is not ready yet),
+            # the API serves pooled tenants only and enterprise ones answer 503 (beacon §V.55).
+            optional: true
             defaultMode: 0440
 ---
 apiVersion: apps/v1

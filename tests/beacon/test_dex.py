@@ -1,5 +1,5 @@
 # tests/beacon/test_dex.py
-"""beacon §T.39: Dex client `beacon` (beacon §V.35, §V.25)."""
+"""beacon §T.39: Dex client `beacon` (beacon §V.35, beacon §V.25)."""
 import hashlib
 import re
 
@@ -38,7 +38,7 @@ def test_dex_rolls_when_its_config_changes():
 
 
 def test_beacon_comments_cite_beacon_sections_not_bare_ones():
-    # beacon §V.27: this repo has its own SPEC.md numbering; a bare §T.n next to
+    # beacon §V.27: this repo has its own SPEC.md numbering; a bare beacon §T.n next to
     # beacon's name would point at the wrong task.
     bare = re.compile(r"(?<!beacon )§[TV]\.\d+")
     text = (REPO / "base-apps/dex/configmap.yaml").read_text()

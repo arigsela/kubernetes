@@ -6,7 +6,7 @@ app: beacon
 catalog_entity: beacon-db
 kind: docs
 namespace: beacon
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-19
 status: draft
 tags: [uptime, multi-tenant, ambient, fastapi]
 sources:
@@ -28,6 +28,7 @@ sources:
   - base-apps/beacon/secret-stores.yaml
   - base-apps/beacon/external-secrets.yaml
   - base-apps/beacon/serviceaccounts.yaml
+  - base-apps/beacon-tenants.yaml
   - base-apps/postgresql/beacon-database.yaml
   - base-apps/postgresql/init-beacon-roles.yaml
   - base-apps/postgresql/external-secrets-beacon-db.yaml
@@ -106,6 +107,19 @@ annotation to the notifier (beacon §T.23).
   role passwords. Nothing secret is in git.
 - Fault flags: ConfigMap `beacon-flags` (flagd JSON). Every flag defaults to off; a fault is
   a commit, its removal a `git revert` (beacon §V.13).
+
+## Enterprise tenants
+
+Free tenants live in the pooled database above. An **enterprise** tenant has its own namespace,
+database and beacon stack, composed from one `XTenant` in `base-apps/beacon-tenants/` (beacon §T.25,
+beacon §T.46). Its signup is `pending` until the owner opens that PR: the Grafana alert "Beacon
+enterprise signup pending" says so (beacon §T.26); beacon holds no GitHub credential (beacon §V.54).
+
+beacon-api reaches each tenant's database through `TENANT_DSN_DIR` (`/etc/beacon/tenants`): one file
+per slug from ExternalSecret `beacon-tenant-dsns` (`find` over Vault `k8s-secrets/tenants/`, store
+`vault-beacon-tenants`, SA `eso-beacon-tenants`, beacon §T.45). Both are in the last sync wave, so a
+store that is not ready yet never holds back beacon's own rollout. The volume is optional: with no
+enterprise tenant there is no Secret, and the api runs as before.
 
 ## Images
 Six IMMUTABLE ECR repos (`beacon-api`, `-web`, `-scheduler`, `-checker`, `-notifier`, `-mcp`,

@@ -31,7 +31,7 @@ def test_v20_host_is_allow_listed_never_open():
     assert rules, "beacon.arigsela.com has no allow-list rule: the Gateway would refuse it"
     for r in rules:
         # Every rule naming the host restricts the source: no path is public until
-        # beacon's WAF and rate-limit tests pass (beacon §V.20, §T.36).
+        # beacon's WAF and rate-limit tests pass (beacon §V.20, beacon §T.36).
         assert r.get("from"), "an allow-list rule for beacon without `from:` makes it public"
         assert f"{HOST}:*" in r["to"][0]["operation"]["hosts"]
 

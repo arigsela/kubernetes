@@ -152,6 +152,13 @@ data:
           "match": {"alertname": "Beacon notifier not traced"},
           "route": "none",
           "why": "The runbook is a two-step check (init container present? operator ready?); a rollout of the notifier fixes it."
+        },
+        {
+          "id": "beacon-enterprise-signup-pending",
+          "source": "grafana",
+          "match": {"alertname": "Beacon enterprise signup pending"},
+          "route": "none",
+          "why": "Not a fault: an approval for the owner, who opens the XTenant PR; nothing for an agent to investigate (beacon §V.54)."
         }
       ]
     }

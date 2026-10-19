@@ -60,7 +60,13 @@ composes, for each one:
 The stack starts in order, from what the composition observes: the init Job once the database
 is Ready, the workers once that release's init Job succeeded. A promotion (`base-apps/beacon/runbook.md`)
 moves every tenant: a new init Job migrates its database first, and the workers keep their old
-images until it succeeds. beacon-api's route to the tenant's database comes with beacon §T.45.
+images until it succeeds.
+
+beacon-api (`base-apps/beacon/`) is the one service that reads across (beacon §T.45): ExternalSecret
+`beacon-tenant-dsns` (store `vault-beacon-tenants`, role `beacon-tenants`) syncs each tenant's
+`k8s-secrets/tenants/tenant-<slug>/api` into one file per slug under `TENANT_DSN_DIR`, and each
+tenant database admits beacon-api's pods on 5432 (`db-from-beacon-api`). A tenant whose file is
+missing answers 503; nothing falls back to the pooled database (beacon §V.55).
 
 ## Safety
 

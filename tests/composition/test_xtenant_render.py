@@ -347,7 +347,7 @@ def test_v5_tenant_probes_are_never_exempt(case):
 @pytest.mark.parametrize("case", STACK)
 def test_v9_the_tenants_notifier_is_left_to_the_operator(case):
     """No inject-python annotation on the notifier (the namespace's workload defaults add "true"),
-    "false" on every SDK service, and the namespace has its own Instrumentation (beacon §V.9, §V.32)."""
+    "false" on every SDK service, and the namespace has its own Instrumentation (beacon §V.9, beacon §V.32)."""
     assert "annotations" not in _pod(_one(case, "Deployment", "beacon-notifier"))["metadata"]
     for kind, name in [("Deployment", "beacon-checker"), ("CronJob", "beacon-scheduler"),
                        ("CronJob", "beacon-scheduler-daily")]:
@@ -381,3 +381,19 @@ def test_every_committed_tenant_is_a_render_case():
     assert {f"committed-{p.stem}" for p in _committed()} <= set(CASES)
     for p in _committed():
         assert re.fullmatch(r"[a-z][a-z0-9-]{2,30}", p.stem), p
+
+
+@pytest.mark.parametrize("case", ALL)
+def test_v55_tenant_database_admits_beacon_api_and_its_stack_only(case):
+    pols = [d for d in _kinds(case, "NetworkPolicy")
+            if d["spec"]["podSelector"].get("matchLabels") == {"cnpg.io/cluster": "beacon-db"}]
+    sources = [f for p in pols for r in p["spec"].get("ingress", []) for f in r["from"]]
+    api = [f for f in sources if "namespaceSelector" in f and
+           f["namespaceSelector"]["matchLabels"].get("kubernetes.io/metadata.name") == "beacon"]
+    assert api == [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "beacon"}},
+                    "podSelector": {"matchLabels": {"app": "beacon-api"}}}]
+    # Every other source is this namespace's own stack, or the CNPG operator on its status port.
+    others = [f for f in sources if f not in api]
+    for f in others:
+        ns = f.get("namespaceSelector", {}).get("matchLabels", {}).get("kubernetes.io/metadata.name")
+        assert ns in (None, "cnpg-system"), f

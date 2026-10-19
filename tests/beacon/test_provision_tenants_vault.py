@@ -1,5 +1,5 @@
 # tests/beacon/test_provision_tenants_vault.py
-"""beacon §T.42 / §V.52: scripts/provision-beacon-tenants-vault.sh, run against a stub `vault` CLI.
+"""beacon §T.42 / beacon §V.52: scripts/provision-beacon-tenants-vault.sh, run against a stub `vault` CLI.
 
 One tenant role for every tenant namespace and one read role for beacon-api, written once by
 the owner. The stub records policies and roles, so these tests read exactly what the script

@@ -7,7 +7,7 @@
 # NO resources-finalizer, on purpose: deleting this Application must never cascade to the
 # tenants. Each XR also carries Delete=false (Application delete) and Prune=false (file removed)
 # until its offboarding PR, and the xtenant-guard policy refuses any delete without a verified
-# backup (beacon §V.12, §R.18).
+# backup (beacon §V.12, beacon §R.18).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

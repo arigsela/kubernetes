@@ -6,8 +6,8 @@
 # Rules the script keeps, each pinned by a test (arigsela/kubernetes tests/composition/,
 # tests/beacon/test_tenants.py):
 #   * every namespaced object lands in tenant-<slug> (beacon §V.50);
-#   * the bucket is deletionPolicy: Orphan and its name carries the tenant id (beacon §V.12, §V.49);
-#   * quota + LimitRange, default-deny ingress (beacon §V.51, §V.31);
+#   * the bucket is deletionPolicy: Orphan and its name carries the tenant id (beacon §V.12, beacon §V.49);
+#   * quota + LimitRange, default-deny ingress (beacon §V.51, beacon §V.31);
 #   * secrets come from ESO Password generators, created once, pushed to the tenant's own Vault
 #     folder k8s-secrets/tenants/tenant-<slug>/ with role beacon-tenant (beacon §V.52). The
 #     PushSecret deletes them when it is deleted (offboarding, beacon §V.49), so two Usages keep
@@ -390,7 +390,7 @@ spec:
 
 
           def sdk_annotations():
-              # SDK services trace themselves; the operator instruments only the notifier (beacon §V.32, §V.9).
+              # SDK services trace themselves; the operator instruments only the notifier (beacon §V.32, beacon §V.9).
               return {"instrumentation.opentelemetry.io/inject-python": "false"}
 
 
@@ -590,6 +590,13 @@ spec:
               tcp = lambda *ports: [{"port": p, "protocol": "TCP"} for p in ports]
               yield "netpol-db-from-stack", pol("db-from-stack", {"matchLabels": {"cnpg.io/cluster": DB}},
                                                 ingress=[{"from": [{"podSelector": stack}], "ports": tcp(5432)}])
+              # beacon-api is the one service that reads across (beacon §V.55, beacon §T.45). The database is out
+              # of the mesh, so plain 5432 from the api's own pods.
+              yield "netpol-db-from-beacon-api", pol(
+                  "db-from-beacon-api", {"matchLabels": {"cnpg.io/cluster": DB}},
+                  ingress=[{"from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "beacon"}},
+                                      "podSelector": {"matchLabels": {"app": "beacon-api"}}}],
+                            "ports": tcp(5432)}])
               yield "netpol-notifier-from-checker", pol(
                   "notifier-from-checker", {"matchLabels": {"app": "beacon-notifier"}},
                   ingress=[{"from": [{"podSelector": {"matchLabels": {"app": "beacon-checker"}}}],
