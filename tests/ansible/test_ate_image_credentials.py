@@ -16,6 +16,8 @@ KEY_ID = "AKIAIOSFODNN7EXAMPLE"
 SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 TOKEN = "ECR-REGISTRY-TOKEN-NEVER-PRINTED"
 KEYS = {"DOCS_CHECKER_PULL_AWS_ACCESS_KEY_ID": KEY_ID, "DOCS_CHECKER_PULL_AWS_SECRET_ACCESS_KEY": SECRET}
+# Variables the shell running the fake provider adds by itself (dash/bash), not passed by the play.
+SHELL_NOISE = {"PWD", "OLDPWD", "SHLVL", "_"}
 
 FAKE_PROVIDER = f"""#!/bin/sh
 env > /tmp/provider-env
@@ -73,11 +75,20 @@ def test_the_verify_runs_the_provider_with_only_the_configs_environment(node, in
     r = run_playbook("ate-image-credentials.yml", inventory_for("k3s_workers"), *stage(node, FAKE_PROVIDER), env=KEYS)
     assert r.returncode == 0, r.stdout + r.stderr
     seen = dict(line.split("=", 1) for line in node_read(node, "/tmp/provider-env").splitlines() if "=" in line)
+    seen = {k: v for k, v in seen.items() if k not in SHELL_NOISE}
+    # Exactly atelet's stand-in env (rustfs's variables) overlaid with the config's: nothing else from the
+    # host or the play (env -i), so this is the environment atelet will give the binary.
+    assert set(seen) == {"AWS_REGION", "AWS_S3_USE_PATH_STYLE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_PROFILE",
+                         "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_ENDPOINT_URL",
+                         "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_ROLE_ARN", "AWS_CONFIG_FILE",
+                         "AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "AWS_EC2_METADATA_DISABLED"}, seen
     assert seen["AWS_SHARED_CREDENTIALS_FILE"] == f"{DIR}/aws-credentials"
     assert seen["AWS_PROFILE"] == "docs-checker-pull"
-    assert seen["AWS_EC2_METADATA_DISABLED"] == "true"
-    assert seen.get("AWS_ACCESS_KEY_ID", "") == "" and seen.get("AWS_SECRET_ACCESS_KEY", "") == ""
-    assert not any(k.startswith("DOCS_CHECKER_PULL_") for k in seen), "the play's own env leaked to the provider"
+    # The seeded dummies (a fake key, an unreachable endpoint) must have been overridden by the blanks.
+    for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_ENDPOINT_URL",
+                 "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_ROLE_ARN", "AWS_CONFIG_FILE"):
+        assert seen[name] == "", f"{name}={seen[name]!r}: the inherited value survived"
+    assert seen["AWS_IGNORE_CONFIGURED_ENDPOINT_URLS"] == seen["AWS_EC2_METADATA_DISABLED"] == "true"
     assert "credentials for 852893458518.dkr.ecr.us-east-2.amazonaws.com" in r.stdout
     assert_nothing_secret_in(r)
 

@@ -18,9 +18,12 @@
 #   scripts/provision-docs-checker-pull.sh                create the key if Vault has none, then place what Vault holds
 #   scripts/provision-docs-checker-pull.sh --limit HOST   place on one worker only (a new or rebuilt one)
 #   scripts/provision-docs-checker-pull.sh --rotate       add a second key, store it, place and verify it; the old one stays
-#   scripts/provision-docs-checker-pull.sh --retire-old   delete every key of the user except Vault's
+#   scripts/provision-docs-checker-pull.sh --retire-old   place and verify Vault's key on EVERY worker, then delete every
+#                                                         other key of the user (nothing is deleted if any worker fails)
 #
 # Rotation takes two runs on purpose: a key is deleted only after its successor has worked on every worker.
+# --retire-old re-runs that placement itself, so an earlier --rotate that failed part-way cannot strand a worker
+# on the key being deleted. Neither step takes --limit: both are all-workers operations.
 # After --retire-old, `kubectl -n ate-system rollout restart ds/atelet` drops the registry tokens atelet cached
 # from the old key (it keeps them for up to ~6 h).
 #
@@ -54,6 +57,10 @@ done
 if ((check)) && [[ $mode != ensure ]]; then
   echo "--check previews the placement only; it does not combine with --$mode" >&2; exit 2
 fi
+if [[ -n $limit && $mode != ensure ]]; then
+  echo "--$mode works on every worker; it does not combine with --limit (a key changed on one worker strands the others)" >&2
+  exit 2
+fi
 
 : "${VAULT_ADDR:?set VAULT_ADDR (https://vault.arigsela.com, or a port-forward on http://127.0.0.1:8200)}"
 if ! vault token lookup >/dev/null 2>&1; then
@@ -67,14 +74,20 @@ fi
 
 # The stored key as Vault's JSON; nothing when absent. Any other error stops the run, so a transient failure
 # can never look like "absent" and mint a key.
+# stdout and stderr are kept apart: the CLI can print warnings on stderr with a successful read.
 vault_json() {
-  local out
-  if out=$(vault kv get -mount="$MOUNT" -format=json "$KEY" 2>&1); then
+  local out err errf
+  errf=$(mktemp)
+  if out=$(vault kv get -mount="$MOUNT" -format=json "$KEY" 2>"$errf"); then
+    rm -f "$errf"
     printf '%s' "$out"
-  elif grep -qi "no value found" <<<"$out"; then
+    return 0
+  fi
+  err=$(cat "$errf"); rm -f "$errf"
+  if grep -qi "no value found" <<<"$err"; then
     :
   else
-    echo "cannot read $MOUNT/$KEY (and it is not a 'not found'): ${out%%$'\n'*}" >&2
+    echo "cannot read $MOUNT/$KEY (and it is not a 'not found'): ${err%%$'\n'*}" >&2
     exit 2
   fi
 }
@@ -135,6 +148,9 @@ case $mode in
     fi
     others=$(awk -v keep="$vault_id" '$1 != "" && $1 != keep { print $1 }' <<<"$keys")
     if [[ -z $others ]]; then echo "only Vault's key $vault_id exists: nothing to retire"; exit 0; fi
+    # Every worker must hold Vault's key, verified, before another key goes: place() on all of them (no
+    # --limit, never --check) exits on any failure, so nothing below runs unless it succeeded everywhere.
+    place
     for id in $others; do
       aws iam delete-access-key --user-name "$IAM_USER" --access-key-id "$id"
       echo "deleted key $id"
