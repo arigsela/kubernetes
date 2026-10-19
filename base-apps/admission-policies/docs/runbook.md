@@ -156,8 +156,8 @@ itself is broken: `kubectl delete validatingadmissionpolicybinding agent-definit
 
 **To soak it instead of enforcing** (shadow: it warns and audits, blocks nothing): in
 `base-apps/admission-policies/agent-definitions-from-git.yaml` (hand-written; there is no
-`ENFORCE` constant for it) set `failurePolicy: Ignore` at line 62 and
-`validationActions: [Warn, Audit]` at line 103. **Precondition:** soak only while `byo-images`
+`ENFORCE` constant for it) set `failurePolicy: Ignore` and `validationActions: [Warn, Audit]` on
+the two lines marked `# enforcing`. **Precondition:** soak only while `byo-images`
 holds no pinned digest (every entry still ends in `REPLACE_WITH_DIGEST`) and before any byo
 Agent syncs, so in practice land the policy on its own before the byo change. The byo admission
 (SPEC §V.101) is safe only while git is the only writer of agent definitions, so flip back to
@@ -189,8 +189,22 @@ Harness included, so until the pin its whole session fails at setup, naming the 
    python3 scripts/validate-agent-capability.py --repo-root .
    python3 -m pytest tests/agent-capability/ tests/admission-policies/ -q
    ```
+4. **After the merge, sync in order.** The pin changes the policy (Application
+   `admission-policies`) and the Harness (Application `kagent-secrets`) in one commit, but the two
+   apps sync independently. If `kagent-secrets` applies the Harness before `admission-policies`
+   has applied the new `byoImages`, the live `agent-capability-runtime` still holds the old list
+   and denies it ("not exactly an entry of the taxonomy's byo-images"), and Argo CD does not
+   retry a failed automated sync of the same revision (SPEC §R.42): `kagent-secrets` stays
+   Failed, the docs-checker Agent without its Harness. So: `argocd app sync admission-policies`
+   (or wait until `argocd app get admission-policies` shows it Synced at the merge revision),
+   then, if `argocd app get kagent-secrets` shows the Harness denied by
+   `agent-capability-runtime`, `argocd app sync kagent-secrets`. Check:
+   `kubectl -n kagent get harness docs-checker -o jsonpath='{.spec.workload.image}'`.
 A later image is a NEW entry (keep the old one until no Harness runs it), never a repository or
-a tag: a repository would admit every digest pushed there later. Every entry is a reviewed
+a tag: a repository would admit every digest pushed there later. So for a later digest, step 2
+is not the `sed` (it replaces the placeholder): ADD the new string to `byo-images` as a second
+entry and point the good fixture and the Harness at it (steps 3 and 4 as above); remove the old
+entry in a later change, once the Harness has synced on the new image. Every entry is a reviewed
 image, and the Agents on it still have to satisfy invariant 7 in CI (class `read`, only
 `read-only-servers`, only read tools). Adding a server to `read-only-servers` needs a
 server-side read-only proof in `tests/agent-capability` (`READ_ONLY_PROOFS`).

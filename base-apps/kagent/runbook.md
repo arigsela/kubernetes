@@ -245,6 +245,13 @@ group to the role, and note it in the manifest header's dated list.
   v1.0.0-alpha14 ADKConfig` means the controller is not on alpha14: the image speaks alpha14's
   runtime contract only (§T.128), so a kagent rollback below alpha14 breaks this agent, and only
   this one. Substrate waits up to 30 s for its `GET /readyz` on 8081 before the first message.
+- **Check, right after a pin or bump merge:** `argocd app get kagent-secrets`. A failed sync with
+  the Harness `docs-checker` denied by `agent-capability-runtime` ("not exactly an entry of the
+  taxonomy's byo-images") means `kagent-secrets` applied the new Harness before
+  `admission-policies` applied the new `byoImages`; the Agent then has no Harness to run on.
+  **Fix:** once `argocd app get admission-policies` shows it Synced at the merge revision,
+  `argocd app sync kagent-secrets` (Argo CD does not retry a failed sync of the same revision,
+  SPEC §R.42; admission-policies runbook, "Pin a byo image digest", step 4).
 - **Fix:** where the fault lives: the Substrate pull key, or the kagent version. The image itself
   changes only by a new digest: build, push and pin it (admission-policies runbook, "Pin a byo
   image digest"), never a tag in the Harness (the CRD and `agent-capability-runtime` refuse one).
@@ -265,15 +272,20 @@ group to the role, and note it in the manifest header's dated list.
     Role `docs-checker-trigger` is missing (`argocd app get kagent-secrets`).
   - `the delivery could not be recorded (…), so the report is not posted`: the API server refused
     even the claim alone (it is down, or the ConfigMap is already over 1 MiB). The report is in the
-    log, not in Slack; run again once the API answers (reset the memory first if it is the size).
+    log, not in Slack; run again once the API answers. If it is the size, reset the memory to get
+    unstuck, and lower docs-checker's snapshot cap (next bullet) so it does not regrow.
 - **Slack shows the report AND `:x: … Failed: memory not saved: …`:** the report was delivered;
   only docs-checker's new snapshot was dropped. Either it would have taken the ConfigMap's data
   past its budget (the API server's 1 MiB less a 16 KiB margin; `… bytes of ConfigMap data`), the
   API server refused it (`HTTP 422`), or it is not a version-1 snapshot with an integer run
   counter (`snapshot version …`, `run counter …`: docs-checker's memory schema changed, so update
   `SNAPSHOT_VERSION` in `scripts/docs_checker_trigger.py`). The previous memory is kept, so the
-  next run re-checks what this one learned and costs more. If the size alert repeats, reset the
-  memory (How-to below).
+  next run re-checks what this one learned and costs more. **A size alert that repeats** means
+  docs-checker's own snapshot hard cap sits above the ConfigMap budget (SPEC §T.132 (f)): lower it
+  in `arigsela/claude-agents` (`docs-checker/src/docs_checker/memory.py`; being lowered to about
+  960 KiB), then rebuild and push the image and pin it as a NEW `byo-images` entry
+  (admission-policies runbook, "Pin a byo image digest"). A reset alone regrows the
+  snapshot to the same size within weeks.
 - **Check, nothing in Slack at all:** `kubectl -n kagent get cronjob docs-checker-trigger` (`LAST
   SCHEDULE`; a run missed by more than an hour is skipped by design) and the Job's log. `report not
   posted: …` means n8n refused the post: the run is recorded as claimed, so the Job's retry posts
@@ -295,8 +307,8 @@ group to the role, and note it in the manifest header's dated list.
   kagent/docs-checker-trigger --context <session from the log> "check <path>"` continues it.
 - **State:** `kubectl -n kagent get cm docs-checker-memory -o jsonpath='{.data.deliveries\.json}'`
   lists the last ten run ids and whether each was posted; `memory.json` is docs-checker's snapshot.
-- **Reset the memory** (garbled snapshot, a repeated "memory not saved" size alert, or to force
-  every doc to be checked):
+- **Reset the memory** (a garbled snapshot, or to force every doc to be checked; a repeating
+  "memory not saved" size alert needs docs-checker's snapshot cap lowered, see the symptom above):
   `kubectl -n kagent delete cm docs-checker-memory`, when no run is in progress. Argo CD recreates it
   empty; the next run checks every doc (the slowest and most expensive run, still capped at $1.00).
   It also forgets which runs were delivered, so do not delete it while a Job is retrying.
@@ -436,11 +448,15 @@ a routine Renovate merge. Sessions and long-term memory reset.
    runtime contract itself. Read the release for changes to that contract (the
    `KAGENT_CONFIG_JSON` `ADKConfig` shape, the `kagent.runtime.v1` TaskStore service, the A2A and
    `/readyz` ports), rebuild the image (`arigsela/claude-agents` `docs-checker/`) against the
-   matching `kagent-core`, push it, and pin the new digest **in the same PR**: the taxonomy's
-   `byo-images` entry, the good fixture and `harnesses/docs-checker.yaml` (the `sed` in the
-   admission-policies runbook, "Pin a byo image digest", with the old digest in place of
-   `REPLACE_WITH_DIGEST`). The image checks the config shape at startup and refuses one it does
-   not know, as it refused alpha11's.
+   matching `kagent-core`, push it, and **in the same PR ADD** its digest to the taxonomy's
+   `byo-images` as a NEW entry (keep the old one: the live Harness runs it until this PR syncs)
+   and point the good fixture and `harnesses/docs-checker.yaml` at the new string. Not the
+   admission-policies runbook's `sed`: that replaces the placeholder, and swapping the one entry
+   in place would deny whichever Harness the live policy does not list yet. Regenerate and
+   validate as in that runbook ("Pin a byo image digest", step 3), and after the merge sync in its
+   order (step 4). Remove the old entry in a later PR, once `kubectl -n kagent get harness
+   docs-checker -o jsonpath='{.spec.workload.image}'` shows the new digest. The image checks the
+   config shape at startup and refuses one it does not know, as it refused alpha11's.
 2. **Run the guardrails** against the new CRDs: `python -m pytest tests/admission-policies -q`,
    the identity and capability validators, and `tests/agent-capability`.
 3. **Archive the record:** take a final audit export
