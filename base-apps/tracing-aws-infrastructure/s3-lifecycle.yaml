@@ -1,0 +1,27 @@
+# Tempo deletes blocks older than block_retention (168h, base-apps/tracing/tempo.yaml) itself.
+# This rule is the backstop: anything Tempo leaves behind (a block from a crashed compaction,
+# a retention change) expires a day after the retention window instead of accruing forever.
+apiVersion: s3.aws.upbound.io/v1beta2
+kind: BucketLifecycleConfiguration
+metadata:
+  name: tempo-traces-lifecycle
+  labels:
+    app: tempo
+    component: storage-lifecycle
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-2
+    bucketRef:
+      name: asela-tempo-traces-20261019
+    rule:
+      - id: expire-after-retention
+        status: Enabled
+        # Single-element lists, not objects: the provider-aws v2 schema (see the comment in
+        # base-apps/loki-aws-infrastructure/s3-lifecycle.yaml).
+        filter:
+          - prefix: ""
+        expiration:
+          - days: 8
+  providerConfigRef:
+    name: default

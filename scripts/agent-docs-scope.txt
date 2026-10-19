@@ -26,3 +26,4 @@ substrate
 dispatcher
 slack-bridge
 beacon
+tracing

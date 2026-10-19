@@ -1,0 +1,9 @@
+name: tracing-aws-infrastructure
+sourcePath: base-apps/tracing-aws-infrastructure
+# Tempo's S3 bucket, its IAM user and access key (beacon §T.18). Everything in the directory is
+# a cluster-scoped Crossplane managed resource, so nothing is created in this namespace; the
+# AccessKey writes its connection Secret into `tracing`, which base-apps/tracing.yaml creates.
+# Deliberately no CreateNamespace=true, like beacon-aws-infrastructure.
+namespace: tracing
+syncOptions:
+  - ServerSideApply=true

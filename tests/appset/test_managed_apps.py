@@ -25,6 +25,7 @@ EXPECTED_APPS = {
     "ecr-auth",
     "jupyter-aws-infrastructure",
     "loki-aws-infrastructure",
+    "tracing-aws-infrastructure",
 }
 
 

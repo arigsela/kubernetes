@@ -1,0 +1,89 @@
+# base-apps/tracing/smoke-job.yaml (beacon §T.18, beacon §V.18)
+# Run every third-party image beacon's Phase 3 adds on a real node before any of it rolls
+# out: the nodes are Xeon E5-2670 (AVX, no AVX2), and a binary built for x86-64-v3 dies
+# with SIGILL on its first instructions. Each container starts its image's own binary.
+#
+# The OpenTelemetry Operator's two images are listed here although the operator itself is
+# beacon §T.22 (base-apps/opentelemetry-operator.yaml): this Job runs them first, and that app
+# must pin the same digests (tests/beacon/test_tracing.py).
+#
+# PreSync: a failure stops this app's sync only (tracing, not logging). BeforeHookCreation
+# keeps the last run's pod and logs until the next sync.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tracing-smoke
+  namespace: tracing
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app: tracing-smoke
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        # The node's CPU, for the record; the busybox shell comes from the autoinstrumentation
+        # image, which is otherwise only files.
+        - name: cpu
+          image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b1@sha256:fcfd4588cbf2c68ae6a5b67501d8aa4a1c58c0b89e664c8eee71952ac12430ff
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              grep -m1 "model name" /proc/cpuinfo
+              grep -qw avx /proc/cpuinfo || { echo "no AVX on this node" >&2; exit 1; }
+              if grep -qw avx2 /proc/cpuinfo; then echo "AVX2 present"; else echo "AVX2 absent (x86-64-v2 node, as expected)"; fi
+          resources: &small
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext: &locked
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+        - name: tempo
+          image: grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
+          args: ["-version"]
+          resources: *small
+          securityContext: *locked
+        - name: otelcol
+          image: otel/opentelemetry-collector-contrib:0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6
+          args: ["--version"]
+          resources: *small
+          securityContext: *locked
+        # The manager is a cobra command: --help parses flags and exits 0 without touching the API.
+        - name: otel-operator
+          image: ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator:0.161.0@sha256:76ac4fa40512b60f85ff236c60c075ca3407858efe72e22d2e96a9cf1bc82dc2
+          args: ["--help"]
+          resources: *small
+          securityContext: *locked
+        # The layer the operator copies into an instrumented pod: Python packages built on
+        # python:3.14 (beacon §R.25). Importing them under the notifier's 3.13 is the beacon
+        # app's smoke (base-apps/beacon/jobs.yaml, beacon §T.22); here: the image runs and the
+        # tree is there.
+        - name: autoinstrumentation-python
+          image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b1@sha256:fcfd4588cbf2c68ae6a5b67501d8aa4a1c58c0b89e664c8eee71952ac12430ff
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              test -f /autoinstrumentation/opentelemetry/instrumentation/auto_instrumentation/sitecustomize.py
+              echo "autoinstrumentation-python: $(ls /autoinstrumentation | wc -l) top-level entries"
+          resources: *small
+          securityContext: *locked

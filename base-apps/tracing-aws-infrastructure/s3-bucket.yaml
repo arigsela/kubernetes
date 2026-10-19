@@ -1,0 +1,23 @@
+# S3 bucket for Tempo's trace blocks (beacon §T.18). Tempo 3.x keeps recent traces in its
+# live-store and writes completed blocks here; object storage is what Tempo recommends for
+# anything beyond a test (beacon §R.5). Same shape as base-apps/loki-aws-infrastructure/.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: asela-tempo-traces-20261019
+  labels:
+    app: tempo
+    component: storage
+    managed-by: crossplane
+spec:
+  forProvider:
+    region: us-east-2
+    tags:
+      Name: "Tempo trace storage"
+      Environment: "homelab"
+      ManagedBy: "Crossplane"
+      Purpose: "Tempo trace block storage"
+      CostCenter: "observability"
+      Project: "beacon"
+  providerConfigRef:
+    name: default
