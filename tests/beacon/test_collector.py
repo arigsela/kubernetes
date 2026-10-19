@@ -160,3 +160,39 @@ def test_v42_running_collector_scrubs_urls(collector):
     assert spans["beacon-api"]["http.target"] == "/public/v1/status/homelab"
     assert spans["beacon-api"]["url.full"] == "https://beacon.arigsela.com/public/v1/status/homelab"
     assert "url.query" not in spans["beacon-api"]
+
+
+def post(ports, service, n):
+    body = {"resourceSpans": [resource_spans(service, [span("tick", 1, []) for _ in range(n)])]}
+    req = urllib.request.Request(f"http://127.0.0.1:{ports['http']}/v1/traces", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    assert urllib.request.urlopen(req, timeout=5).status == 200
+
+
+def span_count(ports, service):
+    text = urllib.request.urlopen(f"http://127.0.0.1:{ports['prom']}/metrics", timeout=5).read().decode()
+    for line in text.splitlines():
+        if line.startswith("tracing_spans_received_total") and f'service_name="{service}"' in line:
+            return float(line.rsplit(" ", 1)[1])
+    return None
+
+
+def wait_for(fn, want, seconds=15):
+    deadline = time.time() + seconds
+    got = None
+    while time.time() < deadline:
+        got = fn()
+        if got == want:
+            return got
+        time.sleep(0.5)
+    return got
+
+
+def test_v9_span_count_is_cumulative(collector):
+    """beacon §B.14: the count connector emits deltas; the Prometheus exporter alone shows only
+    the latest one, so a rate or absence alert on it means nothing. 3 spans, then 2: 5."""
+    ports, _ = collector
+    post(ports, "beacon-notifier", 3)
+    assert wait_for(lambda: span_count(ports, "beacon-notifier"), 3.0) == 3.0
+    post(ports, "beacon-notifier", 2)
+    assert wait_for(lambda: span_count(ports, "beacon-notifier"), 5.0) == 5.0

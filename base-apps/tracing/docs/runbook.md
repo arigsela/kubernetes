@@ -52,7 +52,8 @@ commands below only inspect.
   NetworkPolicy rule to `tracing` port 4318 (beacon §V.41).
 - **Received but not in Tempo:** `kubectl -n tracing logs deploy/otel-collector --tail=100`.
   `memory_limiter` refusing data means the collector is at its limit; export errors name Tempo
-  or Coroot. A trace with no error and no beacon service is kept only 10% of the time (by design).
+  or Coroot (`Decompressor is not installed for grpc-encoding "gzip"`: an exporter lost its
+  `compression: none`, beacon §B.13). A trace with no error and no beacon service is kept only 10% of the time (by design).
 - **In Tempo, but a URL is cut short:** expected. Query strings and the notifier's delivery
   paths are scrubbed (beacon §V.42).
 

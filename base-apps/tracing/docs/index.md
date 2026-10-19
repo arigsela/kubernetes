@@ -53,9 +53,11 @@ SDK ships only the HTTP exporter), 4317 for gRPC (Istio, from beacon §T.20). In
 3. `tail_sampling` (beacon §V.43): keeps every trace with an error and every trace touching a
    `beacon-*` service, and 10% of the rest. Sampling happens here, not at the Gateway,
    because apps behind the Gateway (kagent, Substrate) follow its sampling decision.
-4. Exported to Tempo and to Coroot (Coroot keeps its own 7 days).
+4. Exported to Tempo and to Coroot (Coroot keeps its own 7 days). The Coroot export is
+   uncompressed: Coroot's receiver refuses gzip (beacon §B.13).
 A second pipeline counts spans per `service.name` before sampling
-(`tracing_spans_received_total`, one label) for the beacon §V.9 alert. One replica on
+(`tracing_spans_received_total`, one label, a running total via `deltatocumulative`, beacon
+§B.14) for the beacon §V.9 alert. One replica on
 purpose: tail sampling needs a whole trace on one instance.
 
 ## Storage
