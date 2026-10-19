@@ -81,10 +81,10 @@ def rendered_chart(tmp_path_factory) -> list[dict]:
     """The kagent chart exactly as Argo renders it: the Application's chart, version, values,
     release name and namespace. The values key above is only a claim about the chart; the
     render is what the cluster gets. (The kagent-tools subchart's own default, rbac.create:
-    true, is a `*`/`*`/`*` ClusterRole bound to this ServiceAccount, still in 1.0.0-alpha11.)
+    true, is a `*`/`*`/`*` ClusterRole bound to this ServiceAccount, still in 1.0.0-alpha14.)
 
     KAGENT_CHART_VERSION overrides the version, to check a chart bump against the current
-    values before the Application moves (e.g. KAGENT_CHART_VERSION=1.0.0-alpha11)."""
+    values before the Application moves (e.g. KAGENT_CHART_VERSION=1.0.0-alpha14)."""
     if shutil.which("helm") is None:
         if os.environ.get("CI"):
             pytest.fail("helm is required to render the kagent chart (preinstalled on GitHub runners)")

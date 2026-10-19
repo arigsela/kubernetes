@@ -149,7 +149,7 @@
       dependencyDashboardApproval: true,
       automerge: false,
       prBodyNotes: [
-        '**kagent + Substrate lockstep.** Bump Substrate only to the version this kagent release is built against (`go.mod` / `kagent install` in the kagent tag), never on its own. Re-pin every `@sha256` image in the values of `base-apps/kagent.yaml`, `substrate-podcert.yaml` and `substrate.yaml` (and the recorded component digests in its header), re-render with `helm template --kube-version` and re-check the Substrate prerequisites (`base-apps/substrate/docs.md`).',
+        '**kagent + Substrate lockstep.** Bump Substrate only to the version this kagent release is built against (`go.mod` / `kagent install` in the kagent tag), never on its own. Re-pin every `@sha256` image in the values of `base-apps/kagent.yaml` (controller, UI, tools, worker) and the golang-adk digest the release\'s `config.harnessImages` catalog names (`helm template … | grep golang-adk`) in the three Harnesses; diff `helm show values` between the versions for moved keys, `substrate-podcert.yaml` and `substrate.yaml` (and the recorded component digests in its header), re-render with `helm template --kube-version` and re-check the Substrate prerequisites (`base-apps/substrate/docs.md`).',
       ],
     },
     {

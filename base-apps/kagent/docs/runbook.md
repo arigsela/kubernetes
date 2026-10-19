@@ -6,7 +6,7 @@ app: kagent
 catalog_entity: kagent
 kind: runbook
 namespace: kagent
-last_reviewed: 2026-10-11
+last_reviewed: 2026-10-18
 status: stable
 tags: [ai-agent, kagent, mcp, anthropic, substrate]
 sources:
@@ -28,7 +28,8 @@ sources:
   - base-apps/kagent/agent-docs-mcp.yaml
   - base-apps/kagent/agent-docs-mcp-remote.yaml
   - base-apps/kagent/backstage-catalog-mcp.yaml
-  - base-apps/kagent/kagent-postgres-external-secret.yaml
+  - base-apps/kagent/kagent-postgres-owner-external-secret.yaml
+  - base-apps/kagent/kagent-postgres-readwrite-external-secret.yaml
   - base-apps/kagent/kagent-anthropic-external-secret.yaml
   - base-apps/kagent/agent-docs-mcp-external-secret.yaml
   - base-apps/kagent/httproute-mcp.yaml
@@ -213,7 +214,8 @@ The App token is minted from the Secret `implementer-github-app` (Vault `impleme
 
 ### Symptom: `kagent-controller` CrashLoopBackOff
 - **Check:** `kubectl -n kagent logs deploy/kagent-controller --previous --tail=100`. Usual causes:
-  the `kagent-postgres` Secret missing or stale (`kubectl -n kagent get externalsecret kagent-postgres`),
+  the `kagent-postgres-owner` or `kagent-postgres-readwrite` Secret missing or stale
+  (`kubectl -n kagent get externalsecret kagent-postgres-owner kagent-postgres-readwrite`),
   pgvector missing from schema `extensions` in `kagent_v1` (the controller refuses to start), a
   migration error after a version change, or Substrate's API unreachable
   (`kubectl get pods -n ate-system`).
@@ -342,12 +344,16 @@ a routine Renovate merge. Sessions and long-term memory reset.
 1. **Prepare one PR** (Renovate opens it as `kagent-substrate` only after you tick it on the
    Dependency Dashboard, labelled `clean-db-migration`): the five charts (`kagent-crds`, `kagent`,
    `substrate-crds`, `substrate-podcert`, `substrate`) to the versions the kagent release names;
-   re-pin **every** digest in the values of `base-apps/kagent.yaml` (controller, `agentImage`, UI,
-   tools, `substrateWorkerPool.workerImage`), `substrate-podcert.yaml` and `substrate.yaml`
+   re-pin **every** digest in the values of `base-apps/kagent.yaml` (controller, UI, tools,
+   `substrateWorkerPool.workerImage`), `substrate-podcert.yaml` and `substrate.yaml`
    (plus the component digests in its header); the golang-adk `workload.image` in **all three**
    Harnesses (identical); and the CRD fixture under `tests/admission-policies/fixtures/crds/`.
    Re-render both charts with `helm template --kube-version` and read the release notes for
-   CRD and value changes. Renovate groups the Harness image with the charts (`renovate.json5`,
+   CRD and value changes. Read `helm show values` for the moved `config.*` keys. Before the
+   Application moves, run `KAGENT_CHART_VERSION=<new> python3 -m pytest
+   tests/agent-capability/test_kagent_tools_rbac.py` (it honours the override);
+   `test_kagent_chart_config.py` renders the Application's own `targetRevision`, so run it once
+   the Application names the new chart. Renovate groups the Harness image with the charts (`renovate.json5`,
    group `kagent-substrate`), so it never arrives as a Harness-only PR.
 2. **Run the guardrails** against the new CRDs: `python -m pytest tests/admission-policies -q`,
    the identity and capability validators, and `tests/agent-capability`.
@@ -358,11 +364,14 @@ a routine Renovate merge. Sessions and long-term memory reset.
 4. **Clean databases:** drop `kagent_v1` and `substrate` on the pgvector Postgres, then sync the
    `postgresql` app once: `init-kagent-v1-db` and `init-substrate-db` recreate them empty, and
    `init-kagent-audit-role` / `init-agent-audit-web-role` restore the audit grants.
+   `init-kagent-v1-db` also recreates the read/write login.
 5. **Merge**, then restart `kagent-controller` and Substrate's `ate-api-server` if they don't roll
    on their own.
-6. **Accept:** 7 Agents `Ready`; each answers a multi-step tool question; `k8s-agent` pauses a
+6. **Accept:** 9 Agents `Ready`; each answers a multi-step tool question; `k8s-agent` pauses a
    delete for approval (reject keeps the object); `scripts/ask-hk` works; run
-   `agent-audit-ungated` once by hand and read its line.
+   `agent-audit-ungated` once by hand and read its line. Expect the eval gate to re-score every
+   agent (the Harness digest is in each definition hash) and to hold `homelab-knowledge` on the
+   memory entry until it is reseeded (see *Read, re-run or reset the evaluation gate*).
 
 ### Roll back
 - **A bad agent, prompt or value change:** `git revert` the PR. Argo CD applies it.
@@ -370,6 +379,9 @@ a routine Renovate merge. Sessions and long-term memory reset.
   `substrate` dumps (step 3 above) into freshly created databases: the new version will have
   migrated the schema. Snapshots written by the newer Substrate may not restore; start new
   conversations.
+- **A bad alpha14 bump:** the alpha11 dumps are restored as above, and `git revert` re-adds
+  `kagent-postgres-external-secret.yaml` (deleted by the alpha14 PR), which the alpha11 controller
+  reads as `kagent-postgres`.
 - **Back to kagent 0.10.3** (last resort, never exercised): 0.10 and 1.x can't share a cluster
   (both own `mcpservers.kagent.dev`) and there is no conversion. Revert the cutover PRs in reverse
   order (#737 chart and CRDs, then #734 agents and v1alpha3 guardrails), check what later PRs

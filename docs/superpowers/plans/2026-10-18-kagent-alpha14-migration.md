@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** Draft 2026-10-18, awaiting the owner's review. Nothing here is applied.
+**Status:** PRs #869, #870, #872 merged 2026-10-19; PR 3 (this bump) open — see SPEC T126–T128.
 **Owner:** Ari Sela
 **Goal:** Move the cluster's kagent from 1.0.0-alpha11 to 1.0.0-alpha14 without losing the three stdio MCP servers, with the two-login Postgres model upstream now requires, and with every chart value moved to the new `config` schema.
 
