@@ -28,7 +28,7 @@ spec:
       overlapSize: 2
   workload:
     # Same pin as kagent-memory.yaml.
-    image: ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha11@sha256:29409dfe1a030b50da3ff3f72599752cb5824a50f6aa136c16bf2b1678aa89b8
+    image: ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha14@sha256:eb1b0c7f635f31d464cff7cf212275f2642057a629ed20b39661e9f644f71f21
   substrate:
     workerPoolRef:
       name: kagent-default
