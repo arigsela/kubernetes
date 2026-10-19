@@ -74,6 +74,14 @@ spec:
               value: homelab
             - name: BEACON_DB_POOL_MAX
               value: "4"
+            # Traces to the collector over OTLP/HTTP (beacon §V.41; the SDK ships the http exporter).
+            # 100% of root traces, explicit: the collector samples (beacon §V.43).
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.tracing.svc.cluster.local:4318
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_traceidratio
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "1.0"
           resources:
             requests:
               cpu: 100m
@@ -269,6 +277,12 @@ spec:
               value: dex.arigsela.com,beacon.arigsela.com
             - name: SSRF_EXEMPT_TENANTS
               value: homelab
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector.tracing.svc.cluster.local:4318
+            - name: OTEL_TRACES_SAMPLER
+              value: parentbased_traceidratio
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "1.0"
           resources:
             requests:
               cpu: 50m

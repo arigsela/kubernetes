@@ -20,6 +20,7 @@ sources:
   - base-apps/beacon/waypoint.yaml
   - base-apps/beacon/authorization-policy.yaml
   - base-apps/beacon/network-policies.yaml
+  - base-apps/tracing/collector.yaml
   - base-apps/beacon/httproute.yaml
   - base-apps/beacon/certificate.yaml
   - base-apps/beacon/secret-stores.yaml
@@ -73,7 +74,16 @@ bare `§T.n` (that would be this repo's own SPEC.md).
 - **Egress:** the checker and notifier connect to tenant-supplied addresses, so their egress
   refuses private, CGNAT, loopback, link-local and cluster ranges at L3, under the
   application's SSRF guard. The home WAN address is refused by the guard only (it rotates;
-  the guard resolves it live from `SSRF_SELF_HOSTS`).
+  the guard resolves it live from `SSRF_SELF_HOSTS`). The one in-cluster exception is the
+  trace collector (`otel-collector` in `tracing`, TCP 4318 only, beacon §V.41).
+
+## Tracing
+api, checker and both scheduler CronJobs export over OTLP/HTTP to
+`otel-collector.tracing.svc.cluster.local:4318` with an explicit sampler (100% of their own
+root traces; the collector samples, beacon §V.43). The collector scrubs URLs before anything
+is stored (beacon §V.42). See `base-apps/tracing/docs.md`. Every log line carries
+`trace_id=<32 hex>`, which Grafana links to the trace (beacon §T.43). The notifier carries no
+OTel variable: it is traced only through the platform (beacon §V.9, beacon §T.22).
 
 ## Data
 - Database `beacon` on the shared CNPG `postgresql-cluster` (`base-apps/postgresql/`). Row-

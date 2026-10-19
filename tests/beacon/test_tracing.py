@@ -139,3 +139,121 @@ def test_v27_tracing_files_cite_beacon_sections_only(path):
     text = Path(REPO / path).read_text()
     folded = re.sub(r"beacon\s*\n\s*(#\s*)?§", "beacon §", text)
     assert not BARE.findall(folded), BARE.findall(folded)
+
+
+# --- beacon §T.19: the collector and beacon's export path ----------------------------------
+
+COLLECTOR = "base-apps/tracing/collector.yaml"
+ENDPOINT = "http://otel-collector.tracing.svc.cluster.local:4318"
+
+
+def collector_config() -> dict:
+    cm = one(COLLECTOR, "ConfigMap", "otel-collector-config")
+    return yaml.safe_load(cm["data"]["collector.yaml"])
+
+
+def traces_pipelines() -> dict:
+    return {k: v for k, v in collector_config()["service"]["pipelines"].items() if k.split("/")[0] == "traces"}
+
+
+def test_t19_collector_config_checksum_is_current():
+    cm = one(COLLECTOR, "ConfigMap", "otel-collector-config")
+    want = hashlib.sha256(json.dumps(cm["data"], sort_keys=True).encode()).hexdigest()
+    deploy = one(COLLECTOR, "Deployment", "otel-collector")
+    assert deploy["spec"]["template"]["metadata"]["annotations"]["checksum/config"] == want, want
+
+
+def test_t19_one_collector_replica():
+    """Tail sampling needs every span of a trace on the same instance."""
+    deploy = one(COLLECTOR, "Deployment", "otel-collector")
+    assert deploy["spec"]["replicas"] == 1 and deploy["spec"]["strategy"]["type"] == "Recreate"
+
+
+def test_v41_every_traces_pipeline_starts_with_memory_limiter():
+    for name, p in traces_pipelines().items():
+        assert p["processors"][0] == "memory_limiter", name
+
+
+def test_v42_scrub_precedes_every_exporter():
+    """Every traces pipeline whose spans leave the collector runs transform/scrub; only the
+    span counter (a connector, it never exports a span) may skip it."""
+    cfg = collector_config()
+    connectors = set(cfg.get("connectors", {}))
+    leaving = {n: p for n, p in traces_pipelines().items() if set(p["exporters"]) - connectors}
+    assert leaving, "no traces pipeline exports anywhere"
+    for name, p in leaving.items():
+        assert "transform/scrub" in p["processors"], name
+        assert p["processors"].index("transform/scrub") < p["processors"].index("batch"), name
+    statements = " ".join(s for block in cfg["processors"]["transform/scrub"]["trace_statements"]
+                          for s in block["statements"])
+    for key in ("http.url", "url.full", "http.target"):
+        assert f'replace_pattern(attributes["{key}"], "\\\\?.*$$", "")' in statements, key
+    assert 'delete_key(attributes, "url.query")' in statements
+
+
+def test_v43_tail_sampling_keeps_errors_and_beacon():
+    policies = {p["name"]: p for p in collector_config()["processors"]["tail_sampling"]["policies"]}
+    assert policies["errors"]["status_code"]["status_codes"] == ["ERROR"]
+    beacon = policies["beacon"]["string_attribute"]
+    assert beacon["key"] == "service.name" and beacon["values"] == ["beacon-.*"] and beacon["enabled_regex_matching"]
+    assert policies["everything-else"]["type"] == "probabilistic"
+
+
+def test_v29_span_count_has_one_bounded_label():
+    cfg = collector_config()
+    [(name, counter)] = cfg["connectors"]["count"]["spans"].items()
+    assert counter["attributes"] == [{"key": "service.name"}], name
+    assert cfg["processors"]["transform/count"]["trace_statements"] == [
+        {"context": "resource", "statements": ['keep_keys(attributes, ["service.name"])']}]
+    count = cfg["service"]["pipelines"]["traces/count"]
+    assert count["processors"] == ["memory_limiter", "transform/count"] and count["exporters"] == ["count"]
+
+
+def test_t19_collector_forwards_to_tempo_and_coroot():
+    exporters = collector_config()["exporters"]
+    assert exporters["otlp/tempo"]["endpoint"] == "tempo.tracing.svc.cluster.local:4317"
+    assert exporters["otlp/coroot"]["endpoint"] == "coroot-coroot.coroot.svc.cluster.local:4317"
+    assert collector_config()["service"]["pipelines"]["traces"]["exporters"] == ["otlp/tempo", "otlp/coroot"]
+
+
+def pod_specs():
+    """(name, pod spec) for every beacon Deployment and CronJob."""
+    for doc in load("base-apps/beacon/deployments.yaml"):
+        if doc["kind"] == "Deployment":
+            yield doc["metadata"]["name"], doc["spec"]["template"]["spec"]
+    for doc in load("base-apps/beacon/cronjobs.yaml"):
+        if doc["kind"] == "CronJob":
+            yield doc["metadata"]["name"], doc["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+
+
+SDK = {"beacon-api", "beacon-checker", "beacon-scheduler", "beacon-scheduler-daily"}
+
+
+def test_v41_sdk_services_export_to_collector_with_an_explicit_sampler():
+    seen = set()
+    for name, spec in pod_specs():
+        env = {e["name"]: e.get("value") for c in spec["containers"] for e in c.get("env", [])}
+        otel = {k: v for k, v in env.items() if k.startswith("OTEL_")}
+        if name not in SDK:
+            continue
+        seen.add(name)
+        assert otel == {"OTEL_EXPORTER_OTLP_ENDPOINT": ENDPOINT,
+                        "OTEL_TRACES_SAMPLER": "parentbased_traceidratio",
+                        "OTEL_TRACES_SAMPLER_ARG": "1.0"}, name
+    assert seen == SDK
+
+
+def test_v41_probe_egress_admits_only_the_collector():
+    pol = one("base-apps/beacon/network-policies.yaml", "NetworkPolicy", "probe-egress")
+    to_tracing = [r for r in pol["spec"]["egress"]
+                  if any(t.get("namespaceSelector", {}).get("matchLabels", {}).get("kubernetes.io/metadata.name")
+                         == "tracing" for t in r.get("to", []))]
+    assert len(to_tracing) == 1
+    [rule] = to_tracing
+    assert rule["to"] == [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "tracing"}},
+                           "podSelector": {"matchLabels": {"app": "otel-collector"}}}]
+    assert rule["ports"] == [{"port": 4318, "protocol": "TCP"}]
+    # The collector Service really serves OTLP/HTTP on that port, from those pods.
+    svc = one(COLLECTOR, "Service", "otel-collector")
+    assert svc["spec"]["selector"] == {"app": "otel-collector"}
+    assert {"name": "otlp-http", "port": 4318, "targetPort": "otlp-http"} in svc["spec"]["ports"]

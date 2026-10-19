@@ -1,0 +1,249 @@
+# base-apps/tracing/collector.yaml (beacon §T.19)
+# The OpenTelemetry Collector: every trace source in the cluster that is not kagent/Substrate
+# sends here (OTLP gRPC 4317, HTTP 4318), and it forwards to Tempo and to Coroot.
+#
+#   beacon §V.41  memory_limiter first in every traces pipeline
+#   beacon §V.42  transform/scrub before every exporter: no query strings, no notifier
+#                 delivery paths (tests/beacon/test_collector.py runs this config)
+#   beacon §V.43  tail sampling here, not at the Gateway: keep errors and beacon, 10% of the rest
+#   beacon §V.9   the span count per service (port 8889) is the signal the notifier alert reads
+#
+# One replica on purpose: tail sampling needs every span of a trace on the same instance.
+# contrib, not the k8s distribution, for transform and tail_sampling.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: tracing
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: tracing
+  labels:
+    app: otel-collector
+data:
+  collector.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      # First in every traces pipeline (beacon §V.41): refuse data before the pod is OOM-killed.
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 100
+
+      # beacon §V.42: no query string and no notifier delivery path leaves this collector.
+      # Envoy's http.url keeps the query (beacon §R.42), so the Gateway's spans would carry OAuth
+      # code/state and search text; the notifier's httpx spans would carry Slack webhook paths,
+      # which are the credential. `$$` is the config escape for a literal `$`.
+      transform/scrub:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              - replace_pattern(attributes["http.url"], "\\?.*$$", "")
+              - replace_pattern(attributes["url.full"], "\\?.*$$", "")
+              - replace_pattern(attributes["http.target"], "\\?.*$$", "")
+              - delete_key(attributes, "url.query")
+          - context: span
+            conditions:
+              - resource.attributes["service.name"] == "beacon-notifier" and kind == SPAN_KIND_CLIENT
+            statements:
+              - replace_pattern(attributes["url.full"], "^(https?://[^/]+).*$$", "$$1")
+              - delete_key(attributes, "url.path")
+              - delete_key(attributes, "http.target")
+
+      # beacon §V.43: the Gateway samples 100% so apps that follow its decision (kagent,
+      # Substrate) keep their own traces; volume is cut here instead.
+      tail_sampling:
+        decision_wait: 10s
+        num_traces: 20000
+        expected_new_traces_per_sec: 50
+        policies:
+          - name: errors
+            type: status_code
+            status_code:
+              status_codes: [ERROR]
+          - name: beacon
+            type: string_attribute
+            string_attribute:
+              key: service.name
+              values: ["beacon-.*"]
+              enabled_regex_matching: true
+          - name: everything-else
+            type: probabilistic
+            probabilistic:
+              sampling_percentage: 10
+
+      batch:
+        send_batch_size: 512
+        timeout: 5s
+
+      # The span-count pipeline keeps only service.name, so the metric's labels stay bounded
+      # (beacon §V.29).
+      transform/count:
+        error_mode: ignore
+        trace_statements:
+          - context: resource
+            statements:
+              - keep_keys(attributes, ["service.name"])
+
+    connectors:
+      # Spans received per service, before sampling: the beacon §V.9 alert signal (the
+      # notifier's 2 s DB poll keeps its count steady while it is instrumented and healthy).
+      count:
+        spans:
+          tracing.spans.received:
+            description: Spans received by the collector, by service, before sampling.
+            attributes:
+              - key: service.name
+
+    exporters:
+      otlp/tempo:
+        endpoint: tempo.tracing.svc.cluster.local:4317
+        tls:
+          insecure: true
+      otlp/coroot:
+        endpoint: coroot-coroot.coroot.svc.cluster.local:4317
+        tls:
+          insecure: true
+      prometheus:
+        endpoint: 0.0.0.0:8889
+
+    service:
+      extensions: [health_check]
+      telemetry:
+        logs:
+          level: info
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, transform/scrub, tail_sampling, batch]
+          exporters: [otlp/tempo, otlp/coroot]
+        traces/count:
+          receivers: [otlp]
+          processors: [memory_limiter, transform/count]
+          exporters: [count]
+        metrics/count:
+          receivers: [count]
+          exporters: [prometheus]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: tracing
+  labels:
+    app: otel-collector
+spec:
+  replicas: 1
+  # Never two: tail sampling would split a trace's spans between them.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+      annotations:
+        # sha256 of otel-collector-config's `data` (json.dumps, sort_keys); the collector reads
+        # its config only at startup. tests/beacon/test_tracing.py fails if it is stale.
+        checksum/config: 67f25a6178b2b078677fb3dff5c53bb37a63346fca3d62fb376142efe513b1fd
+        # Only the span-count exporter: one series per service (beacon §V.29).
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8889"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: otel-collector
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6
+          args:
+            - --config=/conf/collector.yaml
+          env:
+            # Below the 512Mi limit and above memory_limiter's 400MiB, so the limiter acts first.
+            - name: GOMEMLIMIT
+              value: 440MiB
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+            - name: span-counts
+              containerPort: 8889
+            - name: health
+              containerPort: 13133
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: tracing
+  labels:
+    app: otel-collector
+spec:
+  type: ClusterIP
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http

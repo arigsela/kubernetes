@@ -472,6 +472,10 @@ jobs:
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run beacon tests
+        # BEACON_REQUIRE_DOCKER: tests/beacon/test_collector.py runs the pinned collector image
+        # (beacon §V.42) and must not skip here.
+        env:
+          BEACON_REQUIRE_DOCKER: "1"
         run: python -m pytest tests/beacon/ -q
 
   # Substrate: atelet's ECR credential provider (§T.129, §V.100). atelet dies at startup on a config it
