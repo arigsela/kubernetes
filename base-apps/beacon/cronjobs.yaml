@@ -51,7 +51,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: scheduler
-              image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.3.0@sha256:230c73a6dc6e3b01cdff9cd7e7e1caa57820452d57f4d6789bb643d33ef41d21
+              image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.3.1@sha256:dccac0736f1b8201b788294077f376461c5c0e3abbeaa433f6d102013ae93ebf
               env:
                 - name: DATABASE_URL
                   valueFrom:
@@ -140,7 +140,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: scheduler
-              image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.3.0@sha256:230c73a6dc6e3b01cdff9cd7e7e1caa57820452d57f4d6789bb643d33ef41d21
+              image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.3.1@sha256:dccac0736f1b8201b788294077f376461c5c0e3abbeaa433f6d102013ae93ebf
               args: ["--daily"]
               env:
                 - name: DATABASE_URL

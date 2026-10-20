@@ -62,7 +62,7 @@ spec:
               mountPath: /otel-auto-instrumentation-python
       containers:
         - name: cpu
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.0@sha256:b0f291037c23dae671d59c64482e9f9acc2fc44d996559888421751447a7e550
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.1@sha256:3f47c806c6d9fbd36bf2f3ad390dc77395c03dd5ae3167f69b2bf653ac0843d6
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -82,7 +82,7 @@ spec:
             capabilities:
               drop: ["ALL"]
         - name: api
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.0@sha256:b0f291037c23dae671d59c64482e9f9acc2fc44d996559888421751447a7e550
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.1@sha256:3f47c806c6d9fbd36bf2f3ad390dc77395c03dd5ae3167f69b2bf653ac0843d6
           args: ["--self-check"]
           resources:
             requests:
@@ -100,7 +100,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: scheduler
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.3.0@sha256:230c73a6dc6e3b01cdff9cd7e7e1caa57820452d57f4d6789bb643d33ef41d21
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.3.1@sha256:dccac0736f1b8201b788294077f376461c5c0e3abbeaa433f6d102013ae93ebf
           args: ["--self-check"]
           resources:
             requests:
@@ -118,7 +118,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: checker
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-checker:v0.3.0@sha256:6f33631de90e28387e77ef09b843c905f7bf2a584c0e27668dc817f7e768d6f4
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-checker:v0.3.1@sha256:217b724a6f89bf5d079b0b67804a77a9e547f354fa6878c23baf5861f3c81469
           args: ["--self-check"]
           resources:
             requests:
@@ -136,7 +136,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: notifier
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.3.0@sha256:79db1a801dc89aeddd8adf22effd981d7664d3717e27d38f964ab9d64ee6203d
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.3.1@sha256:294481dc3b31223277f41dd51b070b69e764eff3b35da9475cea43d019ff0bec
           args: ["--self-check"]
           resources:
             requests:
@@ -154,7 +154,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: mcp
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-mcp:v0.3.0@sha256:45a89a3c48982323fadb5e0e76180ef2f2b066f89aa8609fffc1262214cc7ffd
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-mcp:v0.3.1@sha256:4e27718dd658f5eb32a3ad842d5421514d25254f89c444193dcf08f90e14ceb7
           args: ["--self-check"]
           resources:
             requests:
@@ -173,7 +173,7 @@ spec:
               mountPath: /tmp
         # beacon §V.9 on the image that actually ships: no opentelemetry distribution.
         - name: notifier-no-otel
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.3.0@sha256:79db1a801dc89aeddd8adf22effd981d7664d3717e27d38f964ab9d64ee6203d
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.3.1@sha256:294481dc3b31223277f41dd51b070b69e764eff3b35da9475cea43d019ff0bec
           command: ["python", "-c"]
           args:
             - |
@@ -201,7 +201,7 @@ spec:
         # runs 3.13 (beacon §R.25): its C extensions may not load, and pure-Python fallbacks
         # must. sitecustomize runs at startup; this checks it instrumented what the notifier uses.
         - name: notifier-otel-layer
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.3.0@sha256:79db1a801dc89aeddd8adf22effd981d7664d3717e27d38f964ab9d64ee6203d
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.3.1@sha256:294481dc3b31223277f41dd51b070b69e764eff3b35da9475cea43d019ff0bec
           command: ["python", "-c"]
           args:
             - |
@@ -252,7 +252,7 @@ spec:
               mountPath: /otel-auto-instrumentation-python
               readOnly: true
         - name: web
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-web:v0.3.0@sha256:51298066b4fdf677e411c20109124cd467889e23b10c1fc9a178b95a92393ba1
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-web:v0.3.1@sha256:68b6ac841ff6ffcb8f54fe6b5c3d00e1d9655b0be410aa59cd4e6026e033d3b6
           command: ["/bin/sh", "-c"]
           args:
             - nginx -t && test -s /usr/share/nginx/html/index.html && echo "web smoke ok"
@@ -344,7 +344,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: migrate
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.0@sha256:b0f291037c23dae671d59c64482e9f9acc2fc44d996559888421751447a7e550
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.1@sha256:3f47c806c6d9fbd36bf2f3ad390dc77395c03dd5ae3167f69b2bf653ac0843d6
           args: ["migrate"]
           env:
             - name: DATABASE_URL
@@ -407,7 +407,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: seed
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.0@sha256:b0f291037c23dae671d59c64482e9f9acc2fc44d996559888421751447a7e550
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.1@sha256:3f47c806c6d9fbd36bf2f3ad390dc77395c03dd5ae3167f69b2bf653ac0843d6
           args: ["seed-tenant"]
           env:
             - name: DATABASE_URL

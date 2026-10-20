@@ -346,7 +346,7 @@ spec:
               value: parentbased_traceidratio
             - name: OTEL_TRACES_SAMPLER_ARG
               value: '1.0'
-            image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.3.0@sha256:230c73a6dc6e3b01cdff9cd7e7e1caa57820452d57f4d6789bb643d33ef41d21
+            image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.3.1@sha256:dccac0736f1b8201b788294077f376461c5c0e3abbeaa433f6d102013ae93ebf
             name: scheduler
             resources:
               limits:
@@ -442,7 +442,7 @@ spec:
               value: parentbased_traceidratio
             - name: OTEL_TRACES_SAMPLER_ARG
               value: '1.0'
-            image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.3.0@sha256:230c73a6dc6e3b01cdff9cd7e7e1caa57820452d57f4d6789bb643d33ef41d21
+            image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-scheduler:v0.3.1@sha256:dccac0736f1b8201b788294077f376461c5c0e3abbeaa433f6d102013ae93ebf
             name: scheduler
             resources:
               limits:
@@ -541,7 +541,7 @@ spec:
           value: parentbased_traceidratio
         - name: OTEL_TRACES_SAMPLER_ARG
           value: '1.0'
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-checker:v0.3.0@sha256:6f33631de90e28387e77ef09b843c905f7bf2a584c0e27668dc817f7e768d6f4
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-checker:v0.3.1@sha256:217b724a6f89bf5d079b0b67804a77a9e547f354fa6878c23baf5861f3c81469
         name: checker
         resources:
           limits:
@@ -628,7 +628,7 @@ spec:
           value: ''
         - name: BEACON_DB_POOL_MAX
           value: '4'
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.3.0@sha256:79db1a801dc89aeddd8adf22effd981d7664d3717e27d38f964ab9d64ee6203d
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-notifier:v0.3.1@sha256:294481dc3b31223277f41dd51b070b69e764eff3b35da9475cea43d019ff0bec
         livenessProbe:
           httpGet:
             path: /healthz
@@ -763,13 +763,13 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   annotations:
-    crossplane.io/composition-resource-name: init-b0f29103
+    crossplane.io/composition-resource-name: init-3f47c806
   labels:
     app.kubernetes.io/component: stack
     app.kubernetes.io/managed-by: crossplane
     app.kubernetes.io/part-of: beacon
     beacon.arigsela.com/tenant: acme-co
-  name: beacon-init-b0f29103
+  name: beacon-init-3f47c806
   namespace: tenant-acme-co
 spec:
   activeDeadlineSeconds: 1800
@@ -801,7 +801,7 @@ spec:
           value: 0b5e9d72-1c3a-4f8e-b6d0-9e8f7a6b5c4d
         - name: TENANT_SLUG
           value: acme-co
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.0@sha256:b0f291037c23dae671d59c64482e9f9acc2fc44d996559888421751447a7e550
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.1@sha256:3f47c806c6d9fbd36bf2f3ad390dc77395c03dd5ae3167f69b2bf653ac0843d6
         name: init-tenant-db
         resources:
           limits:
@@ -851,7 +851,7 @@ spec:
             secretKeyRef:
               key: app-password
               name: beacon-db-secrets
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.0@sha256:b0f291037c23dae671d59c64482e9f9acc2fc44d996559888421751447a7e550
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.1@sha256:3f47c806c6d9fbd36bf2f3ad390dc77395c03dd5ae3167f69b2bf653ac0843d6
         name: bootstrap-roles
         resources:
           limits:
@@ -879,7 +879,7 @@ spec:
               name: beacon-db-secrets
         - name: DATABASE_URL
           value: postgresql://beacon_owner:$(BEACON_OWNER_PASSWORD)@beacon-db-rw.tenant-acme-co.svc.cluster.local:5432/beacon
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.0@sha256:b0f291037c23dae671d59c64482e9f9acc2fc44d996559888421751447a7e550
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/beacon-api:v0.3.1@sha256:3f47c806c6d9fbd36bf2f3ad390dc77395c03dd5ae3167f69b2bf653ac0843d6
         name: migrate
         resources:
           limits:
