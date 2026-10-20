@@ -517,6 +517,14 @@ spec:
 
 
           DUMP_SCRIPT = """set -eu
+          # k3s's network policy controller admits a new pod about a second after it starts, and refuses it
+          # until then; pg_dump would connect at once. Wait up to a minute (beacon §B.28).
+          tries=0
+          until pg_isready --quiet --timeout=5; do
+            tries=$((tries + 1))
+            test "$tries" -lt 30 || { echo "database not reachable" >&2; exit 1; }
+            sleep 2
+          done
           pg_dump --format=custom --no-owner --file=/dump/beacon.dump
           # A dump that does not list is not a backup (beacon §V.12).
           pg_restore --list /dump/beacon.dump > /dev/null
@@ -553,7 +561,9 @@ spec:
               spec = pod_spec("beacon-dump", [upload], [{"name": "dump", "emptyDir": {"sizeLimit": "1Gi"}},
                                                         {"name": "tmp", "emptyDir": {"sizeLimit": "64Mi"}}],
                               restart="Never", init=[dump])
-              return {"metadata": {"labels": pod_labels(t, "beacon-dump")}, "spec": spec}
+              # pg_dump and the aws CLI: nothing for the Python agent to instrument (beacon §B.28).
+              return {"metadata": {"labels": pod_labels(t, "beacon-dump"), "annotations": sdk_annotations()},
+                      "spec": spec}
 
 
           def nightly_dump(t, suspend):

@@ -314,6 +314,10 @@ def test_v12_dumps_are_verified_before_and_after_upload(case):
         dump = " ".join(spec["initContainers"][0]["command"])
         upload = " ".join(spec["containers"][0]["command"])
         assert "pg_dump --format=custom" in dump and "pg_restore --list" in dump and "test -s" in dump
+        # k3s's network policy controller refuses a new pod for about a second; pg_dump connects at
+        # once, so it waits for the database first, for a bounded time (beacon §B.28).
+        assert dump.index("pg_isready") < dump.index("pg_dump --format"), name
+        assert re.search(r'test "\$tries" -lt [0-9]+', dump), f"{name}: the wait must be bounded"
         assert "head-object" in upload and 'test "$size" -gt 0' in upload
         assert _env(spec["containers"][0])["BUCKET"].startswith("beacon-tenant-")
     nightly = _env(_pod(jobs["beacon-dump-nightly"])["spec"]["containers"][0])
@@ -355,6 +359,20 @@ def test_v9_the_tenants_notifier_is_left_to_the_operator(case):
         assert ann["instrumentation.opentelemetry.io/inject-python"] == "false", name
     inst = _one(case, "Instrumentation", "beacon-python")["spec"]
     assert inst["exporter"]["endpoint"].endswith(":4318")
+
+
+@pytest.mark.parametrize("case", STACK)
+def test_v9_only_the_notifier_is_auto_instrumented(case):
+    """The namespace's workload defaults add inject-python "true" to every pod template that lacks
+    the annotation; the notifier is the one pod meant to get it. The dump pods run pg_dump and the
+    aws CLI, and once got the Python agent injected into the uploader (beacon §B.28)."""
+    for d in _kinds(case, "Deployment") + _kinds(case, "CronJob") + _kinds(case, "Job"):
+        name = d["metadata"]["name"]
+        ann = _pod(d)["metadata"].get("annotations", {})
+        if name == "beacon-notifier":
+            assert "instrumentation.opentelemetry.io/inject-python" not in ann
+        else:
+            assert ann.get("instrumentation.opentelemetry.io/inject-python") == "false", name
 
 
 @pytest.mark.parametrize("case", STACK)
