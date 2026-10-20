@@ -165,6 +165,8 @@ spec:
       backoffLimit: 2
       template:
         metadata:
+          annotations:
+            instrumentation.opentelemetry.io/inject-python: 'false'
           labels:
             app: beacon-dump
             app.kubernetes.io/name: beacon-dump
@@ -235,7 +237,12 @@ spec:
           - command:
             - /bin/sh
             - -c
-            - "set -eu\npg_dump --format=custom --no-owner --file=/dump/beacon.dump\n\
+            - "set -eu\n# k3s's network policy controller admits a new pod about a\
+              \ second after it starts, and refuses it\n# until then; pg_dump would\
+              \ connect at once. Wait up to a minute (beacon \xA7B.28).\ntries=0\n\
+              until pg_isready --quiet --timeout=5; do\n  tries=$((tries + 1))\n \
+              \ test \"$tries\" -lt 30 || { echo \"database not reachable\" >&2; exit\
+              \ 1; }\n  sleep 2\ndone\npg_dump --format=custom --no-owner --file=/dump/beacon.dump\n\
               # A dump that does not list is not a backup (beacon \xA7V.12).\npg_restore\
               \ --list /dump/beacon.dump > /dev/null\ntest -s /dump/beacon.dump\n"
             env:
