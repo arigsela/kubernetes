@@ -246,7 +246,8 @@ def test_v105_running_collector(running_collector):
     deadline = time.time() + 30
     while time.time() < deadline:
         text = metrics()
-        if len(exported()) >= 13 and 'server="api.anthropic.com"' in text and "agent_run_start_seconds" in text:
+        if (len(exported()) >= 13 and 'server="api.anthropic.com"' in text and "agent_run_start_seconds" in text
+                and "agent_runs_total" in text):
             break
         time.sleep(0.5)
     spans = exported()
@@ -274,3 +275,22 @@ def test_v105_running_collector(running_collector):
             ("agentgateway", "demo-agent"), ("demo-agent", "api.anthropic.com")} <= edges, edges
     assert not any(c == "demo-agent" and s == "kagent-controller" for c, s in edges), \
         "UpdateTask calls must stay off the service graph"
+
+    def counter(name, **labels):
+        total = 0.0
+        for line in text.splitlines():
+            if line.startswith(name + "{") and all(f'{k}="{v}"' in line for k, v in labels.items()):
+                total += float(line.rsplit(" ", 1)[1])
+        return total
+
+    # Each span counted once, by agent and model; the merged tool wrapper and the unknown model's
+    # cost are not counted.
+    assert counter("agent_tokens_input_total", service_name="demo-agent") == 30500
+    assert counter("agent_tokens_input_total", gen_ai_request_model="claude-sonnet-5-5") == 30000
+    assert counter("agent_tokens_output_total", service_name="demo-agent") == 1450
+    assert counter("agent_tokens_cache_read_total", service_name="demo-agent") == 23000
+    assert counter("agent_tokens_cache_write_total", service_name="demo-agent") == 4000
+    assert counter("agent_cost_estimate_usd_total", service_name="demo-agent") == pytest.approx(sum(want))
+    assert counter("agent_model_calls_total", service_name="demo-agent") == 3
+    assert counter("agent_tool_calls_total", service_name="demo-agent", gen_ai_tool_name="k8s_get_resources") == 1
+    assert counter("agent_runs_total", service_name="demo-agent") == 1
