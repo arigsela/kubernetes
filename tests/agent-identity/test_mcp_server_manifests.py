@@ -22,6 +22,32 @@ ADAPTER = re.compile(r"852893458518\.dkr\.ecr\.us-east-2\.amazonaws\.com/agentga
                      + re.escape(AGW_VERSION) + r"@sha256:[0-9a-f]{64}")
 
 
+AGENT_TEMPLATES = REPO / "base-apps" / "kagent" / "agent-templates"
+OTLP_COLLECTOR = "otel-collector.tracing.svc.cluster.local:4317"
+ALLOW = re.compile(r"\s*mcp\.tool\.name in \[([^\]]*)\]\s*", re.S)
+
+
+def bound_tools(remote):
+    """Every tool any AgentTemplate binds from the RemoteMCPServer `remote`."""
+    tools = set()
+
+    def walk(o):
+        if isinstance(o, dict):
+            m = o.get("mcp")
+            if isinstance(m, dict) and isinstance(m.get("server"), dict) and m["server"].get("name") == remote:
+                tools.update(m.get("tools") or [])
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    for f in sorted(AGENT_TEMPLATES.glob("*.yaml")):
+        for d in yaml.safe_load_all(f.read_text()):
+            walk(d)
+    return tools
+
+
 def docs(name):
     return [d for d in yaml.safe_load_all((REPO / "base-apps/kagent" / f"{name}.yaml").read_text()) if d]
 
@@ -111,3 +137,46 @@ def test_pod_template_checksum_matches_the_config(name):
     want = hashlib.sha256(text.encode()).hexdigest()
     got = one(name, "Deployment")["spec"]["template"]["metadata"]["annotations"]["checksum/config"]
     assert got == want, f"{name}: set checksum/config to {want}"
+
+
+@pytest.mark.parametrize("name", sorted(SERVERS))
+def test_gateway_allows_exactly_the_tools_agents_bind(name):
+    """The adapter enforces its own tool allowlist (§T.134), a second layer under the server's
+    flags (--tools, --read-only, BRAVE_MCP_ENABLED_TOOLS). It is exactly the tools some
+    AgentTemplate binds from this server: tools/list shows only those, and any other call is
+    refused ("Unknown tool") before it reaches the server. Binding a new tool therefore means
+    adding it here too, or this fails."""
+    cfg = yaml.safe_load(one(name, "ConfigMap")["data"]["local.yaml"])
+    rules = cfg["binds"][0]["listeners"][0]["routes"][0]["policies"]["mcpAuthorization"]["rules"]
+    assert len(rules) == 1 and set(rules[0]) == {"allow"}, rules  # allow, not deny: errors then fail closed
+    m = ALLOW.fullmatch(rules[0]["allow"])
+    assert m, rules[0]["allow"]
+    allowed = {t.strip().strip('"') for t in m.group(1).split(",") if t.strip()}
+    want = bound_tools(SERVERS[name][1])
+    assert want, f"no AgentTemplate binds {SERVERS[name][1]}"
+    assert allowed == want, f"{name}: allow exactly {sorted(want)}"
+
+
+@pytest.mark.parametrize("name", sorted(SERVERS))
+def test_traces_go_to_the_cluster_collector(name):
+    cfg = yaml.safe_load(one(name, "ConfigMap")["data"]["local.yaml"])
+    assert "tracing" not in cfg["config"], "config.tracing is deprecated in 1.6; use frontendPolicies.tracing"
+    tracing = cfg["frontendPolicies"]["tracing"]
+    assert tracing["host"] == OTLP_COLLECTOR and tracing["protocol"] == "grpc"
+    # Sample everything here; the collector's tail sampling cuts the volume (beacon §V.43).
+    assert tracing["randomSampling"] == "true"
+    # One Tempo service per server instead of three spans all named "agentgateway".
+    assert tracing["resources"] == {"service.name": f'"{name}"'}
+
+
+@pytest.mark.parametrize("name", sorted(SERVERS))
+def test_prometheus_scrapes_the_adapter_stats_port(name):
+    """agentgateway serves /metrics on 15020 (config.statsAddr default). Only the annotation
+    names the port: declaring 15020 as a containerPort would make the kubernetes-pods job
+    scrape each pod twice (one target per declared port, both rewritten to 15020)."""
+    pod = one(name, "Deployment")["spec"]["template"]
+    ann = pod["metadata"]["annotations"]
+    assert ann["prometheus.io/scrape"] == "true"
+    assert ann["prometheus.io/port"] == "15020" and ann["prometheus.io/path"] == "/metrics"
+    assert all(p["containerPort"] != 15020 for c in pod["spec"]["containers"] for p in c.get("ports", []))
+    assert "statsAddr" not in yaml.safe_load(one(name, "ConfigMap")["data"]["local.yaml"])["config"]

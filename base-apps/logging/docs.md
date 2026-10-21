@@ -28,6 +28,7 @@ sources:
   - base-apps/logging/istio-ambient-dashboard.yaml
   - base-apps/logging/grafana-dashboard-cluster-overview.yaml
   - base-apps/logging/grafana-dashboard-coraza.yaml
+  - base-apps/logging/grafana-dashboard-mcp.yaml
   - base-apps/logging/prometheus-config.yaml
   - base-apps/logging/prometheus-statefulset.yaml
   - base-apps/loki-aws-infrastructure/s3-bucket.yaml
@@ -108,8 +109,10 @@ under `base-apps/logging/`.
    **generated** by `scripts/gen-cluster-overview-dashboard.py` (CI runs it with
    `--check`; never hand-edit it). Its ConfigMap keeps the historical name
    `grafana-dashboard-k8s-basic`, which until 2026-09-24 existed only in the cluster with an
-   empty placeholder. Also `Istio` (`istio-ambient-dashboard.yaml`) and `Security`
-   (`grafana-dashboard-coraza.yaml`, Coraza WAF).
+   empty placeholder. Also `Istio` (`istio-ambient-dashboard.yaml`), `Security`
+   (`grafana-dashboard-coraza.yaml`, Coraza WAF) and `Agents` (`grafana-dashboard-mcp.yaml`,
+   **MCP Tool Calls**, uid `mcp-tool-calls`: tool calls per server and tool, refused calls,
+   status, latency and memory of the kagent MCP adapters; §T.134).
    Alert rules (`grafana-alerting.yaml`, delivered to n8n → Slack) cover agent guardrails
    (the ungated-tool rule's runbook links `https://agent-audit.arigsela.com/?days=730`)
    and Falco from Loki, and cluster health from Prometheus: **Pod CPU starved** (PSI CPU

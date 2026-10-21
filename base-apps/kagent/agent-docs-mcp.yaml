@@ -49,6 +49,14 @@ data:
                       pathPrefix: /sse
                   - path:
                       pathPrefix: /mcp
+                # Exactly the tools the AgentTemplates bind from this server (§T.134,
+                # tests/agent-identity): tools/list shows only these, and any other call is
+                # refused as "Unknown tool" before it reaches the server.
+                policies:
+                  mcpAuthorization:
+                    rules:
+                      - allow: >-
+                          mcp.tool.name in ["get_commit", "get_file_contents", "list_commits", "search_code"]
                 backends:
                   - weight: 100
                     mcp:
@@ -62,6 +70,16 @@ data:
                               - --toolsets
                               - repos
     config: {}
+    # Spans to the cluster collector, as service agent-docs-mcp (a CEL string). Sample everything
+    # here; the collector's tail sampling cuts the volume (beacon §V.43). frontendPolicies, not
+    # config.tracing: 1.6 logs that one as deprecated. /metrics stays on the default :15020.
+    frontendPolicies:
+      tracing:
+        host: otel-collector.tracing.svc.cluster.local:4317
+        protocol: grpc
+        randomSampling: "true"
+        resources:
+          service.name: '"agent-docs-mcp"'
 ---
 apiVersion: v1
 kind: Service
@@ -107,7 +125,12 @@ spec:
         app.kubernetes.io/name: agent-docs-mcp
       annotations:
         # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
-        checksum/config: "34e77a21ef2b60d99497d6b959fc2539e488cefd7a33c2a97a065792529e0cb8"
+        checksum/config: "b70a90cdfeaa0b7cca44a7b56c0adbf1b01d2f2c9ed7b39eead1563000a33c21"
+        # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
+        # containerPort would make the kubernetes-pods job scrape the pod twice.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15020"
+        prometheus.io/path: /metrics
     spec:
       serviceAccountName: agent-docs-mcp
       automountServiceAccountToken: false
