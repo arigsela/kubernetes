@@ -89,13 +89,15 @@ spec:
             - atespace: kagent
               allowedNamespaces: [kagent]
 
-        # Traces (atenet-router) to Coroot, like kagent's. Metrics stay with Prometheus, which
-        # scrapes the prometheus.io/scrape-annotated pods; OTLP metrics push would only retry
-        # localhost. Logs: no endpoint, so actor events go to stdout and Alloy ships them to Loki.
+        # Traces (atenet-router) to the cluster collector, like kagent's (§V.104): it forwards to
+        # Tempo and Coroot, and a run's Substrate spans stay in the same kept trace as its kagent
+        # spans. Metrics stay with Prometheus, which scrapes the prometheus.io/scrape-annotated pods;
+        # OTLP metrics push would only retry localhost. Logs: no endpoint, so actor events go to
+        # stdout and Alloy ships them to Loki.
         otel:
           traces:
             enabled: true
-            endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
+            endpoint: http://otel-collector.tracing.svc.cluster.local:4317
           metrics:
             enabled: false
 

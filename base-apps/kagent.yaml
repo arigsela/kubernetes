@@ -81,23 +81,20 @@ spec:
           substrate:
             apiEndpoint: dns:///api.ate-system.svc:443
             routerUrl: http://atenet-router.ate-system.svc:80
-          # OpenTelemetry → Coroot's OTLP receiver (gRPC 4317; http:// = no TLS). Metrics stay with
-          # Prometheus; Coroot does not take OTLP metrics here. The same targets for the agent
-          # runtimes (runtimeDefaults), which on alpha11 inherited the single otel block.
+          # Traces → the cluster collector (gRPC 4317; http:// = no TLS), which keeps every kagent
+          # trace (service.namespace=kagent) and forwards to Tempo and Coroot (§V.104). Not straight
+          # to Coroot: kagent's exporters gzip and Coroot's receiver refuses gzip, so nothing ever
+          # arrived (§B.37). No OTLP logs: the controller's stdout reaches Loki through Alloy and a
+          # session's through ateom. Metrics stay with Prometheus. The same for the agent runtimes
+          # (runtimeDefaults), which on alpha11 inherited the single otel block.
           telemetry:
             traces:
-              endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
-              protocol: grpc
-            logs:
-              endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
+              endpoint: http://otel-collector.tracing.svc.cluster.local:4317
               protocol: grpc
           runtimeDefaults:
             telemetry:
               traces:
-                endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
-                protocol: grpc
-              logs:
-                endpoint: http://coroot-coroot.coroot.svc.cluster.local:4317
+                endpoint: http://otel-collector.tracing.svc.cluster.local:4317
                 protocol: grpc
 
         controller:

@@ -65,7 +65,7 @@ def test_substrate_client_certificates_are_still_projected(controller_config):
     assert {"/run/substrate-servicedns", "/run/substrate-podidentity"} <= mounts
 
 
-def test_auth_substrate_and_telemetry(controller_config):
+def test_auth_and_substrate(controller_config):
     c = controller_config["config"]
     assert c["server"]["auth"]["mode"] == "insecure"
     # The chart adds caFile/clientCertFile once substrateClientCertificate is enabled (the mounts
@@ -75,9 +75,15 @@ def test_auth_substrate_and_telemetry(controller_config):
     assert sub["routerUrl"] == "http://atenet-router.ate-system.svc:80"
     assert sub["caFile"] == "/run/substrate-servicedns/trust-bundle.pem"
     assert sub["clientCertFile"] == "/run/substrate-podidentity/credential-bundle.pem"
-    coroot = {"endpoint": "http://coroot-coroot.coroot.svc.cluster.local:4317", "protocol": "grpc"}
-    assert c["telemetry"]["traces"] == coroot and c["telemetry"]["logs"] == coroot and "metrics" not in c["telemetry"]
-    assert c["runtimeDefaults"]["telemetry"]["traces"] == coroot and c["runtimeDefaults"]["telemetry"]["logs"] == coroot
+
+
+def test_v104_controller_and_sessions_send_traces_to_the_collector(controller_config):
+    """§V.104: kagent's exporters gzip; Coroot's receiver refuses gzip (§B.37), the collector takes it
+    and forwards to Tempo and Coroot. No OTLP logs: stdout already reaches Loki (Alloy, ateom)."""
+    c = controller_config["config"]
+    collector = {"endpoint": "http://otel-collector.tracing.svc.cluster.local:4317", "protocol": "grpc"}
+    for scope, telemetry in (("controller", c["telemetry"]), ("runtimeDefaults", c["runtimeDefaults"]["telemetry"])):
+        assert telemetry == {"traces": collector}, scope
 
 
 def test_no_alpha11_keys_linger(controller_config):
