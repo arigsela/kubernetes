@@ -7,7 +7,8 @@
 #
 # Prometheus queries use the default datasource (no uid, the Istio dashboard's convention); the
 # Loki panels pin uid `loki` like the Coraza dashboard, which grafana-deployment.yaml keeps stable.
-# Only Prometheus scrapes annotated pods (alloy-config.yaml), so plain sums do not double count.
+# Only Prometheus scrapes annotated pods (alloy-config.yaml), and its kubernetes-pods job skips the
+# copy-binary init container (prometheus-config.yaml), so plain sums do not double count.
 apiVersion: v1
 kind: ConfigMap
 metadata:
