@@ -59,6 +59,16 @@ data:
                       pathPrefix: /sse
                   - path:
                       pathPrefix: /mcp
+                # Exactly the tools the AgentTemplates bind from this server (§T.134,
+                # tests/agent-identity): tools/list shows only these, and any other call is
+                # refused as "Unknown tool" before it reaches the server.
+                policies:
+                  mcpAuthorization:
+                    rules:
+                      - allow: >-
+                          mcp.tool.name in ["create_branch", "create_or_update_file", "create_pull_request",
+                          "get_commit", "get_file_contents", "list_branches", "list_commits",
+                          "list_pull_requests", "pull_request_read", "push_files", "search_code"]
                 backends:
                   - weight: 100
                     mcp:
@@ -71,6 +81,16 @@ data:
                               - --tools
                               - get_file_contents,search_code,list_commits,get_commit,list_branches,list_pull_requests,pull_request_read,create_branch,create_or_update_file,push_files,create_pull_request
     config: {}
+    # Spans to the cluster collector, as service implementer-mcp (a CEL string). Sample everything
+    # here; the collector's tail sampling cuts the volume (beacon §V.43). frontendPolicies, not
+    # config.tracing: 1.6 logs that one as deprecated. /metrics stays on the default :15020.
+    frontendPolicies:
+      tracing:
+        host: otel-collector.tracing.svc.cluster.local:4317
+        protocol: grpc
+        randomSampling: "true"
+        resources:
+          service.name: '"implementer-mcp"'
 ---
 apiVersion: v1
 kind: Service
@@ -116,7 +136,12 @@ spec:
         app.kubernetes.io/name: implementer-mcp
       annotations:
         # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
-        checksum/config: "2f1fc6c4871d7f7c00ca575fdd77581ad53d2bca2bcce3f9128702721f24a147"
+        checksum/config: "e00804b5991bd2f0df7aacc5025c39186c9964a0fb015beb35b4369d44eaf14f"
+        # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
+        # containerPort would make the kubernetes-pods job scrape the pod twice.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15020"
+        prometheus.io/path: /metrics
     spec:
       serviceAccountName: implementer-mcp
       automountServiceAccountToken: false

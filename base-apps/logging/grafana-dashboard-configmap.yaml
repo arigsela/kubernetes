@@ -31,3 +31,12 @@ data:
         editable: true
         options:
           path: /var/lib/grafana/dashboards/coraza
+      # MCP Tool Calls (grafana-dashboard-mcp.yaml, §T.134): the kagent MCP adapters.
+      - name: 'agents'
+        orgId: 1
+        folder: 'Agents'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/agents

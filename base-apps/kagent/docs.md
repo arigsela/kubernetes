@@ -280,6 +280,8 @@ In v1alpha3 an AgentTemplate MCP binding accepts only a same-namespace `RemoteMC
 | `kagent-api` (chart) | the controller's own `/mcp` | none |
 
 A server Deployment registers no tools with agents; the `RemoteMCPServer` that points at its Service does.
+
+The agentgateway adapter in front of `agent-docs-mcp`, `brave-search-mcp` and `implementer-mcp` also enforces its own allowlist (`policies.mcpAuthorization` in each `local.yaml`, §T.134): exactly the tools some AgentTemplate binds from that server, so `agent-docs` shows 4 of the 13 tools its `repos` toolset loads. `tools/list` returns only those, and any other call is refused as `Unknown tool` (HTTP 400) before it reaches the server; `tests/agent-identity` fails if a binding and an allowlist differ. It is a second layer under the server's own flags (`--tools`, `--read-only`, `BRAVE_MCP_ENABLED_TOOLS`). Each adapter exports metrics on `:15020` (Prometheus, pod annotations), logs one line per MCP request (Loki: `{namespace="kagent", container="mcp-server"} |= "mcp.method.name"`) and sends traces to Tempo as service `agent-docs-mcp`, `brave-search-mcp` or `implementer-mcp`. Grafana: **Agents → MCP Tool Calls**.
 An agent initializes every `RemoteMCPServer` its template binds at the start of each run and
 fails the run if one does not answer (`agent run failed: … failed to init MCP session … Service
 Unavailable`). A tool server that is restarting therefore fails every agent bound to it, not only

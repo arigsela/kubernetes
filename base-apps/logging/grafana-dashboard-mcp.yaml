@@ -1,0 +1,411 @@
+# MCP Tool Calls dashboard (§T.134): the three stdio MCP servers in base-apps/kagent/
+# (agent-docs-mcp, brave-search-mcp, implementer-mcp) run under agentgateway, which exports
+# agentgateway_mcp_requests_total and request histograms on :15020 (scraped by Prometheus'
+# kubernetes-pods job through the pod annotations) and logs one access line per MCP request
+# (Loki, container mcp-server). Traces go to Tempo as services agent-docs-mcp, brave-search-mcp
+# and implementer-mcp.
+#
+# Prometheus queries use the default datasource (no uid, the Istio dashboard's convention); the
+# Loki panels pin uid `loki` like the Coraza dashboard, which grafana-deployment.yaml keeps stable.
+# Only Prometheus scrapes annotated pods (alloy-config.yaml), so plain sums do not double count.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-mcp
+  namespace: logging
+  labels:
+    grafana_dashboard: "1"
+data:
+  mcp-tool-calls.json: |
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1,
+          "panels": [],
+          "title": "MCP adapters: agent-docs-mcp, brave-search-mcp, implementer-mcp (agentgateway, \u00a7T.134)",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus"
+          },
+          "description": "tools/call requests per server and tool, from agentgateway_mcp_requests_total. Counts refused calls too (a tool off the allowlist is counted under the name the agent asked for); see the panel on the right.",
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 1
+          },
+          "id": 2,
+          "title": "Tool calls per minute, by tool",
+          "type": "timeseries",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (server, resource) (rate(agentgateway_mcp_requests_total{namespace=\"kagent\", method=\"tools/call\"}[$__rate_interval])) * 60",
+              "legendFormat": "{{server}} \u00b7 {{resource}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "id": 3,
+          "title": "Refused tool calls (not on the allowlist)",
+          "type": "timeseries",
+          "description": "tools/call answered \"Unknown tool\" by the adapter's mcpAuthorization allowlist: an agent asked for a tool no AgentTemplate binds from that server. Expected to be zero.",
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 12,
+            "y": 1
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "unit": "short",
+              "custom": {
+                "drawStyle": "bars",
+                "fillOpacity": 60
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (pod) (count_over_time({namespace=\"kagent\", container=\"mcp-server\"} |= \"mcp.method.name=tools/call\" |= \"Unknown tool\" [$__interval]))",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus"
+          },
+          "description": "Every MCP method per adapter (initialize, tools/list, tools/call, server/discover from the kagent controller, ...).",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 10
+          },
+          "id": 4,
+          "title": "MCP requests per minute, by method",
+          "type": "timeseries",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (deployment, method) (label_replace(rate(agentgateway_mcp_requests_total{namespace=\"kagent\"}[$__rate_interval]), \"deployment\", \"$1\", \"pod\", \"(.+)-[a-z0-9]+-[a-z0-9]+\")) * 60",
+              "legendFormat": "{{deployment}} \u00b7 {{method}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus"
+          },
+          "description": "Responses on :3000 per adapter. A refused tool call is a 400; a 5xx means the stdio server failed or the adapter did.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 10
+          },
+          "id": 5,
+          "title": "HTTP responses per minute, by status",
+          "type": "timeseries",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (deployment, status) (label_replace(rate(agentgateway_request_duration_seconds_count{namespace=\"kagent\", protocol=\"mcp\"}[$__rate_interval]), \"deployment\", \"$1\", \"pod\", \"(.+)-[a-z0-9]+-[a-z0-9]+\")) * 60",
+              "legendFormat": "{{deployment}} \u00b7 {{status}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus"
+          },
+          "description": "95th percentile of MCP request duration per adapter (tools/call dominates: it is the GitHub or Brave API call).",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 18
+          },
+          "id": 6,
+          "title": "Request latency p95",
+          "type": "timeseries",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum by (deployment, le) (label_replace(rate(agentgateway_request_duration_seconds_bucket{namespace=\"kagent\", protocol=\"mcp\"}[$__rate_interval]), \"deployment\", \"$1\", \"pod\", \"(.+)-[a-z0-9]+-[a-z0-9]+\")))",
+              "legendFormat": "{{deployment}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "prometheus"
+          },
+          "description": "The adapter and its stdio server share the container; the limit is 256 MiB. The Grafana memory alerts key on this container name.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 18
+          },
+          "id": 7,
+          "title": "Memory working set (container mcp-server)",
+          "type": "timeseries",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "unit": "bytes",
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (deployment) (label_replace(container_memory_working_set_bytes{namespace=\"kagent\", container=\"mcp-server\"}, \"deployment\", \"$1\", \"pod\", \"(.+)-[a-z0-9]+-[a-z0-9]+\"))",
+              "legendFormat": "{{deployment}}",
+              "refId": "A"
+            }
+          ]
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "id": 8,
+          "title": "Refused tool calls (log lines)",
+          "type": "logs",
+          "description": "The access-log line of each refused call: gen_ai.tool.name is the tool asked for, trace.id opens the trace in Tempo.",
+          "gridPos": {
+            "h": 9,
+            "w": 24,
+            "x": 0,
+            "y": 26
+          },
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "dedupStrategy": "none"
+          },
+          "targets": [
+            {
+              "expr": "{namespace=\"kagent\", container=\"mcp-server\"} |= \"mcp.method.name=tools/call\" |= \"Unknown tool\"",
+              "refId": "A"
+            }
+          ]
+        }
+      ],
+      "refresh": "1m",
+      "schemaVersion": 39,
+      "tags": [
+        "mcp",
+        "agentgateway",
+        "kagent"
+      ],
+      "time": {
+        "from": "now-24h",
+        "to": "now"
+      },
+      "timezone": "",
+      "title": "MCP Tool Calls",
+      "uid": "mcp-tool-calls",
+      "version": 1
+    }

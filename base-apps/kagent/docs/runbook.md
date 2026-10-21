@@ -204,7 +204,12 @@ The App token is minted from the Secret `implementer-github-app` (Vault `impleme
   also the backing pod: `kubectl -n kagent get pods -l app.kubernetes.io/name=agent-docs-mcp`. A server Deployment registers no tools
   with agents; the `RemoteMCPServer` that points at its Service does. A tool is
   available to an agent only if its AgentTemplate binding lists it.
-- **Fix:** fix the target Service first. A missing tool: add it to the binding's `tools` by PR.
+- **Check (adapter servers):** a call answered `Unknown tool` by `agent-docs`, `brave-search` or
+  `implementer` was refused by the adapter's allowlist, not the server (Grafana **Agents → MCP
+  Tool Calls**, panel "Refused tool calls"; the log line names the tool in `gen_ai.tool.name`).
+- **Fix:** fix the target Service first. A missing tool: add it to the binding's `tools` by PR,
+  and for those three servers also to the `mcp.tool.name in [...]` allowlist in
+  `<server>-mcp.yaml` (then reset `checksum/config`; `tests/agent-identity` names both values).
   A tool new to the taxonomy must be classified first (`agent-capability-taxonomy.yaml`), or CI
   and admission deny the template. Errors right after a controller restart (Backstage not
   answering yet) clear on their own.
