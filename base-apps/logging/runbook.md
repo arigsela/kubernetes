@@ -6,7 +6,7 @@ app: logging
 catalog_entity: logging
 kind: runbook
 namespace: logging
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-21
 status: stable
 tags: [loki, grafana, prometheus, alloy]
 sources:
@@ -22,6 +22,9 @@ sources:
   - base-apps/logging/httproute.yaml
   - base-apps/logging/certificate.yaml
   - base-apps/logging/prometheus-statefulset.yaml
+  - base-apps/logging/grafana-dashboards-agents.yaml
+  - scripts/gen-agent-dashboards.py
+  - scripts/agent-demo.sh
   - docs/troubleshooting/in-place-resize.md
 ---
 
@@ -120,7 +123,9 @@ sources:
   the Loki/Prometheus datasources are reachable from inside the Grafana pod
   (`http://loki.logging.svc.cluster.local:3100`, `http://prometheus.logging.svc.cluster.local:9090`
   — both ClusterIP-only) and that the `grafana-dashboard-provider` ConfigMap's folders
-  (`Kubernetes`, `Istio`, `Security`) still match the mounted dashboard ConfigMaps.
+  (`Kubernetes`, `Istio`, `Security`, `Agents`) still match the mounted dashboard ConfigMaps.
+  An Agents dashboard that never appears is usually a ConfigMap missing from the
+  `dashboards-agents` projected volume (`tests/dashboards/test_agent_dashboards.py` checks it).
 - **Fix:** PR any datasource URL or dashboard-provider path changes; a stuck cert-manager
   challenge for `grafana-tls` is a cert-manager issue, not this app.
 
@@ -142,7 +147,32 @@ Grafana has no other way in: the login form and basic auth are off
   re-syncs in about 2 minutes. `kubectl` access is unaffected throughout. Re-apply the commit
   once OAuth is fixed — this host is internet-facing.
 
+### Symptom: Agent Platform shows no run, or its token tiles stay at 0
+- **Check:** whether an agent ran in the last 7 days (the run picker reads
+  `agent_run_start_seconds`) and in the dashboard's range (24 h by default):
+  `sum(agent_runs_total)` and `agent_run_start_seconds` in Explore (Prometheus). Both come
+  from the collector (`base-apps/tracing/docs.md`); if they are missing, check the collector
+  is up and scraped (`tracing_spans_received_total{service_name="kagent-controller"}` grows).
+  Tempo panels answer at most 24 h: a longer range makes them error.
+- **Fix:** run `scripts/agent-demo.sh` (three read-only agent runs) from the home network;
+  numbers appear within a minute. A run's estimated cost exists only for runs after the
+  collector change that stamps it.
+
 ## How-to
+
+### Before a demo
+Run `scripts/agent-demo.sh` from the home network (off it `ask-hk` gets 403 from the Gateway's
+allow-list). It asks homelab-knowledge, k8s-reader and istio-agent one read-only question each
+and prints `https://grafana.arigsela.com/d/agent-platform`, which is also Grafana's home and
+opens on the newest run. It changes nothing in the cluster, sends no alert and scores no agent.
+
+### Change an Agents dashboard
+Edit `scripts/gen-agent-dashboards.py` and run it with `--repo-root .`; never hand-edit
+`grafana-dashboards-agents.yaml` (CI runs `--check`). A new dashboard needs a `DASHBOARDS` entry
+and a source in the `dashboards-agents` projected volume (`grafana-deployment.yaml`), which
+restarts Grafana. Read the collector's agent counters with `window_total()`, never `increase()`
+or `rate()`; ask Tempo only instant metrics queries (Grafana 11.6 cannot read Tempo 3.1's range
+responses); test new queries against the cluster before merging.
 
 ### Deploy / update
 Edit manifests here and PR; Argo CD syncs on merge (`prune`/`selfHeal` enabled). How a

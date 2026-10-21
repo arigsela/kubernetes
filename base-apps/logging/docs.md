@@ -6,7 +6,7 @@ app: logging
 catalog_entity: logging
 kind: docs
 namespace: logging
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-21
 status: stable
 tags: [loki, grafana, prometheus, alloy]
 sources:
@@ -28,7 +28,9 @@ sources:
   - base-apps/logging/istio-ambient-dashboard.yaml
   - base-apps/logging/grafana-dashboard-cluster-overview.yaml
   - base-apps/logging/grafana-dashboard-coraza.yaml
-  - base-apps/logging/grafana-dashboard-mcp.yaml
+  - base-apps/logging/grafana-dashboards-agents.yaml
+  - scripts/gen-agent-dashboards.py
+  - scripts/agent-demo.sh
   - base-apps/logging/prometheus-config.yaml
   - base-apps/logging/prometheus-statefulset.yaml
   - base-apps/loki-aws-infrastructure/s3-bucket.yaml
@@ -110,9 +112,23 @@ under `base-apps/logging/`.
    `--check`; never hand-edit it). Its ConfigMap keeps the historical name
    `grafana-dashboard-k8s-basic`, which until 2026-09-24 existed only in the cluster with an
    empty placeholder. Also `Istio` (`istio-ambient-dashboard.yaml`), `Security`
-   (`grafana-dashboard-coraza.yaml`, Coraza WAF) and `Agents` (`grafana-dashboard-mcp.yaml`,
-   **MCP Tool Calls**, uid `mcp-tool-calls`: tool calls per server and tool, refused calls,
-   status, latency and memory of the kagent MCP adapters; §T.134).
+   (`grafana-dashboard-coraza.yaml`, Coraza WAF) and `Agents` (§T.135): seven dashboards,
+   each its own ConfigMap in `grafana-dashboards-agents.yaml`, **generated** by
+   `scripts/gen-agent-dashboards.py` (CI runs `--check`) and mounted through one projected
+   volume. **Agent Platform** (uid `agent-platform`) is Grafana's home dashboard
+   (`GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH`): six tiles (agents and eval-gate holds, tool
+   calls and refusals, tokens and estimated cost, mesh traffic, sandboxes, alerts handed to
+   agents), each opening a deep dive, then one request followed end to end: per-hop counts
+   and p95, the newest agent run's tokens, its trace and its logs. The deep dives are **Agent
+   Quality**, **Tokens & Models**, **Agent Traffic** (service graph and waypoint traffic),
+   **Sandboxes** (Substrate), **Alerts to Agents** (dispatcher) and **MCP Tool Calls** (uid
+   `mcp-tool-calls`, §T.134, plus kagent-tools' calls per tool). Tokens, cost and calls come
+   from the collector's counters (`base-apps/tracing/docs.md`); only the kagent agents are
+   traced, so docs-checker is not in them. `scripts/agent-demo.sh` makes three read-only agent
+   runs before a demo.
+   The datasources link logs and traces both ways: Loki's derived field turns a trace id in
+   beacon's, kagent's or agentgateway's format into a Tempo link, and Tempo's trace to logs
+   searches every namespace for the trace id. Tempo's service map reads Prometheus.
    Alert rules (`grafana-alerting.yaml`, delivered to n8n → Slack) cover agent guardrails
    (the ungated-tool rule's runbook links `https://agent-audit.arigsela.com/?days=730`)
    and Falco from Loki, and cluster health from Prometheus: **Pod CPU starved** (PSI CPU

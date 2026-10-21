@@ -180,6 +180,8 @@ jobs:
         run: python -m pytest tests/dashboards/ -q
       - name: Check the Cluster Overview dashboard is in sync with its generator
         run: python scripts/gen-cluster-overview-dashboard.py --repo-root . --check
+      - name: Check the Agents dashboards are in sync with their generator
+        run: python scripts/gen-agent-dashboards.py --repo-root . --check
 
   ops-scripts-validate:
     runs-on: ubuntu-latest
