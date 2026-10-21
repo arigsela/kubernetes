@@ -10,6 +10,16 @@
 #   (this repo)   tail sampling also keeps every kagent trace (tests/agent-capability/test_agent_traces.py)
 #   beacon §V.9   the span count per service (port 8889) is the signal the notifier alert reads
 #
+# For the Agents dashboards (tests/agent-capability/test_agent_traces.py):
+#   - kagent's TaskStore UpdateTask spans are dropped: one per streamed status update, ~500 in a
+#     78 s run, which buried the run in Tempo.
+#   - kagent's runtime puts each tool's whole output on its execute_tool span even with content
+#     capture off; transform/scrub deletes it, so no tool output is stored or shown.
+#   - Each model call gets an estimated cost (transform/genai-cost), which Tempo sums like tokens.
+#   - Two small metric sets on :8889, read before sampling: the service graph of the agent
+#     platform (Tempo's service map in Grafana) and the start time of each agent run, by trace
+#     id, so the Agent Platform dashboard opens on the latest run.
+#
 # One replica on purpose: tail sampling needs every span of a trace on the same instance.
 # contrib, not the k8s distribution, for transform and tail_sampling.
 ---
@@ -48,6 +58,36 @@ data:
         limit_mib: 400
         spike_limit_mib: 100
 
+      # kagent's streaming status updates: one TaskStore UpdateTask call per streamed event (524
+      # of a 617-span run). They carry no information a dashboard uses.
+      filter/noise:
+        error_mode: ignore
+        trace_conditions:
+          - span.name == "kagent.runtime.v1.TaskStoreService/UpdateTask"
+
+      # An estimated cost on each model call of a kagent agent (agent.cost.estimate_usd), so Tempo
+      # can sum cost like tokens. $/MTok: base input, cache write (5 min), cache read, output, from
+      # Anthropic's API pricing as of 2026-10-06; Haiku's is its rate for prompts up to 100K tokens.
+      # Input tokens include the cached ones (kagent's telemetry contract), so uncached input is
+      # input - cache read - cache write. A model not listed gets no cost; its tokens still count.
+      transform/genai-cost:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            conditions:
+              - IsMatch(name, "^generate_content ") and attributes["gen_ai.usage.input_tokens"] != nil
+            statements:
+              - set(cache["input"], Double(attributes["gen_ai.usage.input_tokens"]))
+              - set(cache["output"], 0.0)
+              - set(cache["output"], Double(attributes["gen_ai.usage.output_tokens"])) where attributes["gen_ai.usage.output_tokens"] != nil
+              - set(cache["cache_read"], 0.0)
+              - set(cache["cache_read"], Double(attributes["gen_ai.usage.cache_read.input_tokens"])) where attributes["gen_ai.usage.cache_read.input_tokens"] != nil
+              - set(cache["cache_write"], 0.0)
+              - set(cache["cache_write"], Double(attributes["gen_ai.usage.cache_write.input_tokens"])) where attributes["gen_ai.usage.cache_write.input_tokens"] != nil
+              - set(attributes["agent.cost.estimate_usd"], ((cache["input"] - cache["cache_read"] - cache["cache_write"]) * 2.0 + cache["cache_write"] * 2.5 + cache["cache_read"] * 0.2 + cache["output"] * 10.0) / 1000000.0) where attributes["gen_ai.request.model"] == "claude-sonnet-5-5"
+              - set(attributes["agent.cost.estimate_usd"], ((cache["input"] - cache["cache_read"] - cache["cache_write"]) * 4.0 + cache["cache_write"] * 5.0 + cache["cache_read"] * 0.2 + cache["output"] * 20.0) / 1000000.0) where attributes["gen_ai.request.model"] == "claude-opus-5-5"
+              - set(attributes["agent.cost.estimate_usd"], ((cache["input"] - cache["cache_read"] - cache["cache_write"]) * 0.1 + cache["cache_write"] * 0.125 + cache["cache_read"] * 0.01 + cache["output"] * 0.5) / 1000000.0) where attributes["gen_ai.request.model"] == "claude-haiku-5-5"
+
       # beacon §V.42: no query string and no notifier delivery path leaves this collector.
       # Envoy's http.url keeps the query (beacon §R.42), so the Gateway's spans would carry OAuth
       # code/state and search text; the notifier's httpx spans would carry Slack webhook paths,
@@ -61,6 +101,8 @@ data:
               - replace_pattern(attributes["url.full"], "\\?.*$$", "")
               - replace_pattern(attributes["http.target"], "\\?.*$$", "")
               - delete_key(attributes, "url.query")
+              # kagent's runtime (ADK) copies each tool's output onto its execute_tool span.
+              - delete_key(attributes, "gcp.vertex.agent.tool_response")
           - context: span
             conditions:
               - resource.attributes["service.name"] == "beacon-notifier" and kind == SPAN_KIND_CLIENT
@@ -116,6 +158,49 @@ data:
             statements:
               - keep_keys(attributes, ["service.name"])
 
+      # The agent platform's spans only: kagent (controller and every agent), Substrate (ateapi,
+      # atelet, its agentgateway router), the MCP adapters, and the ingress Gateway's spans for
+      # requests into kagent. Everything else in the cluster stays off the service graph, and so
+      # do the UpdateTask stream (dropped from Tempo too) and each MCP adapter's calls to its own
+      # stdio server.
+      filter/agent-platform:
+        error_mode: ignore
+        trace_conditions:
+          - >-
+            not (resource.attributes["service.namespace"] == "kagent"
+            or IsMatch(resource.attributes["service.name"], "^(ateapi|atelet|agentgateway|agent-docs-mcp|brave-search-mcp|implementer-mcp)$")
+            or (resource.attributes["service.name"] == "main-istio.istio-ingress"
+            and IsMatch(span.attributes["upstream_cluster"], "[.]kagent[.]svc[.]")))
+          - span.name == "kagent.runtime.v1.TaskStoreService/UpdateTask"
+          - >-
+            span.kind == SPAN_KIND_CLIENT
+            and IsMatch(resource.attributes["service.name"], "^(agent-docs-mcp|brave-search-mcp|implementer-mcp)$")
+
+      # Down to the service name, so the graph has one node per service and nothing per pod or
+      # session. A call whose server sends no span here (the model API, kagent-tools, ollama) or
+      # whose server span lost its parent (the controller's TaskStore, the MCP adapters) is named
+      # by peer.service, which the graph turns into a node: the short service name, never an IP.
+      # Each agent run's invoke_agent span gets its trace id as an attribute for the run metric.
+      transform/agent-platform:
+        error_mode: ignore
+        trace_statements:
+          - context: resource
+            statements:
+              - keep_keys(attributes, ["service.name"])
+          - context: span
+            conditions:
+              - kind == SPAN_KIND_CLIENT
+            statements:
+              - set(attributes["peer.service"], "kagent-controller") where IsMatch(attributes["rpc.method"], "^kagent[.]runtime[.]")
+              - set(attributes["peer.service"], attributes["server.address"]) where attributes["peer.service"] == nil and attributes["server.address"] != nil and not IsMatch(attributes["server.address"], "^[0-9.]+$$")
+              - replace_pattern(attributes["peer.service"], "^([^.]+)[.][^.]+([.]svc([.]cluster[.]local)?)?$$", "$$1")
+          - context: span
+            conditions:
+              - IsMatch(name, "^invoke_agent ")
+            statements:
+              - set(attributes["service.name"], resource.attributes["service.name"])
+              - set(attributes["trace.id"], trace_id.string)
+
     connectors:
       # Spans received per service, before sampling: the beacon §V.9 alert signal (the
       # notifier's 2 s DB poll keeps its count steady while it is instrumented and healthy).
@@ -125,6 +210,38 @@ data:
             description: Spans received by the collector, by service, before sampling.
             attributes:
               - key: service.name
+
+      # Who calls whom across the agent platform: traces_service_graph_request_total{client,
+      # server} and its failures and latency, which Grafana's Tempo datasource draws as a
+      # service map. An agent run's two sides arrive in different batches, seconds apart, so
+      # spans wait 30 s for their pair.
+      service_graph:
+        latency_histogram_buckets: [100ms, 500ms, 1s, 5s, 15s, 60s, 300s]
+        virtual_node_peer_attributes: [peer.service]
+        store:
+          ttl: 30s
+          max_items: 5000
+        metrics_flush_interval: 30s
+
+      # agent_run_start_seconds{service_name, trace_id, gen_ai_conversation_id}: the start time of
+      # each agent run. The landing dashboard takes the newest trace id (and its session) from it. One series per run; Prometheus keeps
+      # 15 days, a few thousand series.
+      signal_to_metrics:
+        spans:
+          - name: agent.run.start
+            description: Start time of an agent run (an invoke_agent span), in Unix seconds, by trace id.
+            unit: s
+            conditions:
+              - span.attributes["trace.id"] != nil
+            include_resource_attributes:
+              - key: service.name
+            attributes:
+              - key: service.name
+              - key: trace.id
+              - key: gen_ai.conversation.id
+                optional: true
+            gauge:
+              value: Double(span.start_time_unix_nano) / 1000000000.0
 
     exporters:
       otlp/tempo:
@@ -149,7 +266,7 @@ data:
       pipelines:
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, transform/scrub, tail_sampling, batch]
+          processors: [memory_limiter, filter/noise, transform/genai-cost, transform/scrub, tail_sampling, batch]
           exporters: [otlp/tempo, otlp/coroot]
         traces/count:
           receivers: [otlp]
@@ -158,6 +275,15 @@ data:
         metrics/count:
           receivers: [count]
           processors: [deltatocumulative]
+          exporters: [prometheus]
+        # Spans of the agent platform, before sampling, to the service graph and the run metric.
+        # Neither exports a span, so transform/scrub is not needed here (beacon §V.42).
+        traces/agent-platform:
+          receivers: [otlp]
+          processors: [memory_limiter, filter/agent-platform, transform/agent-platform]
+          exporters: [service_graph, signal_to_metrics]
+        metrics/agent-platform:
+          receivers: [service_graph, signal_to_metrics]
           exporters: [prometheus]
 ---
 apiVersion: apps/v1
@@ -182,8 +308,9 @@ spec:
       annotations:
         # sha256 of otel-collector-config's `data` (json.dumps, sort_keys); the collector reads
         # its config only at startup. tests/beacon/test_tracing.py fails if it is stale.
-        checksum/config: 8b09199d3937bdf1b919f9054449e3c403ba499d602a10646761aa2f4d7c0b1e
-        # Only the span-count exporter: one series per service (beacon §V.29).
+        checksum/config: d09dcf24a7a7fe1529139c9de3fae8699634c67306c09d98e664969f6328ae5c
+        # The span count (one series per service, beacon §V.29), the agent platform's service
+        # graph and its run start times.
         prometheus.io/scrape: "true"
         prometheus.io/port: "8889"
         prometheus.io/path: /metrics
