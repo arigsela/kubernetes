@@ -245,6 +245,13 @@ Gains a kagent-tools row (built-in Kubernetes tools: calls and failures by tool)
   Prometheus, Loki and Tempo, and against a local collector and Prometheus fed the real ask-hk
   trace three times: the token tiles read 457,623 input tokens, 3 × the trace's 152,541.
 
+- **After a review of the branch:** counters are read per series and never go negative when
+  the collector restarts in place; counter and run series stay exposed 48 hours (not 30 days),
+  so the run picker is a cheap instant query read when the page loads (runs of the last 2
+  days); log panels mask email addresses (Substrate's router logs the user, the dispatcher an
+  approver); the collector also scrubs ADK's prompt and response attributes should kagent ever
+  write them; Haiku's over-100K price is in; the dashboards refresh every minute.
+
 ## Left to the builder
 
 Exact PromQL/LogQL/TraceQL, panel types and styling, connector configuration, the series-bounding

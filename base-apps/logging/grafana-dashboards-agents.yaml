@@ -28,7 +28,7 @@ data:
       "version": 1,
       "editable": true,
       "graphTooltip": 1,
-      "refresh": "30s",
+      "refresh": "1m",
       "time": {
         "from": "now-24h",
         "to": "now"
@@ -92,7 +92,7 @@ data:
                 "uid": "${prometheus}"
               },
               "refId": "A",
-              "expr": "(sum by () (last_over_time(agent_runs_total[$__interval] offset -$__interval)) - (sum by () (last_over_time(agent_runs_total[1h]) and last_over_time(agent_runs_total[$__interval] offset -$__interval)) or sum by () (last_over_time(agent_runs_total[$__interval] offset -$__interval)) * 0))",
+              "expr": "sum by () (((last_over_time(agent_runs_total[$__interval] offset -$__interval) - last_over_time(agent_runs_total[1h])) >= 0) or last_over_time(agent_runs_total[$__interval] offset -$__interval))",
               "legendFormat": "",
               "instant": false,
               "range": true,
@@ -104,7 +104,7 @@ data:
                 "uid": "loki"
               },
               "refId": "B",
-              "expr": "sum(last_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | event=\"eval-gate\" | pass_rate!=\"\" | label_format held_n=`{{ if eq .held \"true\" }}1{{ else }}0{{ end }}` | unwrap held_n [30d]) by (agent)) or vector(0)",
+              "expr": "sum(last_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | __error__=\"\" | event=\"eval-gate\" | pass_rate!=\"\" | label_format held_n=`{{ if eq .held \"true\" }}1{{ else }}0{{ end }}` | unwrap held_n [30d]) by (agent)) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -205,7 +205,7 @@ data:
                 "uid": "${prometheus}"
               },
               "refId": "A",
-              "expr": "(sum by () (last_over_time(agent_tool_calls_total[$__interval] offset -$__interval)) - (sum by () (last_over_time(agent_tool_calls_total[1h]) and last_over_time(agent_tool_calls_total[$__interval] offset -$__interval)) or sum by () (last_over_time(agent_tool_calls_total[$__interval] offset -$__interval)) * 0))",
+              "expr": "sum by () (((last_over_time(agent_tool_calls_total[$__interval] offset -$__interval) - last_over_time(agent_tool_calls_total[1h])) >= 0) or last_over_time(agent_tool_calls_total[$__interval] offset -$__interval))",
               "legendFormat": "",
               "instant": false,
               "range": true,
@@ -316,7 +316,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by () (last_over_time(agent_tokens_input_total[$__interval] offset -$__interval)) - (sum by () (last_over_time(agent_tokens_input_total[1h]) and last_over_time(agent_tokens_input_total[$__interval] offset -$__interval)) or sum by () (last_over_time(agent_tokens_input_total[$__interval] offset -$__interval)) * 0))",
+              "expr": "sum by () (((last_over_time(agent_tokens_input_total[$__interval] offset -$__interval) - last_over_time(agent_tokens_input_total[1h])) >= 0) or last_over_time(agent_tokens_input_total[$__interval] offset -$__interval))",
               "legendFormat": "",
               "instant": false,
               "range": true,
@@ -327,7 +327,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "B",
-              "expr": "(sum by () (last_over_time(agent_tokens_output_total[$__interval] offset -$__interval)) - (sum by () (last_over_time(agent_tokens_output_total[1h]) and last_over_time(agent_tokens_output_total[$__interval] offset -$__interval)) or sum by () (last_over_time(agent_tokens_output_total[$__interval] offset -$__interval)) * 0))",
+              "expr": "sum by () (((last_over_time(agent_tokens_output_total[$__interval] offset -$__interval) - last_over_time(agent_tokens_output_total[1h])) >= 0) or last_over_time(agent_tokens_output_total[$__interval] offset -$__interval))",
               "legendFormat": "",
               "instant": false,
               "range": true,
@@ -338,7 +338,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "C",
-              "expr": "(sum by () (last_over_time(agent_cost_estimate_usd_total[$__interval] offset -$__interval)) - (sum by () (last_over_time(agent_cost_estimate_usd_total[1h]) and last_over_time(agent_cost_estimate_usd_total[$__interval] offset -$__interval)) or sum by () (last_over_time(agent_cost_estimate_usd_total[$__interval] offset -$__interval)) * 0))",
+              "expr": "sum by () (((last_over_time(agent_cost_estimate_usd_total[$__interval] offset -$__interval) - last_over_time(agent_cost_estimate_usd_total[1h])) >= 0) or last_over_time(agent_cost_estimate_usd_total[$__interval] offset -$__interval))",
               "legendFormat": "",
               "instant": false,
               "range": true,
@@ -695,7 +695,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | event=\"finding\" [7d])) or vector(0)",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"finding\" [7d])) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             },
@@ -705,7 +705,7 @@ data:
                 "uid": "loki"
               },
               "refId": "B",
-              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | event=\"remediate\" | decision=\"remediate\" [7d])) or vector(0)",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" | decision=\"remediate\" [7d])) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -1932,7 +1932,7 @@ data:
           ],
           "fieldConfig": {
             "defaults": {
-              "noValue": "No agent run in the last 7 days: run scripts/agent-demo.sh"
+              "noValue": "No agent run in the last 2 days: run scripts/agent-demo.sh"
             },
             "overrides": []
           },
@@ -1960,7 +1960,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "{namespace=~\"kagent|ate-system\"} |~ `(?:trace_id\":\"|trace\\.id=|trace_id=)${trace_id}(?:[^0-9a-f]|$)|session-${session}(?:[^0-9a-f-]|$)` != \"TaskStoreService/UpdateTask\" != \"request before normalization\" != \"request after normalization\"",
+              "expr": "{namespace=~\"kagent|ate-system\"} |~ `(?:trace_id\":\"|trace\\.id=|trace_id=)${trace_id}(?:[^0-9a-f]|$)|session-${session}(?:[^0-9a-f-]|$)` != \"TaskStoreService/UpdateTask\" != \"request before normalization\" != \"request after normalization\" | line_format `{{ regexReplaceAll \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}\" __line__ \"<email>\" }}`",
               "legendFormat": "",
               "queryType": "range"
             }
@@ -1975,7 +1975,7 @@ data:
           },
           "fieldConfig": {
             "defaults": {
-              "noValue": "No agent run in the last 7 days: run scripts/agent-demo.sh"
+              "noValue": "No agent run in the last 2 days: run scripts/agent-demo.sh"
             },
             "overrides": []
           },
@@ -2009,12 +2009,12 @@ data:
               "type": "prometheus"
             },
             "query": {
-              "query": "query_result(sort_desc(topk(20, max by (service_name, trace_id) (max_over_time(agent_run_start_seconds[7d])))))",
+              "query": "query_result(sort_desc(topk(20, max by (service_name, trace_id) (agent_run_start_seconds))))",
               "refId": "trace_id"
             },
-            "definition": "query_result(sort_desc(topk(20, max by (service_name, trace_id) (max_over_time(agent_run_start_seconds[7d])))))",
+            "definition": "query_result(sort_desc(topk(20, max by (service_name, trace_id) (agent_run_start_seconds))))",
             "regex": "/service_name=\"(?<text>[^\"]+)\".*trace_id=\"(?<value>[0-9a-f]{32})\"/",
-            "refresh": 2,
+            "refresh": 1,
             "sort": 0,
             "includeAll": false,
             "multi": false,
@@ -2022,7 +2022,7 @@ data:
             "current": {},
             "options": [],
             "hide": 0,
-            "description": "The newest agent runs of the last 7 days, newest first (agent_run_start_seconds)."
+            "description": "The newest agent runs of the last 2 days, newest first (agent_run_start_seconds). Read when the page loads."
           },
           {
             "type": "query",
@@ -2032,10 +2032,10 @@ data:
               "type": "prometheus"
             },
             "query": {
-              "query": "query_result(max by (gen_ai_conversation_id) (max_over_time(agent_run_start_seconds{trace_id=\"$trace_id\"}[7d])))",
+              "query": "query_result(max by (gen_ai_conversation_id) (last_over_time(agent_run_start_seconds{trace_id=\"$trace_id\"}[2d])))",
               "refId": "session"
             },
-            "definition": "query_result(max by (gen_ai_conversation_id) (max_over_time(agent_run_start_seconds{trace_id=\"$trace_id\"}[7d])))",
+            "definition": "query_result(max by (gen_ai_conversation_id) (last_over_time(agent_run_start_seconds{trace_id=\"$trace_id\"}[2d])))",
             "regex": "/gen_ai_conversation_id=\"([^\"]+)\"/",
             "refresh": 2,
             "sort": 0,
@@ -2073,7 +2073,7 @@ data:
       "version": 1,
       "editable": true,
       "graphTooltip": 1,
-      "refresh": "30s",
+      "refresh": "1m",
       "time": {
         "from": "now-24h",
         "to": "now"
@@ -2137,7 +2137,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "count(count by (agent) (count_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | event=\"eval-gate\" | pass_rate!=\"\" [7d]))) or vector(0)",
+              "expr": "count(count by (agent) (count_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | __error__=\"\" | event=\"eval-gate\" | pass_rate!=\"\" [7d]))) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -2199,7 +2199,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum(last_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | event=\"eval-gate\" | pass_rate!=\"\" | label_format held_n=`{{ if eq .held \"true\" }}1{{ else }}0{{ end }}` | unwrap held_n [30d]) by (agent)) or vector(0)",
+              "expr": "sum(last_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | __error__=\"\" | event=\"eval-gate\" | pass_rate!=\"\" | label_format held_n=`{{ if eq .held \"true\" }}1{{ else }}0{{ end }}` | unwrap held_n [30d]) by (agent)) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -2265,7 +2265,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum(count_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | event=\"eval-gate\" | pass_rate!=\"\" | regression=\"true\" [7d])) or vector(0)",
+              "expr": "sum(count_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | __error__=\"\" | event=\"eval-gate\" | pass_rate!=\"\" | regression=\"true\" [7d])) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -2397,7 +2397,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "max_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | event=\"eval-gate\" | pass_rate!=\"\" | unwrap pass_rate [$__interval]) by (agent)",
+              "expr": "max_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | __error__=\"\" | event=\"eval-gate\" | pass_rate!=\"\" | unwrap pass_rate [$__interval]) by (agent)",
               "legendFormat": "{{agent}}",
               "queryType": "range"
             }
@@ -2463,7 +2463,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum by (result) (count_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | event=\"eval-gate\" | label_format result=`{{ if .pass_rate }}scored{{ else }}unchanged, skipped{{ end }}` [$__interval]))",
+              "expr": "sum by (result) (count_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | __error__=\"\" | event=\"eval-gate\" | label_format result=`{{ if .pass_rate }}scored{{ else }}unchanged, skipped{{ end }}` [$__interval]))",
               "legendFormat": "{{result}}",
               "queryType": "range"
             }
@@ -2526,7 +2526,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "{namespace=\"kagent\", container=\"eval-gate\"} | json | event=\"eval-gate\" | pass_rate!=\"\"",
+              "expr": "{namespace=\"kagent\", container=\"eval-gate\"} | json | __error__=\"\" | event=\"eval-gate\" | pass_rate!=\"\"",
               "legendFormat": "",
               "queryType": "range"
             }
@@ -2634,7 +2634,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by (service_name) (last_over_time(agent_runs_total[$__interval] offset -$__interval)) - (sum by (service_name) (last_over_time(agent_runs_total[1h]) and last_over_time(agent_runs_total[$__interval] offset -$__interval)) or sum by (service_name) (last_over_time(agent_runs_total[$__interval] offset -$__interval)) * 0))",
+              "expr": "sum by (service_name) (((last_over_time(agent_runs_total[$__interval] offset -$__interval) - last_over_time(agent_runs_total[1h])) >= 0) or last_over_time(agent_runs_total[$__interval] offset -$__interval))",
               "legendFormat": "{{service_name}}",
               "instant": false,
               "range": true,
@@ -2926,7 +2926,7 @@ data:
       "version": 1,
       "editable": true,
       "graphTooltip": 1,
-      "refresh": "30s",
+      "refresh": "1m",
       "time": {
         "from": "now-24h",
         "to": "now"
@@ -2988,7 +2988,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by () (last_over_time(agent_tokens_input_total[$__range])) - (sum by () (last_over_time(agent_tokens_input_total[1h] offset $__range) and last_over_time(agent_tokens_input_total[$__range])) or sum by () (last_over_time(agent_tokens_input_total[$__range])) * 0))",
+              "expr": "sum by () (((last_over_time(agent_tokens_input_total[$__range]) - last_over_time(agent_tokens_input_total[1d] offset $__range)) >= 0) or last_over_time(agent_tokens_input_total[$__range]))",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -3049,7 +3049,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "100 * (sum by () (last_over_time(agent_tokens_cache_read_total[$__range])) - (sum by () (last_over_time(agent_tokens_cache_read_total[1h] offset $__range) and last_over_time(agent_tokens_cache_read_total[$__range])) or sum by () (last_over_time(agent_tokens_cache_read_total[$__range])) * 0)) / (sum by () (last_over_time(agent_tokens_input_total[$__range])) - (sum by () (last_over_time(agent_tokens_input_total[1h] offset $__range) and last_over_time(agent_tokens_input_total[$__range])) or sum by () (last_over_time(agent_tokens_input_total[$__range])) * 0))",
+              "expr": "100 * sum by () (((last_over_time(agent_tokens_cache_read_total[$__range]) - last_over_time(agent_tokens_cache_read_total[1d] offset $__range)) >= 0) or last_over_time(agent_tokens_cache_read_total[$__range])) / sum by () (((last_over_time(agent_tokens_input_total[$__range]) - last_over_time(agent_tokens_input_total[1d] offset $__range)) >= 0) or last_over_time(agent_tokens_input_total[$__range]))",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -3124,7 +3124,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by () (last_over_time(agent_tokens_output_total[$__range])) - (sum by () (last_over_time(agent_tokens_output_total[1h] offset $__range) and last_over_time(agent_tokens_output_total[$__range])) or sum by () (last_over_time(agent_tokens_output_total[$__range])) * 0))",
+              "expr": "sum by () (((last_over_time(agent_tokens_output_total[$__range]) - last_over_time(agent_tokens_output_total[1d] offset $__range)) >= 0) or last_over_time(agent_tokens_output_total[$__range]))",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -3185,7 +3185,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by () (last_over_time(agent_model_calls_total[$__range])) - (sum by () (last_over_time(agent_model_calls_total[1h] offset $__range) and last_over_time(agent_model_calls_total[$__range])) or sum by () (last_over_time(agent_model_calls_total[$__range])) * 0))",
+              "expr": "sum by () (((last_over_time(agent_model_calls_total[$__range]) - last_over_time(agent_model_calls_total[1d] offset $__range)) >= 0) or last_over_time(agent_model_calls_total[$__range]))",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -3246,7 +3246,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by () (last_over_time(agent_runs_total[$__range])) - (sum by () (last_over_time(agent_runs_total[1h] offset $__range) and last_over_time(agent_runs_total[$__range])) or sum by () (last_over_time(agent_runs_total[$__range])) * 0))",
+              "expr": "sum by () (((last_over_time(agent_runs_total[$__range]) - last_over_time(agent_runs_total[1d] offset $__range)) >= 0) or last_over_time(agent_runs_total[$__range]))",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -3307,7 +3307,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by () (last_over_time(agent_cost_estimate_usd_total[$__range])) - (sum by () (last_over_time(agent_cost_estimate_usd_total[1h] offset $__range) and last_over_time(agent_cost_estimate_usd_total[$__range])) or sum by () (last_over_time(agent_cost_estimate_usd_total[$__range])) * 0))",
+              "expr": "sum by () (((last_over_time(agent_cost_estimate_usd_total[$__range]) - last_over_time(agent_cost_estimate_usd_total[1d] offset $__range)) >= 0) or last_over_time(agent_cost_estimate_usd_total[$__range]))",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -3382,7 +3382,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by (service_name) (last_over_time(agent_tokens_input_total[$__interval] offset -$__interval)) - (sum by (service_name) (last_over_time(agent_tokens_input_total[1h]) and last_over_time(agent_tokens_input_total[$__interval] offset -$__interval)) or sum by (service_name) (last_over_time(agent_tokens_input_total[$__interval] offset -$__interval)) * 0))",
+              "expr": "sum by (service_name) (((last_over_time(agent_tokens_input_total[$__interval] offset -$__interval) - last_over_time(agent_tokens_input_total[1h])) >= 0) or last_over_time(agent_tokens_input_total[$__interval] offset -$__interval))",
               "legendFormat": "{{service_name}}",
               "instant": false,
               "range": true,
@@ -3444,7 +3444,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by (service_name) (last_over_time(agent_tokens_output_total[$__interval] offset -$__interval)) - (sum by (service_name) (last_over_time(agent_tokens_output_total[1h]) and last_over_time(agent_tokens_output_total[$__interval] offset -$__interval)) or sum by (service_name) (last_over_time(agent_tokens_output_total[$__interval] offset -$__interval)) * 0))",
+              "expr": "sum by (service_name) (((last_over_time(agent_tokens_output_total[$__interval] offset -$__interval) - last_over_time(agent_tokens_output_total[1h])) >= 0) or last_over_time(agent_tokens_output_total[$__interval] offset -$__interval))",
               "legendFormat": "{{service_name}}",
               "instant": false,
               "range": true,
@@ -3506,7 +3506,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by (service_name) (last_over_time(agent_cost_estimate_usd_total[$__range])) - (sum by (service_name) (last_over_time(agent_cost_estimate_usd_total[1h] offset $__range) and last_over_time(agent_cost_estimate_usd_total[$__range])) or sum by (service_name) (last_over_time(agent_cost_estimate_usd_total[$__range])) * 0))",
+              "expr": "sum by (service_name) (((last_over_time(agent_cost_estimate_usd_total[$__range]) - last_over_time(agent_cost_estimate_usd_total[1d] offset $__range)) >= 0) or last_over_time(agent_cost_estimate_usd_total[$__range]))",
               "legendFormat": "{{service_name}}",
               "instant": true,
               "range": false
@@ -3568,7 +3568,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by (gen_ai_request_model) (last_over_time(agent_tokens_input_total[$__range])) - (sum by (gen_ai_request_model) (last_over_time(agent_tokens_input_total[1h] offset $__range) and last_over_time(agent_tokens_input_total[$__range])) or sum by (gen_ai_request_model) (last_over_time(agent_tokens_input_total[$__range])) * 0))",
+              "expr": "sum by (gen_ai_request_model) (((last_over_time(agent_tokens_input_total[$__range]) - last_over_time(agent_tokens_input_total[1d] offset $__range)) >= 0) or last_over_time(agent_tokens_input_total[$__range]))",
               "legendFormat": "{{gen_ai_request_model}}",
               "instant": true,
               "range": false
@@ -3629,7 +3629,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by (gen_ai_request_model) (last_over_time(agent_cost_estimate_usd_total[$__range])) - (sum by (gen_ai_request_model) (last_over_time(agent_cost_estimate_usd_total[1h] offset $__range) and last_over_time(agent_cost_estimate_usd_total[$__range])) or sum by (gen_ai_request_model) (last_over_time(agent_cost_estimate_usd_total[$__range])) * 0))",
+              "expr": "sum by (gen_ai_request_model) (((last_over_time(agent_cost_estimate_usd_total[$__range]) - last_over_time(agent_cost_estimate_usd_total[1d] offset $__range)) >= 0) or last_over_time(agent_cost_estimate_usd_total[$__range]))",
               "legendFormat": "{{gen_ai_request_model}}",
               "instant": true,
               "range": false
@@ -3704,7 +3704,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by (gen_ai_request_model) (last_over_time(agent_model_calls_total[$__interval] offset -$__interval)) - (sum by (gen_ai_request_model) (last_over_time(agent_model_calls_total[1h]) and last_over_time(agent_model_calls_total[$__interval] offset -$__interval)) or sum by (gen_ai_request_model) (last_over_time(agent_model_calls_total[$__interval] offset -$__interval)) * 0))",
+              "expr": "sum by (gen_ai_request_model) (((last_over_time(agent_model_calls_total[$__interval] offset -$__interval) - last_over_time(agent_model_calls_total[1h])) >= 0) or last_over_time(agent_model_calls_total[$__interval] offset -$__interval))",
               "legendFormat": "{{gen_ai_request_model}}",
               "instant": false,
               "range": true,
@@ -3841,7 +3841,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by (gen_ai_tool_name) (last_over_time(agent_tool_calls_total[$__range])) - (sum by (gen_ai_tool_name) (last_over_time(agent_tool_calls_total[1h] offset $__range) and last_over_time(agent_tool_calls_total[$__range])) or sum by (gen_ai_tool_name) (last_over_time(agent_tool_calls_total[$__range])) * 0))",
+              "expr": "sum by (gen_ai_tool_name) (((last_over_time(agent_tool_calls_total[$__range]) - last_over_time(agent_tool_calls_total[1d] offset $__range)) >= 0) or last_over_time(agent_tool_calls_total[$__range]))",
               "legendFormat": "{{gen_ai_tool_name}}",
               "instant": true,
               "range": false
@@ -4021,7 +4021,7 @@ data:
           "title": "How tokens and cost are counted",
           "options": {
             "mode": "markdown",
-            "content": "The collector counts every model call's tokens (`gen_ai.usage.*` on its span) before sampling, so each call counts once.\n\nCost is an **estimate** stamped on each call at Anthropic's list prices on 2026-10-06 ($ per million tokens):\n\n| model | input | cache write | cache read | output |\n|---|---|---|---|---|\n| claude-sonnet-5-5 | 2 | 2.5 | 0.2 | 10 |\n| claude-opus-5-5 | 4 | 5 | 0.2 | 20 |\n| claude-haiku-5-5 | 0.1 | 0.125 | 0.01 | 0.5 |\n\nOnly the kagent agents are traced; docs-checker (LangGraph) sends no traces."
+            "content": "The collector counts every model call's tokens (`gen_ai.usage.*` on its span) before sampling, so each call counts once.\n\nCost is an **estimate** stamped on each call at Anthropic's list prices on 2026-10-06 ($ per million tokens):\n\n| model | input | cache write | cache read | output |\n|---|---|---|---|---|\n| claude-sonnet-5-5 | 2 | 2.5 | 0.2 | 10 |\n| claude-opus-5-5 | 4 | 5 | 0.2 | 20 |\n| claude-haiku-5-5 | 0.1 | 0.125 | 0.01 | 0.5 |\n\nHaiku over 100K-token prompts: 0.5 / 0.625 / 0.05 / 2.5.\n\nOnly the kagent agents are traced; docs-checker (LangGraph) sends no traces."
           },
           "id": 19,
           "gridPos": {
@@ -4073,7 +4073,7 @@ data:
       "version": 1,
       "editable": true,
       "graphTooltip": 1,
-      "refresh": "30s",
+      "refresh": "1m",
       "time": {
         "from": "now-24h",
         "to": "now"
@@ -4171,7 +4171,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "(sum by (client, server) (last_over_time(traces_service_graph_request_total[$__range])) - (sum by (client, server) (last_over_time(traces_service_graph_request_total[1h] offset $__range) and last_over_time(traces_service_graph_request_total[$__range])) or sum by (client, server) (last_over_time(traces_service_graph_request_total[$__range])) * 0)) > 0",
+              "expr": "sum by (client, server) (((last_over_time(traces_service_graph_request_total[$__range]) - last_over_time(traces_service_graph_request_total[1d] offset $__range)) >= 0) or last_over_time(traces_service_graph_request_total[$__range])) > 0",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -4182,7 +4182,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "B",
-              "expr": "(sum by (client, server) (last_over_time(traces_service_graph_request_failed_total[$__range])) - (sum by (client, server) (last_over_time(traces_service_graph_request_failed_total[1h] offset $__range) and last_over_time(traces_service_graph_request_failed_total[$__range])) or sum by (client, server) (last_over_time(traces_service_graph_request_failed_total[$__range])) * 0)) or (sum by (client, server) (last_over_time(traces_service_graph_request_total[$__range])) - (sum by (client, server) (last_over_time(traces_service_graph_request_total[1h] offset $__range) and last_over_time(traces_service_graph_request_total[$__range])) or sum by (client, server) (last_over_time(traces_service_graph_request_total[$__range])) * 0)) * 0",
+              "expr": "sum by (client, server) (((last_over_time(traces_service_graph_request_failed_total[$__range]) - last_over_time(traces_service_graph_request_failed_total[1d] offset $__range)) >= 0) or last_over_time(traces_service_graph_request_failed_total[$__range])) or sum by (client, server) (((last_over_time(traces_service_graph_request_total[$__range]) - last_over_time(traces_service_graph_request_total[1d] offset $__range)) >= 0) or last_over_time(traces_service_graph_request_total[$__range])) * 0",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -4565,7 +4565,7 @@ data:
       "version": 1,
       "editable": true,
       "graphTooltip": 1,
-      "refresh": "30s",
+      "refresh": "1m",
       "time": {
         "from": "now-24h",
         "to": "now"
@@ -5594,7 +5594,7 @@ data:
       "version": 1,
       "editable": true,
       "graphTooltip": 1,
-      "refresh": "30s",
+      "refresh": "1m",
       "time": {
         "from": "now-24h",
         "to": "now"
@@ -5658,7 +5658,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | event=\"dispatch\" | status=\"firing\" [7d])) or vector(0)",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | status=\"firing\" [7d])) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -5720,7 +5720,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | event=\"dispatch\" | decision=\"investigate\" [7d])) or vector(0)",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | decision=\"investigate\" [7d])) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -5782,7 +5782,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | event=\"dispatch\" | decision=~\"skip-.*\" [7d])) or vector(0)",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | decision=~\"skip-.*\" [7d])) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -5844,7 +5844,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | event=\"finding\" [7d])) or vector(0)",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"finding\" [7d])) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -5906,7 +5906,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | event=\"remediate\" | decision=\"remediate\" [7d])) or vector(0)",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" | decision=\"remediate\" [7d])) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -5968,7 +5968,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | event=\"decision\" | approved=\"true\" [7d])) or vector(0)",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"decision\" | approved=\"true\" [7d])) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -6030,7 +6030,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum by (rule) (count_over_time({namespace=\"dispatcher\"} | json | event=\"dispatch\" | status=\"firing\" [$__interval]))",
+              "expr": "sum by (rule) (count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | status=\"firing\" [$__interval]))",
               "legendFormat": "{{rule}}",
               "queryType": "range"
             }
@@ -6094,7 +6094,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum by (decision) (count_over_time({namespace=\"dispatcher\"} | json | event=\"dispatch\" [$__interval]))",
+              "expr": "sum by (decision) (count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" [$__interval]))",
               "legendFormat": "{{decision}}",
               "queryType": "range"
             }
@@ -6158,7 +6158,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum by (agent, state) (count_over_time({namespace=\"dispatcher\"} | json | event=\"finding\" [$__interval]))",
+              "expr": "sum by (agent, state) (count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"finding\" [$__interval]))",
               "legendFormat": "{{agent}} {{state}}",
               "queryType": "range"
             }
@@ -6222,7 +6222,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum by (verdict, decision) (count_over_time({namespace=\"dispatcher\"} | json | event=\"remediate\" [7d]))",
+              "expr": "sum by (verdict, decision) (count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" [7d]))",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -6298,7 +6298,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | event=\"remediate\" | decision=\"remediate\" [24h])) or vector(0)",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" | decision=\"remediate\" [24h])) or vector(0)",
               "legendFormat": "",
               "queryType": "instant"
             }
@@ -6356,7 +6356,7 @@ data:
         {
           "type": "logs",
           "title": "Dispatcher events",
-          "description": "Every alert, finding, remediation and approval, newest first.",
+          "description": "Every alert, finding, remediation and approval, newest first (emails masked).",
           "datasource": {
             "type": "loki",
             "uid": "loki"
@@ -6368,7 +6368,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "{namespace=\"dispatcher\"} | json | event=~\"dispatch|finding|remediate|decision\"",
+              "expr": "{namespace=\"dispatcher\"} | json | __error__=\"\" | event=~\"dispatch|finding|remediate|decision\" | line_format `{{ regexReplaceAll \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}\" __line__ \"<email>\" }}`",
               "legendFormat": "",
               "queryType": "range"
             }
@@ -6441,7 +6441,7 @@ data:
       "version": 1,
       "editable": true,
       "graphTooltip": 1,
-      "refresh": "30s",
+      "refresh": "1m",
       "time": {
         "from": "now-24h",
         "to": "now"

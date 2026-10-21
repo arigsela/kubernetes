@@ -78,10 +78,15 @@ def test_v105_taskstore_update_spans_never_reach_tempo():
 
 
 def test_v105_tool_output_is_scrubbed():
-    """ADK copies each tool's whole output onto its execute_tool span even with content capture off."""
+    """ADK copies each tool's whole output onto its execute_tool span even with content capture off,
+    and can write the whole prompt and response (llm_request, llm_response)."""
     statements = [s for block in _collector_config()["processors"]["transform/scrub"]["trace_statements"]
                   for s in block["statements"]]
-    assert 'delete_key(attributes, "gcp.vertex.agent.tool_response")' in statements
+    [stmt] = [s for s in statements if "gcp[.]vertex" in s]
+    pattern = re.search(r'delete_matching_keys\(attributes, "(.+)"\)', stmt).group(1).replace("$$", "$")
+    for key in ("gcp.vertex.agent.tool_response", "gcp.vertex.agent.llm_request", "gcp.vertex.agent.llm_response"):
+        assert re.match(pattern, key), key
+    assert not re.match(pattern, "gcp.vertex.agent.tool_call_args")
 
 
 def test_v105_cost_prices_match_the_published_table():
@@ -90,10 +95,14 @@ def test_v105_cost_prices_match_the_published_table():
     for s in block["statements"]:
         m = re.search(r'\* ([\d.]+) \+ cache\["cache_write"\] \* ([\d.]+) \+ cache\["cache_read"\] \* ([\d.]+)'
                       r' \+ cache\["output"\] \* ([\d.]+)\) / 1000000\.0\) where attributes\["gen_ai\.request\.model"\]'
-                      r' == "([^"]+)"', s)
+                      r' == "([^"]+)"$', s)
         if m:
             found[m.group(5)] = tuple(float(x) for x in m.group(1, 2, 3, 4))
     assert found == PRICES
+    # Haiku's second rate, for a prompt over 100K tokens, is set last so it wins.
+    long = [s for s in block["statements"] if 'cache["input"] > 100000.0' in s]
+    assert len(long) == 1 and long[0] == block["statements"][-1]
+    assert '* 0.5 + cache["cache_write"] * 0.625 + cache["cache_read"] * 0.05 + cache["output"] * 2.5)' in long[0]
     procs = _pipelines()["traces"]["processors"]
     assert procs.index("transform/genai-cost") < procs.index("tail_sampling")
 
@@ -164,7 +173,9 @@ def _synthetic_run(trace):
                     gen_ai__usage__output_tokens=50)
     http = _span(trace, "HTTP POST", CLIENT, model1, server__address="api.anthropic.com")
     tool = _span(trace, "execute_tool k8s_get_resources", INTERNAL, invoke, gen_ai__tool__name="k8s_get_resources",
-                 gcp__vertex__agent__tool_response="NAME READY STATUS secret-looking-output")
+                 gcp__vertex__agent__tool_response="NAME READY STATUS secret-looking-output",
+                 gcp__vertex__agent__llm_request="secret-looking-prompt",
+                 gcp__vertex__agent__tool_call_args='{"namespace":"kagent"}')
     update = _span(trace, UPDATE_TASK, CLIENT, invoke, rpc__method=UPDATE_TASK, server__address="10.43.156.252")
     return {"resourceSpans": [
         _resource({"service.name": "main-istio.istio-ingress"}, [ingress_srv, ingress_cli]),
@@ -253,7 +264,8 @@ def test_v105_running_collector(running_collector):
     spans = exported()
     names = [s["name"] for s in spans]
     assert UPDATE_TASK not in names and "invoke_agent demo_agent" in names, names
-    assert "secret-looking-output" not in out.read_text()
+    assert "secret-looking-output" not in out.read_text() and "secret-looking-prompt" not in out.read_text()
+    assert "gcp.vertex.agent.tool_call_args" in out.read_text()
     cost = {}
     for s in spans:
         a = {x["key"]: x["value"] for x in s.get("attributes", [])}

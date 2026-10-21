@@ -79,12 +79,16 @@ before sampling, into metrics for the Agents dashboards on the same `:8889`:
   set from the client span's `server.address` (short service name, never an IP).
 - `agent_tokens_{input,output,cache_read,cache_write}_total`, `agent_cost_estimate_usd_total`,
   `agent_model_calls_total`, `agent_tool_calls_total`, `agent_runs_total`
-  (`signal_to_metrics`, by agent and model or tool): each span counted once. They keep growing
-  for 30 days without a new value (`deltatocumulative/agent-platform`) and the exporter keeps
-  exposing them as long, because the dashboards subtract each series' value before a window
-  instead of using `increase()`, which would lose every new series' first value.
-- `agent_run_start_seconds{trace_id, gen_ai_conversation_id}`: one series per agent run, so
-  the Agent Platform dashboard opens on the newest run.
+  (`signal_to_metrics`, by agent and model or tool): each span counted once. The exporter
+  keeps a series exposed for 48 hours after its last update, and `deltatocumulative/agent-platform`
+  keeps its running total one hour less, so a series that comes back starts from zero. The
+  dashboards subtract each series' value before a window instead of using `increase()`, which
+  would lose every new series' first value.
+- `agent_run_start_seconds{trace_id, gen_ai_conversation_id}`: one series per agent run,
+  exposed 48 hours, so the Agent Platform dashboard opens on the newest run.
+Before the counters, a `batch` step makes concurrent sessions reach them one batch at a time.
+`transform/scrub` also deletes ADK's `llm_request` and `llm_response`, should kagent ever write
+them; tool arguments stay.
 `tests/agent-capability/test_agent_traces.py` runs the config on a synthetic run and checks
 each of these. One replica on purpose: tail sampling needs a whole trace on one instance.
 

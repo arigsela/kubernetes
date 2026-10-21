@@ -15,7 +15,7 @@
 #     78 s run, which buried the run in Tempo.
 #   - kagent's runtime puts each tool's whole output on its execute_tool span even with content
 #     capture off; transform/scrub deletes it, so no tool output is stored or shown.
-#   - Each model call gets an estimated cost (transform/genai-cost), which Tempo sums like tokens.
+#   - Each model call gets an estimated cost (transform/genai-cost).
 #   - Small metric sets on :8889, read before sampling: the service graph of the agent platform
 #     (Tempo's service map in Grafana), counters of the agents' tokens, estimated cost, model
 #     and tool calls and runs, and the start time of each agent run by trace id, so the Agent
@@ -66,9 +66,10 @@ data:
         trace_conditions:
           - span.name == "kagent.runtime.v1.TaskStoreService/UpdateTask"
 
-      # An estimated cost on each model call of a kagent agent (agent.cost.estimate_usd), so Tempo
-      # can sum cost like tokens. $/MTok: base input, cache write (5 min), cache read, output, from
-      # Anthropic's API pricing as of 2026-10-06; Haiku's is its rate for prompts up to 100K tokens.
+      # An estimated cost on each model call of a kagent agent (agent.cost.estimate_usd): shown on
+      # the span in a trace, summed by agent_cost_estimate_usd_total. $/MTok: base input, cache
+      # write (5 min), cache read, output, from
+      # Anthropic's API pricing as of 2026-10-06; Haiku has a second rate for prompts over 100K tokens.
       # Input tokens include the cached ones (kagent's telemetry contract), so uncached input is
       # input - cache read - cache write. A model not listed gets no cost; its tokens still count.
       transform/genai-cost:
@@ -88,6 +89,8 @@ data:
               - set(attributes["agent.cost.estimate_usd"], ((cache["input"] - cache["cache_read"] - cache["cache_write"]) * 2.0 + cache["cache_write"] * 2.5 + cache["cache_read"] * 0.2 + cache["output"] * 10.0) / 1000000.0) where attributes["gen_ai.request.model"] == "claude-sonnet-5-5"
               - set(attributes["agent.cost.estimate_usd"], ((cache["input"] - cache["cache_read"] - cache["cache_write"]) * 4.0 + cache["cache_write"] * 5.0 + cache["cache_read"] * 0.2 + cache["output"] * 20.0) / 1000000.0) where attributes["gen_ai.request.model"] == "claude-opus-5-5"
               - set(attributes["agent.cost.estimate_usd"], ((cache["input"] - cache["cache_read"] - cache["cache_write"]) * 0.1 + cache["cache_write"] * 0.125 + cache["cache_read"] * 0.01 + cache["output"] * 0.5) / 1000000.0) where attributes["gen_ai.request.model"] == "claude-haiku-5-5"
+              # Haiku's rate for a prompt over 100K tokens (sets it again, so this row goes last).
+              - set(attributes["agent.cost.estimate_usd"], ((cache["input"] - cache["cache_read"] - cache["cache_write"]) * 0.5 + cache["cache_write"] * 0.625 + cache["cache_read"] * 0.05 + cache["output"] * 2.5) / 1000000.0) where attributes["gen_ai.request.model"] == "claude-haiku-5-5" and cache["input"] > 100000.0
 
       # beacon §V.42: no query string and no notifier delivery path leaves this collector.
       # Envoy's http.url keeps the query (beacon §R.42), so the Gateway's spans would carry OAuth
@@ -102,8 +105,10 @@ data:
               - replace_pattern(attributes["url.full"], "\\?.*$$", "")
               - replace_pattern(attributes["http.target"], "\\?.*$$", "")
               - delete_key(attributes, "url.query")
-              # kagent's runtime (ADK) copies each tool's output onto its execute_tool span.
-              - delete_key(attributes, "gcp.vertex.agent.tool_response")
+              # kagent's runtime (ADK) copies each tool's output onto its execute_tool span; ADK can
+              # also write the whole prompt and response. Tool arguments stay: they say what the
+              # agent asked for (a namespace, a file path).
+              - delete_matching_keys(attributes, "^gcp[.]vertex[.]agent[.](tool_response|llm_request|llm_response)$$")
           - context: span
             conditions:
               - resource.attributes["service.name"] == "beacon-notifier" and kind == SPAN_KIND_CLIENT
@@ -152,10 +157,11 @@ data:
       # this keeps a running total, so rate() and absence alerts mean something (beacon §B.14).
       deltatocumulative: {}
 
-      # The agent counters stay cumulative for 30 days without a new delta (default 5 minutes),
-      # so a series never restarts from zero while the collector runs (see signal_to_metrics).
+      # An agent counter stays cumulative for 47 hours without a new delta (default 5 minutes), one
+      # hour less than the exporter shows it: a series that disappears comes back from zero, never
+      # from an old total the dashboards would count again (see signal_to_metrics).
       deltatocumulative/agent-platform:
-        max_stale: 720h
+        max_stale: 47h
 
       transform/count:
         error_mode: ignore
@@ -234,14 +240,13 @@ data:
       #   agent_runs_total
       # They count each span once. A model call is rare, so a plain increase() would lose the first
       # value of every new series; the dashboards subtract each series' value at the window's start
-      # instead (scripts/gen-agent-dashboards.py, window_total), which needs a series to only ever
-      # grow and to stay exposed while the collector runs: hence deltatocumulative/agent-platform's
-      # 30-day max_stale and the exporter's 30-day metric_expiration.
+      # instead (scripts/gen-agent-dashboards.py, window_total), which needs a series to stay
+      # exposed between runs and to restart from zero, not from an old total, when it comes back:
+      # hence deltatocumulative/agent-platform's max_stale just under the exporter's expiration.
       #
       # agent_run_start_seconds{service_name, trace_id, gen_ai_conversation_id}: the start time of
       # each agent run. The landing dashboard takes the newest trace id (and its session) from it.
-      # One series per run (about a hundred a day), exposed until the collector restarts or for 30
-      # days: a few thousand series.
+      # One series per run (about a hundred a day), exposed for 48 hours: a few hundred series.
       signal_to_metrics:
         spans:
           - name: agent.run.start
@@ -357,13 +362,13 @@ data:
         compression: none
         tls:
           insecure: true
-      # A series stays exposed for 30 days after its last update (default 5 minutes): the agent
+      # A series stays exposed for 48 hours after its last update (default 5 minutes): the agent
       # counters are rare events, and the dashboards read each one's value just before a window
       # (scripts/gen-agent-dashboards.py, window_total). The span count is unaffected (beacon §V.9
       # reads its increase, which is 0 for a series that stops growing, as for a missing one).
       prometheus:
         endpoint: 0.0.0.0:8889
-        metric_expiration: 720h
+        metric_expiration: 48h
 
     service:
       extensions: [health_check]
@@ -387,7 +392,7 @@ data:
         # Neither exports a span, so transform/scrub is not needed here (beacon §V.42).
         traces/agent-platform:
           receivers: [otlp]
-          processors: [memory_limiter, filter/agent-platform, transform/genai-cost, transform/agent-platform]
+          processors: [memory_limiter, filter/agent-platform, transform/genai-cost, transform/agent-platform, batch]
           exporters: [service_graph, signal_to_metrics]
         metrics/agent-platform:
           receivers: [service_graph, signal_to_metrics]
@@ -416,7 +421,7 @@ spec:
       annotations:
         # sha256 of otel-collector-config's `data` (json.dumps, sort_keys); the collector reads
         # its config only at startup. tests/beacon/test_tracing.py fails if it is stale.
-        checksum/config: 92ca600ebd37e28e702cf2753de1d65c97b233907fe0c25189c4ed0f8390d384
+        checksum/config: 4555b0f1e219d388f3e92573f9ff925b3784026e0aa915df235b490f029a34e8
         # The span count (one series per service, beacon §V.29), the agent platform's service
         # graph and its run start times.
         prometheus.io/scrape: "true"
