@@ -154,8 +154,9 @@ endpoint itself.
     reviewed, working model. No agent in git uses it; it is the default for agents created in
     the UI.
   - `kagent-tools.rbac.create: false` (see *Tool server RBAC*), `grafana-mcp.enabled: false`, and
-    `config.telemetry` + `config.runtimeDefaults.telemetry`: traces and logs to Coroot (gRPC 4317;
-    metrics off).
+    `config.telemetry` + `config.runtimeDefaults.telemetry`: traces to the cluster collector
+    (`otel-collector.tracing`, gRPC 4317), which keeps every kagent trace and forwards to Tempo and
+    Coroot (§V.104). No OTLP logs or metrics.
   - Every image (controller, UI, tools, worker) is pinned by digest through its `tag`, because
     the chart's image helpers take no digest key. Renovate can't see these (Helm `valuesObject`).
     The golang-adk image is pinned in each Harness (the chart's `config.harnessImages` catalog
@@ -415,7 +416,11 @@ endpoint once shadowed the UI's own `/mcp` page). A new host needs a Gateway lis
 hostname in `MANAGED_HOSTNAMES` in `base-apps/wan-ip-monitor/cronjob.yaml`.
 
 ## Observability and audit
-- **Traces and logs**: OpenTelemetry to Coroot. Actor output reaches stdout of the
+- **Traces**: OpenTelemetry to the cluster collector, then Tempo (Grafana → Explore → Tempo,
+  `{resource.service.namespace="kagent"}`: `kagent-controller`, and each session under its agent's
+  name) and Coroot. Every kagent trace is kept whole. Until §B.37 they went straight to Coroot,
+  which refuses kagent's gzip, so none arrived anywhere.
+- **Logs**: stdout only. Actor output reaches stdout of the
   `kagent-default` worker pods, labelled with the session (`ate.actor.name: session-<id>`) and the
   template (`ate.template.name: <agent>-<hash>`); Alloy ships it to Loki.
 - **Agent action record**: `scripts/agent-audit.py` (default `--source v1`) reads `kagent_v1`

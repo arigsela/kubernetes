@@ -1,11 +1,13 @@
 # base-apps/tracing/collector.yaml (beacon §T.19)
-# The OpenTelemetry Collector: every trace source in the cluster that is not kagent/Substrate
-# sends here (OTLP gRPC 4317, HTTP 4318), and it forwards to Tempo and to Coroot.
+# The OpenTelemetry Collector: every trace source in the cluster sends here (OTLP gRPC 4317,
+# HTTP 4318), and it forwards to Tempo and to Coroot. kagent and Substrate too: nothing else
+# exports OTLP to Coroot, whose receiver refuses gzip (tests/agent-capability/test_agent_traces.py).
 #
 #   beacon §V.41  memory_limiter first in every traces pipeline
 #   beacon §V.42  transform/scrub before every exporter: no query strings, no notifier
 #                 delivery paths (tests/beacon/test_collector.py runs this config)
 #   beacon §V.43  tail sampling here, not at the Gateway: keep errors and beacon, 10% of the rest
+#   (this repo)   tail sampling also keeps every kagent trace (tests/agent-capability/test_agent_traces.py)
 #   beacon §V.9   the span count per service (port 8889) is the signal the notifier alert reads
 #
 # One replica on purpose: tail sampling needs every span of a trace on the same instance.
@@ -84,6 +86,14 @@ data:
               key: service.name
               values: ["beacon-.*"]
               enabled_regex_matching: true
+          # Every kagent trace: an agent run is rare and only useful whole. kagent sets
+          # service.namespace=kagent on the controller and on every session; a match keeps the
+          # whole trace, so the MCP adapter and Substrate spans of that run stay with it.
+          - name: kagent
+            type: string_attribute
+            string_attribute:
+              key: service.namespace
+              values: ["kagent"]
           - name: everything-else
             type: probabilistic
             probabilistic:
@@ -172,7 +182,7 @@ spec:
       annotations:
         # sha256 of otel-collector-config's `data` (json.dumps, sort_keys); the collector reads
         # its config only at startup. tests/beacon/test_tracing.py fails if it is stale.
-        checksum/config: 116487844a111138c4363635df4636245ca5aae9136fdf19c14e9e8d1194bfe5
+        checksum/config: 8b09199d3937bdf1b919f9054449e3c403ba499d602a10646761aa2f4d7c0b1e
         # Only the span-count exporter: one series per service (beacon §V.29).
         prometheus.io/scrape: "true"
         prometheus.io/port: "8889"

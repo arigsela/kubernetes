@@ -30,7 +30,7 @@ sources:
 
 ## What it is
 The cluster's trace store. Before it, Coroot was the only place traces went (kagent and
-Substrate export there directly, `base-apps/kagent.yaml`). This app was built for beacon's
+Substrate exported there directly, and Coroot refused kagent's gzip). This app was built for beacon's
 Phase 3 (`arigsela/beacon` SPEC, beacon §T.18 to beacon §T.23): proving that a service with
 no tracing code still shows up in Tempo because platform policy instruments it. Every
 comment cites beacon's sections as `beacon §T.n` / `beacon §V.n`, never a bare `§T.n` (that
@@ -43,9 +43,11 @@ is this repo's own SPEC.md).
 | `tracing-smoke` | PreSync Job | Runs every third-party image of beacon's Phase 3 on a node before any of it rolls out (beacon §V.18): Tempo, the collector, the OpenTelemetry Operator and its Python layer. |
 
 ## The collector (`collector.yaml`)
-Every trace source except kagent and Substrate (which export to Coroot themselves) sends to
-`otel-collector.tracing.svc.cluster.local`: 4318 for OTLP/HTTP (beacon's services; the Python
-SDK ships only the HTTP exporter), 4317 for gRPC (Istio, from beacon §T.20). In order:
+Every trace source sends to `otel-collector.tracing.svc.cluster.local`: 4318 for OTLP/HTTP
+(beacon's services; the Python SDK ships only the HTTP exporter), 4317 for gRPC (Istio, from
+beacon §T.20; kagent's controller and sessions and Substrate's atenet-router,
+`base-apps/kagent.yaml` and `base-apps/substrate.yaml`). Nothing else exports OTLP to Coroot
+(`tests/agent-capability/test_agent_traces.py`). In order:
 1. `memory_limiter` first in every traces pipeline (beacon §V.41): refuse, don't OOM.
 2. `transform/scrub` (beacon §V.42): strips the query string from `http.url`, `url.full` and
    `http.target`, drops `url.query`, and cuts the notifier's outgoing `url.full` to
@@ -53,7 +55,9 @@ SDK ships only the HTTP exporter), 4317 for gRPC (Istio, from beacon §T.20). In
    and a Slack webhook path is itself the credential. `tests/beacon/test_collector.py` runs
    this exact config and checks the secret parts never come out.
 3. `tail_sampling` (beacon §V.43): keeps every trace with an error and every trace touching a
-   `beacon-*` service, and 10% of the rest. Sampling happens here, not at the Gateway,
+   `beacon-*` service, and 10% of the rest. It also keeps every kagent trace
+   (`service.namespace=kagent`, the controller and each session): agent runs are rare and only
+   useful whole. Sampling happens here, not at the Gateway,
    because apps behind the Gateway (kagent, Substrate) follow its sampling decision.
 4. Exported to Tempo and to Coroot (Coroot keeps its own 7 days). The Coroot export is
    uncompressed: Coroot's receiver refuses gzip (beacon §B.13).
