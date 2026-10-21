@@ -59,6 +59,15 @@ locals {
     # build, so no push role here or next to the app); pulls use the docs-checker-pull
     # user (docs-checker-pull-iam.tf).
     "docs-checker" = { image_tag_mutability = "IMMUTABLE", scan_on_push = true, keep_tagged = 10 }
+
+    # The agentgateway adapter that the three stdio MCP servers in base-apps/kagent/ run
+    # under (§T.126). Upstream stopped publishing the musl images after v1.3.1, and only a
+    # musl build supports --copy-self, so the image is rebuilt here from the static release
+    # binary (images/agentgateway/, scripts/build-agentgateway-image.sh). Pushed by hand,
+    # like docs-checker. IMMUTABLE because the Deployments pin it by digest; keep_tagged = 10
+    # so a reverted pin stays pullable. No scan on push: the image is FROM scratch with one
+    # binary and no OS packages to scan.
+    "agentgateway" = { image_tag_mutability = "IMMUTABLE", scan_on_push = false, keep_tagged = 10 }
   }
 
   # Repositories on their way out (step 1 above). Same settings as before the
