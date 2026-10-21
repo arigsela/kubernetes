@@ -66,8 +66,9 @@ AGENT = "resource.service.name"
 MODEL_NAME = "span.gen_ai.request.model"
 
 # LogQL streams.
-EVAL = '{namespace="kagent", container="eval-gate"} | json | event="eval-gate"'
-DISP = '{namespace="dispatcher"} | json'
+# `__error__=""` drops a line that is not JSON (a traceback); a metric query fails on one otherwise.
+EVAL = '{namespace="kagent", container="eval-gate"} | json | __error__="" | event="eval-gate"'
+DISP = '{namespace="dispatcher"} | json | __error__=""'
 REFUSED = '{namespace="kagent", container="mcp-server"} |= "mcp.method.name=tools/call" |= "Unknown tool"'
 
 # Substrate templates are <agent>-<12 hex>; one label per agent across template revisions.
@@ -82,32 +83,38 @@ def window_total(metric, by, window, forward=False):
     """What a counter of the collector's (agent_tokens_input_total, ...) added within `window`.
 
     Not increase(): a model call is a rare event, so many series are new inside the window and
-    increase() never counts a series' first value. Each series only grows and stays exposed while
-    the collector runs (deltatocumulative/agent-platform and the exporter keep it 30 days), so its
-    growth in the window is its last value minus its value just before the window, or all of it
-    when the series is new. A collector restart starts new series (new pod label), each counted the
-    same way. tests/dashboards/test_agent_dashboards.py runs this through promtool.
+    increase() never counts a series' first value. Per series: its last value in the window minus
+    its value just before, or all of its last value when it has none before (a new series: a new
+    agent or model, or a collector pod that replaced the old one) or when it fell (it restarted
+    from zero: the container restarted in place, or it sat idle past the collector's 47 hours).
+    The collector exposes each series for 48 hours after its last update, so the value before a
+    window is there; a scrape gap longer than the lookback counts that series' whole total once.
+    tests/dashboards/test_agent_dashboards.py runs this through promtool.
 
     forward=True counts the window that starts at the evaluation time, for range queries: Grafana
     floors a range query's end to the step, so a window ending at each step would never show the
-    last few minutes, which is where the demo's runs are.
+    last few minutes, which is where the demo's runs are. Its lookback is 1 hour, as it runs once
+    per step; an instant total looks back a day.
     """
     if forward:
         last = f"last_over_time({metric}[{window}] offset -{window})"
-        before = f"(last_over_time({metric}[1h]) and {last})"
+        before = f"last_over_time({metric}[1h])"
     else:
         last = f"last_over_time({metric}[{window}])"
-        before = f"(last_over_time({metric}[1h] offset {window}) and {last})"
-    now = f"sum by ({by}) ({last})"
-    return f"({now} - (sum by ({by}) {before} or {now} * 0))"
+        before = f"last_over_time({metric}[1d] offset {window})"
+    return f"sum by ({by}) ((({last} - {before}) >= 0) or {last})"
 
 
 # Agents whose latest score held them. A hold lasts until the agent is scored again, so 30 days
 # (Loki's retention). `by (agent)` merges an agent's lines before taking the last one: | json makes
 # every field a label, so per-line series would turn "latest" into "any in the window".
-HELD_NOW = ('sum(last_over_time({namespace="kagent", container="eval-gate"} | json | event="eval-gate" '
+HELD_NOW = ('sum(last_over_time({namespace="kagent", container="eval-gate"} | json | __error__="" | event="eval-gate" '
             '| pass_rate!="" | label_format held_n=`{{ if eq .held "true" }}1{{ else }}0{{ end }}` '
             '| unwrap held_n [30d]) by (agent)) or vector(0)')
+
+# Log panels mask email addresses: Substrate's router logs the user's, the dispatcher an approver's.
+MASK_EMAILS = ('| line_format `{{ regexReplaceAll "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}" '
+               '__line__ "<email>" }}`')
 
 RARE = "7d"  # rare events: their own window, never "No data" (design: calls made without the owner)
 
@@ -337,26 +344,27 @@ def dashboard(uid, title, description, layout, templating=None, time_from="now-2
     templating = [PROM_VARIABLE] + (templating or [])
     return {"uid": uid, "title": title, "description": description, "tags": ["agents"],
             "timezone": "browser", "schemaVersion": 39, "version": 1, "editable": True, "graphTooltip": 1,
-            "refresh": "30s", "time": {"from": time_from, "to": "now"}, "links": LINKS,
+            "refresh": "1m", "time": {"from": time_from, "to": "now"}, "links": LINKS,
             "panels": layout.panels, "templating": {"list": templating}, "annotations": {"list": []}}
 
 
 # --- Agent Platform (landing) -------------------------------------------------------------------
 
-LATEST_RUNS = ('sort_desc(topk(20, max by (service_name, trace_id) '
-               '(max_over_time(agent_run_start_seconds[7d]))))')
+# The collector exposes each run's start time for 48 hours: an instant query lists them cheaply.
+LATEST_RUNS = 'sort_desc(topk(20, max by (service_name, trace_id) (agent_run_start_seconds)))'
+
 # A run's log lines: the controller's and Substrate's router lines carry its trace id, the sandbox's
-# carry its session. Each id is anchored, so an empty variable (no run in 7 days) matches no line
+# carry its session. Each id is anchored, so an empty variable (no run in 2 days) matches no line
 # that carries a real id; it could match one whose trace id is empty, which kagent and Substrate
 # do not write.
 RUN_LOG_REGEX = ('(?:trace_id":"|trace\\.id=|trace_id=)${trace_id}(?:[^0-9a-f]|$)'
                  '|session-${session}(?:[^0-9a-f-]|$)')
 RUN_LOGS = ('{namespace=~"kagent|ate-system"} |~ `' + RUN_LOG_REGEX + '`'
             ' != "TaskStoreService/UpdateTask" != "request before normalization"'
-            ' != "request after normalization"')
+            ' != "request after normalization" ' + MASK_EMAILS)
 RUN_FIELDS = [("gen_ai.usage.input_tokens", "input tokens"), ("gen_ai.usage.output_tokens", "output tokens"),
               ("agent.cost.estimate_usd", "est. cost")]
-NO_RUN = "No agent run in the last 7 days: run scripts/agent-demo.sh"
+NO_RUN = "No agent run in the last 2 days: run scripts/agent-demo.sh"
 
 
 def landing():
@@ -507,15 +515,16 @@ def landing():
          "query": {"query": f"query_result({LATEST_RUNS})", "refId": "trace_id"},
          "definition": f"query_result({LATEST_RUNS})",
          "regex": '/service_name="(?<text>[^"]+)".*trace_id="(?<value>[0-9a-f]{32})"/',
-         "refresh": 2, "sort": 0, "includeAll": False, "multi": False, "allowCustomValue": True,
+         "refresh": 1, "sort": 0, "includeAll": False, "multi": False, "allowCustomValue": True,
          "current": {}, "options": [], "hide": 0,
-         "description": "The newest agent runs of the last 7 days, newest first (agent_run_start_seconds)."},
+         "description": "The newest agent runs of the last 2 days, newest first (agent_run_start_seconds). "
+                        "Read when the page loads."},
         {"type": "query", "name": "session", "label": "Session", "datasource": PROM,
          "query": {"query": 'query_result(max by (gen_ai_conversation_id) '
-                            '(max_over_time(agent_run_start_seconds{trace_id="$trace_id"}[7d])))',
+                            '(last_over_time(agent_run_start_seconds{trace_id="$trace_id"}[2d])))',
                    "refId": "session"},
          "definition": 'query_result(max by (gen_ai_conversation_id) '
-                       '(max_over_time(agent_run_start_seconds{trace_id="$trace_id"}[7d])))',
+                       '(last_over_time(agent_run_start_seconds{trace_id="$trace_id"}[2d])))',
          "regex": '/gen_ai_conversation_id="([^"]+)"/', "refresh": 2, "sort": 0, "includeAll": False,
          "multi": False, "current": {}, "options": [], "hide": 2},
     ]
@@ -656,6 +665,7 @@ def tokens():
                  "| model | input | cache write | cache read | output |\n|---|---|---|---|---|\n"
                  "| claude-sonnet-5-5 | 2 | 2.5 | 0.2 | 10 |\n| claude-opus-5-5 | 4 | 5 | 0.2 | 20 |\n"
                  "| claude-haiku-5-5 | 0.1 | 0.125 | 0.01 | 0.5 |\n\n"
+                 "Haiku over 100K-token prompts: 0.5 / 0.625 / 0.05 / 2.5.\n\n"
                  "Only the kagent agents are traced; docs-checker (LangGraph) sends no traces.")),
     ])
     return dashboard("agent-tokens", "Tokens & Models",
@@ -828,8 +838,8 @@ def alerts():
                  "Against the cap of 2 a day (dispatcher limits.restarts_per_day).",
                  steps=[("green", None), ("orange", 2), ("red", 3)])),
     ])
-    b.line(10, [(24, logs("Dispatcher events", loki(f'{DISP} | event=~"dispatch|finding|remediate|decision"'),
-                          "Every alert, finding, remediation and approval, newest first.", time_from=RARE,
+    b.line(10, [(24, logs("Dispatcher events", loki(f'{DISP} | event=~"dispatch|finding|remediate|decision" {MASK_EMAILS}'),
+                          "Every alert, finding, remediation and approval, newest first (emails masked).", time_from=RARE,
                           no_value="No dispatcher events in 7 days"))])
     return dashboard("agent-alerts", "Alerts to Agents",
                      "Alerts handed to agents: what came in, which agent looked, what it found, which restarts a person approved.", b)

@@ -148,8 +148,8 @@ Grafana has no other way in: the login form and basic auth are off
   once OAuth is fixed — this host is internet-facing.
 
 ### Symptom: Agent Platform shows no run, or its token tiles stay at 0
-- **Check:** whether an agent ran in the last 7 days (the run picker reads
-  `agent_run_start_seconds`) and in the dashboard's range (24 h by default):
+- **Check:** whether an agent ran in the last 2 days (the run picker reads
+  `agent_run_start_seconds`, exposed 48 h, when the page loads) and in the dashboard's range (24 h by default):
   `sum(agent_runs_total)` and `agent_run_start_seconds` in Explore (Prometheus). Both come
   from the collector (`base-apps/tracing/docs.md`); if they are missing, check the collector
   is up and scraped (`tracing_spans_received_total{service_name="kagent-controller"}` grows).

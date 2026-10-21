@@ -243,7 +243,10 @@ def test_the_landing_page_opens_on_the_newest_run():
     landing = _dashboards()["agent-platform"]
     v = {x["name"]: x for x in landing["templating"]["list"]}
     run = v["trace_id"]
-    assert run["datasource"] == {"type": "prometheus"} and run["refresh"] == 2 and run["sort"] == 0
+    # Read on load, from an instant query: one sample per run exposed (48 h), not a 7-day range of
+    # every run's samples on every refresh of everyone's home page.
+    assert run["datasource"] == {"type": "prometheus"} and run["refresh"] == 1 and run["sort"] == 0
+    assert "_over_time" not in run["definition"]
     assert "sort_desc(topk(20" in run["definition"] and "agent_run_start_seconds" in run["definition"]
     line = '{service_name="homelab-knowledge", trace_id="3ace5cd912380b069823402928b147e5"} 1792614488.4 1792622769000'
     rx = run["regex"].strip("/").replace("(?<", "(?P<")
@@ -303,7 +306,7 @@ def test_cost_prices_on_the_dashboard_match_the_collector():
     prices = {}
     for s in block["statements"]:
         m = re.search(r'\* ([\d.]+) \+ cache\["cache_write"\] \* ([\d.]+) \+ cache\["cache_read"\] \* ([\d.]+) '
-                      r'\+ cache\["output"\] \* ([\d.]+)\) / 1000000\.0\) where .* == "([^"]+)"', s)
+                      r'\+ cache\["output"\] \* ([\d.]+)\) / 1000000\.0\) where [^ ]+ == "([^"]+)"$', s)
         if m:
             prices[m.group(5)] = [float(x) for x in m.group(1, 2, 3, 4)]
     note = next(p for _, p in _panels() if p["type"] == "text" and "cost" in p["title"])["options"]["content"]
@@ -311,6 +314,20 @@ def test_cost_prices_on_the_dashboard_match_the_collector():
     for row in re.findall(r"^\| (claude-[a-z0-9-]+) \| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \| ([\d.]+) \|$", note, re.M):
         shown[row[0]] = [float(x) for x in row[1:]]
     assert prices and shown == prices
+    assert "Haiku over 100K-token prompts: 0.5 / 0.625 / 0.05 / 2.5." in note
+
+
+def test_log_panels_mask_email_addresses():
+    """Substrate's router logs the user's email with each run; the dispatcher logs an approver's."""
+    logs = [(uid, p) for uid, p in _panels() if p["type"] == "logs" and uid in ("agent-platform", "agent-alerts")]
+    assert logs
+    for uid, p in logs:
+        assert gen.MASK_EMAILS in p["targets"][0]["expr"], (uid, p["title"])
+    rx = re.search(r'regexReplaceAll "([^"]+)"', gen.MASK_EMAILS).group(1)
+    line = 'route=default/route0 x-user-id=someone@example.com approved_by="ops.person+x@corp.co.uk"'
+    masked = re.sub(rx, "<email>", line)
+    assert "@" not in masked and masked.count("<email>") == 2
+    assert re.sub(rx, "<email>", "golang.org/x/net v2@v2.5.0") == "golang.org/x/net v2@v2.5.0"
 
 
 # --- window_total through promtool (Prometheus 3.0.1, the deployed version) -----------------------
@@ -348,8 +365,17 @@ def _promtool_cases():
     ]
     # (44m, 59m]: p1's last is 150 and its value before the window is 150 (0); p2 is new (30).
     tests[2]["exp_samples"][0]["value"] = 30
+    # The collector container restarted in place (same pod): the series falls to 0 and grows to 30.
+    reset = [{"series": f'{m}{{service_name="c", pod="p1"}}', "values": _values({(0, 29): 100, (35, 59): 30})}]
+    reset_tests = [
+        {"expr": gen.window_total(m, "service_name", "30m"), "eval_time": "59m",
+         "exp_samples": [{"labels": '{service_name="c"}', "value": 30}]},
+        {"expr": gen.window_total(m, "service_name", "10m", forward=True), "eval_time": "29m",
+         "exp_samples": [{"labels": '{service_name="c"}', "value": 30}]},
+    ]
     return {"rule_files": [], "evaluation_interval": "1m",
-            "tests": [{"interval": "1m", "input_series": series, "promql_expr_test": tests}]}
+            "tests": [{"interval": "1m", "input_series": series, "promql_expr_test": tests},
+                      {"interval": "1m", "input_series": reset, "promql_expr_test": reset_tests}]}
 
 
 def _prometheus_image():
