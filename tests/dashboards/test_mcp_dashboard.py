@@ -1,4 +1,6 @@
-"""Guards on the MCP Tool Calls dashboard (base-apps/logging/grafana-dashboard-mcp.yaml, §T.134)."""
+"""Guards on the MCP Tool Calls dashboard (§T.134), generated since §T.135 by
+scripts/gen-agent-dashboards.py into base-apps/logging/grafana-dashboards-agents.yaml under its
+original ConfigMap name, grafana-dashboard-mcp."""
 import json
 from pathlib import Path
 
@@ -13,10 +15,16 @@ def _cm(path):
 
 
 def _dashboard():
-    cm = _cm(LOGGING / "grafana-dashboard-mcp.yaml")
+    cm = next(d for d in yaml.safe_load_all((LOGGING / "grafana-dashboards-agents.yaml").read_text())
+              if d and d["metadata"]["name"] == "grafana-dashboard-mcp")
     assert cm["metadata"]["labels"]["grafana_dashboard"] == "1"
     (body,) = cm["data"].values()
     return json.loads(body)
+
+
+def test_uid_is_unchanged():
+    """Links from §T.134's docs and runbook point at /d/mcp-tool-calls."""
+    assert _dashboard()["uid"] == "mcp-tool-calls"
 
 
 def test_panel_ids_unique_and_queries_scoped_to_the_adapters():
@@ -35,7 +43,7 @@ def test_prometheus_uses_the_default_datasource_and_loki_its_pinned_uid():
     loki_uids = {d["uid"] for d in ds["datasources"] if d["type"] == "loki"}
     for p in _dashboard()["panels"]:
         src = p.get("datasource")
-        if src is None:  # row
+        if src is None or p["type"] == "row":
             continue
         if src["type"] == "prometheus":
             assert src == {"type": "prometheus"}, p["title"]
@@ -49,6 +57,8 @@ def test_grafana_provides_and_mounts_it():
     dep = next(d for d in yaml.safe_load_all((LOGGING / "grafana-deployment.yaml").read_text())
                if d and d["kind"] == "Deployment")
     pod = dep["spec"]["template"]["spec"]
-    vol = next(v["name"] for v in pod["volumes"] if v.get("configMap", {}).get("name") == "grafana-dashboard-mcp")
+    vol = next(v["name"] for v in pod["volumes"]
+               if any(src.get("configMap", {}).get("name") == "grafana-dashboard-mcp"
+                      for src in v.get("projected", {}).get("sources", [])))
     mounts = {m["name"]: m["mountPath"] for c in pod["containers"] for m in c.get("volumeMounts", [])}
     assert mounts[vol] == path

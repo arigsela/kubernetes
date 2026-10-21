@@ -31,7 +31,8 @@ data:
         editable: true
         options:
           path: /var/lib/grafana/dashboards/coraza
-      # MCP Tool Calls (grafana-dashboard-mcp.yaml, §T.134): the kagent MCP adapters.
+      # The Agents folder (§T.135): Agent Platform (Grafana's home) and its deep dives, generated
+      # by scripts/gen-agent-dashboards.py into grafana-dashboards-agents.yaml.
       - name: 'agents'
         orgId: 1
         folder: 'Agents'
