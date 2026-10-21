@@ -161,6 +161,12 @@ spec:
         kagent-tools:
           rbac:
             create: false
+          # Tool calls and failures per tool (kagent_tools_mcp_invocations_total, ..._failure_total)
+          # for the MCP Tool Calls dashboard. One container, no init container (§V.103).
+          podAnnotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "8085"
+            prometheus.io/path: /metrics
           tools:
             image:
               tag: "0.3.0@sha256:cb89eb76216195a90cac73846b447525b6e6e33e45154d1ded9621bf11340315"

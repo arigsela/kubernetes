@@ -98,3 +98,15 @@ def test_every_image_is_pinned_by_digest_and_no_kmcp_is_rendered(controller_conf
               for c in d["spec"]["template"]["spec"]["containers"]]
     assert images and all("@sha256:" in i for i in images), images
     assert not [d for d in controller_config["docs"] if "kmcp" in d["metadata"]["name"]]
+
+
+def test_kagent_tools_metrics_are_scraped(controller_config):
+    """The MCP Tool Calls dashboard reads kagent_tools_mcp_invocations_total from :8085. A pod with
+    an init container would be scraped twice (§V.103), so there must be none."""
+    deploy = [d for d in controller_config["docs"]
+              if d["kind"] == "Deployment" and d["metadata"]["name"] == "kagent-tools"][0]
+    pod = deploy["spec"]["template"]
+    assert {k: v for k, v in pod["metadata"]["annotations"].items() if k.startswith("prometheus.io/")} == {
+        "prometheus.io/scrape": "true", "prometheus.io/port": "8085", "prometheus.io/path": "/metrics"}
+    assert not pod["spec"].get("initContainers")
+    assert 8085 in [p["containerPort"] for c in pod["spec"]["containers"] for p in c.get("ports", [])]
