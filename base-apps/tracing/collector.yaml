@@ -16,9 +16,10 @@
 #   - kagent's runtime puts each tool's whole output on its execute_tool span even with content
 #     capture off; transform/scrub deletes it, so no tool output is stored or shown.
 #   - Each model call gets an estimated cost (transform/genai-cost), which Tempo sums like tokens.
-#   - Two small metric sets on :8889, read before sampling: the service graph of the agent
-#     platform (Tempo's service map in Grafana) and the start time of each agent run, by trace
-#     id, so the Agent Platform dashboard opens on the latest run.
+#   - Small metric sets on :8889, read before sampling: the service graph of the agent platform
+#     (Tempo's service map in Grafana), counters of the agents' tokens, estimated cost, model
+#     and tool calls and runs, and the start time of each agent run by trace id, so the Agent
+#     Platform dashboard opens on the latest run.
 #
 # One replica on purpose: tail sampling needs every span of a trace on the same instance.
 # contrib, not the k8s distribution, for transform and tail_sampling.
@@ -151,6 +152,11 @@ data:
       # this keeps a running total, so rate() and absence alerts mean something (beacon §B.14).
       deltatocumulative: {}
 
+      # The agent counters stay cumulative for 30 days without a new delta (default 5 minutes),
+      # so a series never restarts from zero while the collector runs (see signal_to_metrics).
+      deltatocumulative/agent-platform:
+        max_stale: 720h
+
       transform/count:
         error_mode: ignore
         trace_statements:
@@ -195,11 +201,9 @@ data:
               - set(attributes["peer.service"], attributes["server.address"]) where attributes["peer.service"] == nil and attributes["server.address"] != nil and not IsMatch(attributes["server.address"], "^[0-9.]+$$")
               - replace_pattern(attributes["peer.service"], "^([^.]+)[.][^.]+([.]svc([.]cluster[.]local)?)?$$", "$$1")
           - context: span
-            conditions:
-              - IsMatch(name, "^invoke_agent ")
             statements:
               - set(attributes["service.name"], resource.attributes["service.name"])
-              - set(attributes["trace.id"], trace_id.string)
+              - set(attributes["trace.id"], trace_id.string) where IsMatch(name, "^invoke_agent ")
 
     connectors:
       # Spans received per service, before sampling: the beacon §V.9 alert signal (the
@@ -223,16 +227,28 @@ data:
           max_items: 5000
         metrics_flush_interval: 30s
 
+      # Counters of the kagent agents' work, before sampling, each by agent (service_name):
+      #   agent_tokens_{input,output,cache_read,cache_write}_total{gen_ai_request_model}
+      #   agent_cost_estimate_usd_total{gen_ai_request_model}  (transform/genai-cost's estimate)
+      #   agent_model_calls_total{gen_ai_request_model}, agent_tool_calls_total{gen_ai_tool_name}
+      #   agent_runs_total
+      # They count each span once. A model call is rare, so a plain increase() would lose the first
+      # value of every new series; the dashboards subtract each series' value at the window's start
+      # instead (scripts/gen-agent-dashboards.py, window_total), which needs a series to only ever
+      # grow and to stay exposed while the collector runs: hence deltatocumulative/agent-platform's
+      # 30-day max_stale and the exporter's 30-day metric_expiration.
+      #
       # agent_run_start_seconds{service_name, trace_id, gen_ai_conversation_id}: the start time of
-      # each agent run. The landing dashboard takes the newest trace id (and its session) from it. One series per run; Prometheus keeps
-      # 15 days, a few thousand series.
+      # each agent run. The landing dashboard takes the newest trace id (and its session) from it.
+      # One series per run (about a hundred a day), exposed until the collector restarts or for 30
+      # days: a few thousand series.
       signal_to_metrics:
         spans:
           - name: agent.run.start
             description: Start time of an agent run (an invoke_agent span), in Unix seconds, by trace id.
             unit: s
             conditions:
-              - span.attributes["trace.id"] != nil
+              - IsMatch(span.name, "^invoke_agent ")
             include_resource_attributes:
               - key: service.name
             attributes:
@@ -242,6 +258,92 @@ data:
                 optional: true
             gauge:
               value: Double(span.start_time_unix_nano) / 1000000000.0
+          - name: agent.tokens.input
+            description: Input tokens of the agents' model calls.
+            conditions:
+              - IsMatch(span.name, "^generate_content ") and span.attributes["gen_ai.usage.input_tokens"] != nil
+            attributes:
+              - key: service.name
+              - key: gen_ai.request.model
+                default_value: unknown
+            sum:
+              value: Int(span.attributes["gen_ai.usage.input_tokens"])
+              monotonic: true
+          - name: agent.tokens.output
+            description: Output tokens of the agents' model calls.
+            conditions:
+              - IsMatch(span.name, "^generate_content ") and span.attributes["gen_ai.usage.output_tokens"] != nil
+            attributes:
+              - key: service.name
+              - key: gen_ai.request.model
+                default_value: unknown
+            sum:
+              value: Int(span.attributes["gen_ai.usage.output_tokens"])
+              monotonic: true
+          - name: agent.tokens.cache_read
+            description: Cache read tokens of the agents' model calls.
+            conditions:
+              - IsMatch(span.name, "^generate_content ") and span.attributes["gen_ai.usage.cache_read.input_tokens"] != nil
+            attributes:
+              - key: service.name
+              - key: gen_ai.request.model
+                default_value: unknown
+            sum:
+              value: Int(span.attributes["gen_ai.usage.cache_read.input_tokens"])
+              monotonic: true
+          - name: agent.tokens.cache_write
+            description: Cache write tokens of the agents' model calls.
+            conditions:
+              - IsMatch(span.name, "^generate_content ") and span.attributes["gen_ai.usage.cache_write.input_tokens"] != nil
+            attributes:
+              - key: service.name
+              - key: gen_ai.request.model
+                default_value: unknown
+            sum:
+              value: Int(span.attributes["gen_ai.usage.cache_write.input_tokens"])
+              monotonic: true
+          - name: agent.cost.estimate.usd
+            description: Estimated cost of the agents' model calls in USD (transform/genai-cost).
+            conditions:
+              - span.attributes["agent.cost.estimate_usd"] != nil
+            attributes:
+              - key: service.name
+              - key: gen_ai.request.model
+                default_value: unknown
+            sum:
+              value: span.attributes["agent.cost.estimate_usd"]
+              monotonic: true
+          - name: agent.model.calls
+            description: Model calls of the agents (generate_content spans).
+            conditions:
+              - IsMatch(span.name, "^generate_content ")
+            attributes:
+              - key: service.name
+              - key: gen_ai.request.model
+                default_value: unknown
+            sum:
+              value: "1"
+              monotonic: true
+          - name: agent.tool.calls
+            description: Tool calls of the agents (execute_tool spans; the wrapper of parallel calls is not one).
+            conditions:
+              - IsMatch(span.name, "^execute_tool ") and span.attributes["gen_ai.tool.name"] != "(merged tools)"
+            attributes:
+              - key: service.name
+              - key: gen_ai.tool.name
+                default_value: unknown
+            sum:
+              value: "1"
+              monotonic: true
+          - name: agent.runs
+            description: Agent runs (invoke_agent spans, one per agent turn).
+            conditions:
+              - IsMatch(span.name, "^invoke_agent ")
+            attributes:
+              - key: service.name
+            sum:
+              value: "1"
+              monotonic: true
 
     exporters:
       otlp/tempo:
@@ -255,8 +357,13 @@ data:
         compression: none
         tls:
           insecure: true
+      # A series stays exposed for 30 days after its last update (default 5 minutes): the agent
+      # counters are rare events, and the dashboards read each one's value just before a window
+      # (scripts/gen-agent-dashboards.py, window_total). The span count is unaffected (beacon §V.9
+      # reads its increase, which is 0 for a series that stops growing, as for a missing one).
       prometheus:
         endpoint: 0.0.0.0:8889
+        metric_expiration: 720h
 
     service:
       extensions: [health_check]
@@ -280,10 +387,11 @@ data:
         # Neither exports a span, so transform/scrub is not needed here (beacon §V.42).
         traces/agent-platform:
           receivers: [otlp]
-          processors: [memory_limiter, filter/agent-platform, transform/agent-platform]
+          processors: [memory_limiter, filter/agent-platform, transform/genai-cost, transform/agent-platform]
           exporters: [service_graph, signal_to_metrics]
         metrics/agent-platform:
           receivers: [service_graph, signal_to_metrics]
+          processors: [deltatocumulative/agent-platform]
           exporters: [prometheus]
 ---
 apiVersion: apps/v1
@@ -308,7 +416,7 @@ spec:
       annotations:
         # sha256 of otel-collector-config's `data` (json.dumps, sort_keys); the collector reads
         # its config only at startup. tests/beacon/test_tracing.py fails if it is stale.
-        checksum/config: d09dcf24a7a7fe1529139c9de3fae8699634c67306c09d98e664969f6328ae5c
+        checksum/config: 92ca600ebd37e28e702cf2753de1d65c97b233907fe0c25189c4ed0f8390d384
         # The span count (one series per service, beacon §V.29), the agent platform's service
         # graph and its run start times.
         prometheus.io/scrape: "true"

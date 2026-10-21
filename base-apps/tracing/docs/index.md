@@ -6,7 +6,7 @@ app: tracing
 catalog_entity: tracing
 kind: docs
 namespace: tracing
-last_reviewed: 2026-10-19
+last_reviewed: 2026-10-21
 status: draft
 tags: [tempo, tracing, opentelemetry]
 sources:
@@ -23,6 +23,7 @@ sources:
   - base-apps/logging/grafana-deployment.yaml
   - tests/beacon/test_tracing.py
   - tests/beacon/test_collector.py
+  - tests/agent-capability/test_agent_traces.py
   - base-apps/beacon/network-policies.yaml
 ---
 
@@ -49,22 +50,43 @@ beacon §T.20; kagent's controller and sessions and Substrate's atenet-router,
 `base-apps/kagent.yaml` and `base-apps/substrate.yaml`). Nothing else exports OTLP to Coroot
 (`tests/agent-capability/test_agent_traces.py`). In order:
 1. `memory_limiter` first in every traces pipeline (beacon §V.41): refuse, don't OOM.
-2. `transform/scrub` (beacon §V.42): strips the query string from `http.url`, `url.full` and
+2. `filter/noise` drops kagent's `TaskStoreService/UpdateTask` spans: one per streamed status
+   update, 524 of a 617-span agent run, and nothing a dashboard reads.
+3. `transform/genai-cost` stamps `agent.cost.estimate_usd` on each model call
+   (`generate_content` span) of a priced model, from its token counts at Anthropic's list
+   prices (the table is in the config, dated). A model without a row gets none.
+4. `transform/scrub` (beacon §V.42): strips the query string from `http.url`, `url.full` and
    `http.target`, drops `url.query`, and cuts the notifier's outgoing `url.full` to
    `scheme://host`. Envoy's `http.url` keeps the query (OAuth `code`/`state`, search text),
-   and a Slack webhook path is itself the credential. `tests/beacon/test_collector.py` runs
-   this exact config and checks the secret parts never come out.
-3. `tail_sampling` (beacon §V.43): keeps every trace with an error and every trace touching a
+   and a Slack webhook path is itself the credential. It also deletes
+   `gcp.vertex.agent.tool_response`: kagent's runtime copies each tool's whole output onto
+   its `execute_tool` span even with content capture off. `tests/beacon/test_collector.py`
+   runs this exact config and checks the secret parts never come out.
+5. `tail_sampling` (beacon §V.43): keeps every trace with an error and every trace touching a
    `beacon-*` service, and 10% of the rest. It also keeps every kagent trace
    (`service.namespace=kagent`, the controller and each session): agent runs are rare and only
    useful whole. Sampling happens here, not at the Gateway,
    because apps behind the Gateway (kagent, Substrate) follow its sampling decision.
-4. Exported to Tempo and to Coroot (Coroot keeps its own 7 days). The Coroot export is
+6. Exported to Tempo and to Coroot (Coroot keeps its own 7 days). The Coroot export is
    uncompressed: Coroot's receiver refuses gzip (beacon §B.13).
 A second pipeline counts spans per `service.name` before sampling
 (`tracing_spans_received_total`, one label, a running total via `deltatocumulative`, beacon
-§B.14) for the beacon §V.9 alert. One replica on
-purpose: tail sampling needs a whole trace on one instance.
+§B.14) for the beacon §V.9 alert. A third, `traces/agent-platform`, reads the agent
+platform's spans (kagent, Substrate, the MCP adapters, the Gateway's spans into kagent), also
+before sampling, into metrics for the Agents dashboards on the same `:8889`:
+- `traces_service_graph_*{client, server}` (`service_graph`): who calls whom. A call whose
+  server sends no span (the model API, kagent-tools, ollama) is named by its `peer.service`,
+  set from the client span's `server.address` (short service name, never an IP).
+- `agent_tokens_{input,output,cache_read,cache_write}_total`, `agent_cost_estimate_usd_total`,
+  `agent_model_calls_total`, `agent_tool_calls_total`, `agent_runs_total`
+  (`signal_to_metrics`, by agent and model or tool): each span counted once. They keep growing
+  for 30 days without a new value (`deltatocumulative/agent-platform`) and the exporter keeps
+  exposing them as long, because the dashboards subtract each series' value before a window
+  instead of using `increase()`, which would lose every new series' first value.
+- `agent_run_start_seconds{trace_id, gen_ai_conversation_id}`: one series per agent run, so
+  the Agent Platform dashboard opens on the newest run.
+`tests/agent-capability/test_agent_traces.py` runs the config on a synthetic run and checks
+each of these. One replica on purpose: tail sampling needs a whole trace on one instance.
 
 ## The OpenTelemetry Operator (`base-apps/opentelemetry-operator.yaml`)
 Helm chart 0.126.0 (operator 0.161.0), namespace `opentelemetry-operator-system`. One job:
@@ -90,10 +112,19 @@ smoke Job runs the notifier under that layer before every sync (the layer is bui
 
 ## Grafana
 `base-apps/logging/grafana-deployment.yaml` provisions the `Tempo` datasource (uid `tempo`).
-Trace to logs: from a span, "Logs for this span" queries Loki by namespace and pod around
-the span's time. Logs to trace: Loki's derived field `trace_id=([0-9a-f]{32})` turns a log
-line's trace id into a link to Tempo. beacon's services write that field (beacon §T.43).
+Trace to logs: from a span, "Logs for this span" searches Loki in every namespace for lines
+holding the trace id, five minutes either side of the span (an agent run logs from kagent's
+controller and from Substrate, and an agent's service name is no pod's `app` label). Logs to
+trace: Loki's derived field turns a 32-hex trace id into a link to Tempo in three shapes:
+`trace_id=<id>` (beacon's services, beacon §T.43), `"trace_id":"<id>"` (kagent's controller)
+and `trace.id=<id>` (agentgateway: the MCP adapters, Substrate's router and egress). The
+service map reads the collector's `traces_service_graph_*` from Prometheus. The Agents
+dashboards are in `base-apps/logging/` (`scripts/gen-agent-dashboards.py`).
 
 ## Known limits
 - One replica, `Recreate` rollouts: Tempo is briefly down on every config change.
-- Metrics-generator is off (no span metrics, no TraceQL metrics) until its cost is measured.
+- Metrics-generator is off until its cost is measured. Tempo still answers TraceQL metrics
+  from its blocks, up to 24 h per query, but Grafana 11.6 runs only instant ones (it cannot
+  read Tempo 3.1's range responses: `unknown field "step"`) and never `sum_over_time` (it does
+  not recognise it as a metrics query). Sums and time series come from the collector's
+  counters instead.
