@@ -78,6 +78,36 @@ artwork.
 | `whole-picture-speaker-notes.md` | Per-panel text alternative, what to say, qualifications and sources, as of 2026-10-14. Its precision corrections (the exact promotion predicate, not "every check green"; a `review:skip` label alone cannot promote; an unattributed commit is refused; the human approving a restart is recorded beside, not inside, the runtime's record) are the ones to keep in mind when presenting. |
 | `whole-picture-presentation-brief.md` | The source brief: the full 14-screen version with the layer-by-layer mapping tables, the eight-path scorecard, the ladder, the "what next" track, data provenance and the "do not claim" list. The eight-panel deck is its permitted short cut (screens 03, 05, 07, 09, 10, 11, 13, plus 12). |
 
+## The implementer and the leak restarter — 2026-10-14
+
+Two technical walkthroughs of the remediation agents, made the day both went live. The
+implementer turns a resource alert or a person's request into a pull request under its own
+GitHub App identity, and stops there: a human merges. The leak restarter is the one
+remediation that changes the cluster directly. When the implementer's verdict on a
+memory-limit alert is `leak`, the dispatcher opens a second session with the restarter, whose
+only mutating tool (delete the named pod so its controller recreates it) waits for a human to
+approve it. Both decks are drawn from the deployed manifests, the dispatcher code and the
+SPEC acceptance records (T116 to T118); there is no separate source brief. They keep tool and
+file names, so they read as engineering walkthroughs rather than leadership briefings. Same
+anonymization as the decks above.
+
+Both were finished on the afternoon of 2026-10-14, before three later changes. The
+implementer deck's "not yet: gated operator action for leaks" is the leak restarter, built
+the same day. Restart approvals are now decided on the dispatcher's approvals page (live later
+that afternoon, and it logs the approver's email) or with Slack buttons (that evening), so the
+command-line approval on the restarter deck's panel 05 is the fallback. And the runtime moved
+from kagent 1.0.0-alpha11 to alpha14 on 2026-10-19; the implementer notes' sandbox limitation
+was written against alpha11.
+
+| file | what it is |
+|---|---|
+| `implementer-infographics.pdf` | Eight 16:9 infographic panels (from alert to proposed fix; what was deployed; how an alert reaches the agent; diagnose before changing a number; the change contract; where the hard gates sit; two recorded acceptance runs; operate it with its limits visible). Raster pages, no selectable text; the notes below carry the text. |
+| `implementer-speaker-notes.md` | Per-panel text, qualifications and sources. Keep its corrections in mind when presenting: four proposal tools, not five; the three-open-PR cap is soft backpressure, not a ceiling; branch, file and injection rules are prompt constraints, not GitHub permission boundaries. |
+| `leak-restarter-infographics.pdf` | Eight 16:9 infographic panels (a leak becomes a held action; one verdict line chooses the path; the restarter has one mutating tool; check the target before offering approval; approve the task your laptop never saw; two budgets prevent restart loops; what the acceptance actually proved; a restart is relief, not a repair). Raster pages, no selectable text. |
+| `leak-restarter-speaker-notes.md` | Per-panel text, qualifications and sources. No leaking pod was available, so the full leak-to-restart chain is covered by unit tests and its parts were proven live separately; the restart budgets live in memory; the runtime's record names the dispatcher, not the human, as the approver. |
+
+The generation prompts and per-panel PNGs the notes mention are not kept in the repo.
+
 ## Tech-stack talk — 2026-10-11
 
 | file | what it is |

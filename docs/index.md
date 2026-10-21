@@ -28,6 +28,8 @@ and Evaluation.
 | `presentations/dev-workflow-infographics.pdf` | record | Companion deck (2026-10-12, seven panels): the development workflow with an agent in the loop, from spec-driven design through PR triage and the check wall to merge-as-deployment. Speaker notes and the 15-screen source brief are beside it |
 | `presentations/agents-as-a-service-infographics.pdf` | record | Third deck (2026-10-12, seven panels): agents defined once as platform resources and consumed from the UI, the coding assistant (MCP), the command line and automation (A2A), and the portal. Speaker notes and the 14-screen source brief are beside it |
 | `presentations/whole-picture-infographics.pdf` | record | Fourth deck (regenerated 2026-10-14, eight panels): the platform placed on the ADP reference architecture (tooling, paths, agent infrastructure, as code), every piece and all eight core paths scored built / partial / not yet (eight, none, none after the implementer, the restarter and the approvals page), the maturity ladder, and the five next pieces, all landed in order. Speaker notes and the 14-screen source brief are beside it |
+| `presentations/implementer-infographics.pdf` | record | The implementer walkthrough (2026-10-14, eight panels): how a resource alert or a person's request becomes a pull request from the in-cluster implementer agent, the change contract it works under, where the hard gates sit, and the two recorded acceptance runs. Speaker notes are beside it |
+| `presentations/leak-restarter-infographics.pdf` | record | Its companion (2026-10-14, eight panels): a `leak` verdict on a memory-limit alert becomes a pod restart held for human approval, with the target checks, the restart budgets, what acceptance proved and the limits that remain. Speaker notes are beside it |
 | `superpowers/specs/2026-07-14-adp-remaining-pillars-roadmap.md` | active | Roadmap for the remaining pillars + the O0 observability spike result |
 | `superpowers/specs/2026-07-11-agent-identity-principal-design.md` | record | Identity: the "agent-principal" pattern (scoped credentials) |
 | `superpowers/specs/2026-07-13-agent-capability-classes-design.md` | record | Security: per-agent capability classes + tool taxonomy |
@@ -43,7 +45,7 @@ in `scripts/validate-agent-*.py`.
 
 Decks and briefs about the platform for an outside audience, anonymized; each is a
 *record* of the platform at its date. `presentations/README.md` lists them and how
-to present. Today: the ADP concept briefing, its development-workflow companion and the agents-as-a-service brief (above), and the tech-stack talk brief.
+to present. Today: the ADP concept briefing, its development-workflow companion, the agents-as-a-service brief, the whole-picture map and the implementer and leak-restarter walkthroughs (above), and the tech-stack talk brief.
 
 ## Platform components (`platform/`)
 
