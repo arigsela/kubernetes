@@ -38,10 +38,13 @@
       //   - base-apps/atlantis.yaml: the image tag inside inline Helm values.
       //   - terraform/modules/argocd/variables.tf: the Argo CD chart version
       //     inside a variable default (applied by Atlantis, not Argo CD).
+      //   - scripts/build-agentgateway-image.sh: the agentgateway release the
+      //     MCP adapter image is built from (§T.133).
       customType: 'regex',
       managerFilePatterns: [
         '/^base-apps/atlantis\\.yaml$/',
         '/^terraform/modules/argocd/variables\\.tf$/',
+        '/^scripts/build-agentgateway-image\\.sh$/',
       ],
       matchStrings: [
         '#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(?:\\s+registryUrl=(?<registryUrl>\\S+))?(?:\\s+versioning=(?<versioning>\\S+))?\\s*\\n\\s*[\\w.-]+\\s*[:=]\\s*"?(?<currentValue>[^"\\s]+)"?',
@@ -165,11 +168,17 @@
       automerge: false,
     },
     {
-      description: 'The agentgateway adapter the three stdio MCP servers run under (§T.126) moves in one PR: one binary, three Deployments.',
-      matchManagers: ['kubernetes'],
-      matchPackageNames: ['ghcr.io/agentgateway/agentgateway'],
-      matchFileNames: ['base-apps/kagent/agent-docs-mcp.yaml', 'base-apps/kagent/brave-search-mcp.yaml', 'base-apps/kagent/implementer-mcp.yaml'],
+      // The three stdio MCP servers (§T.126) pin the adapter image we build (§T.133), which
+      // the own-ECR rule above already hides. What Renovate can see is the release version
+      // in the build script, so that is what it bumps; tests/agent-identity keeps the PR red
+      // until the image is rebuilt and re-pinned, so promotion never merges it half done.
+      description: 'agentgateway releases for the MCP adapter image: bump the build script, then finish the PR by hand.',
+      matchManagers: ['custom.regex'],
+      matchPackageNames: ['agentgateway/agentgateway'],
       groupName: 'mcp-adapter',
+      prBodyNotes: [
+        '**Finish this PR by hand (§T.133).** Set `AGW_SHA256` in `scripts/build-agentgateway-image.sh` from the release\'s `agentgateway-linux-amd64.sha256`, read the release notes for `binds`/MCP changes, run `scripts/build-agentgateway-image.sh --push`, and pin the printed reference in the init containers of `base-apps/kagent/{agent-docs,brave-search,implementer}-mcp.yaml`. CI fails until all three match the new version.',
+      ],
     },
     {
       description: 'An alpha/beta kagent or Substrate bump is a clean-database migration, not an upgrade (every kagent 1.0 alpha so far required one).',
