@@ -118,7 +118,10 @@ spec:
           effect: NoSchedule
       initContainers:
         - name: copy-binary
-          image: ghcr.io/agentgateway/agentgateway:0.9.0-musl@sha256:aa375451b6f925f6b260fe33cbe237555efd322f14f3b5e0c717628a069cfb0a
+          # Built here from the pinned static release binary (images/agentgateway/,
+          # scripts/build-agentgateway-image.sh, §T.133): upstream publishes no musl image after
+          # v1.3.1, and only a musl build has --copy-self. Same tag in all three servers.
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d
           args: ["--copy-self", "/adapterbin/agentgateway"]
           volumeMounts:
             - name: binary

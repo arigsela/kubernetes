@@ -1,7 +1,12 @@
 """The three stdio MCP servers are plain Deployments (§T.126): agentgateway wraps the stdio
 server and serves it on :3000, under the names kmcp used, so the RemoteMCPServers' URLs and the
-container-name-keyed alerts keep working. kagent 1.0.0-alpha14 removed kmcp (kagent#3223)."""
+container-name-keyed alerts keep working. kagent 1.0.0-alpha14 removed kmcp (kagent#3223).
+
+The adapter image is built here (§T.133): scripts/build-agentgateway-image.sh pins the version,
+and the three Deployments must pin that version's image, all by the same digest. A Renovate PR
+that bumps only the script therefore fails here until the image is rebuilt and re-pinned."""
 from pathlib import Path
+import re
 import yaml
 import pytest
 
@@ -11,7 +16,10 @@ SERVERS = {
     "brave-search-mcp": ("brave-search-mcp-remote.yaml", "brave-search", "brave-search-mcp-api-key"),
     "implementer-mcp": ("implementer-mcp-remote.yaml", "implementer", "implementer-github-app"),
 }
-ADAPTER = "ghcr.io/agentgateway/agentgateway:0.9.0-musl@sha256:"
+BUILD_SCRIPT = REPO / "scripts" / "build-agentgateway-image.sh"
+AGW_VERSION = re.search(r"^AGW_VERSION=(\S+)$", BUILD_SCRIPT.read_text(), re.M).group(1)
+ADAPTER = re.compile(r"852893458518\.dkr\.ecr\.us-east-2\.amazonaws\.com/agentgateway:"
+                     + re.escape(AGW_VERSION) + r"@sha256:[0-9a-f]{64}")
 
 
 def docs(name):
@@ -35,7 +43,8 @@ def test_deployment_runs_agentgateway_around_the_stdio_server(name):
     assert dep["metadata"]["name"] == name
     pod = dep["spec"]["template"]["spec"]
     init = pod["initContainers"][0]
-    assert init["image"].startswith(ADAPTER) and init["args"] == ["--copy-self", "/adapterbin/agentgateway"]
+    assert ADAPTER.fullmatch(init["image"]), (init["image"], f"want the {AGW_VERSION} image from the build script")
+    assert init["args"] == ["--copy-self", "/adapterbin/agentgateway"]
     main = pod["containers"][0]
     assert main["name"] == "mcp-server"
     assert main["command"] == ["/adapterbin/agentgateway"] and main["args"] == ["-f", "/config/local.yaml"]
@@ -43,6 +52,12 @@ def test_deployment_runs_agentgateway_around_the_stdio_server(name):
     assert "@sha256:" in main["image"]
     assert pod["serviceAccountName"] == name
     assert main["envFrom"] == [{"secretRef": {"name": SERVERS[name][2]}}]
+
+
+def test_one_adapter_image_for_all_three():
+    """One binary, three Deployments: they move together (what the old Renovate group did)."""
+    images = {one(n, "Deployment")["spec"]["template"]["spec"]["initContainers"][0]["image"] for n in SERVERS}
+    assert len(images) == 1, images
 
 
 @pytest.mark.parametrize("name", sorted(SERVERS))
