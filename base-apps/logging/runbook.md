@@ -151,6 +151,10 @@ change reaches the pods differs per component, and all are single-replica:
   template change does **not** restart it. For resources, resize the running pod in place
   first (`scripts/resize-pod.sh`), then merge the same values; a real restart is a deliberate
   `kubectl -n logging delete pod prometheus-0`. See `docs/troubleshooting/in-place-resize.md`.
+  A `prometheus-config.yaml` change needs no restart, but nothing reloads it either: the mounted
+  file updates within a minute of the sync, then Prometheus reads it on
+  `kubectl -n logging port-forward svc/prometheus 9090` + `curl -X POST localhost:9090/-/reload`
+  (`--web.enable-lifecycle`). Check Status → Configuration (or `/api/v1/status/config`) shows it.
 - **Grafana** is `strategy: Recreate` — about 20 s of downtime per rollout. An alert-rule change
   also restarts it via the `checksum/alerting` annotation (keep it current; the test fails
   otherwise).

@@ -87,6 +87,14 @@ data:
             action: keep
             regex: true
 
+          # Skip init containers. Discovery makes one target per container, and the rule below points
+          # all of them at the pod's prometheus.io/port, so a pod with an init container was scraped
+          # twice (two `container` labels) and every sum over its series doubled. The pod still has a
+          # target per regular container (§V.103, tests/dashboards/test_prometheus_scrape.py).
+          - source_labels: [__meta_kubernetes_pod_container_init]
+            action: drop
+            regex: true
+
           # Use custom scrape path if specified
           - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
             action: replace
