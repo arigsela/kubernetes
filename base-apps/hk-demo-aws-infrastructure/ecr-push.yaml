@@ -1,0 +1,109 @@
+---
+# GitHub Actions in arigsela/hk-demo pushes its image to ECR through
+# GitHub OIDC - no long-lived AWS keys in GitHub. Trust is limited to v* TAG
+# builds of that one repo (its release.yml); the policy to that one repository.
+# Same OIDC provider as github-actions-backstage-ecr, tighter subject.
+#
+# The subject is GitHub's IMMUTABLE form, repo:<owner>@<owner-id>/<repo>@<repo-id>,
+# not repo:arigsela/hk-demo: new repos get it by default
+# (GET repos/arigsela/hk-demo/actions/oidc/customization/sub shows
+# "use_immutable_subject": true). The ids pin the trust to this exact repo:
+# 2475907 = user arigsela, 1429814721 = arigsela/hk-demo. A deleted and
+# re-created repo of the same name gets a new id and is NOT trusted.
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: github-actions-hk-demo-ecr
+  labels:
+    app: hk-demo
+    component: ci-role
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "GitHub Actions (arigsela/hk-demo, v* tags) pushes hk-demo to ECR"
+    maxSessionDuration: 3600
+    assumeRolePolicy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Federated": "arn:aws:iam::852893458518:oidc-provider/token.actions.githubusercontent.com"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+              "StringEquals": {
+                "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+              },
+              "StringLike": {
+                "token.actions.githubusercontent.com:sub": "repo:arigsela@2475907/hk-demo@1429814721:ref:refs/tags/v*"
+              }
+            }
+          }
+        ]
+      }
+    tags:
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: hk-demo-ecr-push
+  labels:
+    app: hk-demo
+    component: ci-policy
+    managed-by: crossplane
+spec:
+  forProvider:
+    description: "Push to the hk-demo ECR repository only"
+    policy: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "EcrLogin",
+            "Effect": "Allow",
+            "Action": ["ecr:GetAuthorizationToken"],
+            "Resource": "*"
+          },
+          {
+            "Sid": "PushThisRepositoryOnly",
+            "Effect": "Allow",
+            "Action": [
+              "ecr:BatchCheckLayerAvailability",
+              "ecr:BatchGetImage",
+              "ecr:CompleteLayerUpload",
+              "ecr:InitiateLayerUpload",
+              "ecr:PutImage",
+              "ecr:UploadLayerPart"
+            ],
+            "Resource": "arn:aws:ecr:us-east-2:852893458518:repository/hk-demo"
+          }
+        ]
+      }
+    tags:
+      ManagedBy: "Crossplane"
+      Environment: "homelab"
+  providerConfigRef:
+    name: default
+---
+apiVersion: iam.aws.upbound.io/v1beta1
+kind: RolePolicyAttachment
+metadata:
+  name: github-actions-hk-demo-ecr-push
+  labels:
+    app: hk-demo
+    component: ci-policy-attachment
+    managed-by: crossplane
+spec:
+  forProvider:
+    roleRef:
+      name: github-actions-hk-demo-ecr
+    policyArnRef:
+      name: hk-demo-ecr-push
+  providerConfigRef:
+    name: default

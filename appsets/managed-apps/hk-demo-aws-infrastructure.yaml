@@ -1,0 +1,9 @@
+name: hk-demo-aws-infrastructure
+sourcePath: base-apps/hk-demo-aws-infrastructure
+# Everything in the directory is a cluster-scoped Crossplane managed resource,
+# so nothing is created in this namespace and it does not have to exist yet.
+# Deliberately no CreateNamespace=true: the hk-demo namespace is created with its
+# ambient label by base-apps/hk-demo/ (design 2026-10-22-hk-demo-design.md §4).
+namespace: hk-demo
+syncOptions:
+  - ServerSideApply=true

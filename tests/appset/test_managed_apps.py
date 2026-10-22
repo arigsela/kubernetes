@@ -23,6 +23,7 @@ EXPECTED_APPS = {
     "crossplane-functions",
     "crossplane-system",
     "ecr-auth",
+    "hk-demo-aws-infrastructure",
     "jupyter-aws-infrastructure",
     "loki-aws-infrastructure",
     "tracing-aws-infrastructure",

@@ -57,6 +57,10 @@ ecr-auth:
   description: "ecr-credentials-sync CronJob (every 15 min) that writes a fresh ecr-registry pull secret into every non-system namespace; AWS keys come from Vault"
   namespace: kube-system
 
+hk-demo-aws-infrastructure:
+  description: "GitHub-OIDC role that lets arigsela/hk-demo v* tag builds push the hk-demo image to ECR (Crossplane)"
+  namespace: hk-demo
+
 jupyter-aws-infrastructure:
   description: "S3 scratch bucket asela-jupyter-scratch plus the IAM user, policy and access key the Jupyter notebook uses (Crossplane)"
   namespace: jupyter
