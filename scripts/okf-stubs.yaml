@@ -14,7 +14,7 @@ agent-sandbox-crds:
   namespace: agent-sandbox-system
 
 argo-rollouts:
-  description: "Argo Rollouts controller and dashboard (Helm chart 2.40.5) with its Gateway route and certificate; no Rollout resources use it today"
+  description: "Argo Rollouts controller and dashboard (Helm chart 2.43.7) with its Gateway route and certificate; no Rollout resources use it today"
   namespace: argo-rollouts
 
 argo-workflow-tasks:
@@ -22,7 +22,7 @@ argo-workflow-tasks:
   namespace: argo-workflows
 
 argo-workflows:
-  description: "Argo Workflows server and controller (Helm chart 2.0.1) with its Gateway route and certificate; the server runs authModes server, so the IP allow-list is its only access control"
+  description: "Argo Workflows server and controller (Helm chart 2.0.13) with its Gateway route and certificate; the server runs authModes server, so the IP allow-list is its only access control"
   namespace: argo-workflows
 
 argo-workflows-aws-infrastructure:
