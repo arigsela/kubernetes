@@ -4,7 +4,9 @@
 # $text placeholder to live-fetch each spec from the app's in-cluster service, so
 # the Backstage backend (running in-cluster) resolves it; the hosts are allow-
 # listed via backend.reading.allow. All in the default namespace so the pilots'
-# fully-qualified refs (default/<name>) resolve.
+# fully-qualified refs (default/<name>) resolve. An app Backstage cannot reach (hk-demo:
+# it listens only behind its login sidecar) gets a spec file under catalog/apis/
+# instead; a relative $text resolves next to this file on GitHub (GitHub integration).
 apiVersion: backstage.io/v1alpha1
 kind: API
 metadata:
@@ -32,3 +34,17 @@ spec:
   system: default/platform-automation
   definition:
     $text: http://dex.dex.svc.cluster.local:5556/.well-known/openid-configuration
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: hk-demo-api
+  description: hk demo page API - ask the hk agent, follow the run as server-sent events, read the evidence boxes (OpenAPI).
+  tags: [openapi, fastapi, server-sent-events]
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  system: default/platform-observability
+  definition:
+    $text: ./apis/hk-demo-openapi.yaml

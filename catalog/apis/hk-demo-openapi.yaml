@@ -1,0 +1,461 @@
+# hk-demo's HTTP API (OpenAPI 3.0.3), shown in Backstage as API hk-demo-api (catalog/api-entities.yaml).
+# A COPY of openapi.yaml in arigsela/hk-demo, where tests/test_openapi.py checks it against the app's
+# code. Do not edit it here: change it in hk-demo and copy it over in the release PR that bumps the
+# image (hk-demo README, Releasing). It is a file, not fetched live like the other API specs, because
+# the app listens only behind its login sidecar, so Backstage cannot fetch it from the service.
+openapi: 3.0.3
+info:
+  title: hk-demo
+  version: 0.1.5
+  description: |
+    The API behind the hk demo page. Ask the homelab-knowledge (hk) agent one question, then
+    follow the run as server-sent events: the agent's progress, its answer, then eight evidence
+    boxes (Gateway, Login, hk demo, Identity check, kagent, Sandbox, Model API, Tools) built from
+    the run's own trace, log lines and metrics.
+
+    **Who can call it.** The host answers only addresses on the Gateway's allow-list. An
+    oauth2-proxy sidecar sits in front of the app: a request without a session is redirected
+    (302) to Dex for a GitHub login, and only emails on the sidecar's list get through. The
+    sidecar passes the email to the app as `X-Forwarded-Email`; without it the app answers 401.
+    There is no API key: this API is for the page, not for scripts.
+
+    **How the app calls the agent.** Over A2A, with its own service-account token (audience
+    `kagent`), so kagent sees `system:serviceaccount:hk-demo:hk-demo`. The person who asked is
+    recorded in the app's log line for the run.
+
+    **One question at a time.** A second question while one runs gets 409. The app keeps its last
+    20 runs in memory; runs from the last 7 days are replayed from its own log lines, the agent's
+    task and the trace.
+
+    **What never reaches the client.** Emails are shown as `a•••@domain`, client IPs as /24,
+    tokens are hidden, tool responses are dropped and log lines are cut at 600 characters.
+servers:
+  - url: https://hk-demo.arigsela.com
+tags:
+  - name: runs
+    description: Ask a question and follow its run.
+  - name: page
+    description: The page itself.
+  - name: health
+    description: Health checks.
+paths:
+  /:
+    get:
+      tags: [page]
+      summary: The demo page
+      operationId: getPage
+      responses:
+        "200":
+          description: The page. Its script and styles are served under `/static/`.
+          content:
+            text/html:
+              schema:
+                type: string
+  /api/ask:
+    post:
+      tags: [runs]
+      summary: Ask hk a question
+      operationId: ask
+      description: |
+        Starts a run and returns its id at once. The answer and the evidence come on the run's
+        event stream (`GET /api/runs/{run_id}/events`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AskRequest"
+      responses:
+        "202":
+          description: The run started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AskAccepted"
+        "400":
+          description: >-
+            The body is not `{"question": "..."}`, or the question is empty or longer than 2000
+            characters.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/LoginRequired"
+        "409":
+          description: A question is already running (`a question is already running`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/runs:
+    get:
+      tags: [runs]
+      summary: Recent runs
+      operationId: listRuns
+      description: Up to 20 runs, newest first, from memory and from the app's log lines (7 days).
+      responses:
+        "200":
+          description: The runs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RunSummary"
+        "401":
+          $ref: "#/components/responses/LoginRequired"
+  /api/runs/{run_id}/events:
+    get:
+      tags: [runs]
+      summary: Follow a run
+      operationId: runEvents
+      description: |
+        Server-sent events. Each message is `event: <name>` and `data: <JSON>`; the schema below
+        is one message. A live run sends `ids`, then `progress` while the agent works, then
+        `answer`, then `boxes` (more than once, as evidence arrives; the last one is final). A
+        run from Recent runs is replayed and starts with `question`. `failed` reports a failure
+        and is still followed by `boxes` where there is evidence. `done` is always last, and the
+        server then closes the stream. A run the app has no record of gives `failed` then `done`.
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: The id from `POST /api/ask` or `GET /api/runs`.
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{32}$"
+      responses:
+        "200":
+          description: The event stream.
+          content:
+            text/event-stream:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/QuestionEvent"
+                  - $ref: "#/components/schemas/IdsEvent"
+                  - $ref: "#/components/schemas/ProgressEvent"
+                  - $ref: "#/components/schemas/AnswerEvent"
+                  - $ref: "#/components/schemas/BoxesEvent"
+                  - $ref: "#/components/schemas/FailedEvent"
+                  - $ref: "#/components/schemas/DoneEvent"
+        "401":
+          $ref: "#/components/responses/LoginRequired"
+        "404":
+          description: The run id is not 32 hex characters (`no such run`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /healthz:
+    get:
+      tags: [health]
+      summary: The app's health check
+      operationId: healthz
+      description: >-
+        Used by the pod's own probes, inside the pod. Through the Gateway it needs a
+        login like every other path.
+      responses:
+        "200":
+          description: The app is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+                    enum: [true]
+  /ping:
+    get:
+      tags: [health]
+      summary: The login sidecar's health check
+      operationId: ping
+      description: >-
+        Answered by the oauth2-proxy sidecar without a login; the homelab monitor
+        checks it. It says nothing about the app behind the sidecar.
+      responses:
+        "200":
+          description: The sidecar is up.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+components:
+  responses:
+    LoginRequired:
+      description: >-
+        No `X-Forwarded-Email`: the request did not come through the login sidecar
+        (`login required`). Through the sidecar, a request without a session gets a 302 to Dex
+        instead.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: What went wrong, in plain words.
+    AskRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          example: Which namespaces run more than one Deployment?
+    AskAccepted:
+      type: object
+      required: [run_id]
+      properties:
+        run_id:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+    RunSummary:
+      type: object
+      required: [run_id, started, question, state]
+      properties:
+        run_id:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+        started:
+          type: string
+          format: date-time
+        question:
+          type: string
+        state:
+          type: string
+          nullable: true
+          description: The A2A task state, such as `TASK_STATE_COMPLETED`; null while it runs.
+    QuestionEvent:
+      type: object
+      description: A replay's question (first event of a replay).
+      required: [event, data]
+      properties:
+        event:
+          type: string
+          enum: [question]
+        data:
+          type: object
+          required: [question]
+          properties:
+            question:
+              type: string
+    IdsEvent:
+      type: object
+      description: The agent accepted the run.
+      required: [event, data]
+      properties:
+        event:
+          type: string
+          enum: [ids]
+        data:
+          type: object
+          required: [context_id, task_id]
+          properties:
+            context_id:
+              type: string
+              description: The kagent session (A2A context) id.
+            task_id:
+              type: string
+              description: The A2A task id.
+    ProgressEvent:
+      type: object
+      description: >-
+        What the agent is doing. Tool calls carry their arguments (each string masked
+        and cut); tool responses are never sent. A replay rebuilds this feed from the trace,
+        without arguments.
+      required: [event, data]
+      properties:
+        event:
+          type: string
+          enum: [progress]
+        data:
+          type: object
+          required: [kind, text, tool, args]
+          properties:
+            kind:
+              type: string
+              enum: [status, tool]
+            text:
+              type: string
+              example: calling k8s_get_resources
+            tool:
+              type: string
+              nullable: true
+            args:
+              type: object
+              nullable: true
+              additionalProperties: true
+    AnswerEvent:
+      type: object
+      description: The agent's answer.
+      required: [event, data]
+      properties:
+        event:
+          type: string
+          enum: [answer]
+        data:
+          type: object
+          required: [text, state]
+          properties:
+            text:
+              type: string
+            state:
+              type: string
+              example: TASK_STATE_COMPLETED
+    BoxesEvent:
+      type: object
+      description: >-
+        The eight evidence boxes, in map order. Sent more than once as the trace and
+        log lines arrive; the last one is final.
+      required: [event, data]
+      properties:
+        event:
+          type: string
+          enum: [boxes]
+        data:
+          type: object
+          required: [boxes]
+          properties:
+            boxes:
+              type: array
+              minItems: 8
+              maxItems: 8
+              items:
+                $ref: "#/components/schemas/Box"
+    FailedEvent:
+      type: object
+      description: The run, or reading its evidence, failed. `done` still follows.
+      required: [event, data]
+      properties:
+        event:
+          type: string
+          enum: [failed]
+        data:
+          type: object
+          required: [reason]
+          properties:
+            reason:
+              type: string
+              example: "HTTP 401 from kagent: ..."
+    DoneEvent:
+      type: object
+      description: The last event. The server closes the stream after it.
+      required: [event, data]
+      properties:
+        event:
+          type: string
+          enum: [done]
+        data:
+          type: object
+          additionalProperties: false
+    Box:
+      type: object
+      description: >-
+        One piece of the platform the request went through, with what this run's
+        evidence shows about it.
+      required: [id, title, what, checks, numbers, logs, spans, config, state, grafana_url,
+                 failed_lines]
+      properties:
+        id:
+          type: string
+          enum: [gateway, login, app, identity, kagent, sandbox, model, tools]
+        title:
+          type: string
+        what:
+          type: string
+          description: What this piece does, in one or two sentences.
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Check"
+        numbers:
+          type: object
+          description: Figures for this run, such as calls, cost or tool time.
+          additionalProperties:
+            type: string
+          example:
+            calls: "9"
+            tool time: "5.9 s"
+            failed: "1"
+        logs:
+          type: array
+          maxItems: 200
+          description: This run's log lines for this piece, masked and cut at 600 characters.
+          items:
+            type: string
+        spans:
+          type: array
+          items:
+            $ref: "#/components/schemas/Span"
+        config:
+          type: array
+          description: Excerpts of the settings in arigsela/kubernetes that apply here.
+          items:
+            $ref: "#/components/schemas/ConfigExcerpt"
+        state:
+          type: string
+          enum: [waiting, partial, done, failed]
+          description: "`failed` when any check saw a failure."
+        grafana_url:
+          type: string
+          description: Grafana Explore, opened on this run's trace and log lines.
+        failed_lines:
+          type: array
+          description: Indexes into `logs` of the lines that report a failure.
+          items:
+            type: integer
+    Check:
+      type: object
+      required: [kind, text, ok]
+      properties:
+        kind:
+          type: string
+          enum: [observed, configured]
+          description: "`observed`: seen in this run's trace, log lines or metrics. `configured`:
+            a setting that applies to every request."
+        text:
+          type: string
+        ok:
+          type: boolean
+          nullable: true
+          description: >-
+            true when seen and fine, false when seen and failed, null while the
+            evidence is on its way.
+    Span:
+      type: object
+      required: [name, service, duration_ms, attrs]
+      properties:
+        name:
+          type: string
+          example: execute_tool k8s_get_resources
+        service:
+          type: string
+        duration_ms:
+          type: number
+        attrs:
+          type: object
+          description: >-
+            An allow-list of the span's attributes (model, tokens, cost, tool name,
+            caller identity).
+          additionalProperties: true
+        error:
+          type: string
+          description: The span's status message, only when the span ended in error.
+    ConfigExcerpt:
+      type: object
+      required: [source, text]
+      properties:
+        source:
+          type: string
+          description: The file in arigsela/kubernetes.
+        text:
+          type: string

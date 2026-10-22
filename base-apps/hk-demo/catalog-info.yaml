@@ -18,6 +18,8 @@ spec:
   lifecycle: production
   owner: group:default/platform
   system: default/platform-observability
+  providesApis:
+    - default/hk-demo-api
   dependsOn:
     - component:kagent/kagent
     - component:ate-system/substrate
