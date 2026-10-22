@@ -175,7 +175,11 @@ and a source in the `dashboards-agents` projected volume (`grafana-deployment.ya
 restarts Grafana. Read counters of rare events (the collector's agent counters, Substrate's
 sessions and crashes, kagent-tools' calls) with `window_total()`, never `increase()` or `rate()`:
 those lose each new series' first value (a sandbox crash read 0). Ask Tempo only instant metrics queries (Grafana 11.6 cannot read Tempo 3.1's range
-responses); test new queries against the cluster before merging.
+responses); test new queries against the cluster before merging. On Agent Platform, a new number
+about the picked run reads the trace panel's trace (`of_the_trace()`), not its own Tempo query:
+each query scans a day of traces in S3, and while four ran the tiles kept the last run's numbers
+for about 10 s. The run-logs query keeps its substring check (`|= "${trace_id}" or …`) before
+the regex, which Loki otherwise runs on every kagent and Substrate line of the day (18 s).
 
 ### Deploy / update
 Edit manifests here and PR; Argo CD syncs on merge (`prune`/`selfHeal` enabled). How a

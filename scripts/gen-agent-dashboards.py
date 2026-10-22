@@ -11,10 +11,12 @@ Edit the panels here and regenerate; never hand-edit the JSON in the ConfigMaps.
 The landing page, Agent Platform, is Grafana's home dashboard. Every other dashboard links back to it.
 
 Where the numbers come from:
-  - Tokens, cost, model calls, tool calls, agent runs: Tempo TraceQL metrics over the kagent agents'
-    spans (generate_content / execute_tool / invoke_agent). Tempo sums span attributes exactly; a
-    Prometheus counter fed per span would lose the first value of every new series. Tempo answers
-    at most 24 h per metrics query, so these panels follow a time range of up to 24 h.
+  - Tokens, cost, model calls, tool calls, agent runs over a time range: the collector's counters
+    (signal_to_metrics over the kagent agents' generate_content / execute_tool / invoke_agent
+    spans), read with window_total(). The per-hop counts and p95s: Tempo TraceQL instant metrics
+    (at most 24 h per query).
+  - The picked run's tokens, cost, calls and turn: its trace, as the trace panel loads it (the
+    Dashboard datasource), so a picked run costs one Tempo lookup.
   - The estimated cost: agent.cost.estimate_usd, stamped on each model call by the collector
     (base-apps/tracing/collector.yaml, transform/genai-cost).
   - The latest run: agent_run_start_seconds{trace_id} from the collector (signal_to_metrics).
@@ -38,6 +40,7 @@ PROM = {"type": "prometheus"}
 LOKI = {"type": "loki", "uid": "loki"}
 TEMPO = {"type": "tempo", "uid": "tempo"}
 MIXED = {"type": "datasource", "uid": "-- Mixed --"}
+DASHBOARD_DS = {"type": "datasource", "uid": "-- Dashboard --"}  # another panel's results
 # A panel mixing datasources cannot resolve {"type": "prometheus"} (Grafana sends no query for it);
 # its Prometheus targets name this variable instead, which defaults to the default Prometheus, so
 # no uid is pinned either way.
@@ -362,12 +365,49 @@ LATEST_RUNS = 'sort_desc(topk(20, max by (service_name, trace_id) (agent_run_sta
 # do not write.
 RUN_LOG_REGEX = ('(?:trace_id":"|trace\\.id=|trace_id=)0{0,31}${trace_id}(?:[^0-9a-f]|$)'
                  '|session-${session}(?:[^0-9a-f-]|$)')
-RUN_LOGS = ('{namespace=~"kagent|ate-system"} |~ `' + RUN_LOG_REGEX + '`'
+# The substring check comes first: Loki then runs the regex only on lines carrying either id, not
+# on every kagent and Substrate line of the day (18 s → 3 s on its half CPU, §B.41). Tempo's form
+# of the id (leading zeros stripped) is still a substring of the line's.
+RUN_LOGS = ('{namespace=~"kagent|ate-system"} |= "${trace_id}" or "session-${session}" |~ `' + RUN_LOG_REGEX + '`'
             ' != "TaskStoreService/UpdateTask" != "request before normalization"'
             ' != "request after normalization" ' + MASK_EMAILS)
-RUN_FIELDS = [("gen_ai.usage.input_tokens", "input tokens"), ("gen_ai.usage.output_tokens", "output tokens"),
-              ("agent.cost.estimate_usd", "est. cost")]
 NO_RUN = "No agent run in the last 2 days: run scripts/agent-demo.sh"
+
+# The run's tiles read the trace the trace panel loads (Grafana's Dashboard datasource): one Tempo
+# lookup per picked run, and the tiles change with the trace. A TraceQL query per tile scanned a
+# day of S3 blocks each, four at once beside that lookup on a 1-CPU Tempo, and the tiles kept the
+# last run's numbers for about 10 s (§B.41). Spans are picked by name as the trace view has them.
+THE_TRACE = "the trace panel's id"  # a tile target's panelId until landing() has laid out the trace
+MODEL_SPANS = "^generate_content "
+TOOL_SPANS = "^execute_tool (?!\\(merged\\))"  # not kagent's parallel-call wrapper, "execute_tool (merged)"
+TURN_SPANS = "^invoke_agent "
+# (tag on the model call, field name, shown as). The regex reads each from a model call's tags,
+# which Grafana 11.6.16 stringifies as [{"value":…,"key":…}, …], value first.
+RUN_FIELDS = [("gen_ai.usage.input_tokens", "input_tokens", "input tokens"),
+              ("gen_ai.usage.output_tokens", "output_tokens", "output tokens"),
+              ("agent.cost.estimate_usd", "cost_usd", "est. cost")]
+
+
+def _tag_number(tag, field):
+    """A lookahead capturing the tag's number as `field`, or nothing when the call lacks the tag."""
+    key = tag.replace(".", "\\.")
+    return f'(?=(?:.*?"value":"?(?<{field}>[0-9.eE+-]+)"?,"key":"{key}")?)'
+
+
+RUN_TAGS_REGEX = "/^" + "".join(_tag_number(tag, field) for tag, field, _ in RUN_FIELDS) + "/"
+
+
+def of_the_trace(title, desc, span_names, *, transformations=(), **kw):
+    """A tile over the spans of the run's trace whose name matches span_names."""
+    p = stat(title, [{"datasource": DASHBOARD_DS, "refId": "A", "panelId": THE_TRACE, "withTransforms": False}],
+             desc, no_value="-", **kw)
+    # The trace comes with the node graph's two frames, so Grafana names its fields "Trace
+    # operationName" and the filter (by display name) found no span: one frame first, plain names.
+    one_frame = {"id": "concatenate", "options": {"frameNameMode": "drop"}}
+    pick = {"id": "filterByValue", "options": {"type": "include", "match": "any", "filters": [
+        {"fieldName": "operationName", "config": {"id": "regex", "options": {"value": span_names}}}]}}
+    return dict(p, transformations=[one_frame, pick, *(transformations or [
+        {"id": "filterFieldsByName", "options": {"include": {"names": ["duration"]}}}])])
 
 
 def landing():
@@ -425,7 +465,8 @@ def landing():
             link=("agent-alerts", "Alerts to Agents"))),
     ])
 
-    b.row("Follow one request: ingress → kagent → Substrate sandbox → agent → model and tools")
+    b.row("Each hop of an agent request, all runs in the time range: ingress → kagent → Substrate sandbox "
+          "→ agent → model and tools")
     hops = [
         ("Entry: Istio Gateway", [
             prom(f'round(sum(increase(istio_requests_total{{{WAYPOINT}, source_workload="main-istio", destination_workload="kagent-controller"}}[$__range])))',
@@ -468,6 +509,7 @@ def landing():
                     field_decimals={"Value #A": 0})
     b.line(4, [(4, hop(t, tg, d, u)) for t, tg, d, u in hops])
 
+    b.row("One run, picked with Run at the top or a trace id below: its tokens, trace and logs")
     b.line(7, [(24, table(
         "Recent agent runs: click a trace id to follow it below", [tsearch(RUNS, limit=20)],
         "The newest agent runs in the dashboard's time range. Clicking a trace id loads that run's "
@@ -479,28 +521,25 @@ def landing():
                    {"matcher": {"id": "byName", "options": "traceName"}, "properties": [{"id": "noValue", "value": "—"}]}],
         no_value="No agent runs in this time range"))])
 
-    run = 'trace:id = "${trace_id}"'
-    calls = f'{{{run} && name=~"generate_content .*"}} | select(span.gen_ai.usage.input_tokens, ' \
-            'span.gen_ai.usage.output_tokens, span.agent.cost.estimate_usd)'
     b.line(4, [
-        (12, dict(stat("This run: tokens and estimated cost", [tsearch(calls, limit=1, spss=100, table_type="spans")],
-                       "The run's model calls (up to 100), summed: input tokens (cache reads included), output "
-                       "tokens, and the estimated cost at list prices.",
-                       field_names={k: v for k, v in RUN_FIELDS}, field_units={"agent.cost.estimate_usd": "currencyUSD"},
-                       field_decimals={"agent.cost.estimate_usd": 3}, calcs="sum", no_value="-"),
-                  # Keep the three attributes (not the span's duration), and make them numbers: a span
-                  # search returns attribute values as text.
-                  transformations=[
-                      {"id": "filterFieldsByName", "options": {"include": {"names": [k for k, _ in RUN_FIELDS]}}},
-                      {"id": "convertFieldType", "options": {"fields": {}, "conversions": [
-                          {"targetField": k, "destinationType": "number"} for k, _ in RUN_FIELDS]}}])),
-        (4, stat("Model calls", [tql(f"{{{run} && name=~\"generate_content .*\"}} | count_over_time()")],
-                 "Calls to the model API in this run.", no_value="-")),
-        (4, stat("Tool calls", [tql(f"{{{run} && name=~\"execute_tool .*\" && span.gen_ai.tool.name != \"(merged tools)\"}} | count_over_time()")],
-                 "Tool calls in this run.", no_value="-")),
-        (4, stat("Agent turn", [tql(f"{{{run} && name=~\"invoke_agent .*\"}} | max_over_time(duration)")],
-                 "How long the agent's turn took.", field_units={"max_over_time": "s"},
-                 no_value="-", decimals=1)),
+        (12, of_the_trace(
+            "This run: tokens and estimated cost",
+            "The run's model calls, summed: input tokens (cache reads included), output tokens, and the "
+            "estimated cost at list prices. Read from the trace below.", MODEL_SPANS,
+            field_names={f: shown for _, f, shown in RUN_FIELDS}, field_units={"cost_usd": "currencyUSD"},
+            field_decimals={"cost_usd": 3}, calcs="sum",
+            # Tags as text, the three numbers out of each model call's tags, numbers again.
+            transformations=[
+                {"id": "convertFieldType", "options": {"fields": {}, "conversions": [
+                    {"targetField": "tags", "destinationType": "string"}]}},
+                {"id": "extractFields", "options": {"source": "tags", "format": "regexp",
+                                                    "regExp": RUN_TAGS_REGEX, "replace": True}},
+                {"id": "convertFieldType", "options": {"fields": {}, "conversions": [
+                    {"targetField": f, "destinationType": "number"} for _, f, _ in RUN_FIELDS]}}])),
+        (4, of_the_trace("Model calls", "Calls to the model API in this run.", MODEL_SPANS, calcs="count")),
+        (4, of_the_trace("Tool calls", "Tool calls in this run.", TOOL_SPANS, calcs="count")),
+        (4, of_the_trace("Agent turn", "How long the agent's turn took.", TURN_SPANS, calcs="max",
+                         field_units={"duration": "ms"}, decimals=1)),
     ])
     b.line(16, [(24, {"type": "traces", "title": "The run, end to end (Tempo)",
                       "description": "One agent run: ingress Gateway, kagent's controller, Substrate's router, "
@@ -514,6 +553,12 @@ def landing():
                           "Lines carrying this run's trace id (controller, Substrate router and egress) or "
                           "its session (Substrate, the sandbox). The TaskStore UpdateTask stream and "
                           "routing debug lines are left out.", no_value=NO_RUN))])
+
+    (trace,) = [p for p in b.panels if p["type"] == "traces"]
+    for p in b.panels:
+        for t in p.get("targets", []):
+            if t.get("panelId") == THE_TRACE:
+                t["panelId"] = trace["id"]
 
     templating = [
         {"type": "query", "name": "trace_id", "label": "Run", "datasource": PROM,
