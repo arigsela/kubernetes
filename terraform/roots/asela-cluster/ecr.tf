@@ -27,11 +27,12 @@ locals {
   ecr_repositories = {
     # Mutability and scan-on-push are per repository because they are what the
     # repositories already had. IMMUTABLE where deployments pin a tag or digest
-    # (agent-audit-web, the model images); MUTABLE where `latest` is deployed
+    # (agent-audit-web, hk-demo, the model images); MUTABLE where `latest` is deployed
     # (weather-kitchen) or releases re-tag (backstage-portal, oncall-agent,
     # plex-stack-mcp).
     "agent-audit-web"          = { image_tag_mutability = "IMMUTABLE", scan_on_push = true }
     "backstage-portal"         = { image_tag_mutability = "MUTABLE", scan_on_push = false }
+    "hk-demo"                  = { image_tag_mutability = "IMMUTABLE", scan_on_push = true }
     "models/nomic-embed-text"  = { image_tag_mutability = "IMMUTABLE", scan_on_push = false }
     "models/qwen3.5-0.8b"      = { image_tag_mutability = "IMMUTABLE", scan_on_push = false }
     "oncall-agent"             = { image_tag_mutability = "MUTABLE", scan_on_push = false }
