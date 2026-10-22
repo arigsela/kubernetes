@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hk-demo-tls
+  namespace: hk-demo
+spec:
+  secretName: hk-demo-tls
+  dnsNames:
+    - hk-demo.arigsela.com
+  issuerRef:
+    name: letsencrypt-route53
+    kind: ClusterIssuer

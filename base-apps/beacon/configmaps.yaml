@@ -179,6 +179,12 @@ data:
           "interval_seconds": 300
         },
         {
+          "name": "hk-demo",
+          "kind": "http",
+          "target": "https://hk-demo.arigsela.com/ping",
+          "interval_seconds": 300
+        },
+        {
           "name": "home",
           "kind": "http",
           "target": "https://home.arigsela.com/",

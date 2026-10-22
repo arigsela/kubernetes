@@ -1,0 +1,172 @@
+# hk demo (§T.136, design docs/superpowers/specs/2026-10-22-hk-demo-design.md §4).
+# Two containers:
+# - app: binds 127.0.0.1:8000. It calls kagent in-cluster with its own projected
+#   service-account token (audience kagent, read on every call), so the waypoint verifies it as
+#   system:serviceaccount:hk-demo:hk-demo. It reads Loki, Tempo and Prometheus with GETs only.
+# - oauth2-proxy: the only way in (Service port 4180). Dex login, PKCE, and one email from Vault
+#   as the allow-list. It sets X-Forwarded-Email, which the app records as "who asked".
+# Image: released by arigsela/hk-demo's release.yml on a v* tag; pin the printed tag@digest.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hk-demo
+  namespace: hk-demo
+  labels:
+    app: hk-demo
+    app.kubernetes.io/name: hk-demo
+spec:
+  replicas: 1   # one in-memory run at a time (the page's "a question is already running")
+  selector:
+    matchLabels:
+      app: hk-demo
+  template:
+    metadata:
+      labels:
+        app: hk-demo
+        app.kubernetes.io/name: hk-demo
+    spec:
+      serviceAccountName: hk-demo
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/hk-demo:v0.1.0@sha256:15ff0b5d6d1aac950c33122d69d3ed6b7edf848a4d5622edb845a54cfd8ef72c
+          env:
+            - name: HK_AGENT
+              value: kagent/homelab-knowledge
+            - name: KAGENT_BASE
+              value: http://kagent-controller.kagent.svc.cluster.local:8083
+            - name: KAGENT_TOKEN_FILE
+              value: /var/run/kagent/token
+            - name: LOKI_URL
+              value: http://loki.logging.svc.cluster.local:3100
+            - name: TEMPO_URL
+              value: http://tempo.tracing.svc.cluster.local:3200
+            - name: PROM_URL
+              value: http://prometheus.logging.svc.cluster.local:9090
+            - name: GRAFANA_URL
+              value: https://grafana.arigsela.com
+            - name: REQUIRE_EMAIL
+              value: "true"
+            - name: APP_HOST
+              value: hk-demo.arigsela.com
+          resources:
+            requests:
+              cpu: 20m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          startupProbe:
+            exec:
+              command: ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: kagent-token
+              mountPath: /var/run/kagent
+              readOnly: true
+        # The only way in: OIDC via Dex, PKCE, and ONE email from Vault as the allow-list (Dex
+        # admits any GitHub account). The dispatcher's flags (no OIDC discovery at startup, so the
+        # pod starts while Dex is down; the JWKS is still fetched when a token is verified).
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916
+          args:
+            - --http-address=0.0.0.0:4180
+            - --upstream=http://127.0.0.1:8000/
+            - --provider=oidc
+            - --provider-display-name=GitHub (via Dex)
+            - --oidc-issuer-url=https://dex.arigsela.com
+            - --skip-oidc-discovery
+            - --login-url=https://dex.arigsela.com/auth
+            - --redeem-url=https://dex.arigsela.com/token
+            - --oidc-jwks-url=https://dex.arigsela.com/keys
+            - --client-id=hk-demo
+            - --client-secret-file=/etc/oauth2-proxy/secrets/client-secret
+            - --cookie-secret-file=/etc/oauth2-proxy/secrets/cookie-secret
+            - --code-challenge-method=S256
+            - --scope=openid email profile
+            - --redirect-url=https://hk-demo.arigsela.com/oauth2/callback
+            - --authenticated-emails-file=/etc/oauth2-proxy/secrets/allowed-emails
+            - --cookie-name=_hk_demo
+            - --cookie-secure=true
+            - --cookie-samesite=lax
+            - --cookie-expire=8h
+            - --skip-provider-button=true
+            - --silence-ping-logging=true
+            - --request-logging=false
+          ports:
+            - containerPort: 4180
+              name: web
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: 4180
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 4180
+            periodSeconds: 10
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: oauth2
+              mountPath: /etc/oauth2-proxy/secrets
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 16Mi
+        - name: oauth2
+          secret:
+            secretName: hk-demo-oauth2
+            defaultMode: 0444
+        # Projected token, audience kagent, rotated by the kubelet before it expires; the mesh
+        # verifies it and sets X-User-Id to this service account (V91, V92).
+        - name: kagent-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: kagent
+                  expirationSeconds: 3600
+                  path: token

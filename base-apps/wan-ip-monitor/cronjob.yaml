@@ -141,6 +141,7 @@ spec:
                     dex.arigsela.com,
                     dispatcher.arigsela.com,
                     grafana.arigsela.com,
+                    hk-demo.arigsela.com,
                     home.arigsela.com,
                     jupyter.arigsela.com,
                     kagent-mcp.arigsela.com,
