@@ -582,7 +582,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum(increase(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[$__interval])))",
+              "expr": "sum by () (((last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[$__interval] offset -$__interval) - last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[1h])) >= 0) or last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[$__interval] offset -$__interval))",
               "legendFormat": "",
               "instant": false,
               "range": true,
@@ -593,7 +593,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "B",
-              "expr": "round(sum(increase(ate_actor_crashes_total[7d]))) or vector(0)",
+              "expr": "sum by () (((last_over_time(ate_actor_crashes_total[7d]) - last_over_time(ate_actor_crashes_total[1d] offset 7d)) >= 0) or last_over_time(ate_actor_crashes_total[7d])) or vector(0)",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -1041,7 +1041,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum(increase(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=~\"create|resume\"}[$__range])))",
+              "expr": "sum by () (((last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=~\"create|resume\"}[$__range]) - last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=~\"create|resume\"}[1d] offset $__range)) >= 0) or last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=~\"create|resume\"}[$__range]))",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -1535,6 +1535,18 @@ data:
                     ]
                   }
                 ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "traceName"
+                },
+                "properties": [
+                  {
+                    "id": "noValue",
+                    "value": "\u2014"
+                  }
+                ]
               }
             ]
           },
@@ -1960,7 +1972,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "{namespace=~\"kagent|ate-system\"} |~ `(?:trace_id\":\"|trace\\.id=|trace_id=)${trace_id}(?:[^0-9a-f]|$)|session-${session}(?:[^0-9a-f-]|$)` != \"TaskStoreService/UpdateTask\" != \"request before normalization\" != \"request after normalization\" | line_format `{{ regexReplaceAll \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}\" __line__ \"<email>\" }}`",
+              "expr": "{namespace=~\"kagent|ate-system\"} |~ `(?:trace_id\":\"|trace\\.id=|trace_id=)0{0,31}${trace_id}(?:[^0-9a-f]|$)|session-${session}(?:[^0-9a-f-]|$)` != \"TaskStoreService/UpdateTask\" != \"request before normalization\" != \"request after normalization\" | line_format `{{ regexReplaceAll \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}\" __line__ \"<email>\" }}`",
               "legendFormat": "",
               "queryType": "range"
             }
@@ -2013,7 +2025,7 @@ data:
               "refId": "trace_id"
             },
             "definition": "query_result(sort_desc(topk(20, max by (service_name, trace_id) (agent_run_start_seconds))))",
-            "regex": "/service_name=\"(?<text>[^\"]+)\".*trace_id=\"(?<value>[0-9a-f]{32})\"/",
+            "regex": "/service_name=\"(?<text>[^\"]+)\".*trace_id=\"0*(?<value>[0-9a-f]{1,32})\"/",
             "refresh": 1,
             "sort": 0,
             "includeAll": false,
@@ -2032,10 +2044,10 @@ data:
               "type": "prometheus"
             },
             "query": {
-              "query": "query_result(max by (gen_ai_conversation_id) (last_over_time(agent_run_start_seconds{trace_id=\"$trace_id\"}[2d])))",
+              "query": "query_result(max by (gen_ai_conversation_id) (last_over_time(agent_run_start_seconds{trace_id=~\"0*$trace_id\"}[2d])))",
               "refId": "session"
             },
-            "definition": "query_result(max by (gen_ai_conversation_id) (last_over_time(agent_run_start_seconds{trace_id=\"$trace_id\"}[2d])))",
+            "definition": "query_result(max by (gen_ai_conversation_id) (last_over_time(agent_run_start_seconds{trace_id=~\"0*$trace_id\"}[2d])))",
             "regex": "/gen_ai_conversation_id=\"([^\"]+)\"/",
             "refresh": 2,
             "sort": 0,
@@ -4627,7 +4639,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum(increase(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[$__range]))) or vector(0)",
+              "expr": "sum by () (((last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[$__range]) - last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[1d] offset $__range)) >= 0) or last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[$__range])) or vector(0)",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -4688,7 +4700,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum(increase(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"resume\"}[$__range]))) or vector(0)",
+              "expr": "sum by () (((last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"resume\"}[$__range]) - last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"resume\"}[1d] offset $__range)) >= 0) or last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"resume\"}[$__range])) or vector(0)",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -4749,7 +4761,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum(increase(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"suspend\"}[$__range]))) or vector(0)",
+              "expr": "sum by () (((last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"suspend\"}[$__range]) - last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"suspend\"}[1d] offset $__range)) >= 0) or last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"suspend\"}[$__range])) or vector(0)",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -4810,7 +4822,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum(increase(ate_actor_crashes_total[7d]))) or vector(0)",
+              "expr": "sum by () (((last_over_time(ate_actor_crashes_total[7d]) - last_over_time(ate_actor_crashes_total[1d] offset 7d)) >= 0) or last_over_time(ate_actor_crashes_total[7d])) or vector(0)",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -4936,7 +4948,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum by (ate_actor_operation_name) (increase(ate_actor_lifecycle_operation_duration_seconds_count[$__interval])))",
+              "expr": "sum by (ate_actor_operation_name) (((last_over_time(ate_actor_lifecycle_operation_duration_seconds_count[$__interval] offset -$__interval) - last_over_time(ate_actor_lifecycle_operation_duration_seconds_count[1h])) >= 0) or last_over_time(ate_actor_lifecycle_operation_duration_seconds_count[$__interval] offset -$__interval))",
               "legendFormat": "{{ate_actor_operation_name}}",
               "instant": false,
               "range": true,
@@ -4997,7 +5009,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum by (agent) (label_replace(increase(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[$__interval]), \"agent\", \"$1\", \"ate_template_name\", \"(.+)-[0-9a-f]{12}\")))",
+              "expr": "sum by (agent) (label_replace(sum by (ate_template_name) (((last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[$__interval] offset -$__interval) - last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[1h])) >= 0) or last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{ate_actor_operation_name=\"create\"}[$__interval] offset -$__interval)), \"agent\", \"$1\", \"ate_template_name\", \"(.+)-[0-9a-f]{12}\"))",
               "legendFormat": "{{agent}}",
               "instant": false,
               "range": true,
@@ -5120,7 +5132,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum by (ate_actor_operation_name, error_type) (increase(ate_actor_lifecycle_operation_duration_seconds_count{error_type!=\"\"}[$__interval])))",
+              "expr": "sum by (ate_actor_operation_name, error_type) (((last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{error_type!=\"\"}[$__interval] offset -$__interval) - last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{error_type!=\"\"}[1h])) >= 0) or last_over_time(ate_actor_lifecycle_operation_duration_seconds_count{error_type!=\"\"}[$__interval] offset -$__interval))",
               "legendFormat": "{{ate_actor_operation_name}} {{error_type}}",
               "instant": false,
               "range": true,
@@ -5504,7 +5516,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum by (ate_imagecache_outcome) (increase(ate_imagecache_requests_total[$__range])))",
+              "expr": "sum by (ate_imagecache_outcome) (((last_over_time(ate_imagecache_requests_total[$__range]) - last_over_time(ate_imagecache_requests_total[1d] offset $__range)) >= 0) or last_over_time(ate_imagecache_requests_total[$__range]))",
               "legendFormat": "{{ate_imagecache_outcome}}",
               "instant": true,
               "range": false
@@ -6925,7 +6937,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum(increase(kagent_tools_mcp_invocations_total{namespace=\"kagent\"}[$__range]))) or vector(0)",
+              "expr": "sum by () (((last_over_time(kagent_tools_mcp_invocations_total{namespace=\"kagent\"}[$__range]) - last_over_time(kagent_tools_mcp_invocations_total{namespace=\"kagent\"}[1d] offset $__range)) >= 0) or last_over_time(kagent_tools_mcp_invocations_total{namespace=\"kagent\"}[$__range])) or vector(0)",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -6986,7 +6998,7 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "round(sum(increase(kagent_tools_mcp_invocations_failure_total{namespace=\"kagent\"}[$__range]))) or vector(0)",
+              "expr": "sum by () (((last_over_time(kagent_tools_mcp_invocations_failure_total{namespace=\"kagent\"}[$__range]) - last_over_time(kagent_tools_mcp_invocations_failure_total{namespace=\"kagent\"}[1d] offset $__range)) >= 0) or last_over_time(kagent_tools_mcp_invocations_failure_total{namespace=\"kagent\"}[$__range])) or vector(0)",
               "legendFormat": "",
               "instant": true,
               "range": false
@@ -7040,8 +7052,8 @@ data:
         },
         {
           "type": "timeseries",
-          "title": "Calls per minute, by tool",
-          "description": "kagent_tools_mcp_invocations_total per tool.",
+          "title": "Calls by tool",
+          "description": "kagent_tools_mcp_invocations_total per tool, counted per interval.",
           "datasource": {
             "type": "prometheus"
           },
@@ -7051,19 +7063,20 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "sum by (tool_name) (rate(kagent_tools_mcp_invocations_total{namespace=\"kagent\"}[$__rate_interval])) * 60",
+              "expr": "sum by (tool_name) (((last_over_time(kagent_tools_mcp_invocations_total{namespace=\"kagent\"}[$__interval] offset -$__interval) - last_over_time(kagent_tools_mcp_invocations_total{namespace=\"kagent\"}[1h])) >= 0) or last_over_time(kagent_tools_mcp_invocations_total{namespace=\"kagent\"}[$__interval] offset -$__interval))",
               "legendFormat": "{{tool_name}}",
               "instant": false,
-              "range": true
+              "range": true,
+              "interval": "15m"
             }
           ],
           "fieldConfig": {
             "defaults": {
               "unit": "short",
               "custom": {
-                "drawStyle": "line",
+                "drawStyle": "bars",
                 "lineWidth": 1,
-                "fillOpacity": 10,
+                "fillOpacity": 60,
                 "showPoints": "auto",
                 "spanNulls": false,
                 "stacking": {
@@ -7082,8 +7095,7 @@ data:
               "displayMode": "table",
               "placement": "right",
               "calcs": [
-                "lastNotNull",
-                "max"
+                "sum"
               ]
             },
             "tooltip": {
@@ -7101,8 +7113,8 @@ data:
         },
         {
           "type": "timeseries",
-          "title": "Failures per minute, by tool",
-          "description": "kagent_tools_mcp_invocations_failure_total per tool.",
+          "title": "Failures by tool",
+          "description": "kagent_tools_mcp_invocations_failure_total per tool, counted per interval.",
           "datasource": {
             "type": "prometheus"
           },
@@ -7112,24 +7124,25 @@ data:
                 "type": "prometheus"
               },
               "refId": "A",
-              "expr": "sum by (tool_name) (rate(kagent_tools_mcp_invocations_failure_total{namespace=\"kagent\"}[$__rate_interval])) * 60",
+              "expr": "sum by (tool_name) (((last_over_time(kagent_tools_mcp_invocations_failure_total{namespace=\"kagent\"}[$__interval] offset -$__interval) - last_over_time(kagent_tools_mcp_invocations_failure_total{namespace=\"kagent\"}[1h])) >= 0) or last_over_time(kagent_tools_mcp_invocations_failure_total{namespace=\"kagent\"}[$__interval] offset -$__interval))",
               "legendFormat": "{{tool_name}}",
               "instant": false,
-              "range": true
+              "range": true,
+              "interval": "15m"
             }
           ],
           "fieldConfig": {
             "defaults": {
               "unit": "short",
               "custom": {
-                "drawStyle": "line",
+                "drawStyle": "bars",
                 "lineWidth": 1,
-                "fillOpacity": 10,
+                "fillOpacity": 60,
                 "showPoints": "auto",
                 "spanNulls": false,
                 "stacking": {
                   "group": "A",
-                  "mode": "none"
+                  "mode": "normal"
                 }
               },
               "color": {
@@ -7144,8 +7157,7 @@ data:
               "displayMode": "table",
               "placement": "right",
               "calcs": [
-                "lastNotNull",
-                "max"
+                "sum"
               ]
             },
             "tooltip": {

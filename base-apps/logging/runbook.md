@@ -154,6 +154,8 @@ Grafana has no other way in: the login form and basic auth are off
   from the collector (`base-apps/tracing/docs.md`); if they are missing, check the collector
   is up and scraped (`tracing_spans_received_total{service_name="kagent-controller"}` grows).
   Tempo panels answer at most 24 h: a longer range makes them error.
+  With no run selected, the trace panel shows "An error occurred within the plugin": it has no
+  trace id to load.
 - **Fix:** run `scripts/agent-demo.sh` (three read-only agent runs) from the home network;
   numbers appear within a minute. A run's estimated cost exists only for runs after the
   collector change that stamps it.
@@ -170,8 +172,9 @@ opens on the newest run. It changes nothing in the cluster, sends no alert and s
 Edit `scripts/gen-agent-dashboards.py` and run it with `--repo-root .`; never hand-edit
 `grafana-dashboards-agents.yaml` (CI runs `--check`). A new dashboard needs a `DASHBOARDS` entry
 and a source in the `dashboards-agents` projected volume (`grafana-deployment.yaml`), which
-restarts Grafana. Read the collector's agent counters with `window_total()`, never `increase()`
-or `rate()`; ask Tempo only instant metrics queries (Grafana 11.6 cannot read Tempo 3.1's range
+restarts Grafana. Read counters of rare events (the collector's agent counters, Substrate's
+sessions and crashes, kagent-tools' calls) with `window_total()`, never `increase()` or `rate()`:
+those lose each new series' first value (a sandbox crash read 0). Ask Tempo only instant metrics queries (Grafana 11.6 cannot read Tempo 3.1's range
 responses); test new queries against the cluster before merging.
 
 ### Deploy / update
