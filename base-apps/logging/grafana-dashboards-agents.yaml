@@ -793,7 +793,7 @@ data:
         },
         {
           "type": "row",
-          "title": "Follow one request: ingress \u2192 kagent \u2192 Substrate sandbox \u2192 agent \u2192 model and tools",
+          "title": "Each hop of an agent request, all runs in the time range: ingress \u2192 kagent \u2192 Substrate sandbox \u2192 agent \u2192 model and tools",
           "id": 8,
           "collapsed": false,
           "gridPos": {
@@ -1486,6 +1486,19 @@ data:
           }
         },
         {
+          "type": "row",
+          "title": "One run, picked with Run at the top or a trace id below: its tokens, trace and logs",
+          "id": 15,
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 16
+          },
+          "panels": []
+        },
+        {
           "type": "table",
           "title": "Recent agent runs: click a trace id to follow it below",
           "description": "The newest agent runs in the dashboard's time range. Clicking a trace id loads that run's trace and logs below; the page opens on the newest run.",
@@ -1559,35 +1572,31 @@ data:
             "sortBy": []
           },
           "transformations": [],
-          "id": 15,
+          "id": 16,
           "gridPos": {
             "h": 7,
             "w": 24,
             "x": 0,
-            "y": 16
+            "y": 17
           }
         },
         {
           "type": "stat",
           "title": "This run: tokens and estimated cost",
-          "description": "The run's model calls (up to 100), summed: input tokens (cache reads included), output tokens, and the estimated cost at list prices.",
+          "description": "The run's model calls, summed: input tokens (cache reads included), output tokens, and the estimated cost at list prices. Read from the trace below.",
           "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
+            "type": "datasource",
+            "uid": "-- Dashboard --"
           },
           "targets": [
             {
               "datasource": {
-                "type": "tempo",
-                "uid": "tempo"
+                "type": "datasource",
+                "uid": "-- Dashboard --"
               },
               "refId": "A",
-              "queryType": "traceql",
-              "query": "{trace:id = \"${trace_id}\" && name=~\"generate_content .*\"} | select(span.gen_ai.usage.input_tokens, span.gen_ai.usage.output_tokens, span.agent.cost.estimate_usd)",
-              "filters": [],
-              "limit": 1,
-              "spss": 100,
-              "tableType": "spans"
+              "panelId": 21,
+              "withTransforms": false
             }
           ],
           "fieldConfig": {
@@ -1611,7 +1620,7 @@ data:
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "agent.cost.estimate_usd"
+                  "options": "cost_usd"
                 },
                 "properties": [
                   {
@@ -1631,7 +1640,7 @@ data:
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "gen_ai.usage.input_tokens"
+                  "options": "input_tokens"
                 },
                 "properties": [
                   {
@@ -1643,7 +1652,7 @@ data:
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "gen_ai.usage.output_tokens"
+                  "options": "output_tokens"
                 },
                 "properties": [
                   {
@@ -1671,15 +1680,27 @@ data:
           },
           "transformations": [
             {
-              "id": "filterFieldsByName",
+              "id": "concatenate",
               "options": {
-                "include": {
-                  "names": [
-                    "gen_ai.usage.input_tokens",
-                    "gen_ai.usage.output_tokens",
-                    "agent.cost.estimate_usd"
-                  ]
-                }
+                "frameNameMode": "drop"
+              }
+            },
+            {
+              "id": "filterByValue",
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "operationName",
+                    "config": {
+                      "id": "regex",
+                      "options": {
+                        "value": "^generate_content "
+                      }
+                    }
+                  }
+                ]
               }
             },
             {
@@ -1688,27 +1709,48 @@ data:
                 "fields": {},
                 "conversions": [
                   {
-                    "targetField": "gen_ai.usage.input_tokens",
+                    "targetField": "tags",
+                    "destinationType": "string"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "extractFields",
+              "options": {
+                "source": "tags",
+                "format": "regexp",
+                "regExp": "/^(?=(?:.*?\"value\":\"?(?<input_tokens>[0-9.eE+-]+)\"?,\"key\":\"gen_ai\\.usage\\.input_tokens\")?)(?=(?:.*?\"value\":\"?(?<output_tokens>[0-9.eE+-]+)\"?,\"key\":\"gen_ai\\.usage\\.output_tokens\")?)(?=(?:.*?\"value\":\"?(?<cost_usd>[0-9.eE+-]+)\"?,\"key\":\"agent\\.cost\\.estimate_usd\")?)/",
+                "replace": true
+              }
+            },
+            {
+              "id": "convertFieldType",
+              "options": {
+                "fields": {},
+                "conversions": [
+                  {
+                    "targetField": "input_tokens",
                     "destinationType": "number"
                   },
                   {
-                    "targetField": "gen_ai.usage.output_tokens",
+                    "targetField": "output_tokens",
                     "destinationType": "number"
                   },
                   {
-                    "targetField": "agent.cost.estimate_usd",
+                    "targetField": "cost_usd",
                     "destinationType": "number"
                   }
                 ]
               }
             }
           ],
-          "id": 16,
+          "id": 17,
           "gridPos": {
             "h": 4,
             "w": 12,
             "x": 0,
-            "y": 23
+            "y": 24
           }
         },
         {
@@ -1716,22 +1758,18 @@ data:
           "title": "Model calls",
           "description": "Calls to the model API in this run.",
           "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
+            "type": "datasource",
+            "uid": "-- Dashboard --"
           },
           "targets": [
             {
               "datasource": {
-                "type": "tempo",
-                "uid": "tempo"
+                "type": "datasource",
+                "uid": "-- Dashboard --"
               },
               "refId": "A",
-              "queryType": "traceql",
-              "query": "{trace:id = \"${trace_id}\" && name=~\"generate_content .*\"} | count_over_time()",
-              "filters": [],
-              "metricsQueryType": "instant",
-              "limit": 20,
-              "tableType": "traces"
+              "panelId": 21,
+              "withTransforms": false
             }
           ],
           "fieldConfig": {
@@ -1756,7 +1794,7 @@ data:
           "options": {
             "reduceOptions": {
               "calcs": [
-                "lastNotNull"
+                "count"
               ],
               "fields": "",
               "values": false
@@ -1768,12 +1806,48 @@ data:
             "orientation": "vertical",
             "wideLayout": true
           },
-          "id": 17,
+          "transformations": [
+            {
+              "id": "concatenate",
+              "options": {
+                "frameNameMode": "drop"
+              }
+            },
+            {
+              "id": "filterByValue",
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "operationName",
+                    "config": {
+                      "id": "regex",
+                      "options": {
+                        "value": "^generate_content "
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "duration"
+                  ]
+                }
+              }
+            }
+          ],
+          "id": 18,
           "gridPos": {
             "h": 4,
             "w": 4,
             "x": 12,
-            "y": 23
+            "y": 24
           }
         },
         {
@@ -1781,22 +1855,18 @@ data:
           "title": "Tool calls",
           "description": "Tool calls in this run.",
           "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
+            "type": "datasource",
+            "uid": "-- Dashboard --"
           },
           "targets": [
             {
               "datasource": {
-                "type": "tempo",
-                "uid": "tempo"
+                "type": "datasource",
+                "uid": "-- Dashboard --"
               },
               "refId": "A",
-              "queryType": "traceql",
-              "query": "{trace:id = \"${trace_id}\" && name=~\"execute_tool .*\" && span.gen_ai.tool.name != \"(merged tools)\"} | count_over_time()",
-              "filters": [],
-              "metricsQueryType": "instant",
-              "limit": 20,
-              "tableType": "traces"
+              "panelId": 21,
+              "withTransforms": false
             }
           ],
           "fieldConfig": {
@@ -1821,7 +1891,7 @@ data:
           "options": {
             "reduceOptions": {
               "calcs": [
-                "lastNotNull"
+                "count"
               ],
               "fields": "",
               "values": false
@@ -1833,12 +1903,48 @@ data:
             "orientation": "vertical",
             "wideLayout": true
           },
-          "id": 18,
+          "transformations": [
+            {
+              "id": "concatenate",
+              "options": {
+                "frameNameMode": "drop"
+              }
+            },
+            {
+              "id": "filterByValue",
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "operationName",
+                    "config": {
+                      "id": "regex",
+                      "options": {
+                        "value": "^execute_tool (?!\\(merged\\))"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "duration"
+                  ]
+                }
+              }
+            }
+          ],
+          "id": 19,
           "gridPos": {
             "h": 4,
             "w": 4,
             "x": 16,
-            "y": 23
+            "y": 24
           }
         },
         {
@@ -1846,22 +1952,18 @@ data:
           "title": "Agent turn",
           "description": "How long the agent's turn took.",
           "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
+            "type": "datasource",
+            "uid": "-- Dashboard --"
           },
           "targets": [
             {
               "datasource": {
-                "type": "tempo",
-                "uid": "tempo"
+                "type": "datasource",
+                "uid": "-- Dashboard --"
               },
               "refId": "A",
-              "queryType": "traceql",
-              "query": "{trace:id = \"${trace_id}\" && name=~\"invoke_agent .*\"} | max_over_time(duration)",
-              "filters": [],
-              "metricsQueryType": "instant",
-              "limit": 20,
-              "tableType": "traces"
+              "panelId": 21,
+              "withTransforms": false
             }
           ],
           "fieldConfig": {
@@ -1886,12 +1988,12 @@ data:
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "max_over_time"
+                  "options": "duration"
                 },
                 "properties": [
                   {
                     "id": "unit",
-                    "value": "s"
+                    "value": "ms"
                   }
                 ]
               }
@@ -1900,7 +2002,7 @@ data:
           "options": {
             "reduceOptions": {
               "calcs": [
-                "lastNotNull"
+                "max"
               ],
               "fields": "",
               "values": false
@@ -1912,12 +2014,48 @@ data:
             "orientation": "vertical",
             "wideLayout": true
           },
-          "id": 19,
+          "transformations": [
+            {
+              "id": "concatenate",
+              "options": {
+                "frameNameMode": "drop"
+              }
+            },
+            {
+              "id": "filterByValue",
+              "options": {
+                "type": "include",
+                "match": "any",
+                "filters": [
+                  {
+                    "fieldName": "operationName",
+                    "config": {
+                      "id": "regex",
+                      "options": {
+                        "value": "^invoke_agent "
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "filterFieldsByName",
+              "options": {
+                "include": {
+                  "names": [
+                    "duration"
+                  ]
+                }
+              }
+            }
+          ],
+          "id": 20,
           "gridPos": {
             "h": 4,
             "w": 4,
             "x": 20,
-            "y": 23
+            "y": 24
           }
         },
         {
@@ -1949,12 +2087,12 @@ data:
             "overrides": []
           },
           "options": {},
-          "id": 20,
+          "id": 21,
           "gridPos": {
             "h": 16,
             "w": 24,
             "x": 0,
-            "y": 27
+            "y": 28
           }
         },
         {
@@ -1972,7 +2110,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "{namespace=~\"kagent|ate-system\"} |~ `(?:trace_id\":\"|trace\\.id=|trace_id=)0{0,31}${trace_id}(?:[^0-9a-f]|$)|session-${session}(?:[^0-9a-f-]|$)` != \"TaskStoreService/UpdateTask\" != \"request before normalization\" != \"request after normalization\" | line_format `{{ regexReplaceAll \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}\" __line__ \"<email>\" }}`",
+              "expr": "{namespace=~\"kagent|ate-system\"} |= \"${trace_id}\" or \"session-${session}\" |~ `(?:trace_id\":\"|trace\\.id=|trace_id=)0{0,31}${trace_id}(?:[^0-9a-f]|$)|session-${session}(?:[^0-9a-f-]|$)` != \"TaskStoreService/UpdateTask\" != \"request before normalization\" != \"request after normalization\" | line_format `{{ regexReplaceAll \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}\" __line__ \"<email>\" }}`",
               "legendFormat": "",
               "queryType": "range"
             }
@@ -1991,12 +2129,12 @@ data:
             },
             "overrides": []
           },
-          "id": 21,
+          "id": 22,
           "gridPos": {
             "h": 10,
             "w": 24,
             "x": 0,
-            "y": 43
+            "y": 44
           }
         }
       ],

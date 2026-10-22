@@ -138,7 +138,8 @@ def test_datasources_follow_the_repo_convention():
     """Prometheus unpinned ({"type": "prometheus"}), Loki and Tempo by the uids the datasource file
     keeps stable. A panel that mixes datasources cannot resolve an unpinned Prometheus target
     (Grafana sends no query for it), so there, and only there, it names the hidden ${prometheus}
-    datasource variable, which defaults to the default Prometheus."""
+    datasource variable, which defaults to the default Prometheus. The Dashboard datasource (another
+    panel's results) only for the run's tiles (test_the_run_tiles_change_with_the_trace)."""
     ds = yaml.safe_load(next(d for d in yaml.safe_load_all(DEPLOY.read_text())
                              if d and d["kind"] == "ConfigMap")["data"]["datasources.yaml"])
     uids = {d["type"]: d["uid"] for d in ds["datasources"]}
@@ -147,6 +148,8 @@ def test_datasources_follow_the_repo_convention():
         mixed = p["datasource"] == gen.MIXED
         if src["type"] == "prometheus":
             assert src == (gen.PROM_IN_MIXED if mixed else {"type": "prometheus"}), (uid, p["title"])
+        elif src == gen.DASHBOARD_DS:
+            assert uid == "agent-platform" and p["datasource"] == src, p["title"]
         else:
             assert src["type"] in ("loki", "tempo") and src["uid"] == uids[src["type"]], (uid, p["title"])
     for uid, d in _dashboards().items():
@@ -292,6 +295,20 @@ def test_run_logs_match_the_run_and_nothing_when_empty():
     assert not re.search(empty, zero_id)
 
 
+def test_run_logs_check_for_the_ids_before_the_regex():
+    """Loki ran the regex on every kagent and Substrate line of the day: 18 s on its half CPU, the
+    last run's logs up meanwhile. A substring check first leaves it the few lines with either id
+    (3 s, the same lines, §B.41). Tempo's id (zeros stripped) is still a substring of the line's."""
+    expr = gen.RUN_LOGS
+    pre = '|= "${trace_id}" or "session-${session}"'
+    assert expr.index(pre) < expr.index("|~")
+    tid, sess = ZERO_LED.lstrip("0"), "01a16026-4ed5-7a36-b89e-b7f00405e755"
+    rx = _run_regex(tid, sess)
+    for line in (SESSION_LINE.replace("01a16026-4ed5-7a36-b89e-b7f00405e755", sess),
+                 '{"msg":"rpc completed","trace_id":"' + ZERO_LED + '"}', "request trace.id=" + ZERO_LED + " span.id=1"):
+        assert re.search(rx, line) and (tid in line or "session-" + sess in line), line
+
+
 # Tempo's search drops a trace id's leading zeros: the k8s-reader run 03468923… is 3468923… in the
 # recent-runs table, so a click on it loaded the trace but no logs, and the picker showed a raw id.
 ZERO_LED = "03468923ed5e78314b6d90ddb2323617"
@@ -316,6 +333,82 @@ def test_a_run_still_in_flight_is_not_called_no_runs():
     (table,) = [p for uid, p in _panels() if p["title"].startswith("Recent agent runs")]
     names = [o for o in table["fieldConfig"]["overrides"] if o["matcher"] == {"id": "byName", "options": "traceName"}]
     assert names and {"id": "noValue", "value": "—"} in names[0]["properties"]
+
+
+def _run_tiles():
+    landing = _dashboards()["agent-platform"]
+    (trace,) = [p for p in landing["panels"] if p["type"] == "traces"]
+    return trace, [p for p in landing["panels"] if p.get("datasource") == gen.DASHBOARD_DS]
+
+
+def test_the_run_tiles_change_with_the_trace():
+    """The run's tiles read the trace the trace panel loads: one Tempo lookup per picked run, and
+    the tiles change with the trace. Each tile's own TraceQL query scanned a day of S3 blocks, four
+    at once beside the lookup on a 1-CPU Tempo, so picking a run left the last run's numbers up for
+    about 10 s (§B.41)."""
+    trace, tiles = _run_tiles()
+    assert [t["query"] for t in trace["targets"]] == ["${trace_id}"]
+    assert sorted(p["title"] for p in tiles) == ["Agent turn", "Model calls", "This run: tokens and estimated cost",
+                                                  "Tool calls"]
+    for p in tiles:
+        assert p["targets"] == [{"datasource": gen.DASHBOARD_DS, "refId": "A", "panelId": trace["id"],
+                                 "withTransforms": False}], p["title"]
+    for uid, p, t in _targets():
+        assert "trace:id" not in _query(t), (uid, p["title"])
+
+
+def _span_filter(panel):
+    # Grafana filters by display name, and beside the node graph's frames the trace's field is
+    # "Trace operationName": the tiles found no span until the frames became one.
+    assert panel["transformations"][0] == {"id": "concatenate", "options": {"frameNameMode": "drop"}}
+    (f,) = [t for t in panel["transformations"] if t["id"] == "filterByValue"]
+    assert f["options"]["type"] == "include"
+    (cond,) = f["options"]["filters"]
+    assert cond["fieldName"] == "operationName" and cond["config"]["id"] == "regex"
+    return re.compile(cond["config"]["options"]["value"])
+
+
+def test_the_run_tiles_pick_their_spans_by_name():
+    """Span names as Tempo's trace view has them; kagent's parallel-call wrapper is
+    `execute_tool (merged)` (§B tool counts: 9 tool calls read 11 with it)."""
+    tiles = {p["title"]: p for p in _run_tiles()[1]}
+    model = "generate_content claude-sonnet-5-5"
+    tool, merged, turn = "execute_tool k8s_get_resources", "execute_tool (merged)", "invoke_agent homelab-knowledge"
+    for title, yes in (("This run: tokens and estimated cost", [model]), ("Model calls", [model]),
+                       ("Tool calls", [tool, "execute_tool get_file_contents"]), ("Agent turn", [turn])):
+        rx = _span_filter(tiles[title])
+        assert all(rx.search(n) for n in yes), title
+        assert not any(rx.search(n) for n in {model, tool, merged, turn} - set(yes)), title
+    assert tiles["Model calls"]["options"]["reduceOptions"]["calcs"] == ["count"]
+    assert tiles["Tool calls"]["options"]["reduceOptions"]["calcs"] == ["count"]
+    assert tiles["Agent turn"]["options"]["reduceOptions"]["calcs"] == ["max"]
+
+
+def _tags(*pairs):
+    # A span's tags as Grafana 11.6.16 hands them to the regex: convertFieldType to string
+    # JSON.stringify's the trace frame's [{value, key}] list, value first.
+    return json.dumps([{"value": v, "key": k} for k, v in pairs], separators=(",", ":"))
+
+
+def test_the_run_tokens_come_from_each_model_calls_tags():
+    """Sums of the three numbers the collector and the model client put on each model call."""
+    tile = next(p for p in _run_tiles()[1] if p["title"] == "This run: tokens and estimated cost")
+    (ext,) = [t["options"] for t in tile["transformations"] if t["id"] == "extractFields"]
+    assert ext["source"] == "tags" and ext["format"] == "regexp" and ext["replace"] is True
+    body = re.fullmatch(r"/(.*)/", ext["regExp"]).group(1)
+    assert "(?<=" not in body and "(?<!" not in body
+    rx = re.compile(body.replace("(?<", "(?P<"))
+    call = _tags(("gen_ai.operation.name", "generate_content"), ("gen_ai.usage.cache_read.input_tokens", 999),
+                 ("gen_ai.usage.input_tokens", 10034), ("gen_ai.usage.output_tokens", 317),
+                 ("gen_ai.usage.reasoning.output_tokens", 0), ("agent.cost.estimate_usd", 0.023238))
+    assert rx.search(call).groupdict() == {"input_tokens": "10034", "output_tokens": "317", "cost_usd": "0.023238"}
+    # No price for the model: no cost, the tokens still count. A number sent as text still reads.
+    assert rx.search(_tags(("gen_ai.usage.input_tokens", "52"), ("gen_ai.usage.output_tokens", 7))).groupdict() == {
+        "input_tokens": "52", "output_tokens": "7", "cost_usd": None}
+    names = [t for t in tile["transformations"] if t["id"] == "convertFieldType"]
+    assert names[0]["options"]["conversions"] == [{"targetField": "tags", "destinationType": "string"}]
+    assert {c["targetField"] for c in names[1]["options"]["conversions"]} == set(rx.groupindex)
+    assert tile["options"]["reduceOptions"]["calcs"] == ["sum"]
 
 
 # --- rare events ----------------------------------------------------------------------------------
