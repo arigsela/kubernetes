@@ -57,7 +57,9 @@ over a screen share. Design: `docs/superpowers/specs/2026-10-22-hk-demo-design.m
 A box shows ✓ only for what this request's own spans, log lines or metrics show; settings that
 hold for every request show ⚙. A box turns red with ✗ when what it saw failed: a tool call
 whose span ended in error (the Tools box gives the error, and its Evidence tab has the tool
-server's own line with the reason), or the waypoint refusing the call. Recent runs replays the app's own runs of the last 7 days from its
+server's own line with the reason), or the waypoint refusing the call. Evidence lines that
+report a failure are red: a line its component logged as an error, a request answered 5xx or
+429, an adapter refusing a tool, or a Gateway or waypoint status of 400 or more. Recent runs replays the app's own runs of the last 7 days from its
 log lines (`{namespace="hk-demo", container="app"} |= "hk-demo-run"`), `GetTask` and the trace.
 
 ## What never reaches the screen
