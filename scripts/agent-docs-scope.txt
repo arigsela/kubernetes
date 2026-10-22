@@ -28,3 +28,4 @@ slack-bridge
 beacon
 beacon-tenants
 tracing
+hk-demo
