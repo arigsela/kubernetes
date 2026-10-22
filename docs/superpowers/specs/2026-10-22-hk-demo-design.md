@@ -86,6 +86,14 @@ is something you can see.
     set, or Explore for that query
 - **Progress and answer:** a progress feed (status updates and tool-call names) and hk's answer once
   it's done.
+- **Arrangement:**
+  - The question bar, with Recent runs as a dropdown in it, is at the top.
+  - The map spans the full width beneath it, as four dashed groups joined by arrows.
+  - Below the map are two columns: the selected box's panel on the left, and the progress feed with
+    the answer under it on the right.
+  - Mockup: `2026-10-22-hk-demo-mockup.html` next to this file. It's an HTML fragment from the
+    brainstorm; its CSS classes come from the brainstorm frame, so read it for structure, not
+    styling.
 
 The Config tab shows the relevant excerpt of the manifest that sets the check, with its repo path.
 The excerpts are static text shipped with the app (see §10).
@@ -104,7 +112,7 @@ All queries use the in-cluster endpoints in §4. The `RUN_LOGS` query, the trace
 | kagent | Starts the agent run and keeps its session and task. | Spans `POST /agents/` and `SendMessage`; controller log lines carrying the trace id. | Agent template `homelab-knowledge` and its capability class `read` (admission policy). The eval gate's last result for the agent, from the `eval-gate` log event. It's shown as context, not a check: the gate doesn't apply to this caller. | run duration |
 | Sandbox | Substrate runs each session as an actor in a gVisor sandbox, snapshots it after the turn, and controls what it may reach. | Spans `ateapi.Control/CreateActor` (or a resume through the router span, `ate.router.resume`), `CreateActorEgressPolicy`, `GetActor`. Router and egress log lines for `session-<contextId>`. | An egress policy is set per actor. Its contents are not visible, and the page says so. | start or resume time |
 | Model API | Every call to the model, counted and priced. The API key is added by Substrate's egress proxy, so it never enters the sandbox. | `generate_content` spans: model, input, output and cache tokens, `agent.cost.estimate_usd`. Egress log lines `api.anthropic.com … /v1/messages 200` for the trace. | Key injection (`ate-secret://`, `base-apps/substrate/docs.md`). The cost is an estimate at list prices, computed by the collector (`transform/genai-cost`). | calls, tokens, $ for this request; today's total from `agent_cost_estimate_usd_total` via `window_total()` |
-| Tools | Each tool call, the server that ran it, and that it was allowed. | `execute_tool` spans (excluding `execute_tool (merged)`): tool name, arguments (truncated, masked), duration. MCP adapter `tools/call` log lines for the trace. | The adapter allow-list (`policies.mcpAuthorization`); kagent-tools RBAC (no Secrets); refused calls today (`REFUSED` query). | calls, time |
+| Tools | Each tool call, the server that ran it, and what allowed it. | Every call: its `execute_tool` span (excluding `execute_tool (merged)`): tool name, arguments (truncated, masked), duration. Calls to adapter-fronted servers (`agent-docs`, `brave-search`): also the adapter's `tools/call` log line, which is the allow-list check passing. | Adapter-fronted servers: the allow-list (`policies.mcpAuthorization`). Direct servers (`kagent-tool-server` k8s tools, `backstage-catalog`): allowed by the agent's tool list in its AgentTemplate and the capability admission policy. The server itself makes no per-call check, and the page says so. Also: kagent-tools RBAC (no Secrets), refused calls today (`REFUSED`). | calls, time |
 
 ### 3. How a question flows
 
@@ -135,10 +143,17 @@ All queries use the in-cluster endpoints in §4. The `RUN_LOGS` query, the trace
    - Prometheus supplies the totals.
    - Panels that are still waiting say what they are waiting for, for example "trace arrives about
      20 s after the answer".
-8. **Recent runs.** The list comes from `LATEST_RUNS` filtered to `service_name="homelab-knowledge"`,
-   which covers the last 48 h. Picking one runs steps 6 and 7 from its trace id and contextId.
-   - Runs made by other callers (ask-hk, the dispatcher) are listed too, with their caller masked.
-   - Their Gateway and Login boxes say "not this app's request".
+8. **Recent runs** are this app's own runs from the last 7 days (Tempo keeps traces 168 h).
+   - The list comes from the app's own run log lines in Loki (`{namespace="hk-demo"}` plus the run
+     marker). Each line carries the full email, `x-request-id`, contextId, taskId and trace id; the
+     email is masked when shown.
+   - Picking a run fetches its question and answer with `GetTask`, which works because the session
+     belongs to the app's service account.
+   - It rebuilds the progress feed from the trace's model-call and tool-call spans, then runs steps
+     6 and 7, so every box, Gateway and Login included, fills as for a live run.
+   - Runs by other callers (ask-hk, the dispatcher) are out of scope: their answers aren't stored
+     anywhere this app can read.
+   - Rehearse through this app, so a fallback run always exists.
 
 The app pushes events to the browser over one server-sent-events stream per question. The Send
 button stays disabled while a run is in flight.
@@ -260,6 +275,14 @@ button stays disabled while a run is in flight.
 - Matching the waypoint log line for the app's call by its `x-request-id`; check that the waypoint
   logs it. If not, the `source_principal` metric sample is the evidence.
 - The repo name, if `hk-demo` is taken.
+
+Settled after the design review (the author's calls; the owner can overrule them):
+
+- **Recent runs:** recent runs are this app's own, rebuilt with `GetTask` and the trace (§3,
+  step 8).
+- **Tools:** the Tools box marks a direct server's calls ⚙ rather than ✓ for "allowed". The box is ✓
+  once every call's observed evidence is in.
+- **Layout:** the arrangement under §1, with the brainstorm mockup kept next to this file.
 
 ## Risks
 

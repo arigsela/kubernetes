@@ -1,0 +1,80 @@
+<!-- hk demo map mockup (brainstorm v3, 2026-10-22). Fragment: CSS classes .mockup/.mockup-header/.mockup-body/.subtitle come from the brainstorm frame. Structure, not styling. -->
+<h2>The map, redrawn for the real path</h2>
+<p class="subtitle">The app now runs in the cluster and calls hk under its own service account, so the route changes. Eight clickable boxes in four groups. The panel shows the new "Identity check" box selected: the two identities.</p>
+
+<style>
+  .m { font: 12px/1.4 system-ui, sans-serif; color: inherit; }
+  .m .box { border: 1px solid rgba(127,127,127,.45); border-radius: 6px; padding: 5px 7px; margin: 3px 0; }
+  .m .node { text-align: center; }
+  .m .on { border-color: #3b82f6; background: rgba(59,130,246,.10); }
+  .m .sel { border: 2px solid #f59e0b; background: rgba(245,158,11,.14); font-weight: 600; }
+  .m .ok { color: #16a34a; font-weight: 600; }
+  .m .cfg { color: #6b7280; font-weight: 600; }
+  .m .dim { opacity: .65; }
+  .m .row { display: flex; gap: 4px; align-items: stretch; }
+  .m .grp { flex: 1; border: 1px dashed rgba(127,127,127,.5); border-radius: 8px; padding: 4px; min-width: 0; }
+  .m .grp > .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; opacity: .7; text-align: center; }
+  .m .arrow { align-self: center; opacity: .55; }
+  .m .mono { font-family: ui-monospace, monospace; font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .m .tabs { margin: 6px 0 2px; }
+  .m .tabs span { display:inline-block; padding: 2px 7px; border-bottom: 2px solid transparent; font-size: 11px; }
+  .m .tabs span.s { border-color: #f59e0b; font-weight: 600; }
+  .m .what { font-style: italic; margin-bottom: 4px; }
+  .m h5 { margin: 6px 0 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
+  .m .two { display: flex; gap: 8px; }
+  .m .two > div { flex: 1; }
+</style>
+
+<div class="mockup">
+  <div class="mockup-header">hk-demo.arigsela.com</div>
+  <div class="mockup-body"><div class="m">
+    <div class="box"><b>Ask hk:</b> "Which apps in the cluster have no runbook?" <span class="dim">· Send · Recent runs ▾</span></div>
+
+    <div class="row">
+      <div class="grp"><div class="lbl">Front door</div>
+        <div class="box node on">Gateway <span class="ok">✓</span></div>
+        <div class="box node on">Login <span class="ok">✓</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="grp"><div class="lbl">This app</div>
+        <div class="box node on">hk demo <span class="ok">✓</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="grp"><div class="lbl">Agent platform</div>
+        <div class="box node sel">Identity check ✓</div>
+        <div class="box node on">kagent <span class="ok">✓</span></div>
+        <div class="box node on">Sandbox <span class="ok">✓</span></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="grp"><div class="lbl">Outside calls</div>
+        <div class="box node on">Model API <span class="ok">✓</span></div>
+        <div class="box node on">Tools <span class="ok">✓</span></div>
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="what">Before kagent accepts a call, the service mesh checks who is calling. Here that is a workload, not a person: the person was checked at the front door.</div>
+      <div class="two">
+        <div>
+          <h5>The person</h5>
+          <div><span class="ok">✓</span> a••••@gmail.com logged in with Dex</div>
+          <div><span class="ok">✓</span> on the app's allowed-emails list</div>
+          <div class="dim">recorded by the app with this run</div>
+        </div>
+        <div>
+          <h5>The workload</h5>
+          <div><span class="ok">✓</span> token for service account hk-demo/hk-demo</div>
+          <div><span class="ok">✓</span> signed by the cluster, audience "kagent"</div>
+          <div><span class="ok">✓</span> the agent's spans say <span class="mono">enduser.id = …:hk-demo:hk-demo</span></div>
+        </div>
+      </div>
+      <div style="margin-top:4px"><span class="cfg">⚙</span> <span class="dim">Configured, not observed per request: only the "kubernetes" Dex client and cluster service accounts are accepted.</span></div>
+      <div class="tabs"><span class="s">Evidence (3)</span><span>Trace spans</span><span>Config</span></div>
+      <div class="mono">waypoint · POST /agents/kagent/homelab-knowledge 200 · source …/ns/hk-demo/sa/hk-demo</div>
+      <div class="mono">span a2a.request · enduser.id=system:serviceaccount:hk-demo:hk-demo · task 01a1…</div>
+    </div>
+
+    <div class="dim" style="margin-top:6px">Other panels: <b>Gateway</b> IP allow-list and its access-log line · <b>Login</b> Dex + allowed emails · <b>hk demo</b> who asked and the ids it got back · <b>kagent</b> agent, version, eval gate, capability class · <b>Sandbox</b> session started or resumed, egress policy, snapshot after the turn · <b>Model API</b> each call's tokens and cost, and the API key added by the egress proxy so it never enters the sandbox · <b>Tools</b> each call, its server, the allow-list.</div>
+  </div></div>
+</div>
+<p class="subtitle">Grey ⚙ lines are settings that hold for every request; green ✓ lines are things this request's logs, trace or metrics show.</p>
