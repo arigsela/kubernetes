@@ -15,7 +15,7 @@ metadata:
   tags: [fastapi, agents, oauth2-proxy, observability]
 spec:
   type: service
-  lifecycle: experimental
+  lifecycle: production
   owner: group:default/platform
   system: default/platform-observability
   dependsOn:
