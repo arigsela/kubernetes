@@ -1,0 +1,27 @@
+# Structured facts for hk-demo. Authoritative for owner, dependencies,
+# namespace and lifecycle; the markdown docs do not restate them.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: hk-demo
+  namespace: hk-demo
+  description: One question to the homelab-knowledge agent, shown end to end (checks, cost, logs, trace)
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=hk-demo'
+    backstage.io/kubernetes-namespace: hk-demo
+    github.com/project-slug: arigsela/hk-demo
+  tags: [fastapi, agents, oauth2-proxy, observability]
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/platform
+  system: default/platform-observability
+  dependsOn:
+    - component:kagent/kagent
+    - component:ate-system/substrate
+    - component:logging/logging
+    - component:tracing/tracing
+    - component:dex/dex
+    - resource:vault/vault
