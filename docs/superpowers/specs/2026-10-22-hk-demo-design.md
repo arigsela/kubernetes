@@ -107,7 +107,7 @@ All queries use the in-cluster endpoints in §4. The `RUN_LOGS` query, the trace
 |---|---|---|---|---|
 | Gateway | The front door; it decides who may reach the platform at all. | The Istio ingress access-log line for the page's request to `hk-demo.arigsela.com`, matched by the `x-request-id` the app received. Shows status, duration and the client IP masked to /24. | The `gateway-allow` rule for the host (`base-apps/istio-ingress/authorizationpolicy.yaml`); TLS certificate. | time at the Gateway |
 | Login | Who the person is. | oauth2-proxy passed `X-Forwarded-Email` (shown masked), as seen by the app on the request. | Dex client `hk-demo`; allowed-emails list (count only); confidential client with PKCE. | — |
-| hk demo | The app: records who asked and calls the agent for them. | The app's own log line for the run: masked email, question length, contextId, taskId, trace id. | Calls kagent only with its service-account token; binds 127.0.0.1 behind the sidecar. | time to the agent's first event |
+| hk demo | The app: records who asked and calls the agent for them. | The app's own log line for the run: email (masked on screen), question, contextId, taskId, trace id. | Calls kagent only with its service-account token; binds 127.0.0.1 behind the sidecar. | time to the agent's first event |
 | Identity check | The mesh checks which workload is calling before kagent sees the call. Here that is a workload, not a person: the person was checked at the front door. | The waypoint access log or the `istio_requests_total{reporter="waypoint"}` sample with `source_principal …/ns/hk-demo/sa/hk-demo`. `enduser.id = system:serviceaccount:hk-demo:hk-demo` on the `a2a.request` span. | RequestAuthentication `kagent-callers`: only Dex audience `kubernetes` and cluster service-account tokens with audience `kagent`. AuthorizationPolicy `kagent-controller`. | — |
 | kagent | Starts the agent run and keeps its session and task. | Spans `POST /agents/` and `SendMessage`; controller log lines carrying the trace id. | Agent template `homelab-knowledge` and its capability class `read` (admission policy). The eval gate's last result for the agent, from the `eval-gate` log event. It's shown as context, not a check: the gate doesn't apply to this caller. | run duration |
 | Sandbox | Substrate runs each session as an actor in a gVisor sandbox, snapshots it after the turn, and controls what it may reach. | Spans `ateapi.Control/CreateActor` (or a resume through the router span, `ate.router.resume`), `CreateActorEgressPolicy`, `GetActor`. Router and egress log lines for `session-<contextId>`. | An egress policy is set per actor. Its contents are not visible, and the page says so. | start or resume time |
@@ -145,10 +145,10 @@ All queries use the in-cluster endpoints in §4. The `RUN_LOGS` query, the trace
      20 s after the answer".
 8. **Recent runs** are this app's own runs from the last 7 days (Tempo keeps traces 168 h).
    - The list comes from the app's own run log lines in Loki (`{namespace="hk-demo"}` plus the run
-     marker). Each line carries the full email, `x-request-id`, contextId, taskId and trace id; the
-     email is masked when shown.
-   - Picking a run fetches its question and answer with `GetTask`, which works because the session
-     belongs to the app's service account.
+     marker). Each line carries the full email, the question (emails masked), `x-request-id`,
+     contextId, taskId and trace id; the email is masked when shown.
+   - Picking a run takes the question from that line and fetches the answer with `GetTask`, which
+     works because the session belongs to the app's service account.
    - It rebuilds the progress feed from the trace's model-call and tool-call spans, then runs steps
      6 and 7, so every box, Gateway and Login included, fills as for a live run.
    - Runs by other callers (ask-hk, the dispatcher) are out of scope: their answers aren't stored
