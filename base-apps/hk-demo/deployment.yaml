@@ -16,6 +16,10 @@ metadata:
     app.kubernetes.io/name: hk-demo
 spec:
   replicas: 1   # one in-memory run at a time (the page's "a question is already running")
+  # Recreate, not RollingUpdate: during a rolling update two pods serve, and a page following a
+  # run on the old pod can be routed to the new one, which does not have it in memory.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: hk-demo
@@ -35,7 +39,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/hk-demo:v0.1.2@sha256:c2e4285b3d802fdf51e6f424494e376636d5fd91fe0c74959d2d0e9d1502904f
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/hk-demo:v0.1.3@sha256:04e157fd360e5c24d633b874cd30402ce22fbb08afe2bfdfb47c1026e11220ab
           env:
             - name: HK_AGENT
               value: kagent/homelab-knowledge
