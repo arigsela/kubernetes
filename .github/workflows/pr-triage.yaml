@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: arigsela/claude-agents/pr-triage@ac3367d4088c816739d85c818f970d0a588505dd
+      - uses: arigsela/claude-agents/pr-triage@2ef37029cd579caf3c97c80e9c07557d3b38f81a
         env:
           GH_TOKEN: ${{ github.token }}
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
