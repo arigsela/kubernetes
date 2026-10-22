@@ -1,0 +1,25 @@
+# hk demo (§T.136): one question to kagent/homelab-knowledge, shown end to end — what each
+# platform piece checked, its cost, its logs and its trace. App: arigsela/hk-demo.
+# Design: docs/superpowers/specs/2026-10-22-hk-demo-design.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: hk-demo
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/hk-demo
+    directory:
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hk-demo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

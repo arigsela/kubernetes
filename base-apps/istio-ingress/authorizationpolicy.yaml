@@ -271,6 +271,21 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
+    # hk-demo — restricted (§T.136). One question to an agent, shown end to end; each question
+    # costs a model call. This allow-list is the first layer; oauth2-proxy + Dex with a one-email
+    # allow-list is the second.
+    - to:
+        - operation:
+            hosts:
+              - hk-demo.arigsela.com
+              - hk-demo.arigsela.com:*
+      from:
+        - source:
+            ipBlocks:
+              - 76.97.4.210/32
+              - 170.85.56.189/32
+              - 170.85.130.202/32
+              - 104.28.177.82/32
     # homepage — restricted. The dashboard enumerates every service in the
     # homelab and Homepage itself ships no authentication (upstream states none
     # is planned), so the allow-list is the ONLY control here.

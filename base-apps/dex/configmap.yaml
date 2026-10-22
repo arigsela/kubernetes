@@ -132,6 +132,16 @@ data:
         redirectURIs:
           - https://dispatcher.arigsela.com/oauth2/callback
 
+      # hk-demo, added 2026-10-22 (§T.136): the hk demo page. CONFIDENTIAL with PKCE, the same
+      # oauth2-proxy sidecar shape as dispatcher. The sidecar's authenticated-emails-file
+      # (k8s-secrets/hk-demo, never committed) is the allow-list; this client grants nothing by
+      # itself (the page calls kagent with its own service account, not this login).
+      - id: hk-demo
+        name: hk demo
+        secretEnv: HK_DEMO_CLIENT_SECRET
+        redirectURIs:
+          - https://hk-demo.arigsela.com/oauth2/callback
+
       # beacon, added 2026-10-18 (beacon §T.39; app repo arigsela/beacon, private).
       # PUBLIC + PKCE for the same reason as argocd and kubernetes: the client is a
       # single-page app, so the code exchange happens in the browser and a client

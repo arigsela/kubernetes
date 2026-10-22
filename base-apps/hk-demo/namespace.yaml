@@ -1,0 +1,11 @@
+# In the mesh, so the app's calls reach kagent through the waypoint, which verifies its
+# service-account token and sets the caller to system:serviceaccount:hk-demo:hk-demo (V91).
+# Also listed in base-apps/kagent/network-policy-controller.yaml.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hk-demo
+  labels:
+    app.kubernetes.io/part-of: agent-guardrails
+    istio.io/dataplane-mode: ambient

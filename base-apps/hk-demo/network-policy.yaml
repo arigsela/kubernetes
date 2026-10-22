@@ -1,0 +1,25 @@
+# Only the ingress Gateway reaches the pod, and only the oauth2-proxy sidecar (4180), over HBONE
+# (15008) as the namespace is in the mesh. The app itself listens on 127.0.0.1:8000 only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hk-demo-ingress
+  namespace: hk-demo
+  labels:
+    app: hk-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: hk-demo
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - port: 4180
+          protocol: TCP
+        - port: 15008
+          protocol: TCP

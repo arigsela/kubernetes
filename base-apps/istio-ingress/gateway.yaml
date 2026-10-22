@@ -258,6 +258,19 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+    - name: https-hk-demo
+      protocol: HTTPS
+      port: 443
+      hostname: hk-demo.arigsela.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: hk-demo-tls
+            namespace: hk-demo
+      allowedRoutes:
+        namespaces:
+          from: All
     - name: https-homepage
       protocol: HTTPS
       port: 443
