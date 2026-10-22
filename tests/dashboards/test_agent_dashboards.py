@@ -219,12 +219,21 @@ def test_counters_the_dashboards_read_exist_in_the_collector():
     assert used and used <= known, used - known
 
 
+# Counters of rare events: most of their series are new inside any window (a new agent or agent
+# version, tool, model or pod), and increase() never counts a series' first value. Live on
+# 2026-10-22 it read 0 sandbox crashes in 7 days for 2, 4 sessions started in 24 hours for 16
+# and 2 kagent-tools calls for 6. Istio's request counters are busy and long-lived: increase()
+# was within 1% there.
+RARE_COUNTERS = (r"agent_[a-z_]+|traces_service_graph_[a-z_]+|ate_actor_crashes_total"
+                 r"|ate_actor_lifecycle_operation_duration_seconds_count|ate_imagecache_requests_total"
+                 r"|kagent_tools_mcp_invocations(?:_failure)?_total")
+
+
 def test_rare_counters_are_never_read_with_increase_or_rate():
-    """A model call is rare: increase() never counts a new series' first value, which is most of
-    them. window_total() does (tested through promtool below)."""
+    """window_total() counts a new series' first value (tested through promtool below)."""
     for uid, p, t in _targets():
         q = _query(t)
-        for m in re.findall(r"(?:increase|rate)\((agent_[a-z_]+|traces_service_graph_[a-z_]+)", q):
+        for m in re.findall(rf"(?:increase|rate)\(({RARE_COUNTERS})\b", q):
             pytest.fail(f"{uid} / {p['title']}: {m} read with increase/rate")
 
 
@@ -233,7 +242,7 @@ def test_range_panels_count_forward_so_the_last_minutes_show():
     the demo's runs of the last few minutes."""
     for uid, p, t in _targets():
         q = _query(t)
-        if t["datasource"]["type"] == "prometheus" and t.get("range") and re.search(r"\bagent_[a-z_]+_total", q):
+        if t["datasource"]["type"] == "prometheus" and t.get("range") and re.search(rf"\b(?:{RARE_COUNTERS})\b", q):
             assert "offset -$__interval" in q, (uid, p["title"])
 
 
@@ -279,6 +288,34 @@ def test_run_logs_match_the_run_and_nothing_when_empty():
         assert not re.search(empty, line), line
     other = _run_regex("0" * 32, "")
     assert not re.search(other, CONTROLLER_LINE)
+    zero_id = 'request grpc.status=0 trace.id=' + "0" * 32 + ' span.id=0000000000000000'
+    assert not re.search(empty, zero_id)
+
+
+# Tempo's search drops a trace id's leading zeros: the k8s-reader run 03468923… is 3468923… in the
+# recent-runs table, so a click on it loaded the trace but no logs, and the picker showed a raw id.
+ZERO_LED = "03468923ed5e78314b6d90ddb2323617"
+
+
+def test_a_run_whose_id_starts_with_zero_keeps_its_logs():
+    v = {x["name"]: x for x in _dashboards()["agent-platform"]["templating"]["list"]}
+    rx = v["trace_id"]["regex"].strip("/").replace("(?<", "(?P<")
+    line = '{service_name="k8s-reader", trace_id="' + ZERO_LED + '"} 1792632623.8 1792632700000'
+    assert re.search(rx, line).group("value") == ZERO_LED.lstrip("0")
+    assert 'trace_id=~"0*$trace_id"' in v["session"]["definition"]
+    rx = _run_regex(ZERO_LED.lstrip("0"), "")
+    for line in ('{"msg":"rpc completed","trace_id":"' + ZERO_LED + '"}',
+                 "request gateway=default/default trace.id=" + ZERO_LED + " span.id=71abe88b"):
+        assert re.search(rx, line), line
+    assert not re.search(rx, '{"trace_id":"1' + ZERO_LED[1:] + '"}')
+
+
+def test_a_run_still_in_flight_is_not_called_no_runs():
+    """Its root span (the ingress call) ends last, so for a minute the table has no name for it:
+    the table's empty text must not fill that cell."""
+    (table,) = [p for uid, p in _panels() if p["title"].startswith("Recent agent runs")]
+    names = [o for o in table["fieldConfig"]["overrides"] if o["matcher"] == {"id": "byName", "options": "traceName"}]
+    assert names and {"id": "noValue", "value": "—"} in names[0]["properties"]
 
 
 # --- rare events ----------------------------------------------------------------------------------

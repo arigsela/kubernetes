@@ -77,18 +77,21 @@ def by_agent(expr):
 
 
 WAYPOINT = 'reporter="waypoint", destination_workload_namespace="kagent"'
+SESSIONS = "ate_actor_lifecycle_operation_duration_seconds_count"  # Substrate: one sample per operation
 
 
 def window_total(metric, by, window, forward=False):
-    """What a counter of the collector's (agent_tokens_input_total, ...) added within `window`.
+    """What a counter of rare events added within `window`: the collector's (agent_tokens_input_total,
+    ...), Substrate's sessions and crashes, kagent-tools' calls.
 
-    Not increase(): a model call is a rare event, so many series are new inside the window and
-    increase() never counts a series' first value. Per series: its last value in the window minus
-    its value just before, or all of its last value when it has none before (a new series: a new
-    agent or model, or a collector pod that replaced the old one) or when it fell (it restarted
-    from zero: the container restarted in place, or it sat idle past the collector's 47 hours).
-    The collector exposes each series for 48 hours after its last update, so the value before a
-    window is there; a scrape gap longer than the lookback counts that series' whole total once.
+    Not increase(): a model call, a session or a crash is a rare event, so many series are new
+    inside the window (a new agent or agent version, tool, model or pod) and increase() never
+    counts a series' first value. Per series: its last value in the window minus its value just
+    before, or all of its last value when it has none before (a new series) or when it fell (it
+    restarted from zero: the container restarted in place, or it sat idle past the collector's 47
+    hours). The collector exposes each series for 48 hours after its last update, and Substrate and
+    kagent-tools for as long as their pod runs, so the value before a window is there; a scrape
+    gap longer than the lookback counts that series' whole total once.
     tests/dashboards/test_agent_dashboards.py runs this through promtool.
 
     forward=True counts the window that starts at the evaluation time, for range queries: Grafana
@@ -357,7 +360,7 @@ LATEST_RUNS = 'sort_desc(topk(20, max by (service_name, trace_id) (agent_run_sta
 # carry its session. Each id is anchored, so an empty variable (no run in 2 days) matches no line
 # that carries a real id; it could match one whose trace id is empty, which kagent and Substrate
 # do not write.
-RUN_LOG_REGEX = ('(?:trace_id":"|trace\\.id=|trace_id=)${trace_id}(?:[^0-9a-f]|$)'
+RUN_LOG_REGEX = ('(?:trace_id":"|trace\\.id=|trace_id=)0{0,31}${trace_id}(?:[^0-9a-f]|$)'
                  '|session-${session}(?:[^0-9a-f-]|$)')
 RUN_LOGS = ('{namespace=~"kagent|ate-system"} |~ `' + RUN_LOG_REGEX + '`'
             ' != "TaskStoreService/UpdateTask" != "request before normalization"'
@@ -406,9 +409,9 @@ def landing():
             names={"A": "requests / min", "B": "5xx"}, units={"A": "short", "B": "percent"},
             graph=True, decimals=1, link=("agent-traffic", "Agent Traffic"))),
         (8, stat("Sandboxes", [
-            prom('round(sum(increase(ate_actor_lifecycle_operation_duration_seconds_count'
-                 '{ate_actor_operation_name="create"}[$__interval])))', ref="A", interval="5m"),
-            prom(f"round(sum(increase(ate_actor_crashes_total[{RARE}]))) or vector(0)", ref="B", instant=True)],
+            prom(window_total(f'{SESSIONS}{{ate_actor_operation_name="create"}}', "", "$__interval", forward=True),
+                 ref="A", interval="5m"),
+            prom(window_total("ate_actor_crashes_total", "", RARE) + " or vector(0)", ref="B", instant=True)],
             "Agent sessions Substrate started (each a gVisor sandbox) and sandbox crashes in 7 days.",
             names={"A": "sessions started", "B": "crashes (7 d)"}, calcs="sum", graph=True,
             link=("agent-sandboxes", "Sandboxes"))),
@@ -440,8 +443,8 @@ def landing():
          "Every call into kagent's controller (people, Slack, the dispatcher, the eval gate, kagent's UI) "
          "and its p95.", {"B": "ms"}),
         ("Sandbox start (Substrate)", [
-            prom('round(sum(increase(ate_actor_lifecycle_operation_duration_seconds_count'
-                 '{ate_actor_operation_name=~"create|resume"}[$__range])))', ref="A", instant=True),
+            prom(window_total(f'{SESSIONS}{{ate_actor_operation_name=~"create|resume"}}', "", "$__range"),
+                 ref="A", instant=True),
             prom('histogram_quantile(0.95, sum by (le) (rate(ate_actor_lifecycle_operation_duration_seconds_bucket'
                  '{ate_actor_operation_name=~"create|resume"}[$__range])))', ref="B", instant=True)],
          "Sessions Substrate created or resumed (a session sleeps between turns, snapshotted) and the "
@@ -471,7 +474,9 @@ def landing():
         "trace and logs below; the page opens on the newest run.",
         overrides=[{"matcher": {"id": "byName", "options": "traceID"}, "properties": [
             {"id": "links", "value": [{"title": "Follow this run",
-                                       "url": "/d/agent-platform?var-trace_id=${__value.raw}&${__url_time_range}"}]}]}],
+                                       "url": "/d/agent-platform?var-trace_id=${__value.raw}&${__url_time_range}"}]}]},
+                   # A run still in flight: its root span (the ingress call) ends last.
+                   {"matcher": {"id": "byName", "options": "traceName"}, "properties": [{"id": "noValue", "value": "—"}]}],
         no_value="No agent runs in this time range"))])
 
     run = 'trace:id = "${trace_id}"'
@@ -514,17 +519,17 @@ def landing():
         {"type": "query", "name": "trace_id", "label": "Run", "datasource": PROM,
          "query": {"query": f"query_result({LATEST_RUNS})", "refId": "trace_id"},
          "definition": f"query_result({LATEST_RUNS})",
-         "regex": '/service_name="(?<text>[^"]+)".*trace_id="(?<value>[0-9a-f]{32})"/',
+         "regex": '/service_name="(?<text>[^"]+)".*trace_id="0*(?<value>[0-9a-f]{1,32})"/',
          "refresh": 1, "sort": 0, "includeAll": False, "multi": False, "allowCustomValue": True,
          "current": {}, "options": [], "hide": 0,
          "description": "The newest agent runs of the last 2 days, newest first (agent_run_start_seconds). "
                         "Read when the page loads."},
         {"type": "query", "name": "session", "label": "Session", "datasource": PROM,
          "query": {"query": 'query_result(max by (gen_ai_conversation_id) '
-                            '(last_over_time(agent_run_start_seconds{trace_id="$trace_id"}[2d])))',
+                            '(last_over_time(agent_run_start_seconds{trace_id=~"0*$trace_id"}[2d])))',
                    "refId": "session"},
          "definition": 'query_result(max by (gen_ai_conversation_id) '
-                       '(last_over_time(agent_run_start_seconds{trace_id="$trace_id"}[2d])))',
+                       '(last_over_time(agent_run_start_seconds{trace_id=~"0*$trace_id"}[2d])))',
          "regex": '/gen_ai_conversation_id="([^"]+)"/', "refresh": 2, "sort": 0, "includeAll": False,
          "multi": False, "current": {}, "options": [], "hide": 2},
     ]
@@ -735,26 +740,31 @@ def traffic():
 def sandboxes():
     b = Layout()
     op = "ate_actor_lifecycle_operation_duration_seconds"
-    creates = f'increase({op}_count{{ate_actor_operation_name="create"}}[$__interval])'
+    creates = window_total(f'{SESSIONS}{{ate_actor_operation_name="create"}}', "ate_template_name", "$__interval",
+                           forward=True)
+
+    def count(operation):
+        return prom(window_total(f'{SESSIONS}{{ate_actor_operation_name="{operation}"}}', "", "$__range")
+                    + " or vector(0)", instant=True)
     b.row("Sessions: each agent conversation is a Substrate actor in a gVisor sandbox, snapshotted between turns")
     b.line(4, [
-        (5, stat("Sessions started", [prom(f'round(sum(increase({op}_count{{ate_actor_operation_name="create"}}[$__range]))) or vector(0)', instant=True)],
+        (5, stat("Sessions started", [count("create")],
                  "New sessions (CreateActor).")),
-        (5, stat("Resumed", [prom(f'round(sum(increase({op}_count{{ate_actor_operation_name="resume"}}[$__range]))) or vector(0)', instant=True)],
+        (5, stat("Resumed", [count("resume")],
                  "A sleeping session woken from its snapshot for the next turn.")),
-        (5, stat("Suspended", [prom(f'round(sum(increase({op}_count{{ate_actor_operation_name="suspend"}}[$__range]))) or vector(0)', instant=True)],
+        (5, stat("Suspended", [count("suspend")],
                  "Sessions snapshotted and stopped after a turn.")),
-        (4, stat("Crashes (7 d)", [prom(f"round(sum(increase(ate_actor_crashes_total[{RARE}]))) or vector(0)", instant=True)],
+        (4, stat("Crashes (7 d)", [prom(window_total("ate_actor_crashes_total", "", RARE) + " or vector(0)", instant=True)],
                  "Sandboxes that died while running.", steps=[("green", None), ("red", 1)])),
         (5, stat("Workers", [prom("sum by (ate_worker_state) (ate_workerpool_workers)", "{{ate_worker_state}}", instant=True)],
                  "Worker pods in the pool by state: idle, partial (some sandboxes), at capacity, unschedulable.",
                  series_names=True)),
     ])
     b.line(8, [
-        (12, ts("Lifecycle operations", [prom(f"round(sum by (ate_actor_operation_name) (increase({op}_count[$__interval])))",
+        (12, ts("Lifecycle operations", [prom(window_total(SESSIONS, "ate_actor_operation_name", "$__interval", forward=True),
                                                        "{{ate_actor_operation_name}}", interval="15m")],
                 "create, resume, suspend, delete.", bars=True, stack=True, calcs=("sum",))),
-        (12, ts("Sessions started per agent", [prom("round(sum by (agent) (" + by_agent(creates) + "))",
+        (12, ts("Sessions started per agent", [prom("sum by (agent) (" + by_agent(creates) + ")",
                                                     "{{agent}}", interval="15m")],
                 "Every agent, docs-checker included (it runs in Substrate though it sends no traces).",
                 bars=True, stack=True, calcs=("sum",))),
@@ -763,7 +773,8 @@ def sandboxes():
         (12, ts("Operation p95", [prom(f"histogram_quantile(0.95, sum by (ate_actor_operation_name, le) (rate({op}_bucket[1h])))",
                                        "{{ate_actor_operation_name}}", interval="5m")],
                 "Over the previous hour.", unit="s")),
-        (12, ts("Operation errors", [prom(f'round(sum by (ate_actor_operation_name, error_type) (increase({op}_count{{error_type!=""}}[$__interval])))',
+        (12, ts("Operation errors", [prom(window_total(f'{SESSIONS}{{error_type!=""}}', "ate_actor_operation_name, error_type",
+                                                    "$__interval", forward=True),
                                           "{{ate_actor_operation_name}} {{error_type}}", interval="15m")],
                 "Lifecycle operations that failed, by error type.", bars=True, no_value="No errors", calcs=("sum",))),
     ])
@@ -785,7 +796,7 @@ def sandboxes():
         (8, ts("Snapshot size p95 per agent", [prom(f"histogram_quantile(0.95, sum by (agent, le) ({by_agent('rate(atelet_snapshot_size_bytes_bucket[1h])')}))",
                                                     "{{agent}}", interval="5m")],
                "Size of the snapshot files a session writes.", unit="bytes")),
-        (8, stat("Image cache", [prom("round(sum by (ate_imagecache_outcome) (increase(ate_imagecache_requests_total[$__range])))",
+        (8, stat("Image cache", [prom(window_total("ate_imagecache_requests_total", "ate_imagecache_outcome", "$__range"),
                                       "{{ate_imagecache_outcome}}", instant=True)],
                  "Sandbox image lookups by outcome (hit or miss) in the time range.", series_names=True)),
     ])
@@ -886,20 +897,24 @@ def mcp():
     b.line(8, [(24, logs("Refused tool calls (log lines)", loki(REFUSED), "The adapter's access line for each refused call.",
                          no_value="No refused calls in this time range"))])
     b.row("kagent-tools: the built-in Kubernetes, Istio and Helm tools")
+    KT_CALLS = 'kagent_tools_mcp_invocations_total{namespace="kagent"}'
+    KT_FAILURES = 'kagent_tools_mcp_invocations_failure_total{namespace="kagent"}'
     b.line(4, [
-        (12, stat("Calls", [prom('round(sum(increase(kagent_tools_mcp_invocations_total{namespace="kagent"}[$__range]))) or vector(0)', instant=True)],
+        (12, stat("Calls", [prom(window_total(KT_CALLS, "", "$__range") + " or vector(0)", instant=True)],
                   "Tool calls kagent-tools served in the time range.")),
-        (12, stat("Failures", [prom('round(sum(increase(kagent_tools_mcp_invocations_failure_total{namespace="kagent"}[$__range]))) or vector(0)', instant=True)],
+        (12, stat("Failures", [prom(window_total(KT_FAILURES, "", "$__range") + " or vector(0)", instant=True)],
                   "Calls that returned an error (for example a resource that does not exist).",
                   steps=[("green", None), ("orange", 1)])),
     ])
     b.line(8, [
-        (12, ts("Calls per minute, by tool", [prom('sum by (tool_name) (rate(kagent_tools_mcp_invocations_total{namespace="kagent"}[$__rate_interval])) * 60',
-                                                   "{{tool_name}}")],
-                "kagent_tools_mcp_invocations_total per tool.", stack=True)),
-        (12, ts("Failures per minute, by tool", [prom('sum by (tool_name) (rate(kagent_tools_mcp_invocations_failure_total{namespace="kagent"}[$__rate_interval])) * 60',
-                                                      "{{tool_name}}")],
-                "kagent_tools_mcp_invocations_failure_total per tool.", no_value="No failures")),
+        (12, ts("Calls by tool", [prom(window_total(KT_CALLS, "tool_name", "$__interval", forward=True),
+                                       "{{tool_name}}", interval="15m")],
+                "kagent_tools_mcp_invocations_total per tool, counted per interval.", bars=True, stack=True,
+                calcs=("sum",))),
+        (12, ts("Failures by tool", [prom(window_total(KT_FAILURES, "tool_name", "$__interval", forward=True),
+                                          "{{tool_name}}", interval="15m")],
+                "kagent_tools_mcp_invocations_failure_total per tool, counted per interval.", bars=True,
+                stack=True, calcs=("sum",), no_value="No failures")),
     ])
     d = dashboard("mcp-tool-calls", "MCP Tool Calls",
                   "Every tool call the agents make: the MCP adapters (allowlists, refusals, latency) and kagent-tools.", b)
