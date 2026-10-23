@@ -173,6 +173,20 @@ data:
           "match": {"alertname": "Agent over its daily budget"},
           "route": "none",
           "why": "Same as above: an investigation would spend from the budgets this alert is about, and the over-budget group's own agent may be refused (§T.137)."
+        },
+        {
+          "id": "agent-budget-blocked",
+          "source": "grafana",
+          "match": {"alertname": "Agent blocked by its daily budget"},
+          "route": "none",
+          "why": "The gateway already stopped the group; an investigation would spend from the budgets this alert is about. The owner decides whether to raise the budget by a pull request (§T.137)."
+        },
+        {
+          "id": "model-gateway-down",
+          "source": "grafana",
+          "match": {"alertname": "Model gateway down"},
+          "route": "none",
+          "why": "An investigation needs model calls, and the agents' model calls go through the gateway that is down; the runbook is the path (§T.137)."
         }
       ]
     }

@@ -186,6 +186,23 @@ def ratio_expr(table: dict | None = None) -> str:
             f"{_budget_vector(table)}\n)")
 
 
+# The gateway's own refusals for an exhausted budget (local proof: agentgateway_requests_total on
+# the llm listener, status 429, reason RateLimit; Anthropic's own 429s are reason Upstream).
+REFUSED = ('agentgateway_requests_total{namespace="model-gateway", listener="llm", status="429", '
+           'reason="RateLimit"}')
+
+
+def refused_expr(table: dict | None = None) -> str:
+    """Budget refusals per group over the last 10 minutes, with the group's labels."""
+    table = table or mb.load()
+    return (f"({_window_total()(REFUSED, 'group', '10m')})\n"
+            f"* on(group) group_left(agents, budget_usd, enforced) (0 * (\n{_budget_vector(table)}\n) + 1)")
+
+
+def gateway_up_expr() -> str:
+    return 'sum(up{namespace="model-gateway"}) or vector(0)'
+
+
 def spend_expr(table: dict | None = None) -> str:
     """Spend per group, with the same labels as ratio_expr so $values.spend matches."""
     table = table or mb.load()
@@ -222,10 +239,23 @@ def _prom(ref: str, expr: str) -> dict:
                       "instant": True, "range": False, "expr": expr}}
 
 
-def _threshold(value: float) -> dict:
+def _threshold(value: float, expression: str = "ratio", op: str = "gt") -> dict:
     return {"refId": "threshold", "relativeTimeRange": {"from": 600, "to": 0}, "datasourceUid": "__expr__",
-            "model": {"refId": "threshold", "type": "threshold", "expression": "ratio",
-                      "conditions": [{"evaluator": {"type": "gt", "params": [value]}}]}}
+            "model": {"refId": "threshold", "type": "threshold", "expression": expression,
+                      "conditions": [{"evaluator": {"type": op, "params": [value]}}]}}
+
+
+BLOCKED_SUMMARY = (
+    f"{_WHO} has spent its ${{{{ $labels.budget_usd }}}} daily budget: the gateway refused "
+    "{{ with $values.refused }}{{ printf \"%.0f\" .Value }}{{ end }} of its model calls in the last "
+    "10 minutes. Its runs fail with budget_exceeded until 00:00 UTC; every other group is unaffected.")
+BLOCKED_RUNBOOK = (
+    "base-apps/model-gateway/runbook.md, \"An agent is blocked\": a loop or a busy day? Grafana, Agents "
+    "→ Agent Platform shows its runs. To raise the budget: base-apps/model-gateway/budgets.yaml, then "
+    "scripts/gen-model-budgets.py --write, and a pull request.")
+DOWN_SUMMARY = ("No model-gateway replica is up: every agent group whose model calls go through the "
+                "gateway fails until one is back.")
+DOWN_RUNBOOK = "base-apps/model-gateway/runbook.md, \"The gateway is down\"."
 
 
 def _rule(uid: str, title: str, severity: str, threshold: float, summary: str, table: dict) -> dict:
@@ -245,6 +275,18 @@ def rule_group(table: dict | None = None) -> dict:
                       NEAR_SUMMARY, table),
                 _rule("agent-budget-over", "Agent over its daily budget", "critical", 0.999,
                       OVER_SUMMARY, table),
+                {"uid": "agent-budget-blocked", "title": "Agent blocked by its daily budget",
+                 "condition": "threshold", "for": "0m",
+                 "annotations": {"summary": BLOCKED_SUMMARY, "runbook": BLOCKED_RUNBOOK},
+                 "labels": {"severity": "critical", "pillar": "cost"},
+                 "noDataState": "OK", "execErrState": "KeepLast",
+                 "data": [_prom("refused", refused_expr(table)), _threshold(0, "refused")]},
+                {"uid": "model-gateway-down", "title": "Model gateway down",
+                 "condition": "threshold", "for": "5m",
+                 "annotations": {"summary": DOWN_SUMMARY, "runbook": DOWN_RUNBOOK},
+                 "labels": {"severity": "critical", "pillar": "cost"},
+                 "noDataState": "OK", "execErrState": "KeepLast",
+                 "data": [_prom("up", gateway_up_expr()), _threshold(1, "up", "lt")]},
             ]}
 
 

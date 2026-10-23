@@ -20,6 +20,7 @@ ALERTING = REPO / "base-apps/logging/grafana-alerting.yaml"
 TABLE = REPO / "base-apps/dispatcher/dispatch-table.yaml"
 PROM_UID = "PBFA97CFB590B2093"
 TITLES = {"Agent near its daily budget": ("warning", 0.8), "Agent over its daily budget": ("critical", 0.999)}
+GATEWAY_TITLES = {"Agent blocked by its daily budget", "Model gateway down"}
 
 
 def _gen():
@@ -46,7 +47,7 @@ def test_rules_follow_the_house_rules():
     g = _group()
     assert g["folder"] == "Agent Budgets" and g["interval"] == "5m" and g["orgId"] == 1
     rules = {r["title"]: r for r in g["rules"]}
-    assert set(rules) == set(TITLES)
+    assert set(rules) == set(TITLES) | GATEWAY_TITLES
     for title, (severity, threshold) in TITLES.items():
         r = rules[title]
         assert r["labels"] == {"severity": severity, "pillar": "cost"}
@@ -158,6 +159,55 @@ def test_budget_labels_carry_the_table():
 def test_every_budget_rule_has_a_dispatch_row_with_route_none():
     cm = yaml.safe_load(TABLE.read_text())
     rows = {r["match"].get("alertname"): r for r in json.loads(cm["data"]["dispatch.json"])["rules"]}
-    for title in TITLES:
+    for title in [*TITLES, "Agent blocked by its daily budget"]:
         assert rows[title]["route"] == "none", title
         assert "spend" in rows[title]["why"], title
+    assert rows["Model gateway down"]["route"] == "none"
+    assert "model call" in rows["Model gateway down"]["why"]
+
+
+def test_the_gateway_rules():
+    gen = _gen()
+    rules = {r["title"]: r for r in _group()["rules"]}
+    blocked = rules["Agent blocked by its daily budget"]
+    data = {d["refId"]: d for d in blocked["data"]}
+    assert set(data) == {"refused", "threshold"} and blocked["condition"] == "threshold"
+    expr = data["refused"]["model"]["expr"]
+    assert expr == gen.refused_expr()
+    for part in ('namespace="model-gateway"', 'listener="llm"', 'status="429"', 'reason="RateLimit"'):
+        assert part in expr, part
+    assert "increase(" not in expr, "a first refusal is a new series: window_total, never increase() (§V.106)"
+    cond = data["threshold"]["model"]
+    assert cond["expression"] == "refused" and cond["conditions"][0]["evaluator"] == {"type": "gt", "params": [0]}
+    assert blocked["labels"] == {"severity": "critical", "pillar": "cost"} and blocked["for"] == "0m"
+    assert "$labels.group" in blocked["annotations"]["summary"] and "$labels.agents" in blocked["annotations"]["summary"]
+
+    down = rules["Model gateway down"]
+    data = {d["refId"]: d for d in down["data"]}
+    assert data["up"]["model"]["expr"] == gen.gateway_up_expr() == 'sum(up{namespace="model-gateway"}) or vector(0)'
+    assert data["threshold"]["model"]["conditions"][0]["evaluator"] == {"type": "lt", "params": [1]}
+    assert down["for"] == "5m" and down["labels"] == {"severity": "critical", "pillar": "cost"}
+    assert down["noDataState"] == "OK", "or vector(0) makes no-data a 0, which fires"
+
+
+def test_refused_through_promtool(tmp_path):
+    """The first refusal of the day is a new series with value 1: it must count (window_total)."""
+    gen = _gen()
+    m = "agentgateway_requests_total"
+    base = 'namespace="model-gateway", pod="model-gateway-abc", listener="llm"'
+    series = [
+        # dcc's first refusal at minute 50: a series that did not exist before
+        {"series": f'{m}{{{base}, group="dcc", status="429", reason="RateLimit"}}', "values": _values({(50, 59): 1}, 60)},
+        # hk's answered calls and an upstream (Anthropic) 429: never a budget refusal
+        {"series": f'{m}{{{base}, group="hk", status="200", reason="Upstream"}}', "values": _values({(0, 59): 7}, 60)},
+        {"series": f'{m}{{{base}, group="hk", status="429", reason="Upstream"}}', "values": _values({(55, 59): 1}, 60)},
+    ]
+    budgets = {g["group"]: g for g in gen.budget_labels()}
+
+    def labels(d):
+        return "{" + ", ".join(f'{k}="{v}"' for k, v in sorted(d.items())) + "}"
+
+    tests = [{"expr": gen.refused_expr(), "eval_time": "59m",
+              "exp_samples": [{"labels": labels(budgets["dcc"]), "value": 1}]}]
+    _promtool(tmp_path, {"rule_files": [], "evaluation_interval": "1m",
+                         "tests": [{"interval": "1m", "input_series": series, "promql_expr_test": tests}]})

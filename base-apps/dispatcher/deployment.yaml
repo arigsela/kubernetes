@@ -25,7 +25,7 @@ spec:
         # nothing restarts the pod, so these checksums change the pod template instead (the same
         # pattern as Grafana's checksum/alerting). scripts/gen-dispatcher-configmap.py writes both;
         # tests/dispatch/test_manifests.py fails if either is stale.
-        checksum/table: "c9cd355fd314d21bf7058341a6266de42f4aeaf60bedd32cc6b6f31fcc3db2f5"
+        checksum/table: "4098a69e1178d81f2101d0ab370c855300eea81b5a66ae883396e410d969d30b"
         checksum/code: "a046b42a424d9ba53904e4808e2d7c299f45ef9188a3373e62fde8a80be7f1cb"
     spec:
       serviceAccountName: dispatcher
