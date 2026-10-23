@@ -122,7 +122,11 @@ under `base-apps/logging/`.
    and p95, the newest agent run's tokens, its trace and its logs. The deep dives are **Agent
    Quality**, **Tokens & Models**, **Agent Traffic** (service graph and waypoint traffic),
    **Sandboxes** (Substrate), **Alerts to Agents** (dispatcher) and **MCP Tool Calls** (uid
-   `mcp-tool-calls`, §T.134, plus kagent-tools' calls per tool). Tokens, cost and calls come
+   `mcp-tool-calls`, §T.134, plus kagent-tools' calls per tool) and **Model Gateway & Budgets** (uid
+   `model-gateway`, §T.137: on the gateway's UTC day, each group's spend against its daily budget,
+   refusals, calls and latency from the gateway's own counters, docs-checker included; budgets read
+   from `base-apps/model-gateway/budgets.yaml`, so `scripts/gen-model-budgets.py --write`
+   regenerates it). Tokens, cost and calls come
    from the collector's counters (`base-apps/tracing/docs.md`); only the kagent agents are
    traced, so docs-checker is not in them. `scripts/agent-demo.sh` makes three read-only agent
    runs before a demo.

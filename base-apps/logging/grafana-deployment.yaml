@@ -322,6 +322,8 @@ spec:
               name: grafana-dashboard-agent-alerts
           - configMap:
               name: grafana-dashboard-mcp
+          - configMap:
+              name: grafana-dashboard-model-gateway
       - name: alerting
         configMap:
           name: grafana-alerting

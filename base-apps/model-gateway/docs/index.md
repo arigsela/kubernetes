@@ -95,6 +95,15 @@ on the other replica every time. So the gateway runs one replica, which counts e
 
 The dispatcher routes all four to `none`: an investigation would spend the budgets they are about.
 
+## Where to watch it
+
+- **Grafana: Agents → Model Gateway & Budgets** (uid `model-gateway`). It opens on today (UTC) and
+  shows each group's spend against its daily budget, refusals, calls by status, latency and the
+  gateway's log.
+- **The gateway's own UI:** `kubectl -n model-gateway port-forward deploy/model-gateway 15000:15000`,
+  then http://localhost:15000/ui. Keys shows each group's budget, today's spend and window; Costs
+  and Logs come from its request log. The config is mounted read-only, so the UI cannot change it.
+
 ## What it keeps
 
 - Postgres database `model_gateway` (login `model_gateway`, base-apps/postgresql/init-model-gateway-db.yaml):
