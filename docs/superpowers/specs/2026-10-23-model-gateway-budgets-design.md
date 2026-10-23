@@ -28,7 +28,10 @@ The third option, one Anthropic workspace per agent group, was not chosen.
 4. **Budgets live in one table in git.** Raising one is a pull request. There is no override
    switch.
 5. **The real Anthropic key exists only in the gateway's namespace.** A sandbox never holds the
-   real key or its own budget key.
+   real key or its own budget key. There is one stated exception: eval-gate's judge keeps its own
+   copy (Secret `eval-gate`, key `anthropic-api-key`, copied by
+   `scripts/provision-eval-gate-vault.sh --copy-anthropic`, §T.112). It is not an agent and does
+   not run in a sandbox. Giving it a key of its own is a follow-up.
 6. **The Anthropic console limit stays** as the monthly backstop.
 
 ## Non-goals
@@ -57,6 +60,11 @@ The third option, one Anthropic workspace per agent group, was not chosen.
   accepted.
 - **A budget alert that starts an agent investigation.** An investigation spends money from the
   very budgets the alert is about.
+- **A blocked run that hangs instead of failing.** The Anthropic Go SDK (v1.80.0, which the Go
+  ADK uses) retries a 429 twice and waits for `Retry-After` with no upper limit
+  (`internal/requestconfig/requestconfig.go:249-271,296-346,380-390`). agentgateway sets
+  `Retry-After` on a budget refusal to the seconds left in the window
+  (`http/budget/mod.rs:464-470`). Left alone, a blocked run would sleep until midnight, twice.
 - **A rollout that breaks every agent at once.** Agents move over one group at a time.
 - **An eval run, blocked by a budget, counted as a regression.** That would hold back the
   agent's automated work for a reason that has nothing to do with its behaviour (see §6).
@@ -96,6 +104,14 @@ The third option, one Anthropic workspace per agent group, was not chosen.
   fixed day. The "blocked" alert is exact, because it counts the gateway's real refusals.
 - How eval-gate treats a budget refusal (§6).
 - How the gateway learns the virtual keys (§3.3).
+- **The console limit is the monthly backstop. It is not sized against the sum of the budgets.**
+  The budgets add up to $15.50 a day, about $480 a month, far above any sensible console limit.
+  A group stuck at its cap every day is announced every day by the "blocked" alert, so it cannot
+  run unnoticed for long. The owner confirms the console limit leaves room for normal spend plus
+  about a week of the largest budget (about $35). The cost if this is wrong: after several days of
+  ignored alerts, the console limit trips and every agent stops, as on 2026-10-14.
+- **eval-gate's copy of the real key is a stated exception** (goal 5).
+- **A budget refusal is not retried** (§3.2).
 
 ## Design
 
@@ -240,6 +256,25 @@ each one against the binary.
     the same prices.
 - **`config.metrics.fields.add`.** Adds a `group` label from the API key's metadata, so the
   gateway's own metrics can be read per group.
+- **A budget refusal must not be retried.**
+  - What a refusal looks like: HTTP 429 with `Retry-After` set to the seconds left in the window,
+    and the JSON body `{"error": {"message": "Budget exceeded", "type": "rate_limit_error",
+    "code": "budget_exceeded"}}` (`proxy/mod.rs:567-581`).
+  - What the gateway must do: send `x-should-retry: false` on that response. The Go SDK obeys the
+    header ahead of the status code (`requestconfig.go:262-284`), so the call fails at once.
+  - The failed call's error carries the method, URL, status and that JSON body
+    (`internal/apierror/apierror.go:64-76`). The agent's run fails, and its message contains
+    `budget_exceeded`.
+  - The first choice is a route `responseHeaderModifier` or `transformations.response` rule that
+    sets the header only on the gateway's own 429. The local proof (§7 step 3) shows whether such
+    rules reach a response the gateway generates itself.
+  - If they don't, the fallback is two listeners in the same pod: a front listener on 8080
+    proxies to a budget listener on `127.0.0.1:8081`. To the front listener the budget 429 is an
+    upstream response, so its response rules certainly apply.
+  - Anthropic's own 429s and 529s keep their normal retries: the header goes only on responses
+    whose body has `code: budget_exceeded`, or only on 429s from the inner listener.
+  - docs-checker's Python SDK uses `Retry-After` only when it is at most 60 s, and otherwise falls
+    back to backoff, so it fails within seconds either way.
 
 #### 3.3 Keys and Vault
 
@@ -339,12 +374,15 @@ each group's budget.
 
 - **Sizing.** Measure one full eval run's cost per group from the dashboards before the first
   group moves, and size budgets to fit (§2).
-- **My call: a budget refusal is "could not score".** A 429 from the gateway with the "budget"
-  reason, met while eval-gate scores an agent, makes that agent's result "could not score",
-  never a regression. The JSON line says `budget` and the Job exits 1, which is the existing
-  "could not score" path, so Argo shows the hook failed. The release gate keeps the previous
-  result for that agent. This changes eval-gate's code (`scripts/` and the generated ConfigMap)
-  and its tests.
+- **My call: a budget refusal is "could not score".**
+  - The trigger: any captured answer, or any failed task message, of an agent being scored that
+    contains `budget_exceeded`. One is enough; eval-gate does not wait for every capture to fail.
+  - The result: that agent is "could not score", never a regression. The JSON line says `budget`
+    and the Job exits 1, which is the existing "could not score" path, so Argo shows the hook
+    failed. The release gate keeps the previous result for that agent.
+  - eval-gate gets no new network path. It reads the reason from the agent's own failed run (§3.2).
+  - This changes eval-gate's code (`scripts/eval_gate.py` and its generated ConfigMap) and its
+    tests.
 
 ### 7. Rollout (one pull request per step)
 
@@ -395,8 +433,9 @@ each group's budget.
   - A task row, §T.137.
   - Invariants, §V.108: every Anthropic ModelConfig goes through the gateway on a group Secret;
     every group has a budget and every model has a price; the gateway's prices equal the
-    collector's; the alert thresholds equal `budgets.yaml`; no `kagent-anthropic` in `kagent`
-    after step 6.
+    collector's; the alert thresholds equal `budgets.yaml`; a budget refusal carries
+    `x-should-retry: false`; no `kagent-anthropic` in `kagent` after step 6 (eval-gate's judge
+    key is the one exception).
   - §B rows for whatever breaks on the way.
 
 ### 9. Done when
@@ -406,7 +445,9 @@ each group's budget.
   - a blocked group gets 429 and its run fails with the budget error;
   - Slack gets both alerts;
   - other agents keep answering.
-- `kagent` holds no real key, and a sandbox call straight to `api.anthropic.com` gets a 401.
+- No ModelConfig, Harness or sandbox holds or reaches the real key; the only copy in `kagent` is
+  eval-gate's judge key. A sandbox call straight to `api.anthropic.com` gets a 401.
+- A blocked run fails within seconds, and its message contains `budget_exceeded`.
 - The Agents dashboards still show tokens and cost per agent.
 - CI is green: the new tests plus the existing `agent-identity`, `agent-capability`, `dispatch`,
   `eval-corpus` and admission-policy suites.
@@ -420,6 +461,8 @@ each group's budget.
 - File layout, and how the tests are split.
 
 ## Risks
+
+- **The console limit.** See "Calls I made". The owner checks it before the first group moves.
 
 - **The whole combination has not run end to end.** That means the `apiKey` policy on
   `x-api-key`, the provider key swap, budgets with the Anthropic routes, and streaming. Step 3's
