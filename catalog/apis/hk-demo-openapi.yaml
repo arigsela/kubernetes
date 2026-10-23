@@ -6,7 +6,7 @@
 openapi: 3.0.3
 info:
   title: hk-demo
-  version: 0.2.3
+  version: 0.3.0
   description: |
     The API behind the hk demo page. Ask the homelab-knowledge (hk) agent a question, then
     follow the run as server-sent events: the agent's progress, its answer, then eight evidence
