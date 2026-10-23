@@ -93,10 +93,12 @@ jobs:
       - name: Validate changed Kubernetes manifests
         run: |
           # base-apps/<app>/mkdocs.yml is Backstage TechDocs config,
-          # appsets/*/*.yaml are ApplicationSet generator configs. Neither is
-          # a Kubernetes manifest, so kubeconform would fail them. Drop them
-          # before validating; yamllint still covers them.
-          FILES=$(echo "${{ needs.changed-files.outputs.yaml_files }}" | tr ' ' '\n' | grep -v -e '/mkdocs\.yml$' -e '^appsets/' || true)
+          # appsets/*/*.yaml are ApplicationSet generator configs and
+          # base-apps/model-gateway/budgets.yaml is the budget table (§T.137,
+          # read by scripts/gen-model-budgets.py). None is a Kubernetes
+          # manifest, so kubeconform would fail them. Drop them before
+          # validating; yamllint still covers them.
+          FILES=$(echo "${{ needs.changed-files.outputs.yaml_files }}" | tr ' ' '\n' | grep -v -e '/mkdocs\.yml$' -e '^appsets/' -e '^base-apps/model-gateway/budgets\.yaml$' || true)
           if [ -z "$FILES" ]; then echo "No Kubernetes manifests to validate."; exit 0; fi
           echo "$FILES" | xargs kubeconform \
             -summary \
