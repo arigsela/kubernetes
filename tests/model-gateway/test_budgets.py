@@ -59,7 +59,7 @@ def test_collector_prices_parse():
 def test_budgets_match_the_spec():
     table = mb.load()
     assert {g: v["daily_usd"] for g, v in table["groups"].items()} == {
-        "hk": 3.0, "build": 5.0, "implementer": 2.0, "restarter": 2.0, "docs-checker": 1.5,
+        "hk": 6.0, "build": 10.0, "implementer": 4.0, "restarter": 4.0, "docs-checker": 2.5,
         "k8s-reader": 0.5, "skill-suggester": 0.5, "dcc": 0.5, "ui-default": 0.5,
     }
     assert table["window"] == "24h" and table["warn_at"] == 0.8

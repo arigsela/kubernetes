@@ -37,7 +37,8 @@ spec:
   description: A read-only Kubernetes investigator. Inspects cluster state, events and logs to diagnose problems. Cannot create, modify, or delete anything.
   # Haiku 5.5: single-domain investigation, speed over depth.
   modelConfig:
-    name: anthropic-claude-haiku-5-5
+    # Through the model gateway (§T.137): group k8s-reader's daily budget, base-apps/model-gateway/budgets.yaml.
+    name: anthropic-claude-haiku-5-5-k8s-reader
   systemPrompt: |-
     You are a read-only Kubernetes investigator.
 

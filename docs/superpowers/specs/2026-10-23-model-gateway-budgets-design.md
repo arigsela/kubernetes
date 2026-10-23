@@ -181,6 +181,12 @@ per model the group uses.
 
 The worst case is $15.50 a day if every group spends everything.
 
+**Raised on 2026-10-23 (PR C, plan Task 11 step 0).** hk $6, build $10, implementer $4, restarter $4,
+docs-checker $2.50; the Haiku groups stay at $0.50, for a worst case of $28.50 a day. The reason:
+two eval-gate runs on top of a normal day did not fit. No scored eval run happened since the cost
+counters began, so this is an estimate. The method is in `budgets.yaml`'s header. Replace it with
+the first measured run.
+
 **Where the sizes come from.** Spend from 2026-10-22 01:32Z to 2026-10-23 was $1.06 for 10
 homelab-knowledge runs (about $0.10 a question), $0.06 for istio-agent and under a cent for
 k8s-reader. The sizes are a guess on top of that. Before the first group moves, the builder
