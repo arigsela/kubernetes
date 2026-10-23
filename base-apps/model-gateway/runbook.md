@@ -56,6 +56,14 @@ Every group with `gateway: true` fails its model calls.
   AgentTemplates until the gateway is back (only while `kagent-anthropic` still exists in kagent,
   spec §4).
 
+## Every call fails 503 "invalid peer certificate"
+
+The gateway cannot verify api.anthropic.com. The image is FROM scratch; the trust store is the
+CA bundle the `ca-bundle` init container copies from the pinned alpine into `/etc/ssl/certs`
+(`SSL_CERT_FILE`). Check the init container ran (`kubectl -n model-gateway describe pod`) and
+that the alpine pin still carries `/etc/ssl/certs/ca-certificates.crt`. Local proof check 14
+tests both cases against the real API.
+
 ## Postgres trouble
 
 The gateway needs Postgres to start, not to serve: a running replica keeps enforcing on its own

@@ -5,8 +5,8 @@ Runs, in Docker: Postgres 16, a mock Anthropic API (mock_anthropic.py) and TWO g
 from the exact image the cluster runs, both on the same database and both on the committed
 base-apps/model-gateway/configmap.yaml (see committed_config() for the few local overrides), with
 test keys passed in the environment the way the cluster passes the real ones. Then it checks, one by one, the behaviours the spec
-relies on, and exits non-zero at the first that fails. Nothing leaves this machine: the provider
-key is a made-up test value and the upstream is the mock.
+relies on, and exits non-zero at the first that fails. The provider key is a made-up test value
+and the upstream is the mock, except check 14: one refused call to the real api.anthropic.com.
 
     tests/model-gateway/proof/run-proof.sh            # needs Docker and the ECR image pulled
 """
@@ -32,6 +32,7 @@ import model_budgets as mb  # noqa: E402
 IMAGE = ("852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0"
          "@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d")
 NET = "mgproof"
+ALPINE = "alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
 VOLUME = "mgproof-files"
 PROVIDER_KEY = "sk-proof-provider-not-a-real-key"
 DB_PASSWORD = "proof-db-password-0123456789abcdef"
@@ -45,7 +46,7 @@ def sh(*args, check=True, **kw):
 
 
 def cleanup():
-    for name in ("mgproof-gw-a", "mgproof-gw-b", "mgproof-mock", "mgproof-pg"):
+    for name in ("mgproof-gw-a", "mgproof-gw-b", "mgproof-gw-tls", "mgproof-mock", "mgproof-pg"):
         sh("docker", "rm", "-f", name, check=False)
     sh("docker", "rm", "-f", "mgproof-files", check=False)
     sh("docker", "network", "rm", NET, check=False)
@@ -114,7 +115,7 @@ def mock_log():
     return json.loads(urllib.request.urlopen(f"http://127.0.0.1:{MOCK_PORT}/_log", timeout=10).read())
 
 
-def committed_config() -> dict:
+def committed_config(upstream: str | None = "http://mgproof-mock:8090/v1") -> dict:
     """base-apps/model-gateway/configmap.yaml as committed, with only what must differ locally:
     the mock as upstream, the admin API reachable from the host, no tracing, and two tiny
     budgets (dcc: the block check; restarter: the shared count). The $MODEL_GATEWAY_* references
@@ -122,7 +123,8 @@ def committed_config() -> dict:
     doc = yaml.safe_load((REPO / "base-apps/model-gateway/configmap.yaml").read_text())
     cfg = yaml.safe_load(doc["data"]["config.yaml"])
     for m in cfg["llm"]["models"]:
-        m["params"]["baseUrl"] = "http://mgproof-mock:8090/v1"
+        if upstream:
+            m["params"]["baseUrl"] = upstream
     cfg["config"]["database"]["url"] = "postgres://proof@mgproof-pg:5432/model_gateway?sslmode=disable"
     cfg["config"]["adminAddr"] = "0.0.0.0:15000"
     cfg.pop("frontendPolicies", None)
@@ -155,6 +157,9 @@ def start_stack(work: Path, stagger: bool = False, gateways=("A", "B")) -> None:
     sh("docker", "create", "--name", "mgproof-files", "-v", f"{VOLUME}:/files", "alpine:3.20", "true")
     sh("docker", "cp", f"{files}/.", "mgproof-files:/files")
     sh("docker", "rm", "-f", "mgproof-files")
+    # The CA bundle the Deployment's init container copies from the repo's pinned alpine.
+    sh("docker", "run", "--rm", "-v", f"{VOLUME}:/files", ALPINE, "sh", "-c",
+       "mkdir -p /files/ca && cp /etc/ssl/certs/ca-certificates.crt /files/ca/")
     for gw in gateways:
         if stagger and gw == "B":
             wait_for(lambda: budgets("A"), 90, 2)
@@ -175,6 +180,39 @@ def start_stack(work: Path, stagger: bool = False, gateways=("A", "B")) -> None:
         if not isinstance(ok, dict):
             print(sh("docker", "logs", f"mgproof-gw-{gw.lower()}", check=False).stderr[-3000:])
             check(f"gateway {gw} starts on the generated config", False, str(ok))
+
+
+def tls_check(work: Path, keys: dict) -> None:
+    """14. The real upstream over TLS (the one call that leaves this machine: a 16-token request
+    with a made-up key, refused by Anthropic). The image is FROM scratch: without a CA bundle the
+    gateway cannot verify api.anthropic.com (live 2026-10-23: 503 UnknownIssuer); with the bundle
+    the Deployment mounts (SSL_CERT_FILE) Anthropic itself answers 401 with its request-id."""
+    cfg = committed_config(upstream=None)
+    (work / "files-tls").mkdir(exist_ok=True)
+    path = work / "config-tls.yaml"
+    path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    sh("docker", "create", "--name", "mgproof-files", "-v", f"{VOLUME}:/files", "alpine:3.20", "true")
+    sh("docker", "cp", str(path), "mgproof-files:/files/config/config-tls.yaml")
+    sh("docker", "rm", "-f", "mgproof-files")
+    results = {}
+    for label, extra in (("no bundle", []),
+                         ("bundle", ["--mount", f"type=volume,src={VOLUME},dst=/etc/ssl/certs,volume-subpath=ca,readonly",
+                                     "-e", "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"])):
+        name = "mgproof-gw-tls"
+        sh("docker", "rm", "-f", name, check=False)
+        sh("docker", "run", "-d", "--name", name, "--network", NET, "--platform", "linux/amd64",
+           "--env-file", str(work / "env"), "--user", "65532:65532", "--read-only", "--tmpfs", "/tmp",
+           "--mount", f"type=volume,src={VOLUME},dst=/config,volume-subpath=config,readonly",
+           "--mount", f"type=volume,src={VOLUME},dst=/var/run/model-gateway/anthropic,volume-subpath=anthropic,readonly",
+           *extra, "-p", "18082:8080", IMAGE, "-f", "/config/config-tls.yaml")
+        wait_for(lambda: http(18082, "/v1/messages", key="probe", body=msg("claude-haiku-5-5"))[0] != 0, 60, 2)
+        results[label] = http(18082, "/v1/messages", key=keys["k8s-reader"], body=msg("claude-haiku-5-5"))
+        sh("docker", "rm", "-f", name, check=False)
+    s0, _, b0 = results["no bundle"]
+    s1, h1, b1 = results["bundle"]
+    check("14a. without a CA bundle the upstream TLS fails (the live bug)", s0 == 503 and "UnknownIssuer" in b0, f"{s0} {b0[:120]}")
+    check("14b. with the Deployment's CA bundle Anthropic itself answers (401 for the made-up key)",
+          s1 == 401 and "request-id" in h1, f"{s1} request-id={'request-id' in h1} {b1[:120]}")
 
 
 def go_sdk_check(keys):
@@ -284,6 +322,10 @@ def main() -> int:
     # 11. the real client: the Anthropic Go SDK v1.80.0 (kagent's Go ADK) fails at once, with the reason
     if "--no-go" not in sys.argv:
         go_sdk_check(keys)
+
+    # 14
+    if "--no-tls" not in sys.argv:
+        tls_check(work, keys)
 
 
 

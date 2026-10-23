@@ -55,6 +55,30 @@ spec:
       # stream cut mid-way is not retried (final review I2). agentgateway drains for
       # TERMINATION_GRACE_PERIOD_SECONDS - 5, then closes what is left before the kubelet's SIGKILL.
       terminationGracePeriodSeconds: 180
+      # The image is FROM scratch: no trust store, so agentgateway (rustls-native-certs) could not
+      # verify api.anthropic.com (live 2026-10-23: every call 503 "invalid peer certificate:
+      # UnknownIssuer"). Copy the CA bundle of the repo's pinned alpine into an emptyDir the gateway
+      # reads through SSL_CERT_FILE. A new bundle comes with an alpine bump (Renovate). Local proof
+      # check 14 runs both cases against the real API.
+      initContainers:
+        - name: ca-bundle
+          image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
+          command: ["cp", "/etc/ssl/certs/ca-certificates.crt", "/ca/ca-certificates.crt"]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: ca-bundle
+              mountPath: /ca
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -73,6 +97,8 @@ spec:
           env:
             - name: TERMINATION_GRACE_PERIOD_SECONDS
               value: "180"   # = terminationGracePeriodSeconds (tests/model-gateway)
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
           ports:
             - containerPort: 8080
               name: http
@@ -113,6 +139,9 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+            - name: ca-bundle
+              mountPath: /etc/ssl/certs
+              readOnly: true
       volumes:
         - name: config
           configMap:
@@ -126,3 +155,6 @@ spec:
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
+        - name: ca-bundle
+          emptyDir:
+            sizeLimit: 4Mi

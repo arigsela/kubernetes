@@ -6,8 +6,9 @@
 - two gateways from the image the cluster runs, both on the config `scripts/gen-model-budgets.py`
   generates.
 
-The mock stands in for Anthropic and the provider key is a made-up test value, so nothing leaves
-the machine. The proof then checks each behaviour the design relies on (spec §7 step 3):
+The mock stands in for Anthropic and the provider key is a made-up test value. One call leaves the
+machine: check 14 sends a 16-token request with a made-up key to the real api.anthropic.com, which
+refuses it, to prove the gateway can verify Anthropic's certificate (`--no-tls` skips it). The proof then checks each behaviour the design relies on (spec §7 step 3):
 - keys are required, and the upstream sees only the provider key;
 - the request body arrives unchanged;
 - each key is limited to its group's models;

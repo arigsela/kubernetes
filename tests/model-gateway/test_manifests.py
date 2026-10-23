@@ -75,7 +75,8 @@ def test_the_pod_runs_as_the_proof_ran_it():
     assert c["securityContext"]["readOnlyRootFilesystem"] is True
     assert c["envFrom"] == [{"secretRef": {"name": "model-gateway-env"}}]
     mounts = {m["name"]: m["mountPath"] for m in c["volumeMounts"]}
-    assert mounts == {"config": "/config", "anthropic": "/var/run/model-gateway/anthropic", "tmp": "/tmp"}
+    assert mounts == {"config": "/config", "anthropic": "/var/run/model-gateway/anthropic", "tmp": "/tmp",
+                      "ca-bundle": "/etc/ssl/certs"}
     vols = {v["name"]: v for v in spec["volumes"]}
     assert vols["config"]["configMap"]["name"] == "model-gateway-config"
     assert vols["anthropic"]["secret"] == {"secretName": "model-gateway-anthropic",
@@ -191,3 +192,28 @@ def test_init_db_job_against_postgres():
         assert other.returncode != 0 and "permission denied" in other.stderr
     finally:
         subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+
+
+ALPINE = "alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
+
+
+def test_the_gateway_can_verify_anthropics_certificate():
+    """Live 2026-10-23: the image is FROM scratch, so agentgateway (rustls-native-certs) had no
+    trust store and every call to api.anthropic.com failed 503 "invalid peer certificate:
+    UnknownIssuer". An init container copies the CA bundle of the repo's pinned alpine into an
+    emptyDir the gateway reads through SSL_CERT_FILE (local proof check 14)."""
+    spec = deployment()["spec"]["template"]["spec"]
+    (init,) = spec["initContainers"]
+    assert init["image"] == ALPINE
+    assert init["command"] == ["cp", "/etc/ssl/certs/ca-certificates.crt", "/ca/ca-certificates.crt"]
+    assert {m["name"]: m["mountPath"] for m in init["volumeMounts"]} == {"ca-bundle": "/ca"}
+    assert init["securityContext"]["readOnlyRootFilesystem"] is True
+    (c,) = spec["containers"]
+    env = {e["name"]: e["value"] for e in c["env"]}
+    assert env["SSL_CERT_FILE"] == "/etc/ssl/certs/ca-certificates.crt"
+    mounts = {m["name"]: m for m in c["volumeMounts"]}
+    assert mounts["ca-bundle"]["mountPath"] == "/etc/ssl/certs" and mounts["ca-bundle"]["readOnly"] is True
+    vols = {v["name"]: v for v in spec["volumes"]}
+    assert "emptyDir" in vols["ca-bundle"]
+    assert ALPINE in (REPO / "base-apps/kagent/eval-canary.yaml").read_text() or \
+        sum(ALPINE in f.read_text() for f in (REPO / "base-apps").rglob("*.yaml")) > 1, "an image the repo already pins"
