@@ -166,7 +166,6 @@ def _manifest_docs():
     return docs
 
 
-@pytest.mark.xfail(strict=True, reason="the manifests arrive in Task 7")
 def test_names_match_the_manifests():
     docs = _manifest_docs()
     stores = {(d["metadata"]["namespace"], d["spec"]["provider"]["vault"]["auth"]["kubernetes"]["role"],

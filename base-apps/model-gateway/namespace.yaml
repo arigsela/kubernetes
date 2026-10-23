@@ -1,0 +1,8 @@
+# Not in the ambient mesh, on purpose: its only client, Substrate's egress (ate-system), is not
+# in the mesh either. Traffic in is plain HTTP, limited by network-policy.yaml.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: model-gateway
+  labels:
+    app.kubernetes.io/part-of: agent-guardrails

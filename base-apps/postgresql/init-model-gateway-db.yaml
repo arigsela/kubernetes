@@ -1,0 +1,128 @@
+# Prepares database `model_gateway` for the model gateway (§T.137): login role model_gateway
+# (no other attributes) owning database model_gateway, CONNECT for it alone. agentgateway creates
+# its own tables in schema public on first start (budget_usage, and request_logs: per-request
+# metadata, pruned by base-apps/model-gateway/request-log-retention.yaml).
+#
+# Idempotent (re-runs on every postgresql sync; the password follows Vault). A role or database
+# that exists with other attributes or another owner fails the Job loudly instead of being bent.
+# A hook-only change does not trigger auto-sync: after changing ONLY this file, sync the
+# postgresql app once by hand.
+#
+# Wave 1: after the ExternalSecret that feeds it (wave 0) is healthy. activeDeadlineSeconds: if
+# the Vault entry was never provisioned, fail the sync visibly instead of hanging it. Needs
+# scripts/provision-model-gateway-vault.sh first: provision, then merge.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-model-gateway-db
+  namespace: postgresql
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 5
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app: init-model-gateway-db
+    spec:
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      restartPolicy: OnFailure
+      containers:
+        - name: init-model-gateway-db
+          image: pgvector/pgvector:0.8.7-pg18@sha256:2358fcba361ed2233a5ed81b5fe4ca779ccb304120ce531a3bf51c0ed7e2bc11
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              PG_HOST="postgresql.postgresql.svc.cluster.local"
+              PG_PORT="5432"
+              export PGPASSWORD="$POSTGRES_PASSWORD"
+
+              until pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$POSTGRES_USER"; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+
+              # The role, with the password from Vault (a transaction-local setting: psql does
+              # not expand :variables inside a dollar-quoted block).
+              psql --no-psqlrc -v ON_ERROR_STOP=1 -h "$PG_HOST" -p "$PG_PORT" \
+                -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v gw_password="$GW_PASSWORD" <<'EOSQL'
+              BEGIN;
+              SELECT set_config('model_gateway_setup.password', :'gw_password', true) AS password \gset
+              DO $setup$
+              DECLARE
+                  pw text := current_setting('model_gateway_setup.password');
+                  r record;
+              BEGIN
+                  PERFORM pg_advisory_xact_lock(hashtextextended('homelab:model-gateway-db-setup', 0));
+                  IF pw = '' THEN
+                      RAISE EXCEPTION 'the model gateway password is empty (Vault k8s-secrets/model-gateway-db)';
+                  END IF;
+                  SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls
+                    INTO r FROM pg_roles WHERE rolname = 'model_gateway';
+                  IF NOT FOUND THEN
+                      EXECUTE format('CREATE ROLE model_gateway LOGIN PASSWORD %L', pw);
+                  ELSIF NOT r.rolcanlogin OR r.rolsuper OR r.rolcreatedb OR r.rolcreaterole
+                        OR r.rolreplication OR r.rolbypassrls THEN
+                      RAISE EXCEPTION 'role model_gateway exists with unexpected attributes';
+                  ELSE
+                      EXECUTE format('ALTER ROLE model_gateway PASSWORD %L', pw);
+                  END IF;
+              END
+              $setup$;
+              COMMIT;
+              EOSQL
+
+              # CREATE DATABASE cannot run inside a transaction, so it is its own step.
+              psql --no-psqlrc -v ON_ERROR_STOP=1 -h "$PG_HOST" -p "$PG_PORT" \
+                -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<'EOSQL'
+              SELECT 'CREATE DATABASE model_gateway OWNER model_gateway'
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'model_gateway')\gexec
+              DO $check$
+              BEGIN
+                  IF (SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = 'model_gateway')
+                     <> 'model_gateway' THEN
+                      RAISE EXCEPTION 'database model_gateway exists with another owner';
+                  END IF;
+              END
+              $check$;
+              REVOKE CONNECT, TEMPORARY ON DATABASE model_gateway FROM PUBLIC;
+              GRANT CONNECT ON DATABASE model_gateway TO model_gateway;
+              EOSQL
+
+              echo "model_gateway database ready: login model_gateway, owner of database model_gateway"
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: n8n-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: n8n-password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-credentials
+                  key: database-name
+            - name: GW_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: model-gateway-db
+                  key: password
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"

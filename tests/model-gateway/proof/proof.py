@@ -32,6 +32,7 @@ import model_budgets as mb  # noqa: E402
 IMAGE = ("852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0"
          "@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d")
 NET = "mgproof"
+VOLUME = "mgproof-files"
 PROVIDER_KEY = "sk-proof-provider-not-a-real-key"
 DB_PASSWORD = "proof-db-password-0123456789abcdef"
 PORTS = {"A": {"llm": 18080, "admin": 18000, "stats": 18020}, "B": {"llm": 18081, "admin": 18001, "stats": 18021}}
@@ -46,7 +47,9 @@ def sh(*args, check=True, **kw):
 def cleanup():
     for name in ("mgproof-gw-a", "mgproof-gw-b", "mgproof-mock", "mgproof-pg"):
         sh("docker", "rm", "-f", name, check=False)
+    sh("docker", "rm", "-f", "mgproof-files", check=False)
     sh("docker", "network", "rm", NET, check=False)
+    sh("docker", "volume", "rm", VOLUME, check=False)
 
 
 def http(port, path, *, key=None, body=None, method="POST", timeout=30):
@@ -143,17 +146,29 @@ def start_stack(work: Path, stagger: bool = False, gateways=("A", "B")) -> None:
     wait_for(lambda: sh("docker", "exec", "mgproof-pg", "pg_isready", "-h", "127.0.0.1", "-U", "proof",
                         "-d", "model_gateway", check=False).returncode == 0, 60)
     time.sleep(2)
+    files = work / "files"
+    (files / "config").mkdir(parents=True, exist_ok=True)
+    (files / "anthropic").mkdir(parents=True, exist_ok=True)
+    (files / "config/config.yaml").write_text((work / "config.yaml").read_text())
+    (files / "anthropic/api-key").write_text(PROVIDER_KEY)
+    sh("docker", "volume", "create", VOLUME)
+    sh("docker", "create", "--name", "mgproof-files", "-v", f"{VOLUME}:/files", "alpine:3.20", "true")
+    sh("docker", "cp", f"{files}/.", "mgproof-files:/files")
+    sh("docker", "rm", "-f", "mgproof-files")
     for gw in gateways:
         if stagger and gw == "B":
             wait_for(lambda: budgets("A"), 90, 2)
         name = f"mgproof-gw-{gw.lower()}"
         p = PORTS[gw]
+        # As the Deployment runs it: UID 65532, read-only root, /tmp writable, the config and the
+        # provider key mounted read-only where the pod mounts them (a volume stands in for the
+        # ConfigMap and the Secret).
         sh("docker", "create", "--name", name, "--network", NET, "--platform", "linux/amd64",
-           "--env-file", str(work / "env"),
+           "--env-file", str(work / "env"), "--user", "65532:65532", "--read-only", "--tmpfs", "/tmp",
+           "--mount", f"type=volume,src={VOLUME},dst=/config,volume-subpath=config,readonly",
+           "--mount", f"type=volume,src={VOLUME},dst=/var/run/model-gateway/anthropic,volume-subpath=anthropic,readonly",
            "-p", f"{p['llm']}:8080", "-p", f"{p['admin']}:15000", "-p", f"{p['stats']}:15020",
-           IMAGE, "-f", "/config.yaml")
-        sh("docker", "cp", str(work / "config.yaml"), f"{name}:/config.yaml")
-        sh("docker", "cp", f"{work / 'root'}/.", f"{name}:/")
+           IMAGE, "-f", "/config/config.yaml")
         sh("docker", "start", name)
     for gw in gateways:
         ok = wait_for(lambda gw=gw: budgets(gw), 90, 2)
@@ -189,9 +204,6 @@ def main() -> int:
     # As in the cluster: agentgateway logs its whole startup config when it sees this variable.
     env["KUBERNETES_SERVICE_HOST"] = "10.43.0.1"
     (work / "env").write_text("".join(f"{k}={v}\n" for k, v in env.items()))
-    keydir = work / "root/var/run/model-gateway/anthropic"
-    keydir.mkdir(parents=True)
-    (keydir / "api-key").write_text(PROVIDER_KEY)
 
     start_stack(work, stagger="--stagger" in sys.argv)
     check("both gateways start on the generated config and the shared database", True)

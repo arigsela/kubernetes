@@ -1,0 +1,26 @@
+# model-gateway: the daily model budget of every kagent agent group, enforced by a standalone
+# agentgateway in front of the Anthropic API (§T.137). Start at base-apps/model-gateway/docs.md.
+# budgets.yaml is data for scripts/gen-model-budgets.py, not a manifest: excluded like the
+# Backstage files.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: model-gateway
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/model-gateway
+    directory:
+      exclude: '{catalog-info.yaml,mkdocs.yml,budgets.yaml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: model-gateway
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

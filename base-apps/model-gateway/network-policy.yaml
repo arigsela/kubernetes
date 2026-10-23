@@ -1,0 +1,39 @@
+# Ingress only from Substrate's egress (the sandboxes' model calls) on 8080 and Prometheus on
+# 15020. The virtual key crosses in plain HTTP, which is why nothing else may connect; a key is
+# worth nothing outside the gateway anyway. Kubelet probes are not affected (beacon's policies).
+# Ingress-only like the repo's other policies: the egress it needs (api.anthropic.com, Postgres,
+# the collector, DNS) has no stable CIDR to pin.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: model-gateway-ingress
+  namespace: model-gateway
+  labels:
+    app: model-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app: model-gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ate-system
+          podSelector:
+            matchLabels:
+              app: atenet-egress
+      ports:
+        - port: 8080
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 15020
+          protocol: TCP
