@@ -35,7 +35,10 @@ is something you can see.
 
 - A product for Kiara's company, or for anyone but the owner.
 - Agents other than hk. The agent name is one setting, but nothing else is designed for them.
-- Follow-up turns. Each question starts a fresh session.
+  (Amended 2026-10-23: a turn may go to `kagent/implementer`; see
+  `2026-10-23-hk-demo-follow-ups-design.md`.)
+- Follow-up turns. Each question starts a fresh session. (Amended 2026-10-23: follow-ups continue
+  the session; see `2026-10-23-hk-demo-follow-ups-design.md`.)
 - Staged failures (a refused tool, an approval pause). The demo shows a normal question and what
   was checked along the way.
 - Any change to kagent's authentication or authorization.

@@ -6,7 +6,7 @@ app: hk-demo
 catalog_entity: hk-demo
 kind: runbook
 namespace: hk-demo
-last_reviewed: 2026-10-22
+last_reviewed: 2026-10-23
 status: stable
 tags: [agents, observability, fastapi, oauth2-proxy]
 sources:
@@ -16,6 +16,8 @@ sources:
   - base-apps/dex/configmap.yaml
   - base-apps/dex/deployment.yaml
   - base-apps/kagent/network-policy-controller.yaml
+  - base-apps/kagent/agent-templates/implementer.yaml
+  - base-apps/dispatcher/dispatch-table.yaml
   - scripts/provision-hk-demo-vault.sh
 ---
 
@@ -57,7 +59,29 @@ Logs: `kubectl -n hk-demo logs deploy/hk-demo -c app` (one JSON line per run pha
   namespace); a trace without `a2a.request` → it arrives last, the page waits 30 s for it. Logs
   missing → Loki ingestion lag; open the run again from Recent runs a minute later.
 
+## After a rehearsal: close the demo pull requests
+
+Every `implementer:` turn opens a real pull request (author `app/arigsela-implementer`). The
+dispatcher stops routing alert-driven fixes to the implementer while it has `open_prs_max` (3)
+pull requests open (`base-apps/dispatcher/dispatch-table.yaml`).
+
+- Check: `gh pr list --author "app/arigsela-implementer" --state open`.
+- Fix: close the rehearsal ones (`gh pr close <n> --delete-branch`), or merge one if the change
+  is wanted. Never leave three open.
+
+## A follow-up fails, or the implementer opens no pull request
+
+- A follow-up answered `failed` with an A2A error: the session is gone (kagent deletes a session
+  after 30 idle days) or was created from an older AgentTemplate revision. Press **New
+  conversation**.
+- The implementer answered `no pull request: <reason>`: it refuses changes to more than three
+  files, to `.github/`, `terraform/`, `SPEC.md`, secret stores and similar (its AgentTemplate's
+  change contract). Narrow the request, for example to one app's `catalog-info.yaml`.
+- `404 no such conversation`: the conversation is older than the app's 7 days of log lines.
+
 ## "A question is already running" and nothing moves
+
+The next question is accepted once the running turn has its answer.
 
 - Check: the app log's last `start` line has no matching `end` line.
 - Fix: a run is stuck (kagent unreachable mid-stream; the stream budget is 900 s).

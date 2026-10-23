@@ -1,4 +1,5 @@
-# hk demo (§T.136, design docs/superpowers/specs/2026-10-22-hk-demo-design.md §4).
+# hk demo (§T.136, design docs/superpowers/specs/2026-10-22-hk-demo-design.md §4; follow-ups and
+# the implementer handoff §T.138, docs/superpowers/specs/2026-10-23-hk-demo-follow-ups-design.md).
 # Two containers:
 # - app: binds 127.0.0.1:8000. It calls kagent in-cluster with its own projected
 #   service-account token (audience kagent, read on every call), so the waypoint verifies it as
@@ -43,6 +44,10 @@ spec:
           env:
             - name: HK_AGENT
               value: kagent/homelab-knowledge
+            # Where a turn that starts with "implementer:" goes: it opens the pull request (class
+            # propose), so hk stays read-only. Same SA token; the waypoint admits it on every agent.
+            - name: IMPLEMENTER_AGENT
+              value: kagent/implementer
             - name: KAGENT_BASE
               value: http://kagent-controller.kagent.svc.cluster.local:8083
             - name: KAGENT_TOKEN_FILE
