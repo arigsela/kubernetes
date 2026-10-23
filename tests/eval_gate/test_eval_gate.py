@@ -303,3 +303,71 @@ def test_run_logs_why_each_failed_entry_failed_and_how_many_tasks_were_polled():
     assert line["polled"] == 0
     # the answer itself never reaches the log
     assert "no idea" not in json.dumps(line)
+
+
+# --- a budget refusal is "could not score", never a regression (§T.137, model gateway spec §6) ---
+
+BUDGET_ERROR = ('POST "http://model-gateway.model-gateway.svc.cluster.local:8080/v1/messages": 429 Too Many '
+                'Requests {"error":{"message":"Budget exceeded","type":"rate_limit_error","code":"budget_exceeded"}}')
+
+
+def _failed_task(text):
+    return {"task": {"id": "t1", "contextId": "c1", "status": {
+        "state": "TASK_STATE_FAILED", "message": {"role": "agent", "parts": [{"text": text}]}}}}
+
+
+def _run_with(send, kube):
+    posted, log = [], []
+    rc = eg.run({"KAGENT_TOKEN_FILE": "/var/run/kagent/token", "GITHUB_TOKEN": "gh", "GITHUB_REPO": "arigsela/kubernetes"},
+                kube=kube, send=send, judge=None, judge_name="none",
+                status_post=lambda **kw: posted.append(kw), log=log.append,
+                corpus_dir=None, corpora={"homelab-knowledge": CORPUS})
+    return rc, posted, log
+
+
+def test_a_budget_refusal_in_a_failed_task_is_not_scored():
+    good = _answers()
+
+    def send(endpoint, question, **kw):
+        if question == "Q2":
+            return _failed_task(BUDGET_ERROR)
+        return good(endpoint, question, **kw)
+
+    kube = FakeKube(objects())
+    rc, posted, log = _run_with(send, kube)
+    assert rc == 1, "the existing could-not-score path: Argo shows the hook failed"
+    line = next(o for o in log if o.get("budget"))
+    assert line == {"event": "eval-gate", "agent": "homelab-knowledge", "error": "budget refused; not scored",
+                    "budget": True, "revision": "abc123", "hash": line["hash"]}
+    assert posted == [], "no commit status: nothing was scored"
+    assert not any("passed" in o for o in log)
+    state = json.loads(kube.cm["data"]["state.json"]) if kube.cm else {}
+    assert "homelab-knowledge" not in (state.get("hashes") or {}), "the next sync scores it again"
+    assert "homelab-knowledge" not in (state.get("release") or {}), "the release gate keeps its previous result"
+
+
+def test_a_budget_refusal_raised_by_the_client_is_not_scored():
+    good = _answers()
+
+    def send(endpoint, question, **kw):
+        if question == "Q1":
+            raise RuntimeError("SendMessage failed: " + BUDGET_ERROR)
+        return good(endpoint, question, **kw)
+
+    rc, posted, log = _run_with(send, FakeKube(objects()))
+    assert rc == 1 and posted == [] and any(o.get("budget") for o in log)
+
+
+def test_another_failed_task_is_still_scored():
+    good = _answers()
+
+    def send(endpoint, question, **kw):
+        if question == "Q2":
+            return _failed_task("the model returned 500")
+        return good(endpoint, question, **kw)
+
+    rc, posted, log = _run_with(send, FakeKube(objects()))
+    assert rc == 0 and not any(o.get("budget") for o in log)
+    line = next(o for o in log if "passed" in o)
+    assert line["failed"] == ["q2"] and line["total"] == 3, "scored as today (a first run sets the baseline)"
+    assert any("context" in o for o in posted)
