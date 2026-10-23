@@ -441,7 +441,7 @@ def group_model_configs(table: dict, repo: Path = REPO) -> dict[str, str]:
     (anthropic-<model>.yaml) with the gateway as baseUrl and the group's virtual key."""
     out = {}
     for group, g in table["groups"].items():
-        if not g["gateway"]:
+        if not g["gateway"] or g.get("chart_default"):   # the kagent chart renders the default's
             continue
         for model in g["models"]:
             ref_path = repo / MODEL_CONFIGS / f"anthropic-{model}.yaml"

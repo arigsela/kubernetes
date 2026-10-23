@@ -28,7 +28,8 @@ metadata:
 spec:
   description: Changes the arigsela/kubernetes repository through a pull request under the implementer GitHub App. Investigates with read tools first; a human merges.
   modelConfig:
-    name: anthropic-claude-sonnet-5-5
+    # Through the model gateway (§T.137): group implementer's daily budget, base-apps/model-gateway/budgets.yaml.
+    name: anthropic-claude-sonnet-5-5-implementer
   systemPrompt: |
     You are the implementer for the homelab GitOps repository arigsela/kubernetes. You change
     the repository only through a pull request opened under your own GitHub App identity, and a

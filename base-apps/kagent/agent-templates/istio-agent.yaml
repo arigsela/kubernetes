@@ -41,7 +41,8 @@ metadata:
 spec:
   description: An Istio expert AI agent specializing in Istio operations, troubleshooting, and maintenance. Every mutating tool call needs human approval.
   modelConfig:
-    name: anthropic-claude-sonnet-5-5
+    # Through the model gateway (§T.137): group build's daily budget, base-apps/model-gateway/budgets.yaml.
+    name: anthropic-claude-sonnet-5-5-build
   promptTemplate:
     dataSources:
       # Rendered by the kagent chart (still in 1.0.0-alpha11: templates/builtin-prompts-configmap.yaml).
