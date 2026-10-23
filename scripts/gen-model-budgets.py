@@ -36,6 +36,101 @@ COST = "agent_cost_estimate_usd_total"
 CHART_DEFAULT_AGENTS = "agents created in the kagent UI"
 
 
+# ------------------------------------------------------------------ the gateway's config
+
+PROVIDER_KEY_FILE = "/var/run/model-gateway/anthropic/api-key"
+DB_URL_ENV = "$MODEL_GATEWAY_DB_URL"
+LLM_PORT = 8080           # the front listener: what Substrate's egress connects to
+BUDGET_PORT = 8081        # the llm listener (keys, budgets, provider key), on 127.0.0.1 only
+METRICS_PORT = 15020      # agentgateway's default stats address (the MCP adapters use it too)
+READY_PORT = 15021        # agentgateway's default readiness address
+ADMIN_PORT = 15000        # agentgateway's default admin/UI address (127.0.0.1): /api/budgets
+# The gateway's own 429 for an exhausted budget carries Retry-After = the seconds left in the
+# window; the Anthropic Go SDK (v1.80.0) waits that long with no limit, twice. x-should-retry:
+# false makes it fail at once (spec §3.2). A response policy does not reach a response the
+# gateway generates itself (local proof, 2026-10-23), so the llm listener sits behind a front
+# listener in the same process: there the refusal is an upstream response and its rules apply.
+# The front tells the refusal from Anthropic's own 429 by Anthropic's `request-id` header, which
+# every Anthropic response carries and the gateway's refusal does not; any x-should-retry
+# Anthropic sent is passed through, so its own 429s and 529s keep their normal retries.
+NO_RETRY = ('response.code == 429 && !("request-id" in response.headers) ? "false" : '
+            '("x-should-retry" in response.headers ? response.headers["x-should-retry"] : "")')
+
+
+def _catalog(models: set[str]) -> dict:
+    """The collector's prices (§V.105) as agentgateway's inline model catalog."""
+    prices = mb.collector_prices()
+    out = {}
+    for model in sorted(models):
+        tiers = prices[model]
+
+        def rates(t):
+            return {"input": str(t["input"]), "output": str(t["output"]),
+                    "cacheRead": str(t["cache_read"]), "cacheWrite": str(t["cache_write"])}
+
+        entry = {"rates": rates(tiers[0])}
+        if len(tiers) > 1:
+            entry["tiers"] = [{"contextOver": t["over"], "rates": rates(t)} for t in tiers[1:]]
+        out[model] = entry
+    return {"providers": {"anthropic": {"models": out}}}
+
+
+def gateway_config(keys: dict[str, str], db_url: str, *, table: dict | None = None,
+                   provider_key_file: str = PROVIDER_KEY_FILE, base_url: str | None = None,
+                   tracing: bool = True) -> dict:
+    """agentgateway v1.6.0 standalone config, `llm` mode (the documented LLM-gateway shape).
+
+    keys: group → the value the config holds for that group's virtual key (in the cluster an
+    env reference, `$MODEL_GATEWAY_KEY_<GROUP>`; in the local proof a literal test key).
+    base_url: the upstream; None means the provider's default (https://api.anthropic.com)."""
+    table = table or mb.load()
+    groups = table["groups"]
+    models = sorted({m for g in groups.values() for m in g["models"]})
+    params: dict = {"apiKey": {"file": provider_key_file}}
+    if base_url:
+        params["baseUrl"] = base_url
+    cfg: dict = {
+        "config": {
+            "statsAddr": f"0.0.0.0:{METRICS_PORT}",
+            "readinessAddr": f"0.0.0.0:{READY_PORT}",
+            "database": {"url": db_url},
+            "modelCatalog": [{"inline": _catalog(set(models))}],
+            "metrics": {"fields": {"add": {"group": 'default(apiKey.group, "")'}}},
+        },
+        "binds": [{"port": LLM_PORT, "listeners": [{"name": "front", "protocol": "HTTP", "routes": [{
+            "name": "budget-listener",
+            "policies": {"transformations": {"response": {"set": {"x-should-retry": NO_RETRY}}}},
+            "backends": [{"host": f"127.0.0.1:{BUDGET_PORT}", "weight": 100}]}]}]}],
+        "gateways": {"llm": {"port": BUDGET_PORT, "bindAddress": "127.0.0.1"}},
+        "llm": {
+            "gateways": "llm",
+            "models": [{"name": m, "provider": "anthropic", "passthrough": "detect",
+                        "params": dict(params)} for m in models],
+            "policies": {
+                "apiKey": {
+                    "mode": "strict",
+                    "location": {"header": {"name": "x-api-key"}},
+                    # metadata.name is required on a key with a budget (1.6.0 refuses to start
+                    # without it). The budget's counter is keyed by the key's hash, so a rotated
+                    # key starts its group's day again at zero (local proof, 2026-10-23).
+                    "keys": [{"key": keys[name], "metadata": {"name": name, "group": name},
+                              "allowedModels": list(g["models"]),
+                              "budgets": [{"name": "daily",
+                                           "limit": {"unit": "USD", "amount": g["daily_usd"]},
+                                           "window": {"rolling": table["window"]},
+                                           "onBudgetExceeded": "Block"}]}
+                             for name, g in groups.items()],
+                },
+            },
+        },
+    }
+    if tracing:
+        cfg["frontendPolicies"] = {"tracing": {
+            "host": "otel-collector.tracing.svc.cluster.local:4317", "protocol": "grpc",
+            "randomSampling": "true", "resources": {"service.name": '"model-gateway"'}}}
+    return cfg
+
+
 def _window_total():
     """window_total() from the dashboards generator: the one tested way to sum rare counters."""
     path = Path(__file__).resolve().parent / "gen-agent-dashboards.py"

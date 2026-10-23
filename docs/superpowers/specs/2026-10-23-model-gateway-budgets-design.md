@@ -215,6 +215,41 @@ are not allowed.
   - The virtual key crosses from the egress to the gateway in plain HTTP. That is accepted
     because of this policy, and because the key is worth nothing outside the gateway.
 
+#### 3.1a What the local proof changed (2026-10-23)
+
+These are the results of `tests/model-gateway/proof/` (results in `results-2026-10-23.md`). Each
+one changed the design.
+
+- **The fallback was needed.** A response rule does not reach a 429 the gateway generates
+  itself. The design uses two listeners in one process:
+  - a front listener on 8080, which the egress connects to;
+  - the budget listener on `127.0.0.1:8081`, in agentgateway's `llm` mode, which holds the keys,
+    the budgets and the provider key.
+
+  The front sets `x-should-retry: false` only on a 429 without Anthropic's `request-id` header,
+  so only on the gateway's own refusal.
+  - That refusal's `Retry-After` was about 49,000 s in the proof.
+  - The Anthropic Go SDK v1.80.0 then failed in 0.0 s, with `budget_exceeded` in its error.
+- **`llm` mode, not hand-built routes.** The docs' own shape: `llm.models[]` with
+  `provider: anthropic`, `passthrough: detect`, and `params.apiKey.file`.
+  - Passthrough forwards the body unchanged: `cache_control`, `thinking` and unknown fields
+    survive.
+  - It still reads usage, including from streamed responses.
+- **A key with a budget needs `metadata.name`.** The gateway refuses to start without it. The
+  budget counter is keyed by the key's hash, so rotating a key starts its group's day at zero.
+- **Base URLs.** The gateway adds `/messages` to the base URL's path, so a custom upstream is
+  `…/v1`. kagent's `baseUrl` is the gateway root: the SDK adds `/v1/messages`.
+- **Sharing between replicas is unreliable.** In about one proof run in three, one replica's
+  spend never reached Postgres, and no error was logged. The other runs shared within 4 s.
+  - The cause was not found; agentgateway 1.6.0 has no matching upstream report.
+  - So the Service pins the egress to one replica (`sessionAffinity: ClientIP`, 86400 s), and the
+    second replica is a standby that serves after a failover.
+  - Each replica always enforces the budget on its own counts. After a failover the standby
+    starts from what reached Postgres, so the worst case is about twice a group's budget on that
+    day.
+- **Prices match.** Haiku's base tier and its over-100K tier, and Sonnet with cache reads, were
+  charged exactly as the collector computes them.
+
 #### 3.2 Configuration
 
 The key names below come from agentgateway v1.6.0's `schema/config.md`. The builder confirms
