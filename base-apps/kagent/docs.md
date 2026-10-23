@@ -175,7 +175,7 @@ group moves all five charts in one PR, and only after approval on the Dependency
 
 | Agent | Model | Harness | Class | Tools |
 |---|---|---|---|---|
-| `homelab-knowledge` | `anthropic-claude-sonnet-5-5` | `kagent-memory` | read | `agent-docs` (`get_file_contents`, `search_code`), `brave-search` (`brave_web_search`, `brave_news_search`), `backstage-catalog` (`get-catalog-entity`), and 8 read tools of `kagent-tool-server`. No sub-agent. The "ask hk" agent |
+| `homelab-knowledge` | `anthropic-claude-sonnet-5-5-hk` | `kagent-memory` | read | `agent-docs` (`get_file_contents`, `search_code`), `brave-search` (`brave_web_search`, `brave_news_search`), `backstage-catalog` (`get-catalog-entity`), and 8 read tools of `kagent-tool-server`. No sub-agent. The "ask hk" agent |
 | `k8s-reader` | `anthropic-claude-haiku-5-5-k8s-reader` | `kagent-stateless` | read | the same 8 read tools of `kagent-tool-server`, nothing else. No memory |
 | `k8s-agent` | `anthropic-claude-sonnet-5-5-build` | `kagent-memory` | admin | `kagent-tool-server` bound twice: read tools `requireApproval: false`, every write/destructive tool `requireApproval: true` |
 | `istio-agent` | `anthropic-claude-sonnet-5-5-build` | `kagent-memory` | admin | the same split, with the Istio tools |

@@ -60,6 +60,16 @@ over a screen share. Design: `docs/superpowers/specs/2026-10-22-hk-demo-design.m
    lines from Loki (substring check before the regex, a window of minutes) and totals from
    Prometheus, and fills the boxes.
 
+The Model API box follows the agent's model calls through the model gateway (§T.137). It shows:
+- the egress injecting the group's key for the gateway;
+- each call through the gateway, checked against the group's daily budget;
+- what the gateway charged this run, from the gateway's own log lines;
+- the group's spend today against its budget. The budgets come from `MODEL_BUDGETS`, which
+  `scripts/gen-model-budgets.py` writes from `base-apps/model-gateway/budgets.yaml`; the spend is
+  the gateway's cost metric since 00:00 UTC.
+
+A refusal (429 `budget_exceeded`) turns the box red.
+
 A box shows ✓ only for what this request's own spans, log lines or metrics show; settings that
 hold for every request show ⚙. A box turns red with ✗ when what it saw failed: a tool call
 whose span ended in error (the Tools box gives the error, and its Evidence tab has the tool
@@ -119,6 +129,7 @@ email as the record of who asked.
 | Login | Dex static client `hk-demo` (`base-apps/dex/configmap.yaml`); client secret in Vault `k8s-secrets/dex:hk-demo-client-secret` and `k8s-secrets/hk-demo:oauth2-client-secret` (same value); cookie secret and the allowed email in `k8s-secrets/hk-demo`, written by `scripts/provision-hk-demo-vault.sh` |
 | Who may call kagent | the namespace's ambient label, the kagent waypoint's `RequestAuthentication` (service-account issuer, audience `kagent`) and `network-policy-controller.yaml` |
 | Data stores | env in `deployment.yaml`: Loki, Tempo, Prometheus in-cluster (GET only); Grafana links |
+| Model budgets | `MODEL_BUDGETS` in `deployment.yaml`, generated from `base-apps/model-gateway/budgets.yaml` by `scripts/gen-model-budgets.py --write` |
 | The Config tab's excerpts | `arigsela/hk-demo` `src/hk_demo/config_excerpts.yaml`, copied from this repo's files: refresh them in the release after those files change |
 | The API description | `catalog/apis/hk-demo-openapi.yaml`, shown in Backstage as API `hk-demo-api` (the API tab): a copy of `arigsela/hk-demo` `openapi.yaml`, which that repo's tests check against the code; copy it over in the release PR when it changes |
 

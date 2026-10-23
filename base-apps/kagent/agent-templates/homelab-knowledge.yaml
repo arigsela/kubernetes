@@ -43,7 +43,8 @@ spec:
   # Sonnet: it walks index.md -> base-apps/index.md -> app docs and then reads live state, so
   # it needs the context headroom and reliable multi-step tool calling.
   modelConfig:
-    name: anthropic-claude-sonnet-5-5
+    # Through the model gateway (§T.137): group hk's daily budget, base-apps/model-gateway/budgets.yaml.
+    name: anthropic-claude-sonnet-5-5-hk
   promptTemplate:
     dataSources:
       # Rendered by the kagent chart (still in 1.0.0-alpha11: templates/builtin-prompts-configmap.yaml).
