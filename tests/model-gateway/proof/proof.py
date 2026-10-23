@@ -182,7 +182,7 @@ def go_sdk_check(keys):
     name = "mgproof-go"
     sh("docker", "rm", "-f", name, check=False)
     sh("docker", "create", "--name", name, "--network", NET, "-w", "/src", "-e", "BASE=http://mgproof-gw-a:8080",
-       "-e", f"KEY={keys['dcc']}", "-e", "MODEL=claude-haiku-5-5", "golang:1.25",
+       "-e", f"KEY={keys['dcc']}", "-e", "MODEL=claude-haiku-5-5", "golang:1.25-alpine",
        "sh", "-c", "go mod tidy >/dev/null 2>&1 && go run .")
     sh("docker", "cp", f"{HERE / 'go-sdk'}/.", f"{name}:/src")
     out = sh("docker", "start", "-a", name, check=False, timeout=600)
@@ -269,9 +269,8 @@ def main() -> int:
     t0 = time.time()
     blocked = wait_for(lambda: http(B, "/v1/messages", key=keys["restarter"], body=msg(sonnet, "in=1,out=1"))[0] == 429, 20, 1)
     # Recorded, not gated: in this proof the sharing failed in about one run in three (agentgateway
-    # 1.6.0: one replica's spend never reached Postgres; cause not found). The Service therefore
-    # pins the egress to one replica (sessionAffinity: ClientIP) and the other is a standby; the
-    # worst case, a failover on a bad day, is about twice a group's budget (spec §3.1).
+    # 1.6.0: one replica's spend never reached Postgres; cause not found), which is why the gateway
+    # runs one replica (spec §3.1a). Re-run this after an agentgateway upgrade: two replicas need it.
     shared = s == 200 and blocked is True
     note = (f"A answered {s}; after {time.time() - t0:.0f}s; A used {used('A', 'restarter', keys)}, "
             f"B used {used('B', 'restarter', keys)}")

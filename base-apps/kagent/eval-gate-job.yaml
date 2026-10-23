@@ -33,7 +33,7 @@ spec:
         # sha256 (first 16 hex) over the eval-gate-code ConfigMap's values, sorted by key;
         # written by scripts/gen-eval-gate-configmap.py so a code or corpus change is a new
         # pod template (tests/eval_gate/test_manifests.py).
-        checksum/code: 2058179ab43a4b25
+        checksum/code: 2b0615d4bba59d73
     spec:
       serviceAccountName: eval-gate
       restartPolicy: Never

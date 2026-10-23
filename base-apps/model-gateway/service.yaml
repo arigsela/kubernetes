@@ -1,9 +1,5 @@
 # What kagent's ModelConfigs point at (baseUrl http://model-gateway.model-gateway.svc.cluster.local:8080).
-# sessionAffinity: every call from Substrate's egress lands on the same replica, which holds the
-# day's counts; the other replica serves only after a failover. Sharing counts between replicas
-# through Postgres failed in about one local proof run in three (spec §3.1a): without affinity a
-# group could spend its budget once per replica. Worst case now: a failover on a bad day, about
-# twice one group's budget.
+# One replica (deployment.yaml), so nothing to pin.
 apiVersion: v1
 kind: Service
 metadata:
@@ -15,10 +11,6 @@ spec:
   type: ClusterIP
   selector:
     app: model-gateway
-  sessionAffinity: ClientIP
-  sessionAffinityConfig:
-    clientIP:
-      timeoutSeconds: 86400
   ports:
     - name: http
       port: 8080

@@ -37,18 +37,34 @@ def test_image_is_the_mcp_adapters_pin():
     assert IMAGE in adapters, "one agentgateway image in the repo"
 
 
-def test_two_replicas_never_both_down_and_the_config_checksum():
+def test_one_active_replica_and_the_config_checksum():
+    """Final review I1: Substrate's egress restarts twice a day (base-apps/substrate/cert-restart-cronjob.yaml),
+    so ClientIP affinity cannot keep one of two replicas active, and sharing counts between replicas
+    was unreliable in the local proof. One replica counts exactly; a rolling update (surge 1,
+    unavailable 0) keeps one serving through a config change. No PDB: with one replica it would
+    block every node drain."""
     import importlib.util
     spec = importlib.util.spec_from_file_location("gen_model_budgets", REPO / "scripts/gen-model-budgets.py")
     gen = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gen)
     d = deployment()
-    assert d["spec"]["replicas"] == 2
-    assert d["spec"]["strategy"]["rollingUpdate"] == {"maxUnavailable": 0, "maxSurge": 1}
-    assert one(APP / "pdb.yaml", "PodDisruptionBudget")["spec"]["minAvailable"] == 1
+    assert d["spec"]["replicas"] == 1
+    assert d["spec"]["strategy"] == {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 0, "maxSurge": 1}}
+    assert not (APP / "pdb.yaml").exists()
     ann = d["spec"]["template"]["metadata"]["annotations"]
     assert ann["checksum/config"] == gen.configmap_checksum((APP / "configmap.yaml").read_text())
     assert ann["prometheus.io/port"] == "15020"
+
+
+def test_a_rollout_drains_streams_instead_of_cutting_them():
+    """Final review I2: agentgateway drains for TERMINATION_GRACE_PERIOD_SECONDS - 5 (default 5 s),
+    and a model stream at maxTokens 16000 runs longer than that; a stream cut mid-way is not retried."""
+    spec = deployment()["spec"]["template"]["spec"]
+    grace = spec["terminationGracePeriodSeconds"]
+    assert grace >= 120
+    (c,) = spec["containers"]
+    env = {e["name"]: e["value"] for e in c.get("env", [])}
+    assert env["TERMINATION_GRACE_PERIOD_SECONDS"] == str(grace)
 
 
 def test_the_pod_runs_as_the_proof_ran_it():
@@ -67,11 +83,10 @@ def test_the_pod_runs_as_the_proof_ran_it():
     assert c["readinessProbe"]["httpGet"] == {"path": "/healthz/ready", "port": 15021}
 
 
-def test_service_pins_the_egress_to_one_replica():
+def test_the_service():
     svc = one(APP / "service.yaml", "Service")
     assert svc["metadata"]["name"] == "model-gateway" and svc["metadata"]["namespace"] == "model-gateway"
-    assert svc["spec"]["sessionAffinity"] == "ClientIP"
-    assert svc["spec"]["sessionAffinityConfig"]["clientIP"]["timeoutSeconds"] == 86400
+    assert "sessionAffinity" not in svc["spec"], "one replica: nothing to pin"
     assert [p["port"] for p in svc["spec"]["ports"]] == [8080]
     assert mb.GATEWAY_URL == "http://model-gateway.model-gateway.svc.cluster.local:8080"
 

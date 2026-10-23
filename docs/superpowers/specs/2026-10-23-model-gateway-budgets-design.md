@@ -97,7 +97,9 @@ The third option, one Anthropic workspace per agent group, was not chosen.
 ## Calls I made (the owner can change any of them)
 
 - The budget sizes in §2.
-- Two gateway replicas, with the budget counts in a new database on the existing CNPG cluster.
+- One gateway replica (final review I1, §3.1a), with the budget counts in a new database on the cluster's
+  shared Postgres, `postgresql.postgresql.svc` (the instance kagent_v1 and Substrate use, not the CNPG
+  `postgresql-cluster`: the same failure domain as the agents).
 - Namespace and Argo CD application `model-gateway`.
 - The 80% warning is measured over a rolling 24 hours, not since midnight. PromQL cannot sum
   "since midnight", so the warning can fire a little early or late compared with the gateway's
@@ -200,8 +202,11 @@ are not allowed.
   `852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d`.
   It is built FROM scratch and runs as 65532. The config file comes from a ConfigMap. Mount an
   emptyDir if the gateway needs a writable directory.
-- **Two replicas.** Spread across the workers, with a PodDisruptionBudget of `minAvailable: 1`.
-  Every model call depends on the gateway, just as it depends on Substrate's egress today.
+- **One replica** (it was two; changed after the final review, §3.1a). A config change rolls with
+  maxSurge 1 / maxUnavailable 0 and a 180 s drain (agentgateway drains for
+  `TERMINATION_GRACE_PERIOD_SECONDS` − 5; its default of 5 s would cut model streams), so no call is
+  dropped. A node drain or a crash is a short outage of every group on the gateway. There is no
+  PodDisruptionBudget, because with one replica it would block every node drain.
 - **Telemetry.**
   - Prometheus annotations on `:15020/metrics`, the pattern from §T.134.
   - Traces to `otel-collector.tracing.svc.cluster.local:4317`. A run's gateway spans must join
@@ -242,11 +247,13 @@ one changed the design.
 - **Sharing between replicas is unreliable.** In about one proof run in three, one replica's
   spend never reached Postgres, and no error was logged. The other runs shared within 4 s.
   - The cause was not found; agentgateway 1.6.0 has no matching upstream report.
-  - So the Service pins the egress to one replica (`sessionAffinity: ClientIP`, 86400 s), and the
-    second replica is a standby that serves after a failover.
-  - Each replica always enforces the budget on its own counts. After a failover the standby
-    starts from what reached Postgres, so the worst case is about twice a group's budget on that
-    day.
+  - The first answer, two replicas with the Service pinning the egress to one (ClientIP affinity),
+    does not hold. Substrate's egress restarts twice a day (substrate `cert-restart-cronjob`), so
+    affinity re-picks a replica about every 12 hours (final review I1).
+  - So the gateway runs **one replica**, which counts exactly.
+  - What can still be lost is the counts not yet in Postgres when the pod restarts. If that pod's
+    flush never worked, that is the whole day's count, and the group can spend up to its budget
+    again that day.
 - **Prices match.** Haiku's base tier and its over-100K tier, and Sonnet with cache reads, were
   charged exactly as the collector computes them.
 
@@ -276,9 +283,10 @@ each one against the binary.
     (`llm/mod.rs:1569-1595`).
 - **`config.database.url`.** Postgres, database `model_gateway` on `postgresql-cluster`, with
   the password taken from the environment (`$VAR`).
-  - Postgres is required, not SQLite: with two replicas, each one adds its spend to Postgres
+  - Postgres is required, not SQLite: with more than one process (a rollout overlaps two for
+    seconds), each one adds its spend to Postgres
     every 5 s and reads back the totals (`http/budget/database.rs:155-257`, an additive upsert in
-    `postgres_upsert.sql`). The two replicas therefore share one budget, and the overshoot is
+    `postgres_upsert.sql`). The processes therefore share one budget (when the flush works), and the overshoot is
     about 5 s of spend plus any streams already running.
   - SQLite per replica would count each budget twice.
   - The gateway will not start without its database.
@@ -507,6 +515,7 @@ each group's budget.
   check worth keeping.
 - **Eval runs could spend more than expected.** §6 sizes for it, and a refusal is "could not
   score", not a regression.
-- **The gateway becomes a single dependency for every model call.** Two replicas, a
-  PodDisruptionBudget and the "Model gateway down" alert limit this. A Postgres outage alone
-  does not stop it serving, but a restart during one does.
+- **The gateway becomes a single dependency for every model call.** It runs as one replica
+  (§3.1a), so a node drain or a crash stops every group on the gateway for the time it takes to
+  reschedule. "Model gateway down" alerts after 5 minutes. A config change rolls without a gap.
+  Undoing a group means pointing its templates back at the reference config while it still exists.
