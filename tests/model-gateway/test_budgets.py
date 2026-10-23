@@ -100,3 +100,15 @@ def test_load_rejects(tmp_path, groups, top):
 
 def test_load_accepts_a_minimal_table(tmp_path):
     assert mb.load(_write(tmp_path, {"ok": GOOD}))["groups"]["ok"]["daily_usd"] == 1.0
+
+
+def test_the_console_limit_guidance_matches_the_table():
+    """Final review I3: the owner sizes the Anthropic console limit (the monthly backstop) from the
+    spec's numbers, so they must follow the table: its daily total, its month and a week of the
+    largest budget."""
+    groups = mb.load()["groups"].values()
+    total = sum(g["daily_usd"] for g in groups)
+    largest = max(g["daily_usd"] for g in groups)
+    spec = (REPO / "docs/superpowers/specs/2026-10-23-model-gateway-budgets-design.md").read_text()
+    assert f"The budgets add up to ${total:.2f} a day, about ${int(total * 31)} a month" in spec
+    assert f"about a week of the largest budget (about ${int(7 * largest)})" in spec
