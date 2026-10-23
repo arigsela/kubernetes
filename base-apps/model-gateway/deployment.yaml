@@ -1,8 +1,14 @@
 # The model gateway (spec §3): agentgateway v1.6.0, our own static image (the MCP adapters' one,
-# images/agentgateway/), on the generated configmap.yaml. Two replicas so a restart or a node
-# drain never takes every model call down; the Service pins Substrate's egress to one of them
-# (service.yaml), because sharing budget counts between replicas was unreliable in the local
-# proof (spec §3.1a).
+# images/agentgateway/), on the generated configmap.yaml.
+#
+# ONE replica, on purpose (final review I1, spec §3.1a). Sharing budget counts between replicas
+# through Postgres failed in about one local proof run in three, and nothing can keep two replicas
+# in an active/standby split: Substrate's egress, the only client, restarts twice a day
+# (substrate cert-restart-cronjob), so ClientIP affinity would re-pick a replica every 12 hours.
+# One replica counts exactly. A config change rolls with maxSurge 1 / maxUnavailable 0, so the new
+# pod serves before the old one drains; a node drain or a crash is a short outage of every
+# group on the gateway ("Model gateway down" alerts after 5 minutes). No PodDisruptionBudget: with
+# one replica it would block every node drain.
 #
 # The image is FROM scratch: no shell, so httpGet probes. Read-only root, an emptyDir at /tmp,
 # UID 65532 (the image's user), as the local proof ran it.
@@ -15,7 +21,7 @@ metadata:
     app: model-gateway
     app.kubernetes.io/name: model-gateway
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -45,13 +51,10 @@ spec:
       automountServiceAccountToken: false
       nodeSelector:
         node.kubernetes.io/workload: application
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: model-gateway
+      # A model stream at maxTokens 16000 runs well past agentgateway's default 5 s drain, and a
+      # stream cut mid-way is not retried (final review I2). agentgateway drains for
+      # TERMINATION_GRACE_PERIOD_SECONDS - 5, then closes what is left before the kubelet's SIGKILL.
+      terminationGracePeriodSeconds: 180
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -67,6 +70,9 @@ spec:
           envFrom:
             - secretRef:
                 name: model-gateway-env
+          env:
+            - name: TERMINATION_GRACE_PERIOD_SECONDS
+              value: "180"   # = terminationGracePeriodSeconds (tests/model-gateway)
           ports:
             - containerPort: 8080
               name: http

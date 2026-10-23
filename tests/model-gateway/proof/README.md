@@ -18,8 +18,9 @@ the machine. The proof then checks each behaviour the design relies on (spec §7
 - the Anthropic Go SDK at kagent's version (v1.80.0) fails at once on a refusal, instead of
   sleeping for its Retry-After.
 
-Whether the two replicas share a count (check 7) is recorded, not gated. In agentgateway 1.6.0 it
-failed in about one run in three; see spec §3.1a.
+Whether two gateways share a count (check 7) is recorded, not gated. In agentgateway 1.6.0 it
+failed in about one run in three, which is why the gateway runs one replica (spec §3.1a). Check it
+again after an upgrade before going back to two.
 
 ```bash
 aws ecr get-login-password --region us-east-2 \
@@ -27,7 +28,7 @@ aws ecr get-login-password --region us-east-2 \
 tests/model-gateway/proof/run-proof.sh          # --no-go skips the Go SDK check, --keep keeps the containers
 ```
 
-You need about 3 GB of free Docker disk. A full Docker VM makes Postgres crash at first boot.
+You need about 1.5 GB of free Docker disk (Postgres, the mock, the gateway image, golang:1.25-alpine). A full Docker VM makes Postgres crash at first boot.
 
 Re-run the proof after any agentgateway, Substrate or kagent upgrade, or any change to
 `gateway_config()`.

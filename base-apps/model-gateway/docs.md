@@ -70,13 +70,18 @@ created in the UI.
 `gateway: true` in a group means its agents' ModelConfigs point at the gateway. Groups move over one
 at a time (spec §7); until a group moves it is only measured and alerted on.
 
-## Two replicas, one active
+## One replica
 
-Each replica counts in memory and adds its counts to Postgres every 5 seconds. In the local proof
-that sharing failed in about one run in three (one replica's spend never reached Postgres; cause
-not found in agentgateway 1.6.0). So the Service pins the egress to one replica
-(`sessionAffinity: ClientIP`) and the other is a standby. Worst case: a failover on a day the
-active replica's counts never reached Postgres, about twice one group's budget that day.
+Two replicas would need to share their counts through Postgres, and that failed in about one
+local proof run in three in agentgateway 1.6.0, with nothing logged. An active/standby split with
+Service affinity does not work here either: Substrate's egress restarts twice a day and would land
+on the other replica every time. So the gateway runs one replica, which counts exactly.
+- **Config changes.** They roll without a gap (maxSurge 1, maxUnavailable 0). The old pod drains
+  for up to 175 s, so streams finish.
+- **Node drains and crashes.** These are short outages of every group on the gateway. "Model
+  gateway down" alerts after 5 minutes.
+- **Lost counts.** On a restart the day's count resumes from Postgres. Counts not yet flushed (up to
+  5 s) are lost.
 
 ## Alerts (Grafana, folder Agent Budgets, to Slack)
 

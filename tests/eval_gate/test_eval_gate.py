@@ -371,3 +371,12 @@ def test_another_failed_task_is_still_scored():
     line = next(o for o in log if "passed" in o)
     assert line["failed"] == ["q2"] and line["total"] == 3, "scored as today (a first run sets the baseline)"
     assert any("context" in o for o in posted)
+
+
+def test_an_answer_that_mentions_budget_exceeded_is_still_scored():
+    """Final review M1: the repo documents budget_exceeded and homelab-knowledge answers from the
+    repo; only a failure (failed task or client error) is a refusal, never an answer's text."""
+    good = _answers(Q1="The gateway answers 429 budget_exceeded once a group's budget is spent")
+    rc, posted, log = _run_with(good, FakeKube(objects()))
+    assert rc == 0 and not any(o.get("budget") for o in log)
+    assert next(o for o in log if "passed" in o)["total"] == 3

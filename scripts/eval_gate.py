@@ -432,7 +432,9 @@ def run(env, *, kube, send, judge, judge_name: str, status_post, log, corpus_dir
         # (§T.137). That says nothing about how the agent behaves, so nothing is scored: "could not
         # score" (exit 1), the hash is not recorded (the next sync scores it again) and the release
         # gate keeps its previous result.
-        if any(BUDGET_REFUSAL in ((v.get("error") or "") + (v.get("answer") or "")) for v in captured.values()):
+        # Only a failure counts, never an answer's text: the repo documents budget_exceeded and an
+        # agent may explain it (final review M1).
+        if any(BUDGET_REFUSAL in (v.get("error") or "") for v in captured.values()):
             log({"event": "eval-gate", "agent": agent, "hash": h, "revision": rev,
                  "error": "budget refused; not scored", "budget": True})
             rc = 1
