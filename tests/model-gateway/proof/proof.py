@@ -33,6 +33,7 @@ IMAGE = ("852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0"
          "@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d")
 NET = "mgproof"
 PROVIDER_KEY = "sk-proof-provider-not-a-real-key"
+DB_PASSWORD = "proof-db-password-0123456789abcdef"
 PORTS = {"A": {"llm": 18080, "admin": 18000, "stats": 18020}, "B": {"llm": 18081, "admin": 18001, "stats": 18021}}
 MOCK_PORT = 18090
 RESULTS: list[tuple[str, bool, str]] = []
@@ -119,6 +120,7 @@ def committed_config() -> dict:
     cfg = yaml.safe_load(doc["data"]["config.yaml"])
     for m in cfg["llm"]["models"]:
         m["params"]["baseUrl"] = "http://mgproof-mock:8090/v1"
+    cfg["config"]["database"]["url"] = "postgres://proof@mgproof-pg:5432/model_gateway?sslmode=disable"
     cfg["config"]["adminAddr"] = "0.0.0.0:15000"
     cfg.pop("frontendPolicies", None)
     for k in cfg["llm"]["policies"]["apiKey"]["keys"]:
@@ -131,7 +133,7 @@ def start_stack(work: Path, stagger: bool = False, gateways=("A", "B")) -> None:
     """Postgres, the mock and the gateways (B only once A is ready when stagger is set)."""
     sh("docker", "network", "create", NET)
     sh("docker", "run", "-d", "--name", "mgproof-pg", "--network", NET, "-e", "POSTGRES_USER=proof",
-       "-e", "POSTGRES_PASSWORD=proofpass", "-e", "POSTGRES_DB=model_gateway", "postgres:16")
+       "-e", f"POSTGRES_PASSWORD={DB_PASSWORD}", "-e", "POSTGRES_DB=model_gateway", "postgres:16")
     sh("docker", "create", "--name", "mgproof-mock", "--network", NET, "-p", f"{MOCK_PORT}:8090",
        "python:3.12-slim", "python", "/mock_anthropic.py")
     sh("docker", "cp", str(HERE / "mock_anthropic.py"), "mgproof-mock:/mock_anthropic.py")
@@ -160,6 +162,22 @@ def start_stack(work: Path, stagger: bool = False, gateways=("A", "B")) -> None:
             check(f"gateway {gw} starts on the generated config", False, str(ok))
 
 
+def go_sdk_check(keys):
+    """The Anthropic Go SDK v1.80.0 (kagent's Go ADK) against an over-budget group."""
+    name = "mgproof-go"
+    sh("docker", "rm", "-f", name, check=False)
+    sh("docker", "create", "--name", name, "--network", NET, "-w", "/src", "-e", "BASE=http://mgproof-gw-a:8080",
+       "-e", f"KEY={keys['dcc']}", "-e", "MODEL=claude-haiku-5-5", "golang:1.25",
+       "sh", "-c", "go mod tidy >/dev/null 2>&1 && go run .")
+    sh("docker", "cp", f"{HERE / 'go-sdk'}/.", f"{name}:/src")
+    out = sh("docker", "start", "-a", name, check=False, timeout=600)
+    sh("docker", "rm", "-f", name, check=False)
+    text = out.stdout + out.stderr
+    elapsed = float((text.split("elapsed=")[1].split()[0]) if "elapsed=" in text else 999)
+    check("11. Go SDK v1.80.0: an over-budget call fails within seconds with budget_exceeded",
+          elapsed < 10 and "budget_exceeded" in text and "429" in text, f"elapsed {elapsed}s; {text.strip()[-240:]}")
+
+
 def main() -> int:
     cleanup()
     keys = {g: "vk-" + secrets.token_hex(16) for g in mb.load()["groups"]}
@@ -167,7 +185,9 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="mgproof-"))
     (work / "config.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
     env = {mb.env_name(g): k for g, k in keys.items()}
-    env["MODEL_GATEWAY_DB_URL"] = "postgres://proof:proofpass@mgproof-pg:5432/model_gateway"
+    env["PGPASSWORD"] = DB_PASSWORD
+    # As in the cluster: agentgateway logs its whole startup config when it sees this variable.
+    env["KUBERNETES_SERVICE_HOST"] = "10.43.0.1"
     (work / "env").write_text("".join(f"{k}={v}\n" for k, v in env.items()))
     keydir = work / "root/var/run/model-gateway/anthropic"
     keydir.mkdir(parents=True)
@@ -251,20 +271,31 @@ def main() -> int:
     check("8. /v1/messages/count_tokens reaches the provider", s == 200 and mock_log()[-1]["path"].endswith("/v1/messages/count_tokens"), f"{s} {body[:120]}")
 
     # 11. the real client: the Anthropic Go SDK v1.80.0 (kagent's Go ADK) fails at once, with the reason
-    if "--no-go" in sys.argv:
-        return 0
-    name = "mgproof-go"
-    sh("docker", "rm", "-f", name, check=False)
-    sh("docker", "create", "--name", name, "--network", NET, "-w", "/src", "-e", "BASE=http://mgproof-gw-a:8080",
-       "-e", f"KEY={keys['dcc']}", "-e", "MODEL=claude-haiku-5-5", "golang:1.25",
-       "sh", "-c", "go mod tidy >/dev/null 2>&1 && go run .")
-    sh("docker", "cp", f"{HERE / 'go-sdk'}/.", f"{name}:/src")
-    out = sh("docker", "start", "-a", name, check=False, timeout=600)
-    sh("docker", "rm", "-f", name, check=False)
-    text = out.stdout + out.stderr
-    elapsed = float((text.split("elapsed=")[1].split()[0]) if "elapsed=" in text else 999)
-    check("11. Go SDK v1.80.0: an over-budget call fails within seconds with budget_exceeded",
-          elapsed < 10 and "budget_exceeded" in text and "429" in text, f"elapsed {elapsed}s; {text.strip()[-240:]}")
+    if "--no-go" not in sys.argv:
+        go_sdk_check(keys)
+
+
+
+    # 12. no secret in the gateways' logs (startup config included, Kubernetes mode)
+    logs = "".join(sh("docker", "logs", f"mgproof-gw-{g}", check=False).stdout
+                   + sh("docker", "logs", f"mgproof-gw-{g}", check=False).stderr for g in "ab")
+    leaked = [n for n, v in [("db password", DB_PASSWORD), ("provider key", PROVIDER_KEY),
+                             *[(f"key {g}", k) for g, k in keys.items()]] if v in logs]
+    check("12. no secret in the logs (startup config printed in Kubernetes mode)",
+          not leaked and "running with config" in logs, f"leaked: {leaked}" if leaked else "startup config logged without secrets")
+
+    # 13. what the gateway keeps in Postgres: the budget counts and a per-request log of metadata
+    # (route, group, model, tokens, cost, status). No prompt or answer: the payload table stays
+    # empty and no message text appears. The log has no retention of its own; a CronJob prunes it.
+    def q(sql):
+        return sh("docker", "exec", "mgproof-pg", "psql", "-U", "proof", "-d", "model_gateway", "-tAc", sql).stdout.strip()
+    tables = q("select table_name from information_schema.tables where table_schema = 'public' order by 1").split()
+    payloads = q("select count(*) from request_log_payloads")
+    text_rows = q("select count(*) from request_logs where attributes_json::text like '%MOCK429%' "
+                  "or attributes_json::text like '%kagent_extra%'")
+    check("13. Postgres holds budget counts and request metadata only (no payloads, no message text)",
+          set(tables) == {"budget_usage", "request_logs", "request_log_payloads", "_agentgateway_request_log_migrations"}
+          and payloads == "0" and text_rows == "0", f"tables {tables}, payload rows {payloads}, rows with message text {text_rows}")
 
     # Metrics for the alerts (Task 8): what a refusal and a charge look like per group
     metrics = urllib.request.urlopen(f"http://127.0.0.1:{PORTS['A']['stats']}/metrics", timeout=10).read().decode()

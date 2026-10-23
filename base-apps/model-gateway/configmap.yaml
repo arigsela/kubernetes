@@ -6,8 +6,9 @@
 # the llm listener (127.0.0.1:8081), which checks the group's virtual key and its daily budget and
 # swaps in the real key. The front exists for one rule: it marks the gateway's own budget refusal
 # x-should-retry: false, so a blocked agent fails at once instead of sleeping until midnight.
-# $MODEL_GATEWAY_* are expanded from the environment (Secret model-gateway-env) when the gateway
-# reads this file; no key value is in git.
+# $MODEL_GATEWAY_KEY_* are expanded from the environment (Secret model-gateway-env) when the
+# gateway reads this file, and the database password comes from PGPASSWORD: no secret is in git or
+# in the gateway's startup log.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -22,7 +23,7 @@ data:
       statsAddr: 0.0.0.0:15020
       readinessAddr: 0.0.0.0:15021
       database:
-        url: $MODEL_GATEWAY_DB_URL
+        url: postgres://model_gateway@postgresql.postgresql.svc.cluster.local:5432/model_gateway?sslmode=disable
       modelCatalog:
         - inline:
             providers:
