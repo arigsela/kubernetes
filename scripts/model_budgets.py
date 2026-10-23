@@ -61,6 +61,31 @@ def env_name(group: str) -> str:
     return "MODEL_GATEWAY_KEY_" + group.upper().replace("-", "_")
 
 
+CHART_DEFAULT_AGENTS = "agents created in the kagent UI"
+
+
+def budget_labels(table: dict | None = None) -> list[dict[str, str]]:
+    """One label set per group, as the budget alerts and the Model Gateway dashboard carry them."""
+    table = table or load()
+    out = []
+    for name, g in table["groups"].items():
+        agents = ", ".join(g["agents"]) if g["agents"] else CHART_DEFAULT_AGENTS
+        out.append({"group": name, "agents": agents, "budget_usd": f"{g['daily_usd']:.2f}",
+                    "enforced": "true" if g["gateway"] else "false"})
+    return out
+
+
+def budget_vector_expr(table: dict | None = None) -> str:
+    """Each group's daily budget as a constant PromQL series carrying budget_labels()."""
+    table = table or load()
+    keys = ("group", "agents", "budget_usd", "enforced")
+    terms = []
+    for labels, g in zip(budget_labels(table), table["groups"].values()):
+        terms.append("label_replace(" * len(keys) + f"vector({g['daily_usd']}),\n"
+                     + ",\n".join(f'  "{k}", "{labels[k]}", "", "")' for k in keys))
+    return "\nor\n".join(terms)
+
+
 # One statement of transform/genai-cost: four $/MTok multipliers, the model, an optional tier.
 _PRICE = re.compile(
     r'\* (?P<input>[\d.]+) \+ cache\["cache_write"\] \* (?P<cache_write>[\d.]+) '

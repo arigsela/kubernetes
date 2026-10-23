@@ -58,6 +58,7 @@ DASHBOARDS = {
     "grafana-dashboard-agent-sandboxes": ("agent-sandboxes.json", "agent-sandboxes"),
     "grafana-dashboard-agent-alerts": ("agent-alerts.json", "agent-alerts"),
     "grafana-dashboard-mcp": ("mcp-tool-calls.json", "mcp-tool-calls"),
+    "grafana-dashboard-model-gateway": ("model-gateway.json", "model-gateway"),
 }
 HOME = f"{MOUNT}/agent-platform.json"
 
@@ -346,10 +347,10 @@ LINKS = [
 ]
 
 
-def dashboard(uid, title, description, layout, templating=None, time_from="now-24h"):
+def dashboard(uid, title, description, layout, templating=None, time_from="now-24h", timezone="browser"):
     templating = [PROM_VARIABLE] + (templating or [])
     return {"uid": uid, "title": title, "description": description, "tags": ["agents"],
-            "timezone": "browser", "schemaVersion": 39, "version": 1, "editable": True, "graphTooltip": 1,
+            "timezone": timezone, "schemaVersion": 39, "version": 1, "editable": True, "graphTooltip": 1,
             "refresh": "1m", "time": {"from": time_from, "to": "now"}, "links": LINKS,
             "panels": layout.panels, "templating": {"list": templating}, "annotations": {"list": []}}
 
@@ -967,9 +968,98 @@ def mcp():
     return d
 
 
+# --- Model Gateway (§T.137) --------------------------------------------------------------------
+
+def _budgets():
+    """scripts/model_budgets.py: the budget table, so this dashboard follows budgets.yaml."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import model_budgets
+    return model_budgets
+
+
+GW = 'namespace="model-gateway"'
+GW_COST = f"agentgateway_gen_ai_client_cost_usd_total{{{GW}}}"
+GW_CALLS = f'agentgateway_requests_total{{{GW}, listener="llm"}}'
+GW_REFUSED = f'agentgateway_requests_total{{{GW}, listener="llm", status="429", reason="RateLimit"}}'
+GW_LATENCY = f"agentgateway_gen_ai_server_request_duration_bucket{{{GW}}}"
+GW_LOGS = '{namespace="model-gateway"} |= "listener=llm"'
+
+
+def model_gateway():
+    mb = _budgets()
+    table_ = mb.load()
+    vector = mb.budget_vector_expr(table_)
+    b = Layout()
+
+    def today(metric, by=""):
+        return prom(window_total(metric, by, "$__range"), instant=True)
+
+    def per_interval(metric, by, legend):
+        return prom(window_total(metric, by, "$__interval", forward=True), legend, interval="15m")
+
+    rows = "\n".join(f"| {name} | {', '.join(g['agents']) or mb.CHART_DEFAULT_AGENTS} | ${g['daily_usd']:.2f} | "
+                     f"{'yes' if g['gateway'] else 'not yet'} |" for name, g in table_["groups"].items())
+    b.row("Today, 00:00 UTC to now: the gateway's own counts (a budget day is a UTC day)")
+    b.line(5, [
+        (5, stat("Spent today", [today(GW_COST)], "What the gateway charged every group today, priced like the "
+                 "collector's estimate from Anthropic's reported usage. Only groups on the gateway count here.",
+                 units={"A": "currencyUSD"}, decimals=4)),
+        (5, stat("Model calls today", [today(GW_CALLS)], "Calls the gateway handled today, answered or refused.")),
+        (5, stat("Refused today", [today(GW_REFUSED)], "Calls refused because the group's daily budget was spent "
+                 "(429 budget_exceeded). The group's runs fail until 00:00 UTC.", steps=[("green", None), ("red", 1)])),
+        (4, stat("Gateway up", [prom(f"sum(up{{{GW}}}) or vector(0)", instant=True)],
+                 "Replicas Prometheus can scrape. 0 means every group on the gateway is failing its model calls.",
+                 steps=[("red", None), ("green", 1)])),
+        (5, text("Where the budgets live", "Budgets: `base-apps/model-gateway/budgets.yaml`, then "
+                 "`scripts/gen-model-budgets.py --write` and a pull request. Runbook: "
+                 "`base-apps/model-gateway/runbook.md`. The gateway's own UI: `kubectl -n model-gateway "
+                 "port-forward deploy/model-gateway 15000:15000`, then http://localhost:15000/ui (Keys).")),
+    ])
+    share = bargauge("Today's spend against the daily budget",
+                     [prom(f"({window_total(GW_COST, 'group', '$__range')})\n/ on(group) group_left(agents, budget_usd) (\n"
+                           f"{vector}\n)", instant=True) | {"legendFormat": "{{group}}"}],
+                     "Each group's spend today as a share of its daily budget. The gateway refuses the group's "
+                     "calls at 100%; Slack hears at the warning line.", unit="percentunit", decimals=1)
+    share["fieldConfig"]["defaults"]["max"] = 1
+    share["fieldConfig"]["defaults"]["color"] = {"mode": "thresholds"}
+    share["fieldConfig"]["defaults"]["thresholds"] = _thr([("green", None), ("orange", table_["warn_at"]), ("red", 1)])
+    b.line(9, [
+        (12, share),
+        (12, text("Groups", "| group | agents | daily budget | on the gateway |\n|---|---|---|---|\n" + rows +
+                  "\n\nGroups not on the gateway yet are only measured, as an estimate, on Tokens & Models.")),
+    ])
+    b.row("Over time")
+    b.line(8, [
+        (12, ts("Spend per group", [per_interval(GW_COST, "group", "{{group}}")],
+                "What the gateway charged each group per interval.", unit="currencyUSD", bars=True, stack=True,
+                calcs=("sum",), no_value="No calls through the gateway in this time range")),
+        (12, ts("Calls per group and status", [per_interval(GW_CALLS, "group, status", "{{group}} {{status}}")],
+                "Every call on the budget listener: 200 answered, 429 refused, 401/403 a wrong or missing key or a "
+                "model outside the group's.", bars=True, stack=True, calcs=("sum",),
+                no_value="No calls through the gateway in this time range")),
+    ])
+    b.line(8, [
+        (12, ts("Refusals per group", [per_interval(GW_REFUSED, "group", "{{group}}")],
+                "Calls refused for a spent budget.", bars=True, calcs=("sum",), no_value="No refusals in this time range")),
+        (12, bargauge("Model call latency p95 per group",
+                      [prom(f"histogram_quantile(0.95, {window_total(GW_LATENCY, 'le, group', '$__range')})", instant=True)
+                       | {"legendFormat": "{{group}}"}],
+                      "Request to last byte at the gateway, Anthropic's time included.", unit="s", decimals=1,
+                      no_value="No calls in this time range")),
+    ])
+    b.row("Calls")
+    b.line(10, [(24, logs("Gateway log (budget listener)", {"refId": "A", "datasource": LOKI, "expr": GW_LOGS,
+                                                            "queryType": "range"},
+                          "One line per call: group, model, status, and for a refusal reason=RateLimit. No keys.",
+                          no_value="No calls through the gateway in this time range"))])
+    return dashboard("model-gateway", "Model Gateway & Budgets",
+                     "Each agent group's daily model budget and what the gateway charged it today, its refusals "
+                     "and calls (§T.137).", b, time_from="now/d", timezone="utc")
+
+
 BUILDERS = {"agent-platform": landing, "agent-quality": quality, "agent-tokens": tokens,
             "agent-traffic": traffic, "agent-sandboxes": sandboxes, "agent-alerts": alerts,
-            "mcp-tool-calls": mcp}
+            "mcp-tool-calls": mcp, "model-gateway": model_gateway}
 
 
 def build_all():

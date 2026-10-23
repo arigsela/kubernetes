@@ -229,7 +229,10 @@ def test_counters_the_dashboards_read_exist_in_the_collector():
 # was within 1% there.
 RARE_COUNTERS = (r"agent_[a-z_]+|traces_service_graph_[a-z_]+|ate_actor_crashes_total"
                  r"|ate_actor_lifecycle_operation_duration_seconds_count|ate_imagecache_requests_total"
-                 r"|kagent_tools_mcp_invocations(?:_failure)?_total")
+                 r"|kagent_tools_mcp_invocations(?:_failure)?_total"
+                 # the model gateway's (§T.137): a group's first call or refusal of the day is a new series
+                 r"|agentgateway_requests_total|agentgateway_gen_ai_client_cost_usd_total"
+                 r"|agentgateway_gen_ai_server_request_duration_bucket")
 
 
 def test_rare_counters_are_never_read_with_increase_or_rate():
