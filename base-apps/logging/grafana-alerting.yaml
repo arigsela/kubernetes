@@ -1169,4 +1169,143 @@ data:
                         type: gt
                         params:
                           - 0.999
+          - uid: agent-budget-blocked
+            title: Agent blocked by its daily budget
+            condition: threshold
+            for: 0m
+            annotations:
+              summary: 'Agent group {{ $labels.group }} ({{ $labels.agents }}) has spent its ${{ $labels.budget_usd }} daily budget: the gateway refused {{ with
+                $values.refused }}{{ printf "%.0f" .Value }}{{ end }} of its model calls in the last 10 minutes. Its runs fail with budget_exceeded until 00:00
+                UTC; every other group is unaffected.'
+              runbook: 'base-apps/model-gateway/runbook.md, "An agent is blocked": a loop or a busy day? Grafana, Agents → Agent Platform shows its runs. To raise
+                the budget: base-apps/model-gateway/budgets.yaml, then scripts/gen-model-budgets.py --write, and a pull request.'
+            labels:
+              severity: critical
+              pillar: cost
+            noDataState: OK
+            execErrState: KeepLast
+            data:
+              - refId: refused
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: PBFA97CFB590B2093
+                model:
+                  refId: refused
+                  datasource:
+                    type: prometheus
+                    uid: PBFA97CFB590B2093
+                  instant: true
+                  range: false
+                  expr: |-
+                    (sum by (group) (((last_over_time(agentgateway_requests_total{namespace="model-gateway", listener="llm", status="429", reason="RateLimit"}[10m]) - last_over_time(agentgateway_requests_total{namespace="model-gateway", listener="llm", status="429", reason="RateLimit"}[1d] offset 10m)) >= 0) or last_over_time(agentgateway_requests_total{namespace="model-gateway", listener="llm", status="429", reason="RateLimit"}[10m])))
+                    * on(group) group_left(agents, budget_usd, enforced) (0 * (
+                    label_replace(label_replace(label_replace(label_replace(vector(3.0),
+                      "group", "hk", "", ""),
+                      "agents", "homelab-knowledge", "", ""),
+                      "budget_usd", "3.00", "", ""),
+                      "enforced", "false", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(5.0),
+                      "group", "build", "", ""),
+                      "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
+                      "budget_usd", "5.00", "", ""),
+                      "enforced", "false", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                      "group", "implementer", "", ""),
+                      "agents", "implementer", "", ""),
+                      "budget_usd", "2.00", "", ""),
+                      "enforced", "false", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                      "group", "restarter", "", ""),
+                      "agents", "restarter", "", ""),
+                      "budget_usd", "2.00", "", ""),
+                      "enforced", "false", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(1.5),
+                      "group", "docs-checker", "", ""),
+                      "agents", "docs-checker", "", ""),
+                      "budget_usd", "1.50", "", ""),
+                      "enforced", "false", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(0.5),
+                      "group", "k8s-reader", "", ""),
+                      "agents", "k8s-reader", "", ""),
+                      "budget_usd", "0.50", "", ""),
+                      "enforced", "false", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(0.5),
+                      "group", "skill-suggester", "", ""),
+                      "agents", "skill-suggester", "", ""),
+                      "budget_usd", "0.50", "", ""),
+                      "enforced", "false", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(0.5),
+                      "group", "dcc", "", ""),
+                      "agents", "dungeon-crawler-carl-agent", "", ""),
+                      "budget_usd", "0.50", "", ""),
+                      "enforced", "false", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(0.5),
+                      "group", "ui-default", "", ""),
+                      "agents", "agents created in the kagent UI", "", ""),
+                      "budget_usd", "0.50", "", ""),
+                      "enforced", "false", "", "")
+                    ) + 1)
+              - refId: threshold
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: refused
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 0
+          - uid: model-gateway-down
+            title: Model gateway down
+            condition: threshold
+            for: 5m
+            annotations:
+              summary: 'No model-gateway replica is up: every agent group whose model calls go through the gateway fails until one is back.'
+              runbook: base-apps/model-gateway/runbook.md, "The gateway is down".
+            labels:
+              severity: critical
+              pillar: cost
+            noDataState: OK
+            execErrState: KeepLast
+            data:
+              - refId: up
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: PBFA97CFB590B2093
+                model:
+                  refId: up
+                  datasource:
+                    type: prometheus
+                    uid: PBFA97CFB590B2093
+                  instant: true
+                  range: false
+                  expr: sum(up{namespace="model-gateway"}) or vector(0)
+              - refId: threshold
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: up
+                  conditions:
+                    - evaluator:
+                        type: lt
+                        params:
+                          - 1
       # END agent-budgets
