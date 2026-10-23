@@ -2,9 +2,9 @@
 """Local proof of the model gateway's generated config (spec §7 step 3; plan Task 5).
 
 Runs, in Docker: Postgres 16, a mock Anthropic API (mock_anthropic.py) and TWO gateways (A and B)
-from the exact image the cluster runs, both on the same database and both on the config
-scripts/gen-model-budgets.py generates (gateway_config), with literal test keys in place of the
-env references and the mock as the upstream. Then it checks, one by one, the behaviours the spec
+from the exact image the cluster runs, both on the same database and both on the committed
+base-apps/model-gateway/configmap.yaml (see committed_config() for the few local overrides), with
+test keys passed in the environment the way the cluster passes the real ones. Then it checks, one by one, the behaviours the spec
 relies on, and exits non-zero at the first that fails. Nothing leaves this machine: the provider
 key is a made-up test value and the upstream is the mock.
 
@@ -12,8 +12,6 @@ key is a made-up test value and the upstream is the mock.
 """
 from __future__ import annotations
 
-import copy
-import importlib.util
 import json
 import secrets
 import subprocess
@@ -30,10 +28,6 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
 import model_budgets as mb  # noqa: E402
-
-spec = importlib.util.spec_from_file_location("gen_model_budgets", REPO / "scripts/gen-model-budgets.py")
-gen = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(gen)
 
 IMAGE = ("852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0"
          "@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d")
@@ -116,6 +110,23 @@ def mock_log():
     return json.loads(urllib.request.urlopen(f"http://127.0.0.1:{MOCK_PORT}/_log", timeout=10).read())
 
 
+def committed_config() -> dict:
+    """base-apps/model-gateway/configmap.yaml as committed, with only what must differ locally:
+    the mock as upstream, the admin API reachable from the host, no tracing, and two tiny
+    budgets (dcc: the block check; restarter: the shared count). The $MODEL_GATEWAY_* references
+    stay, so the gateway's own env expansion of keys and the database URL is part of the proof."""
+    doc = yaml.safe_load((REPO / "base-apps/model-gateway/configmap.yaml").read_text())
+    cfg = yaml.safe_load(doc["data"]["config.yaml"])
+    for m in cfg["llm"]["models"]:
+        m["params"]["baseUrl"] = "http://mgproof-mock:8090/v1"
+    cfg["config"]["adminAddr"] = "0.0.0.0:15000"
+    cfg.pop("frontendPolicies", None)
+    for k in cfg["llm"]["policies"]["apiKey"]["keys"]:
+        if k["metadata"]["name"] in ("dcc", "restarter"):
+            k["budgets"][0]["limit"]["amount"] = 0.001
+    return cfg
+
+
 def start_stack(work: Path, stagger: bool = False, gateways=("A", "B")) -> None:
     """Postgres, the mock and the gateways (B only once A is ready when stagger is set)."""
     sh("docker", "network", "create", NET)
@@ -136,6 +147,7 @@ def start_stack(work: Path, stagger: bool = False, gateways=("A", "B")) -> None:
         name = f"mgproof-gw-{gw.lower()}"
         p = PORTS[gw]
         sh("docker", "create", "--name", name, "--network", NET, "--platform", "linux/amd64",
+           "--env-file", str(work / "env"),
            "-p", f"{p['llm']}:8080", "-p", f"{p['admin']}:15000", "-p", f"{p['stats']}:15020",
            IMAGE, "-f", "/config.yaml")
         sh("docker", "cp", str(work / "config.yaml"), f"{name}:/config.yaml")
@@ -151,14 +163,12 @@ def start_stack(work: Path, stagger: bool = False, gateways=("A", "B")) -> None:
 def main() -> int:
     cleanup()
     keys = {g: "vk-" + secrets.token_hex(16) for g in mb.load()["groups"]}
-    table = copy.deepcopy(mb.load())
-    table["groups"]["dcc"]["daily_usd"] = 0.001         # spent by one call: the block check
-    table["groups"]["restarter"]["daily_usd"] = 0.001   # spent on A, refused on B: the shared count
-    cfg = gen.gateway_config(keys, "postgres://proof:proofpass@mgproof-pg:5432/model_gateway",
-                             table=table, base_url="http://mgproof-mock:8090/v1", tracing=False)
-    cfg["config"]["adminAddr"] = "0.0.0.0:15000"         # reachable from the host, proof only
+    cfg = committed_config()
     work = Path(tempfile.mkdtemp(prefix="mgproof-"))
     (work / "config.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False))
+    env = {mb.env_name(g): k for g, k in keys.items()}
+    env["MODEL_GATEWAY_DB_URL"] = "postgres://proof:proofpass@mgproof-pg:5432/model_gateway"
+    (work / "env").write_text("".join(f"{k}={v}\n" for k, v in env.items()))
     keydir = work / "root/var/run/model-gateway/anthropic"
     keydir.mkdir(parents=True)
     (keydir / "api-key").write_text(PROVIDER_KEY)
