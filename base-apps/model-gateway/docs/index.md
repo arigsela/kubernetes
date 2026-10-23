@@ -62,9 +62,10 @@ keeps working. Before this, one Anthropic workspace limit covered every agent, a
 gateway's config (`configmap.yaml`), its env Secret (`env-external-secret.yaml`), the kagent key
 Secrets, and the Grafana budget alerts; CI fails if any is stale.
 
-A group is the agents that share a key. build-orchestrator, k8s-agent and istio-agent are one
-group (`build`): the two specialists run inside build-orchestrator's sandbox, and kagent allows one
-Secret per host there. The `ui-default` group is the kagent chart's default model config, for agents
+A group is the agents that share a key. An agent that runs inside another's sandbox (a sub-agent)
+must share its parent's group, because kagent allows one Secret per host there. k8s-agent and
+istio-agent share `build`, the group they were in with build-orchestrator (retired 2026-10-23),
+whose sandbox they used to run in. The `ui-default` group is the kagent chart's default model config, for agents
 created in the UI.
 
 `gateway: true` in a group means its agents' ModelConfigs point at the gateway. Groups move over one

@@ -818,7 +818,7 @@ data:
                     sum by (service_name) (((last_over_time(agent_cost_estimate_usd_total[24h]) - last_over_time(agent_cost_estimate_usd_total[1d] offset 24h)) >= 0)
                       or last_over_time(agent_cost_estimate_usd_total[24h])),
                       "group", "hk", "service_name", "homelab-knowledge"),
-                      "group", "build", "service_name", "build-orchestrator|k8s-agent|istio-agent"),
+                      "group", "build", "service_name", "k8s-agent|istio-agent"),
                       "group", "implementer", "service_name", "implementer"),
                       "group", "restarter", "service_name", "restarter"),
                       "group", "docs-checker", "service_name", "docs-checker"),
@@ -835,7 +835,7 @@ data:
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
-                      "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
+                      "agents", "k8s-agent, istio-agent", "", ""),
                       "budget_usd", "10.00", "", ""),
                       "enforced", "true", "", "")
                     or
@@ -899,7 +899,7 @@ data:
                     sum by (service_name) (((last_over_time(agent_cost_estimate_usd_total[24h]) - last_over_time(agent_cost_estimate_usd_total[1d] offset 24h)) >= 0)
                       or last_over_time(agent_cost_estimate_usd_total[24h])),
                       "group", "hk", "service_name", "homelab-knowledge"),
-                      "group", "build", "service_name", "build-orchestrator|k8s-agent|istio-agent"),
+                      "group", "build", "service_name", "k8s-agent|istio-agent"),
                       "group", "implementer", "service_name", "implementer"),
                       "group", "restarter", "service_name", "restarter"),
                       "group", "docs-checker", "service_name", "docs-checker"),
@@ -916,7 +916,7 @@ data:
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
-                      "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
+                      "agents", "k8s-agent, istio-agent", "", ""),
                       "budget_usd", "10.00", "", ""),
                       "enforced", "true", "", "")
                     or
@@ -1011,7 +1011,7 @@ data:
                     sum by (service_name) (((last_over_time(agent_cost_estimate_usd_total[24h]) - last_over_time(agent_cost_estimate_usd_total[1d] offset 24h)) >= 0)
                       or last_over_time(agent_cost_estimate_usd_total[24h])),
                       "group", "hk", "service_name", "homelab-knowledge"),
-                      "group", "build", "service_name", "build-orchestrator|k8s-agent|istio-agent"),
+                      "group", "build", "service_name", "k8s-agent|istio-agent"),
                       "group", "implementer", "service_name", "implementer"),
                       "group", "restarter", "service_name", "restarter"),
                       "group", "docs-checker", "service_name", "docs-checker"),
@@ -1028,7 +1028,7 @@ data:
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
-                      "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
+                      "agents", "k8s-agent, istio-agent", "", ""),
                       "budget_usd", "10.00", "", ""),
                       "enforced", "true", "", "")
                     or
@@ -1092,7 +1092,7 @@ data:
                     sum by (service_name) (((last_over_time(agent_cost_estimate_usd_total[24h]) - last_over_time(agent_cost_estimate_usd_total[1d] offset 24h)) >= 0)
                       or last_over_time(agent_cost_estimate_usd_total[24h])),
                       "group", "hk", "service_name", "homelab-knowledge"),
-                      "group", "build", "service_name", "build-orchestrator|k8s-agent|istio-agent"),
+                      "group", "build", "service_name", "k8s-agent|istio-agent"),
                       "group", "implementer", "service_name", "implementer"),
                       "group", "restarter", "service_name", "restarter"),
                       "group", "docs-checker", "service_name", "docs-checker"),
@@ -1109,7 +1109,7 @@ data:
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
-                      "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
+                      "agents", "k8s-agent, istio-agent", "", ""),
                       "budget_usd", "10.00", "", ""),
                       "enforced", "true", "", "")
                     or
@@ -1208,7 +1208,7 @@ data:
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
-                      "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
+                      "agents", "k8s-agent, istio-agent", "", ""),
                       "budget_usd", "10.00", "", ""),
                       "enforced", "true", "", "")
                     or

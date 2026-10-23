@@ -2,10 +2,10 @@
 # prompt, tools, class) is its AgentTemplate in ../agent-templates/.
 #
 # kagent-memory: the Go ADK runtime with long-term memory, no compaction. Used by the tool-loop
-# agents (homelab-knowledge, k8s-agent, istio-agent, build-orchestrator); all four had memory
-# on kagent 0.10. A shared subagent (build-orchestrator's k8s-agent / istio-agent bindings)
-# runs inside the parent's runtime and gets no runtime policy of its own, so this Harness is
-# what applies to them there.
+# agents (homelab-knowledge, k8s-agent, istio-agent); all three had memory on kagent 0.10. A
+# shared subagent runs inside its parent's runtime and gets no runtime policy of its own, so the
+# parent's Harness is what applies to it there (no agent binds one since build-orchestrator was
+# retired on 2026-10-23).
 #
 # The three `kagent`-runtime Harnesses in this directory (kagent-memory, kagent-stateless,
 # kagent-chat) differ ONLY in spec.kagent. Keep image, worker pool and snapshot location identical

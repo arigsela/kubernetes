@@ -17,9 +17,6 @@ sources:
   - base-apps/kagent/agent-templates/k8s-reader.yaml
   - base-apps/kagent/agent-templates/k8s-agent.yaml
   - base-apps/kagent/agent-templates/istio-agent.yaml
-  - id: build-orchestrator
-    resource: base-apps/kagent/agent-templates/build-orchestrator.yaml
-    title: build-orchestrator AgentTemplate (sub-agent hand-off)
   - base-apps/kagent/agent-templates/skill-suggester.yaml
   - base-apps/kagent/agent-templates/dungeon-crawler-carl-agent.yaml
   - id: implementer
@@ -33,7 +30,6 @@ sources:
   - base-apps/kagent/agents/k8s-reader.yaml
   - base-apps/kagent/agents/k8s-agent.yaml
   - base-apps/kagent/agents/istio-agent.yaml
-  - base-apps/kagent/agents/build-orchestrator.yaml
   - base-apps/kagent/agents/skill-suggester.yaml
   - base-apps/kagent/agents/dungeon-crawler-carl-agent.yaml
   - base-apps/kagent/agents/implementer.yaml
@@ -179,7 +175,6 @@ group moves all five charts in one PR, and only after approval on the Dependency
 | `k8s-reader` | `anthropic-claude-haiku-5-5-k8s-reader` | `kagent-stateless` | read | the same 8 read tools of `kagent-tool-server`, nothing else. No memory |
 | `k8s-agent` | `anthropic-claude-sonnet-5-5-build` | `kagent-memory` | admin | `kagent-tool-server` bound twice: read tools `requireApproval: false`, every write/destructive tool `requireApproval: true` |
 | `istio-agent` | `anthropic-claude-sonnet-5-5-build` | `kagent-memory` | admin | the same split, with the Istio tools |
-| `build-orchestrator` | `anthropic-claude-sonnet-5-5-build` | `kagent-memory` | admin | no tools of its own; sub-agents `k8s-agent` and `istio-agent` |
 | `skill-suggester` | `anthropic-claude-haiku-5-5-skill-suggester` | `kagent-chat` | read | none (called by the Backstage wizard) |
 | `dungeon-crawler-carl-agent` | `anthropic-claude-haiku-5-5-dcc` | `kagent-chat` | read | `brave-search` (`brave_web_search`) for book facts it is unsure of |
 | `implementer` | `anthropic-claude-sonnet-5-5-implementer` | `kagent-stateless` | propose | `implementer` (7 read + the 4 propose tools, ungated: the merge is the gate) and the 8 read tools of `kagent-tool-server` (not `agent-docs` too: a tool name bound twice is refused by the runtime). Opens PRs under GitHub App `arigsela-implementer`; called by a human (ask-hk) or the dispatcher (§T.116) |
@@ -198,11 +193,12 @@ would expose every tool the server has, including ones a later upgrade adds, and
 **Sub-agents hand off, they don't delegate.** On 0.10 a `type: Agent` tool called another agent
 and got its answer back. In 1.0 a `subAgent` binding compiles the child template into the
 parent's runtime, and routing to it transfers the conversation: the child answers the user
-directly and the parent never sees the answer.[^build-orchestrator] So `build-orchestrator` is a
-router that can't combine two specialists' results (its prompt says so), and `homelab-knowledge`
-binds the read tools itself instead of delegating to `k8s-reader` as it did on 0.10. A sub-agent
-runs under the parent's Harness but keeps its own bindings, approval gates included. kagent
-rejects a sub-agent that has sub-agents of its own.
+directly and the parent never sees the answer (SPEC §R.45). That is why `homelab-knowledge` binds
+the read tools itself instead of delegating to `k8s-reader` as it did on 0.10, and why
+`build-orchestrator`, a router in front of `k8s-agent` and `istio-agent` that could not combine
+their results, was retired on 2026-10-23: ask the specialist directly. No agent binds a sub-agent
+now. A sub-agent runs under the parent's Harness but keeps its own bindings, approval gates
+included. kagent rejects a sub-agent that has sub-agents of its own.
 
 `homelab-agent`, a LangGraph BYO agent that duplicated `homelab-knowledge`, was retired on
 2026-10-11: `kagent-langgraph` doesn't implement kagent 1.0's BYO contract (gRPC A2A, TaskStore).
@@ -217,7 +213,7 @@ snapshot location `s3://ate-snapshots/kagent/`. They differ only in `spec.kagent
 
 | Harness | Memory | Compaction | Used by |
 |---|---|---|---|
-| `kagent-memory` | `embedding-model-config` | none | homelab-knowledge, k8s-agent, istio-agent, build-orchestrator |
+| `kagent-memory` | `embedding-model-config` | none | homelab-knowledge, k8s-agent, istio-agent |
 | `kagent-stateless` | none | none | k8s-reader |
 | `kagent-chat` | `embedding-model-config` | every 5 user turns, overlap 2 | skill-suggester, dungeon-crawler-carl-agent |
 
@@ -464,7 +460,7 @@ the hash changed since the last scored run, scores **every Agent in the namespac
   must be called; missing = fail) and `forbid_tools` (any call = hard fail, whatever the answer
   says). A task that pauses for an approval is scored on its PENDING calls and then **rejected**
   by the gate (never approved, nothing runs): that is how the acting agents (`restarter`,
-  `k8s-agent`, `istio-agent`, `implementer`, `build-orchestrator`) get regression tests for the
+  `k8s-agent`, `istio-agent`, `implementer`) get regression tests for the
   calls they would make. CI requires a `tool-use` corpus for every write/admin/propose template.
 - **Scoring**: the rubric (`must_include`/`must_not_include`, the tool keys) and whatever judge the
   `eval-gate` Secret allows (the Jev-then-Claude cascade since 2026-10-13; `judge: none` would
@@ -568,6 +564,5 @@ skipped, the Job is killed after 30 minutes, one retry).
 - The 0.10 A2A skills (`a2aConfig.skills`) are gone: 1.0 generates the agent card. The skills each
   agent advertised are kept as comments in its AgentTemplate.
 
-[^build-orchestrator]: build-orchestrator AgentTemplate (sub-agent hand-off)
 [^sonnet-config]: Sonnet 5.5 ModelConfig (maxTokens, prompt caching)
 [^httproute-mcp]: kagent-mcp HTTPRoute (/mcp and /agents/kagent/)

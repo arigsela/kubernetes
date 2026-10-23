@@ -14,8 +14,8 @@
 # tool in a binding without requireApproval: true.
 #
 # AgentTemplate = WHAT (api.kagent.dev/v1alpha3); its Agent (../agents/k8s-agent.yaml) runs it
-# on ../harnesses/kagent-memory.yaml. build-orchestrator also binds this template as a shared
-# subagent; there it runs inside build-orchestrator's runtime with these same bindings.
+# on ../harnesses/kagent-memory.yaml. No other agent binds it as a subagent (build-orchestrator,
+# which did, was retired on 2026-10-23).
 #
 # Dropped in 1.0: a2aConfig.skills. The skills it advertised on 0.10, kept for the record:
 #   - cluster-diagnostics: Cluster Diagnostics. The ability to analyze and diagnose Kubernetes

@@ -1,5 +1,5 @@
 # Claude Sonnet 5.5 for the agents that reason over several tools
-# (homelab-knowledge, k8s-agent, istio-agent, build-orchestrator, implementer, restarter), and
+# (homelab-knowledge, k8s-agent, istio-agent, implementer, restarter), and
 # the config docs-checker's template binds.
 #
 # kagent 1.0 (api.kagent.dev/v1alpha3). Every agent but docs-checker runs the Go ADK (the
