@@ -86,7 +86,8 @@ def test_budget_refusal_is_not_retried(cfg):
 
 def test_database_metrics_and_addresses(cfg):
     c = cfg["config"]
-    assert c["database"] == {"url": "$MODEL_GATEWAY_DB_URL"}
+    assert c["database"] == {"url": "postgres://model_gateway@postgresql.postgresql.svc.cluster.local:5432"
+                                    "/model_gateway?sslmode=disable"}, "no password: the startup log prints it"
     assert c["metrics"]["fields"]["add"]["group"] == 'default(apiKey.group, "")'
     assert c["statsAddr"] == "0.0.0.0:15020" and c["readinessAddr"] == "0.0.0.0:15021"
     assert "adminAddr" not in c, "the admin API (/api/budgets/status) stays on 127.0.0.1: port-forward to read it"
@@ -101,6 +102,6 @@ def test_tracing_to_the_collector(cfg):
 def test_every_dollar_is_an_expected_env_reference():
     """agentgateway shell-expands the whole file: a stray $ would fail the start or leak an env value."""
     text = yaml.safe_load(CM.read_text())["data"]["config.yaml"]
-    want = {mb.env_name(g) for g in mb.load()["groups"]} | {"MODEL_GATEWAY_DB_URL"}
+    want = {mb.env_name(g) for g in mb.load()["groups"]}
     assert set(re.findall(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)", text)) == want
     assert text.count("$") == len(want)

@@ -41,7 +41,11 @@ CHART_DEFAULT_AGENTS = "agents created in the kagent UI"
 # ------------------------------------------------------------------ the gateway's config
 
 PROVIDER_KEY_FILE = "/var/run/model-gateway/anthropic/api-key"
-DB_URL_ENV = "$MODEL_GATEWAY_DB_URL"
+# No password in the URL: in Kubernetes agentgateway logs its whole startup config, database URL
+# included, unredacted (agentgateway-app run.rs). sqlx takes the password from PGPASSWORD, which
+# the Deployment sets from Secret model-gateway-env (local proof check 12: no secret in the logs).
+DB_URL = ("postgres://model_gateway@postgresql.postgresql.svc.cluster.local:5432/model_gateway"
+          "?sslmode=disable")
 LLM_PORT = 8080           # the front listener: what Substrate's egress connects to
 BUDGET_PORT = 8081        # the llm listener (keys, budgets, provider key), on 127.0.0.1 only
 METRICS_PORT = 15020      # agentgateway's default stats address (the MCP adapters use it too)
@@ -301,14 +305,15 @@ GATEWAY_CM_HEADER = """\
 # the llm listener (127.0.0.1:8081), which checks the group's virtual key and its daily budget and
 # swaps in the real key. The front exists for one rule: it marks the gateway's own budget refusal
 # x-should-retry: false, so a blocked agent fails at once instead of sleeping until midnight.
-# $MODEL_GATEWAY_* are expanded from the environment (Secret model-gateway-env) when the gateway
-# reads this file; no key value is in git.
+# $MODEL_GATEWAY_KEY_* are expanded from the environment (Secret model-gateway-env) when the
+# gateway reads this file, and the database password comes from PGPASSWORD: no secret is in git or
+# in the gateway's startup log.
 """
 
 
 def gateway_configmap(table: dict) -> str:
     keys = {g: "$" + mb.env_name(g) for g in table["groups"]}
-    body = yaml.dump(gateway_config(keys, DB_URL_ENV, table=table), Dumper=_Dumper, sort_keys=False,
+    body = yaml.dump(gateway_config(keys, DB_URL, table=table), Dumper=_Dumper, sort_keys=False,
                      width=150, default_flow_style=False, allow_unicode=True)
     cm = {"apiVersion": "v1", "kind": "ConfigMap",
           "metadata": {"name": "model-gateway-config", "namespace": "model-gateway",
