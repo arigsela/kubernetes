@@ -73,8 +73,11 @@ log lines (`{namespace="hk-demo", container="app"} |= "hk-demo-run"`), `GetTask`
 Each run is a turn of a conversation; the page shows the turns as a thread, and clicking a turn
 shows its own boxes.
 
-- A plain follow-up continues hk's session (A2A `contextId`). The Sandbox box then shows the
-  session's sandbox resumed from its snapshot instead of a new one.
+- A plain follow-up continues hk's session (A2A `contextId`). The Sandbox box then shows no new
+  actor: a sandbox already snapshotted is restored (ateom's `RestoreWorkload` line, about a second);
+  one still running from the last turn is reused (ate-api-server's `ResumeActor`, milliseconds).
+- The first message of each agent session states the date and UTC time (the agents do not know it,
+  and the implementer writes it into pull requests).
 - `implementer: <request>` sends the request to `kagent/implementer` (class `propose`: branches
   and pull requests on this repo under the `arigsela-implementer` App, nothing on the cluster, never
   a merge). hk stays read-only. The app opens an implementer session the first time and continues
