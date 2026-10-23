@@ -133,7 +133,11 @@ under `base-apps/logging/`.
    (the ungated-tool rule's runbook links `https://agent-audit.arigsela.com/?days=730`)
    and Falco from Loki, and cluster health from Prometheus: **Pod CPU starved** (PSI CPU
    stall > 20% for 30m) and **Container near memory limit** (working set > 90% of the
-   limit for 15m). Prometheus rules reference the datasource by its pinned uid
+   limit for 15m). **Agent near its daily budget** and **Agent over its daily budget** (folder
+   Agent Budgets) compare each agent group's estimated spend over the last 24 hours with its
+   daily budget; they are generated from `base-apps/model-gateway/budgets.yaml` by
+   `scripts/gen-model-budgets.py` (§T.137), so edit the table, not the rules. Prometheus rules
+   reference the datasource by its pinned uid
    `PBFA97CFB590B2093`. Grafana reads alerting provisioning only at startup, so its pod
    template carries a `checksum/alerting` annotation of that ConfigMap
    (`tests/dashboards/test_grafana_alerting.py` fails when it is stale) — a merged rule
