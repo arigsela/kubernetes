@@ -97,8 +97,17 @@ def test_docs_checker_sends_its_calls_to_the_gateway():
         assert "ANTHROPIC_BASE_URL" not in env
 
 
-def test_every_group_but_hk_is_on_the_gateway():
-    """hk waits for the hk-demo page's Model API box to show the gateway (its egress checks look for
-    api.anthropic.com)."""
-    on = {name for name, g in mb.load()["groups"].items() if g["gateway"]}
-    assert on == set(mb.load()["groups"]) - {"hk"}
+def test_every_group_is_on_the_gateway():
+    """hk moved last, with hk-demo v0.3.0, whose Model API box shows the gateway (§T.137)."""
+    assert all(g["gateway"] for g in mb.load()["groups"].values())
+
+
+def test_hk_demo_knows_every_budget():
+    """hk-demo's Model API box compares a group's spend today with its budget: MODEL_BUDGETS,
+    written by scripts/gen-model-budgets.py from budgets.yaml."""
+    import json
+    dep = next(d for d in yaml.safe_load_all((REPO / "base-apps/hk-demo/deployment.yaml").read_text())
+               if d and d["kind"] == "Deployment")
+    app = next(c for c in dep["spec"]["template"]["spec"]["containers"] if c["name"] == "app")
+    env = {e["name"]: e.get("value") for e in app["env"]}
+    assert json.loads(env["MODEL_BUDGETS"]) == {g: v["daily_usd"] for g, v in mb.load()["groups"].items()}

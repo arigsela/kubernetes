@@ -469,6 +469,26 @@ def stale_model_configs(wanted: dict[str, str], repo: Path = REPO) -> list[str]:
                   if GENERATED_MARK in p.read_text() and f"{MODEL_CONFIGS}/{p.name}" not in wanted)
 
 
+HK_DEMO_DEPLOY = "base-apps/hk-demo/deployment.yaml"
+_MODEL_BUDGETS_ENV = re.compile(r"(            - name: MODEL_BUDGETS\n              value: ).*\n")
+_APP_HOST_ENV = "            - name: APP_HOST\n              value: hk-demo.arigsela.com\n"
+
+
+def hk_demo_deploy_text(current: str, table: dict) -> str:
+    """hk-demo's MODEL_BUDGETS (group -> daily USD): its Model API box compares a group's spend
+    today with it."""
+    value = json.dumps({g: v["daily_usd"] for g, v in table["groups"].items()}, separators=(", ", ": "))
+    line = f"'{value}'\n"
+    if _MODEL_BUDGETS_ENV.search(current):
+        return _MODEL_BUDGETS_ENV.sub(lambda m: m.group(1) + line, current, count=1)
+    if current.count(_APP_HOST_ENV) != 1:
+        raise SystemExit(f"{HK_DEMO_DEPLOY}: cannot find where to add MODEL_BUDGETS")
+    return current.replace(_APP_HOST_ENV, _APP_HOST_ENV + (
+        "            # Each model-gateway group's daily budget (scripts/gen-model-budgets.py, from\n"
+        "            # base-apps/model-gateway/budgets.yaml): the Model API box shows spend against it.\n"
+        "            - name: MODEL_BUDGETS\n              value: " + line))
+
+
 def outputs(repo: Path = REPO) -> dict[str, str]:
     table = mb.load(repo / "base-apps/model-gateway/budgets.yaml")
     alerting = alerting_text((repo / ALERTING).read_text(), table)
@@ -479,6 +499,7 @@ def outputs(repo: Path = REPO) -> dict[str, str]:
             GATEWAY_ENV_ES: gateway_env_external_secret(table),
             GATEWAY_DEPLOY: gateway_deploy_text((repo / GATEWAY_DEPLOY).read_text(), configmap_checksum(cm)),
             KAGENT_KEYS: kagent_keys(table),
+            HK_DEMO_DEPLOY: hk_demo_deploy_text((repo / HK_DEMO_DEPLOY).read_text(), table),
             str(_dashboards().OUT): _dashboards().render(),
             **group_model_configs(table, repo)}
 

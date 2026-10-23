@@ -29,13 +29,12 @@ version: 1
 window: 24h
 warn_at: 0.8
 groups:
-  # Not on the gateway yet: the hk-demo page's Model API box checks for api.anthropic.com on the
-  # egress, so hk moves with the hk-demo change that shows the gateway instead.
+  # The last to move, with hk-demo v0.3.0, whose Model API box shows the gateway.
   hk:
     agents: [homelab-knowledge]
     models: [claude-sonnet-5-5]
     daily_usd: 6.00
-    gateway: false
+    gateway: true
   build:
     agents: [build-orchestrator, k8s-agent, istio-agent]
     models: [claude-sonnet-5-5]

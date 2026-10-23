@@ -831,7 +831,7 @@ data:
                       "group", "hk", "", ""),
                       "agents", "homelab-knowledge", "", ""),
                       "budget_usd", "6.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
@@ -912,7 +912,7 @@ data:
                       "group", "hk", "", ""),
                       "agents", "homelab-knowledge", "", ""),
                       "budget_usd", "6.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
@@ -1024,7 +1024,7 @@ data:
                       "group", "hk", "", ""),
                       "agents", "homelab-knowledge", "", ""),
                       "budget_usd", "6.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
@@ -1105,7 +1105,7 @@ data:
                       "group", "hk", "", ""),
                       "agents", "homelab-knowledge", "", ""),
                       "budget_usd", "6.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
@@ -1204,7 +1204,7 @@ data:
                       "group", "hk", "", ""),
                       "agents", "homelab-knowledge", "", ""),
                       "budget_usd", "6.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
