@@ -25,7 +25,8 @@ def prompt() -> str:
 def test_class_model_and_harness():
     t = template()
     assert t["metadata"]["labels"]["capability.homelab/class"] == "propose"
-    assert t["spec"]["modelConfig"]["name"] == "anthropic-claude-sonnet-5-5"
+    # Sonnet 5.5 through the model gateway, on group implementer's daily budget (§T.137).
+    assert t["spec"]["modelConfig"]["name"] == "anthropic-claude-sonnet-5-5-implementer"
     agent = one("base-apps/kagent/agents/implementer.yaml", "Agent", "implementer")
     assert agent["spec"] == {"template": {"ref": {"name": "implementer"}}, "harnessRef": {"name": "kagent-stateless"}}
 
