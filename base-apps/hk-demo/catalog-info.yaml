@@ -5,7 +5,8 @@ kind: Component
 metadata:
   name: hk-demo
   namespace: hk-demo
-  description: One question to the homelab-knowledge agent, shown end to end (checks, cost, logs, trace)
+  # Quoted: the text contains ": ", which would break a plain YAML scalar. Changed on request from the hk demo page, 2026-10-14.
+  description: "A conversation with the homelab-knowledge agent, shown end to end (checks, cost, logs, trace); an implementer: turn has the implementer agent open the pull request"
   annotations:
     agent-docs/path: docs.md
     backstage.io/techdocs-ref: dir:.
