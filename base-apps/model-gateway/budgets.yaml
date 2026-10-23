@@ -1,0 +1,73 @@
+# The daily model budget of every kagent agent group: the ONLY place these numbers are written
+# (docs/superpowers/specs/2026-10-23-model-gateway-budgets-design.md §2, SPEC §V.108).
+# scripts/gen-model-budgets.py derives the rest from this file: the Grafana budget alerts, the
+# gateway's config (one virtual key per group, each with this budget), the kagent ExternalSecrets
+# for those keys and the per-group ModelConfigs. Change a number here, run
+# `scripts/gen-model-budgets.py --write`, and open a pull request: there is no other override.
+#
+# A group is the agents that share one virtual key, so one budget. Agents that run inside another
+# agent's sandbox (a Shared subagent) must be in their parent's group: kagent refuses two Secrets
+# for the same host in one actor. That is why `build` holds build-orchestrator, k8s-agent and
+# istio-agent (owner, 2026-10-23).
+#
+# daily_usd: the gateway blocks the group's model calls (429) once it has spent this much in the
+# current 24h window, which starts at 00:00 UTC. Prices are the collector's (§V.105).
+# warn_at: the Slack warning fires when the group's estimated spend over the last 24 hours passes
+# this share of its budget.
+# gateway: true once the group's agents send their model calls through the gateway (rollout
+# step 4-5); false means the group is measured and alerted on, but not yet enforced.
+# Sizes as of 2026-10-23, from 2026-10-22/23 spend: homelab-knowledge $1.06 for 10 questions
+# (about $0.10 each), istio-agent $0.06, k8s-reader under $0.01.
+version: 1
+window: 24h
+warn_at: 0.8
+groups:
+  hk:
+    agents: [homelab-knowledge]
+    models: [claude-sonnet-5-5]
+    daily_usd: 3.00
+    gateway: false
+  build:
+    agents: [build-orchestrator, k8s-agent, istio-agent]
+    models: [claude-sonnet-5-5]
+    daily_usd: 5.00
+    gateway: false
+  implementer:
+    agents: [implementer]
+    models: [claude-sonnet-5-5]
+    daily_usd: 2.00
+    gateway: false
+  restarter:
+    agents: [restarter]
+    models: [claude-sonnet-5-5]
+    daily_usd: 2.00
+    gateway: false
+  # Sonnet through its ModelConfig, Haiku from its own runtime (it picks the model per graph node).
+  docs-checker:
+    agents: [docs-checker]
+    models: [claude-sonnet-5-5, claude-haiku-5-5]
+    daily_usd: 1.50
+    gateway: false
+  k8s-reader:
+    agents: [k8s-reader]
+    models: [claude-haiku-5-5]
+    daily_usd: 0.50
+    gateway: false
+  skill-suggester:
+    agents: [skill-suggester]
+    models: [claude-haiku-5-5]
+    daily_usd: 0.50
+    gateway: false
+  dcc:
+    agents: [dungeon-crawler-carl-agent]
+    models: [claude-haiku-5-5]
+    daily_usd: 0.50
+    gateway: false
+  # The kagent chart's default-model-config (base-apps/kagent.yaml providers.anthropic): agents
+  # created in the UI. No agent in git uses it.
+  ui-default:
+    agents: []
+    chart_default: true
+    models: [claude-haiku-5-5]
+    daily_usd: 0.50
+    gateway: false
