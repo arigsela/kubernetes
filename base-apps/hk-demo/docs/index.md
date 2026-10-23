@@ -78,14 +78,6 @@ report a failure are red: a line its component logged as an error, a request ans
 429, an adapter refusing a tool, or a Gateway or waypoint status of 400 or more. Recent runs replays the app's own runs of the last 7 days from its
 log lines (`{namespace="hk-demo", container="app"} |= "hk-demo-run"`), `GetTask` and the trace.
 
-The Model API box shows the model gateway (`base-apps/model-gateway/`, §T.137) when the turn's
-agent sends its model calls through it, which today means the implementer and not hk. It shows the
-egress adding the group's key for the gateway, each call checked against the group's daily budget,
-what the gateway charged this run, and the group's spend today; a call the gateway refused (429,
-budget spent) is a red ✗. An hk turn still shows the call going straight to `api.anthropic.com`.
-The app takes the budgets from `MODEL_BUDGETS` (JSON, group → USD), which this deployment does not
-set yet, so the box shows today's spend without the budget beside it.
-
 ## Conversations
 
 Each run is a turn of a conversation; the page shows the turns as a thread, and clicking a turn
