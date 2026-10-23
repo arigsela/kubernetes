@@ -108,6 +108,23 @@ was written against alpha11.
 
 The generation prompts and per-panel PNGs the notes mention are not kept in the repo.
 
+## hk demo architecture — 2026-10-23
+
+A one-page diagram to show beside the hk demo page (`base-apps/hk-demo/`): where each of the
+page's eight boxes runs in the cluster, and how a question moves between them. The numbered
+circles match the page's boxes. It was drawn from the manifests on 2026-10-23 (hk-demo v0.2.3,
+kagent 1.0.0-alpha14). Unlike the decks above it is **not anonymized**: it names the hosts, the
+repository and the GitHub App, as the page itself does. Anonymize it before it goes into a deck
+for an outside audience.
+
+| file | what it is |
+|---|---|
+| `hk-demo-architecture.drawio` | The source. Edit it in draw.io. |
+| `hk-demo-architecture.png` | The same diagram as a PNG with the drawing embedded, so draw.io can open and edit it too. Re-export it after an edit: `drawio -x -f png -e -s 1.5 -o hk-demo-architecture.png hk-demo-architecture.drawio`. |
+
+On that date both agents called Anthropic directly through Substrate's egress. The model
+gateway (§T.137) is not drawn, because it was not yet in their path.
+
 ## Tech-stack talk — 2026-10-11
 
 | file | what it is |
