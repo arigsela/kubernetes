@@ -827,41 +827,41 @@ data:
                       "group", "dcc", "service_name", "dungeon-crawler-carl-agent")
                     ))
                     / on(group) group_left(agents, budget_usd, enforced) (
-                    label_replace(label_replace(label_replace(label_replace(vector(3.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(6.0),
                       "group", "hk", "", ""),
                       "agents", "homelab-knowledge", "", ""),
-                      "budget_usd", "3.00", "", ""),
+                      "budget_usd", "6.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(5.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
                       "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
-                      "budget_usd", "5.00", "", ""),
+                      "budget_usd", "10.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "implementer", "", ""),
                       "agents", "implementer", "", ""),
-                      "budget_usd", "2.00", "", ""),
+                      "budget_usd", "4.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "restarter", "", ""),
                       "agents", "restarter", "", ""),
-                      "budget_usd", "2.00", "", ""),
+                      "budget_usd", "4.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(1.5),
+                    label_replace(label_replace(label_replace(label_replace(vector(2.5),
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
-                      "budget_usd", "1.50", "", ""),
+                      "budget_usd", "2.50", "", ""),
                       "enforced", "false", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "k8s-reader", "", ""),
                       "agents", "k8s-reader", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "skill-suggester", "", ""),
@@ -908,41 +908,41 @@ data:
                       "group", "dcc", "service_name", "dungeon-crawler-carl-agent")
                     ))
                     + on(group) group_left(agents, budget_usd, enforced) (0 * (
-                    label_replace(label_replace(label_replace(label_replace(vector(3.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(6.0),
                       "group", "hk", "", ""),
                       "agents", "homelab-knowledge", "", ""),
-                      "budget_usd", "3.00", "", ""),
+                      "budget_usd", "6.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(5.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
                       "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
-                      "budget_usd", "5.00", "", ""),
+                      "budget_usd", "10.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "implementer", "", ""),
                       "agents", "implementer", "", ""),
-                      "budget_usd", "2.00", "", ""),
+                      "budget_usd", "4.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "restarter", "", ""),
                       "agents", "restarter", "", ""),
-                      "budget_usd", "2.00", "", ""),
+                      "budget_usd", "4.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(1.5),
+                    label_replace(label_replace(label_replace(label_replace(vector(2.5),
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
-                      "budget_usd", "1.50", "", ""),
+                      "budget_usd", "2.50", "", ""),
                       "enforced", "false", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "k8s-reader", "", ""),
                       "agents", "k8s-reader", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "skill-suggester", "", ""),
@@ -1020,41 +1020,41 @@ data:
                       "group", "dcc", "service_name", "dungeon-crawler-carl-agent")
                     ))
                     / on(group) group_left(agents, budget_usd, enforced) (
-                    label_replace(label_replace(label_replace(label_replace(vector(3.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(6.0),
                       "group", "hk", "", ""),
                       "agents", "homelab-knowledge", "", ""),
-                      "budget_usd", "3.00", "", ""),
+                      "budget_usd", "6.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(5.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
                       "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
-                      "budget_usd", "5.00", "", ""),
+                      "budget_usd", "10.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "implementer", "", ""),
                       "agents", "implementer", "", ""),
-                      "budget_usd", "2.00", "", ""),
+                      "budget_usd", "4.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "restarter", "", ""),
                       "agents", "restarter", "", ""),
-                      "budget_usd", "2.00", "", ""),
+                      "budget_usd", "4.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(1.5),
+                    label_replace(label_replace(label_replace(label_replace(vector(2.5),
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
-                      "budget_usd", "1.50", "", ""),
+                      "budget_usd", "2.50", "", ""),
                       "enforced", "false", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "k8s-reader", "", ""),
                       "agents", "k8s-reader", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "skill-suggester", "", ""),
@@ -1101,41 +1101,41 @@ data:
                       "group", "dcc", "service_name", "dungeon-crawler-carl-agent")
                     ))
                     + on(group) group_left(agents, budget_usd, enforced) (0 * (
-                    label_replace(label_replace(label_replace(label_replace(vector(3.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(6.0),
                       "group", "hk", "", ""),
                       "agents", "homelab-knowledge", "", ""),
-                      "budget_usd", "3.00", "", ""),
+                      "budget_usd", "6.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(5.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
                       "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
-                      "budget_usd", "5.00", "", ""),
+                      "budget_usd", "10.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "implementer", "", ""),
                       "agents", "implementer", "", ""),
-                      "budget_usd", "2.00", "", ""),
+                      "budget_usd", "4.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "restarter", "", ""),
                       "agents", "restarter", "", ""),
-                      "budget_usd", "2.00", "", ""),
+                      "budget_usd", "4.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(1.5),
+                    label_replace(label_replace(label_replace(label_replace(vector(2.5),
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
-                      "budget_usd", "1.50", "", ""),
+                      "budget_usd", "2.50", "", ""),
                       "enforced", "false", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "k8s-reader", "", ""),
                       "agents", "k8s-reader", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "skill-suggester", "", ""),
@@ -1200,41 +1200,41 @@ data:
                   expr: |-
                     (sum by (group) (((last_over_time(agentgateway_requests_total{namespace="model-gateway", listener="llm", status="429", reason="RateLimit"}[10m]) - last_over_time(agentgateway_requests_total{namespace="model-gateway", listener="llm", status="429", reason="RateLimit"}[1d] offset 10m)) >= 0) or last_over_time(agentgateway_requests_total{namespace="model-gateway", listener="llm", status="429", reason="RateLimit"}[10m])))
                     * on(group) group_left(agents, budget_usd, enforced) (0 * (
-                    label_replace(label_replace(label_replace(label_replace(vector(3.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(6.0),
                       "group", "hk", "", ""),
                       "agents", "homelab-knowledge", "", ""),
-                      "budget_usd", "3.00", "", ""),
+                      "budget_usd", "6.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(5.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(10.0),
                       "group", "build", "", ""),
                       "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
-                      "budget_usd", "5.00", "", ""),
+                      "budget_usd", "10.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "implementer", "", ""),
                       "agents", "implementer", "", ""),
-                      "budget_usd", "2.00", "", ""),
+                      "budget_usd", "4.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(2.0),
+                    label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "restarter", "", ""),
                       "agents", "restarter", "", ""),
-                      "budget_usd", "2.00", "", ""),
+                      "budget_usd", "4.00", "", ""),
                       "enforced", "false", "", "")
                     or
-                    label_replace(label_replace(label_replace(label_replace(vector(1.5),
+                    label_replace(label_replace(label_replace(label_replace(vector(2.5),
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
-                      "budget_usd", "1.50", "", ""),
+                      "budget_usd", "2.50", "", ""),
                       "enforced", "false", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "k8s-reader", "", ""),
                       "agents", "k8s-reader", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "skill-suggester", "", ""),

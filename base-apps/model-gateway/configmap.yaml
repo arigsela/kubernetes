@@ -103,7 +103,7 @@ data:
                 - name: daily
                   limit:
                     unit: USD
-                    amount: 3.0
+                    amount: 6.0
                   window:
                     rolling: 24h
                   onBudgetExceeded: Block
@@ -117,7 +117,7 @@ data:
                 - name: daily
                   limit:
                     unit: USD
-                    amount: 5.0
+                    amount: 10.0
                   window:
                     rolling: 24h
                   onBudgetExceeded: Block
@@ -131,7 +131,7 @@ data:
                 - name: daily
                   limit:
                     unit: USD
-                    amount: 2.0
+                    amount: 4.0
                   window:
                     rolling: 24h
                   onBudgetExceeded: Block
@@ -145,7 +145,7 @@ data:
                 - name: daily
                   limit:
                     unit: USD
-                    amount: 2.0
+                    amount: 4.0
                   window:
                     rolling: 24h
                   onBudgetExceeded: Block
@@ -160,7 +160,7 @@ data:
                 - name: daily
                   limit:
                     unit: USD
-                    amount: 1.5
+                    amount: 2.5
                   window:
                     rolling: 24h
                   onBudgetExceeded: Block

@@ -38,7 +38,7 @@ spec:
       annotations:
         # sha256 of configmap.yaml's data (scripts/gen-model-budgets.py writes it): a budget change
         # rolls the pods. agentgateway also watches its file, but a rollout is the reviewed path.
-        checksum/config: 9419443c5b13fefb81b01b05dbec8f27a8dba044b879d6a27d0cbf0f48eabb7c
+        checksum/config: 06e89cba731703b7d8ea2915186985744988936fba6688d708b5374237bf187a
         # The gateway reads its keys from the environment once, at start. After
         # scripts/provision-model-gateway-vault.sh --rotate <group>, bump this (a pull request) so the
         # pods restart on the new key (runbook, "Rotate a virtual key").
