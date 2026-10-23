@@ -1,0 +1,25 @@
+# Structured facts for the model gateway. Authoritative for owner, dependencies, namespace and
+# lifecycle; the markdown docs do not restate them.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: model-gateway
+  namespace: model-gateway
+  description: Daily model budget per kagent agent group, enforced by agentgateway in front of the Anthropic API
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=model-gateway'
+    backstage.io/kubernetes-namespace: model-gateway
+  tags: [agentgateway, agents, llm-gateway, cost]
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/platform
+  system: default/platform-observability
+  dependsOn:
+    - component:kagent/kagent
+    - component:ate-system/substrate
+    - resource:postgresql/postgresql
+    - component:logging/logging
+    - resource:vault/vault
