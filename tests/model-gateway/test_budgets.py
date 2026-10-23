@@ -63,7 +63,7 @@ def test_budgets_match_the_spec():
         "k8s-reader": 0.5, "skill-suggester": 0.5, "dcc": 0.5, "ui-default": 0.5,
     }
     assert table["window"] == "24h" and table["warn_at"] == 0.8
-    assert table["groups"]["build"]["agents"] == ["build-orchestrator", "k8s-agent", "istio-agent"]
+    assert table["groups"]["build"]["agents"] == ["k8s-agent", "istio-agent"]
     ui = dict(table["groups"]["ui-default"])
     ui.pop("gateway")
     assert ui == {"agents": [], "chart_default": True, "models": ["claude-haiku-5-5"], "daily_usd": 0.5}

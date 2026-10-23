@@ -86,8 +86,8 @@ sessions run as gVisor actors. Substrate itself is in `ate-system`
   still get cut. Prompt caching (`promptCaching: true`) keeps the cost of a longer turn down.
 
 ### Symptom: a turn is stuck waiting for approval
-A call through a `requireApproval: true` binding (only `k8s-agent` and `istio-agent` have one,
-directly or as `build-orchestrator`'s sub-agents) pauses the turn in `TASK_STATE_INPUT_REQUIRED`.
+A call through a `requireApproval: true` binding (`k8s-agent`, `istio-agent` and `restarter` have
+one) pauses the turn in `TASK_STATE_INPUT_REQUIRED`.
 It never expires: `config.sessions.idleTtl` skips turns waiting for approval.
 - **Check:** `scripts/ask-hk` exits 2 and prints what the agent is waiting on. In the UI
   (`https://kagent.arigsela.com`) the session shows the pending tool call. A session belongs to

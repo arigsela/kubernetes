@@ -7,8 +7,9 @@
 #
 # A group is the agents that share one virtual key, so one budget. Agents that run inside another
 # agent's sandbox (a Shared subagent) must be in their parent's group: kagent refuses two Secrets
-# for the same host in one actor. That is why `build` holds build-orchestrator, k8s-agent and
-# istio-agent (owner, 2026-10-23).
+# for the same host in one actor. `build` was build-orchestrator plus the two specialists it ran
+# as subagents (owner, 2026-10-23); build-orchestrator was retired the same day, and k8s-agent
+# and istio-agent keep sharing `build` so their key and the day's count stay as they are.
 #
 # daily_usd: the gateway blocks the group's model calls (429) once it has spent this much in the
 # current 24h window, which starts at 00:00 UTC. Prices are the collector's (§V.105).
@@ -36,7 +37,7 @@ groups:
     daily_usd: 6.00
     gateway: true
   build:
-    agents: [build-orchestrator, k8s-agent, istio-agent]
+    agents: [k8s-agent, istio-agent]
     models: [claude-sonnet-5-5]
     daily_usd: 10.00
     gateway: true

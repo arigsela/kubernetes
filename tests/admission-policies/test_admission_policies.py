@@ -45,15 +45,15 @@ def test_bad_fixture_is_flagged_by_its_policy(cluster, path):
 @pytest.mark.parametrize("path", real_kagent_files(),
                          ids=lambda p: "/".join(p.relative_to(p.parents[1]).with_suffix("").parts))
 def test_real_kagent_manifests_update_without_warnings(cluster, path):
-    """Every kagent object actually deployed (Agents, AgentTemplates incl. build-orchestrator,
-    Harnesses, ModelConfigs, MCP servers) must pass every policy — on UPDATE, the path a sync
+    """Every kagent object actually deployed (Agents, AgentTemplates, Harnesses,
+    ModelConfigs, MCP servers) must pass every policy — on UPDATE, the path a sync
     takes. A policy that flags a real object would block it the day it enforces."""
     verdict, fired, out = cluster.verdict(path.read_text(), update=True)
     assert verdict == "allow", f"real {path.name} got {verdict} from {fired}:\n{out}"
 
 
 def test_real_kagent_manifests_are_all_there():
-    """The harness must exercise the real agents, not a subset: ten Agents and their ten
+    """The harness must exercise the real agents, not a subset: nine Agents and their nine
     AgentTemplates, and the one byo Harness (docs-checker's, the object the byo exception of
     agent-capability-runtime admits; SPEC §V.101). A glob that silently found nothing would make
     the test above vacuous."""
@@ -62,9 +62,8 @@ def test_real_kagent_manifests_are_all_there():
         for d in yaml.safe_load_all(p.read_text()):
             if d:
                 kinds.setdefault(d["kind"], set()).add(d["metadata"]["name"])
-    want = {"homelab-knowledge", "k8s-reader", "k8s-agent", "istio-agent", "build-orchestrator",
-            "skill-suggester", "dungeon-crawler-carl-agent", "implementer", "restarter",
-            "docs-checker"}
+    want = {"homelab-knowledge", "k8s-reader", "k8s-agent", "istio-agent", "skill-suggester",
+            "dungeon-crawler-carl-agent", "implementer", "restarter", "docs-checker"}
     assert kinds.get("Agent") == want, kinds.get("Agent")
     assert kinds.get("AgentTemplate") == want, kinds.get("AgentTemplate")
     assert "docs-checker" in kinds.get("Harness", set()), kinds.get("Harness")

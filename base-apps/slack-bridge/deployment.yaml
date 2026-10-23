@@ -57,7 +57,7 @@ spec:
             # The agents a first word `name:` may pick. Every one of them, including the two
             # that can act: the owner chose approvals in Slack (design conversation 2026-10-14).
             - name: AGENTS
-              value: "homelab-knowledge,k8s-reader,k8s-agent,istio-agent,implementer,restarter,build-orchestrator,skill-suggester"
+              value: "homelab-knowledge,k8s-reader,k8s-agent,istio-agent,implementer,restarter,skill-suggester"
             - name: KAGENT_A2A_BASE
               value: http://kagent-controller.kagent.svc.cluster.local:8083
             - name: DISPATCHER_DECIDE_BASE

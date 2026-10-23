@@ -153,7 +153,7 @@ def test_budget_labels_carry_the_table():
     table = model_budgets.load()["groups"]
     got = {b["group"]: b for b in gen.budget_labels()}
     assert set(got) == set(table)
-    assert got["build"]["agents"] == "build-orchestrator, k8s-agent, istio-agent"
+    assert got["build"]["agents"] == "k8s-agent, istio-agent"
     assert got["build"]["budget_usd"] == "10.00"
     for name, g in table.items():
         assert got[name]["enforced"] == ("true" if g["gateway"] else "false"), name
