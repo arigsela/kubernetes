@@ -576,6 +576,24 @@ jobs:
       - name: Run implementer tests
         run: python -m pytest tests/implementer/ -q
 
+  # The model budgets (§T.137): budgets.yaml is the one table, and everything derived from it
+  # (the Grafana budget alerts, later the gateway config) is generated; the promtool case runs
+  # through Docker on the runner, like dashboards-validate.
+  model-gateway-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run model gateway tests
+        run: python -m pytest tests/model-gateway/ -q
+      - name: Check the generated files are in sync with budgets.yaml
+        run: python scripts/gen-model-budgets.py --check
+
   # The ApplicationSet configs are not schema-validated by kubernetes-validate
   # (they have no kind), and a malformed one does not fail loudly at apply time:
   # goTemplateOptions missingkey=error halts the render for ALL 13 apps and the

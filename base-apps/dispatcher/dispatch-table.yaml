@@ -159,6 +159,20 @@ data:
           "match": {"alertname": "Beacon enterprise signup pending"},
           "route": "none",
           "why": "Not a fault: an approval for the owner, who opens the XTenant PR; nothing for an agent to investigate (beacon §V.54)."
+        },
+        {
+          "id": "agent-budget-near",
+          "source": "grafana",
+          "match": {"alertname": "Agent near its daily budget"},
+          "route": "none",
+          "why": "An investigation would spend from the budgets this alert is about; the owner reads the Agent Platform dashboard and raises the budget by a pull request if it is a busy day (§T.137)."
+        },
+        {
+          "id": "agent-budget-over",
+          "source": "grafana",
+          "match": {"alertname": "Agent over its daily budget"},
+          "route": "none",
+          "why": "Same as above: an investigation would spend from the budgets this alert is about, and the over-budget group's own agent may be refused (§T.137)."
         }
       ]
     }
