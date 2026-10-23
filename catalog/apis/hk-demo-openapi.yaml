@@ -6,12 +6,17 @@
 openapi: 3.0.3
 info:
   title: hk-demo
-  version: 0.1.5
+  version: 0.2.0
   description: |
-    The API behind the hk demo page. Ask the homelab-knowledge (hk) agent one question, then
+    The API behind the hk demo page. Ask the homelab-knowledge (hk) agent a question, then
     follow the run as server-sent events: the agent's progress, its answer, then eight evidence
     boxes (Gateway, Login, hk demo, Identity check, kagent, Sandbox, Model API, Tools) built from
     the run's own trace, log lines and metrics.
+
+    **Conversations.** Each run is one turn of a conversation. Send `conversation_id` to follow
+    up: the turn continues its agent's session. A question that starts with `implementer:` goes
+    to the implementer agent (it opens a pull request on arigsela/kubernetes; a human merges)
+    instead of hk, and carries hk's latest answer as evidence. hk stays read-only.
 
     **Who can call it.** The host answers only addresses on the Gateway's allow-list. An
     oauth2-proxy sidecar sits in front of the app: a request without a session is redirected
@@ -23,9 +28,10 @@ info:
     `kagent`), so kagent sees `system:serviceaccount:hk-demo:hk-demo`. The person who asked is
     recorded in the app's log line for the run.
 
-    **One question at a time.** A second question while one runs gets 409. The app keeps its last
-    20 runs in memory; runs from the last 7 days are replayed from its own log lines, the agent's
-    task and the trace.
+    **One question at a time.** A second question before the running one has its answer gets 409.
+    The earlier run's boxes keep filling after its answer. The app keeps its last 20 runs in
+    memory; runs from the last 7 days are replayed from its own log lines, the agent's task and the
+    trace, and their conversations can be continued.
 
     **What never reaches the client.** Emails are shown as `a•••@domain`, client IPs as /24,
     tokens are hidden, tool responses are dropped and log lines are cut at 600 characters.
@@ -54,11 +60,13 @@ paths:
   /api/ask:
     post:
       tags: [runs]
-      summary: Ask hk a question
+      summary: Ask a question, or follow up in a conversation
       operationId: ask
       description: |
         Starts a run and returns its id at once. The answer and the evidence come on the run's
-        event stream (`GET /api/runs/{run_id}/events`).
+        event stream (`GET /api/runs/{run_id}/events`). Without `conversation_id` it starts a new
+        conversation; with one it is the conversation's next turn. `implementer: <request>` sends
+        the request to the implementer agent.
       requestBody:
         required: true
         content:
@@ -74,20 +82,57 @@ paths:
                 $ref: "#/components/schemas/AskAccepted"
         "400":
           description: >-
-            The body is not `{"question": "..."}`, or the question is empty or longer than 2000
-            characters.
+            The body is not `{"question": "..."}` (with an optional `conversation_id` of 32 hex
+            characters), the question is empty or longer than 2000 characters, or nothing follows
+            `implementer:`.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/LoginRequired"
+        "404":
+          description: >-
+            `conversation_id` is not a conversation in memory or in the app's log lines of the last
+            7 days (`no such conversation (the app keeps 7 days)`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: A question is already running (`a question is already running`).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "503":
+          description: >-
+            The conversation is not in memory and the app's log lines (Loki) could not be read
+            within 10 s. Nothing was started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/conversations:
+    get:
+      tags: [runs]
+      summary: Recent conversations
+      operationId: listConversations
+      description: >-
+        Up to 15 conversations, the one with the newest turn first, each with its turns in order.
+        A run logged before conversations existed is a one-turn hk conversation whose id is its
+        run id.
+      responses:
+        "200":
+          description: The conversations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+        "401":
+          $ref: "#/components/responses/LoginRequired"
   /api/runs:
     get:
       tags: [runs]
@@ -112,9 +157,10 @@ paths:
       operationId: runEvents
       description: |
         Server-sent events. Each message is `event: <name>` and `data: <JSON>`; the schema below
-        is one message. A live run sends `ids`, then `progress` while the agent works, then
-        `answer`, then `boxes` (more than once, as evidence arrives; the last one is final). A
-        run from Recent runs is replayed and starts with `question`. `failed` reports a failure
+        is one message. A run starts with `question` (which turn of which conversation, and the
+        agent), then `ids`, then `progress` while the agent works, then `answer`, then `boxes`
+        (more than once, as evidence arrives; the last one is final). A run from Recent runs is
+        replayed the same way. `failed` reports a failure
         and is still followed by `boxes` where there is evidence. `done` is always last, and the
         server then closes the stream. A run the app has no record of gives `failed` then `done`.
       parameters:
@@ -210,17 +256,82 @@ components:
           type: string
           minLength: 1
           maxLength: 2000
+          description: >-
+            The question. Starting it with `implementer:` sends the rest to the implementer agent.
           example: Which namespaces run more than one Deployment?
+        conversation_id:
+          type: string
+          nullable: true
+          pattern: "^[0-9a-f]{32}$"
+          description: The conversation to follow up in; omit it to start a new one.
     AskAccepted:
       type: object
-      required: [run_id]
+      required: [run_id, conversation_id, agent, turn, question]
+      properties:
+        question:
+          type: string
+          description: The question as the app recorded it, emails and IPs masked.
+        run_id:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+        conversation_id:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+        agent:
+          $ref: "#/components/schemas/AgentRef"
+        turn:
+          type: integer
+          minimum: 1
+    AgentRef:
+      type: string
+      pattern: "^[a-z0-9-]+/[a-z0-9-]+$"
+      example: kagent/implementer
+      description: >-
+        The agent the turn went to, `<namespace>/<name>`: hk (`HK_AGENT`, by default
+        kagent/homelab-knowledge) or the implementer (`IMPLEMENTER_AGENT`, by default
+        kagent/implementer). The page calls an agent named `implementer` "implementer", any other
+        "hk".
+    Conversation:
+      type: object
+      required: [conversation_id, started, updated, turns]
+      properties:
+        conversation_id:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+        started:
+          type: string
+          format: date-time
+        updated:
+          type: string
+          format: date-time
+          description: When its latest turn started.
+        turns:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationTurn"
+    ConversationTurn:
+      type: object
+      required: [run_id, agent, turn, question, state, started]
       properties:
         run_id:
           type: string
           pattern: "^[0-9a-f]{32}$"
+        agent:
+          $ref: "#/components/schemas/AgentRef"
+        turn:
+          type: integer
+          minimum: 1
+        question:
+          type: string
+        state:
+          type: string
+          nullable: true
+        started:
+          type: string
+          format: date-time
     RunSummary:
       type: object
-      required: [run_id, started, question, state]
+      required: [run_id, started, question, state, agent, conversation_id, turn]
       properties:
         run_id:
           type: string
@@ -234,9 +345,17 @@ components:
           type: string
           nullable: true
           description: The A2A task state, such as `TASK_STATE_COMPLETED`; null while it runs.
+        agent:
+          $ref: "#/components/schemas/AgentRef"
+        conversation_id:
+          type: string
+          pattern: "^[0-9a-f]{32}$"
+        turn:
+          type: integer
+          minimum: 1
     QuestionEvent:
       type: object
-      description: A replay's question (first event of a replay).
+      description: The run's question, the agent it went to and its turn (first event).
       required: [event, data]
       properties:
         event:
@@ -244,10 +363,18 @@ components:
           enum: [question]
         data:
           type: object
-          required: [question]
+          required: [question, agent, conversation_id, turn]
           properties:
             question:
               type: string
+            agent:
+              $ref: "#/components/schemas/AgentRef"
+            conversation_id:
+              type: string
+              pattern: "^[0-9a-f]{32}$"
+            turn:
+              type: integer
+              minimum: 1
     IdsEvent:
       type: object
       description: The agent accepted the run.
