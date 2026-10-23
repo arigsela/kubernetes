@@ -18,7 +18,8 @@ spec:
   description: Suggests A2A skills for new kagent agents based on a one-line description
   # Haiku 5.5: one short structured answer per call.
   modelConfig:
-    name: anthropic-claude-haiku-5-5
+    # Through the model gateway (§T.137): group skill-suggester's daily budget, base-apps/model-gateway/budgets.yaml.
+    name: anthropic-claude-haiku-5-5-skill-suggester
   systemPrompt: |
     You receive an agent description. Respond with ONLY a JSON array of exactly 3 skills, each shaped {id (kebab-case), name
       (Title Case), description (one sentence)}. No prose, no markdown.

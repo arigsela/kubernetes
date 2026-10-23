@@ -38,7 +38,8 @@ spec:
   # the model per graph node itself (Haiku 5.5, escalating to Sonnet 5.5; only those two are
   # allowed in its code) and reads this config's prompt caching settings.
   modelConfig:
-    name: anthropic-claude-sonnet-5-5
+    # Through the model gateway (§T.137): group docs-checker's daily budget, base-apps/model-gateway/budgets.yaml.
+    name: anthropic-claude-sonnet-5-5-docs-checker
   tools:
     # The repo at one commit per run: read a file, list and read the commits that touched it, and
     # search code (bound, but the runtime leaves its search fallback off by default: GitHub does

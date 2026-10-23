@@ -29,6 +29,8 @@ version: 1
 window: 24h
 warn_at: 0.8
 groups:
+  # Not on the gateway yet: the hk-demo page's Model API box checks for api.anthropic.com on the
+  # egress, so hk moves with the hk-demo change that shows the gateway instead.
   hk:
     agents: [homelab-knowledge]
     models: [claude-sonnet-5-5]
@@ -38,23 +40,23 @@ groups:
     agents: [build-orchestrator, k8s-agent, istio-agent]
     models: [claude-sonnet-5-5]
     daily_usd: 10.00
-    gateway: false
+    gateway: true
   implementer:
     agents: [implementer]
     models: [claude-sonnet-5-5]
     daily_usd: 4.00
-    gateway: false
+    gateway: true
   restarter:
     agents: [restarter]
     models: [claude-sonnet-5-5]
     daily_usd: 4.00
-    gateway: false
+    gateway: true
   # Sonnet through its ModelConfig, Haiku from its own runtime (it picks the model per graph node).
   docs-checker:
     agents: [docs-checker]
     models: [claude-sonnet-5-5, claude-haiku-5-5]
     daily_usd: 2.50
-    gateway: false
+    gateway: true
   # The first group on the gateway (rollout step 4): cheapest, read-only.
   k8s-reader:
     agents: [k8s-reader]
@@ -65,12 +67,12 @@ groups:
     agents: [skill-suggester]
     models: [claude-haiku-5-5]
     daily_usd: 0.50
-    gateway: false
+    gateway: true
   dcc:
     agents: [dungeon-crawler-carl-agent]
     models: [claude-haiku-5-5]
     daily_usd: 0.50
-    gateway: false
+    gateway: true
   # The kagent chart's default-model-config (base-apps/kagent.yaml providers.anthropic): agents
   # created in the UI. No agent in git uses it.
   ui-default:
@@ -78,4 +80,4 @@ groups:
     chart_default: true
     models: [claude-haiku-5-5]
     daily_usd: 0.50
-    gateway: false
+    gateway: true

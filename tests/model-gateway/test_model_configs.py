@@ -29,7 +29,7 @@ def test_each_moved_group_has_one_config_per_model_that_differs_only_where_it_mu
     for group, g in mb.load()["groups"].items():
         for model in g["models"]:
             path = CONFIGS / f"anthropic-{model}-{group}.yaml"
-            if not g["gateway"]:
+            if not g["gateway"] or g.get("chart_default"):
                 assert not path.exists(), f"{group} has not moved: no generated config"
                 continue
             assert GENERATED in path.read_text()
@@ -53,7 +53,8 @@ def test_agents_use_their_groups_config_once_the_group_moved():
 
 def test_no_stale_generated_config():
     table = mb.load()["groups"]
-    wanted = {f"anthropic-{m}-{grp}.yaml" for grp, g in table.items() if g["gateway"] for m in g["models"]}
+    wanted = {f"anthropic-{m}-{grp}.yaml" for grp, g in table.items()
+              if g["gateway"] and not g.get("chart_default") for m in g["models"]}
     generated = {p.name for p in CONFIGS.glob("*.yaml") if GENERATED in p.read_text()}
     assert generated == wanted
 
@@ -62,3 +63,42 @@ def test_k8s_reader_is_the_first_group_on_the_gateway():
     table = mb.load()["groups"]
     assert table["k8s-reader"]["gateway"] is True
     assert template_model("k8s-reader") == "anthropic-claude-haiku-5-5-k8s-reader"
+
+
+def _kagent_values():
+    app = _load(REPO / "base-apps/kagent.yaml")
+    return yaml.safe_load(app["spec"]["source"]["helm"]["values"]) if "values" in app["spec"]["source"]["helm"] \
+        else app["spec"]["source"]["helm"]["valuesObject"]
+
+
+def test_the_chart_default_follows_ui_default():
+    """agents created in the kagent UI use the chart's default-model-config (providers.anthropic;
+    its `config` is rendered into spec.anthropic)."""
+    g = mb.load()["groups"]["ui-default"]
+    anthropic = _kagent_values()["providers"]["anthropic"]
+    if g["gateway"]:
+        assert anthropic["apiKeySecretRef"] == "model-gateway-key-ui-default"
+        assert anthropic["config"]["baseUrl"] == mb.GATEWAY_URL
+    else:
+        assert anthropic["apiKeySecretRef"] == "kagent-anthropic" and "baseUrl" not in (anthropic.get("config") or {})
+    assert not (CONFIGS / "anthropic-claude-haiku-5-5-ui-default.yaml").exists(), "the chart renders its own"
+
+
+def test_docs_checker_sends_its_calls_to_the_gateway():
+    """docs-checker's runtime calls the API itself (LangChain ChatAnthropic) and reads no base URL from
+    kagent's config: ANTHROPIC_BASE_URL in its Harness points it at the gateway, whose host the egress
+    injects the group's key for."""
+    g = mb.load()["groups"]["docs-checker"]
+    harness = _load(REPO / "base-apps/kagent/harnesses/docs-checker.yaml")
+    env = {e["name"]: e.get("value") for e in harness["spec"].get("env", [])}
+    if g["gateway"]:
+        assert env.get("ANTHROPIC_BASE_URL") == mb.GATEWAY_URL
+    else:
+        assert "ANTHROPIC_BASE_URL" not in env
+
+
+def test_every_group_but_hk_is_on_the_gateway():
+    """hk waits for the hk-demo page's Model API box to show the gateway (its egress checks look for
+    api.anthropic.com)."""
+    on = {name for name, g in mb.load()["groups"].items() if g["gateway"]}
+    assert on == set(mb.load()["groups"]) - {"hk"}

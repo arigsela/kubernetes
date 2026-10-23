@@ -35,7 +35,8 @@ spec:
     istio-agent), which then takes over the conversation and answers directly. Hand-off, not
     delegation: it does not get the specialist's answer back.
   modelConfig:
-    name: anthropic-claude-sonnet-5-5
+    # Through the model gateway (§T.137): group build's daily budget, base-apps/model-gateway/budgets.yaml.
+    name: anthropic-claude-sonnet-5-5-build
   systemPrompt: |
     You are a Kubernetes operations router in front of two specialist agents.
     Read each request and hand it to the one specialist best suited to it.

@@ -837,25 +837,25 @@ data:
                       "group", "build", "", ""),
                       "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
                       "budget_usd", "10.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "implementer", "", ""),
                       "agents", "implementer", "", ""),
                       "budget_usd", "4.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "restarter", "", ""),
                       "agents", "restarter", "", ""),
                       "budget_usd", "4.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(2.5),
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
                       "budget_usd", "2.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "k8s-reader", "", ""),
@@ -867,19 +867,19 @@ data:
                       "group", "skill-suggester", "", ""),
                       "agents", "skill-suggester", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "dcc", "", ""),
                       "agents", "dungeon-crawler-carl-agent", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "ui-default", "", ""),
                       "agents", "agents created in the kagent UI", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     )
               - refId: spend
                 relativeTimeRange:
@@ -918,25 +918,25 @@ data:
                       "group", "build", "", ""),
                       "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
                       "budget_usd", "10.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "implementer", "", ""),
                       "agents", "implementer", "", ""),
                       "budget_usd", "4.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "restarter", "", ""),
                       "agents", "restarter", "", ""),
                       "budget_usd", "4.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(2.5),
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
                       "budget_usd", "2.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "k8s-reader", "", ""),
@@ -948,19 +948,19 @@ data:
                       "group", "skill-suggester", "", ""),
                       "agents", "skill-suggester", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "dcc", "", ""),
                       "agents", "dungeon-crawler-carl-agent", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "ui-default", "", ""),
                       "agents", "agents created in the kagent UI", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     ))
               - refId: threshold
                 relativeTimeRange:
@@ -1030,25 +1030,25 @@ data:
                       "group", "build", "", ""),
                       "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
                       "budget_usd", "10.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "implementer", "", ""),
                       "agents", "implementer", "", ""),
                       "budget_usd", "4.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "restarter", "", ""),
                       "agents", "restarter", "", ""),
                       "budget_usd", "4.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(2.5),
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
                       "budget_usd", "2.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "k8s-reader", "", ""),
@@ -1060,19 +1060,19 @@ data:
                       "group", "skill-suggester", "", ""),
                       "agents", "skill-suggester", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "dcc", "", ""),
                       "agents", "dungeon-crawler-carl-agent", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "ui-default", "", ""),
                       "agents", "agents created in the kagent UI", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     )
               - refId: spend
                 relativeTimeRange:
@@ -1111,25 +1111,25 @@ data:
                       "group", "build", "", ""),
                       "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
                       "budget_usd", "10.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "implementer", "", ""),
                       "agents", "implementer", "", ""),
                       "budget_usd", "4.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "restarter", "", ""),
                       "agents", "restarter", "", ""),
                       "budget_usd", "4.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(2.5),
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
                       "budget_usd", "2.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "k8s-reader", "", ""),
@@ -1141,19 +1141,19 @@ data:
                       "group", "skill-suggester", "", ""),
                       "agents", "skill-suggester", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "dcc", "", ""),
                       "agents", "dungeon-crawler-carl-agent", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "ui-default", "", ""),
                       "agents", "agents created in the kagent UI", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     ))
               - refId: threshold
                 relativeTimeRange:
@@ -1210,25 +1210,25 @@ data:
                       "group", "build", "", ""),
                       "agents", "build-orchestrator, k8s-agent, istio-agent", "", ""),
                       "budget_usd", "10.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "implementer", "", ""),
                       "agents", "implementer", "", ""),
                       "budget_usd", "4.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(4.0),
                       "group", "restarter", "", ""),
                       "agents", "restarter", "", ""),
                       "budget_usd", "4.00", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(2.5),
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
                       "budget_usd", "2.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "k8s-reader", "", ""),
@@ -1240,19 +1240,19 @@ data:
                       "group", "skill-suggester", "", ""),
                       "agents", "skill-suggester", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "dcc", "", ""),
                       "agents", "dungeon-crawler-carl-agent", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
                       "group", "ui-default", "", ""),
                       "agents", "agents created in the kagent UI", "", ""),
                       "budget_usd", "0.50", "", ""),
-                      "enforced", "false", "", "")
+                      "enforced", "true", "", "")
                     ) + 1)
               - refId: threshold
                 relativeTimeRange:

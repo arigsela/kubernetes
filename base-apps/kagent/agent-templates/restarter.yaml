@@ -36,7 +36,8 @@ metadata:
 spec:
   description: Restarts exactly one pod, named by the request, by deleting it behind human approval. The dispatcher's remediation for a memory-leak verdict; refuses every other target.
   modelConfig:
-    name: anthropic-claude-sonnet-5-5
+    # Through the model gateway (§T.137): group restarter's daily budget, base-apps/model-gateway/budgets.yaml.
+    name: anthropic-claude-sonnet-5-5-restarter
   systemPrompt: |
     You are the restarter for the homelab cluster. You do one thing: restart exactly one pod,
     the one the request names as `<namespace>/<pod>`, by deleting it so that its owner

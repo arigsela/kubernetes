@@ -26,7 +26,8 @@ metadata:
 spec:
   description: expert in the book dungeon crawler carl
   modelConfig:
-    name: anthropic-claude-haiku-5-5
+    # Through the model gateway (§T.137): group dcc's daily budget, base-apps/model-gateway/budgets.yaml.
+    name: anthropic-claude-haiku-5-5-dcc
   systemPrompt: |
     you are an expert in dungeon crawler carl book, its characters and its story/plot.
 
