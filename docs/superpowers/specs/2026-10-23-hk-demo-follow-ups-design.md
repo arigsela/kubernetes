@@ -38,9 +38,9 @@ propose, and a human merges.
 - **kagent:** span `invoke_agent implementer`; configured: AgentTemplate `implementer`, capability
   class `propose` (branches and pull requests on arigsela/kubernetes; it never merges).
 - **Tools:** its GitHub tools run on `implementer-mcp`, which is adapter-fronted like `agent-docs`,
-  so each call's allow-list line is observed evidence. The proposal tools (`create_branch`,
-  `create_or_update_file`, `push_files`, `create_pull_request`, `update_pull_request`) carry a
-  configured note: class `propose`, no approval gate, the merge is the human gate (§V.94). A
+  so each call's allow-list line is observed evidence. The proposal tools it binds (`create_branch`,
+  `create_or_update_file`, `push_files`, `create_pull_request`; `update_pull_request` is in the
+  taxonomy but not bound) carry a configured note: class `propose`, no approval gate, the merge is the human gate (§V.94). A
   successful `create_pull_request` span is an observed check.
 - **This app:** which turn this is, whether it continued a session or started one, and how much of
   the other agent's answer it carried.
@@ -63,9 +63,25 @@ A continued session has one `contextId` across turns, so two lookups could mix t
 
 - The Prometheus fallback for the trace (`agent_run_start_seconds{gen_ai_conversation_id}`) is
   skipped for a continued session. The Tempo search by task id is per turn.
-- The run-logs query matches the trace id **or** `session-<contextId>`. For a continued session
-  the window starts at the turn's own start (not a minute before), and a line that lacks the trace
-  id is dropped if it is at or after the next same-session turn's start.
+- The Prometheus fallback is also skipped for a session's first turn once another turn shares its
+  `contextId` (one series per turn; which one comes first is arbitrary).
+- The run-logs query matches the trace id **or** `session-<contextId>`. A line that lacks the trace
+  id counts for a turn only from that turn's own start (for a continued session) up to the next
+  same-session turn's start. A session line written after the answer but after the next turn has
+  started (a late checkpoint) is shown with the next turn: the lines carry no turn.
+
+## Review decisions (2026-10-23, before release)
+
+- Only an answered turn is carried: a turn whose task ended failed, canceled, rejected or paused
+  carries nothing, so the implementer gets the last real finding.
+- Lookups before a turn starts are capped at 10 s each (rebuilding a conversation from Loki; the
+  carried answer from GetTask): oauth2-proxy gives a request 30 s, and a run that starts after the
+  browser was told it failed would still open a pull request. A slow carry is skipped; a slow or
+  failed Loki read is a 503, not "no such conversation".
+- The app's 7-day run lines are read at most every 10 s.
+- The page blocks Send, Enter, New conversation and Recent runs while a question is being sent,
+  shows the question as the server recorded it (masked), and replays a conversation one turn at a
+  time: the next turn starts when the previous one's boxes are complete, or 20 s after its answer.
 
 ## Data
 
