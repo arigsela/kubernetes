@@ -1,0 +1,118 @@
+# The model gateway (spec §3): agentgateway v1.6.0, our own static image (the MCP adapters' one,
+# images/agentgateway/), on the generated configmap.yaml. Two replicas so a restart or a node
+# drain never takes every model call down; the Service pins Substrate's egress to one of them
+# (service.yaml), because sharing budget counts between replicas was unreliable in the local
+# proof (spec §3.1a).
+#
+# The image is FROM scratch: no shell, so httpGet probes. Read-only root, an emptyDir at /tmp,
+# UID 65532 (the image's user), as the local proof ran it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-gateway
+  namespace: model-gateway
+  labels:
+    app: model-gateway
+    app.kubernetes.io/name: model-gateway
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: model-gateway
+  template:
+    metadata:
+      labels:
+        app: model-gateway
+        app.kubernetes.io/name: model-gateway
+      annotations:
+        # sha256 of configmap.yaml's data (scripts/gen-model-budgets.py writes it): a budget change
+        # rolls the pods. agentgateway also watches its file, but a rollout is the reviewed path.
+        checksum/config: 9419443c5b13fefb81b01b05dbec8f27a8dba044b879d6a27d0cbf0f48eabb7c
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15020"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: model-gateway
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: model-gateway
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d
+          args: ["-f", "/config/config.yaml"]
+          # MODEL_GATEWAY_KEY_<GROUP> (expanded into configmap.yaml) and PGPASSWORD (the database
+          # login; the URL in the config carries none, because the startup log prints it).
+          envFrom:
+            - secretRef:
+                name: model-gateway-env
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 15020
+              name: metrics
+            - containerPort: 15021
+              name: ready
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: 15021
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: anthropic
+              mountPath: /var/run/model-gateway/anthropic
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: model-gateway-config
+        - name: anthropic
+          secret:
+            secretName: model-gateway-anthropic
+            items:
+              - key: api-key
+                path: api-key
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

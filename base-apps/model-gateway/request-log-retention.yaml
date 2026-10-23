@@ -1,0 +1,74 @@
+# With a database configured, agentgateway 1.6.0 also writes one metadata row per request to
+# Postgres (request_logs: route, group, model, tokens, cost, status; no prompt, answer or key;
+# local proof check 13) and has no retention for it. Kept: it is a per-call cost record by group.
+# This job deletes rows older than 30 days, as the gateway's own login (it owns the table).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: request-log-retention
+  namespace: model-gateway
+  labels:
+    app.kubernetes.io/name: model-gateway-request-log-retention
+spec:
+  schedule: "17 3 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: model-gateway-request-log-retention
+        spec:
+          restartPolicy: OnFailure
+          automountServiceAccountToken: false
+          nodeSelector:
+            node.kubernetes.io/workload: application
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: prune
+              image: pgvector/pgvector:0.8.7-pg18@sha256:2358fcba361ed2233a5ed81b5fe4ca779ccb304120ce531a3bf51c0ed7e2bc11
+              command:
+                - psql
+                - --no-psqlrc
+                - -v
+                - ON_ERROR_STOP=1
+                - -h
+                - postgresql.postgresql.svc.cluster.local
+                - -U
+                - model_gateway
+                - -d
+                - model_gateway
+                - -c
+                # The table appears on the gateway's first start; until then there is nothing to prune.
+                - >-
+                  DO $prune$ BEGIN IF to_regclass('public.request_logs') IS NOT NULL THEN
+                  DELETE FROM request_logs WHERE completed_at < now() - interval '30 days';
+                  END IF; END $prune$;
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: model-gateway-env
+                      key: PGPASSWORD
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
