@@ -261,6 +261,13 @@ Go ADK behaviour that matters here:
   `ate-secret://` credential, and Substrate's egress gateway injects it into each model call.
   That needs the Substrate chart's `credentialProvider.namespacePolicies` to allow atespace
   `kagent` to read namespace `kagent`; without it every model call returns 403.
+- **The model gateway (§T.137).** Each agent group gets a daily budget enforced by
+  `base-apps/model-gateway`: a group that has moved (`gateway: true` in
+  `base-apps/model-gateway/budgets.yaml`) uses generated ModelConfigs
+  `anthropic-claude-<model>-<group>` whose `baseUrl` is the gateway and whose `apiKeySecret` is the
+  group's virtual key (`model-gateway-key-<group>`, base-apps/kagent/model-gateway-keys.yaml); the
+  egress injects that key, the gateway swaps in the real one. Groups move one at a time; the two
+  configs above stay until the last has moved.
 - **`embedding-model-config`** (`embedding-model-config.yaml`): Ollama `nomic-embed-text`
   (768 dimensions) at `http://ollama.ollama.svc.cluster.local:11434`, used by the memory-enabled
   Harnesses (`spec.kagent.memory.modelConfigRef`), not by any AgentTemplate. Memory vectors are

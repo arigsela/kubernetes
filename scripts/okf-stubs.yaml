@@ -65,10 +65,6 @@ jupyter-aws-infrastructure:
   description: "S3 scratch bucket asela-jupyter-scratch plus the IAM user, policy and access key the Jupyter notebook uses (Crossplane)"
   namespace: jupyter
 
-model-gateway:
-  description: "The daily model budget of each kagent agent group (budgets.yaml, §T.137); the agentgateway app that enforces it lands in the next PR, which replaces this stub with docs.md"
-  namespace: model-gateway
-
 loki-aws-infrastructure:
   description: "S3 bucket asela-chores-loki-logs-20251017 and its lifecycle rule, plus the IAM user and policy Loki writes with (Crossplane)"
   namespace: logging
