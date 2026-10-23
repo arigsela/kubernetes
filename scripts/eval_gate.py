@@ -294,6 +294,9 @@ def write_release(kube, release: dict, *, revision: str | None, now: str, log) -
 
 # ------------------------------------------------------------------ decision
 
+BUDGET_REFUSAL = "budget_exceeded"   # the model gateway's 429 error code (base-apps/model-gateway)
+
+
 def decide(results: list[dict], baseline: float | None) -> dict:
     total = len(results)
     passed = sum(1 for r in results if r.get("passed"))
@@ -425,6 +428,15 @@ def run(env, *, kube, send, judge, judge_name: str, status_post, log, corpus_dir
 
         captured = capture_mod.capture_full(entries, endpoint, send=send, timeout=timeout,
                                             token_file=token_file, log=log, reject=reject)
+        # The model gateway refused the agent's model calls: its group's daily budget is spent
+        # (§T.137). That says nothing about how the agent behaves, so nothing is scored: "could not
+        # score" (exit 1), the hash is not recorded (the next sync scores it again) and the release
+        # gate keeps its previous result.
+        if any(BUDGET_REFUSAL in ((v.get("error") or "") + (v.get("answer") or "")) for v in captured.values()):
+            log({"event": "eval-gate", "agent": agent, "hash": h, "revision": rev,
+                 "error": "budget refused; not scored", "budget": True})
+            rc = 1
+            continue
         if all(v["answer"] is None and not v["tool_calls"] for v in captured.values()):
             log({"event": "eval-gate", "agent": agent, "hash": h, "revision": rev,
                  "error": "every capture failed; nothing to score"})

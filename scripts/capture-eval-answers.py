@@ -73,7 +73,8 @@ def send_message(endpoint: str, question: str, *, transport=None,
 
 def capture_full(entries: list[dict], endpoint: str, *, send=None, timeout: float = a2a.DEFAULT_TIMEOUT,
                  token_file: str | None = None, log=None, reject=None, wait=None) -> dict[str, dict]:
-    """One new session per question. Per corpus id: {"answer", "tool_calls", "pending", "state", "polled"}.
+    """One new session per question. Per corpus id: {"answer", "tool_calls", "pending", "state", "polled",
+    "error"}.
 
     `answer` is None where the agent failed or said nothing. `tool_calls` is what it called
     ([{name, args}], the artifacts' data parts) PLUS, for a task that paused for approval, the
@@ -81,15 +82,19 @@ def capture_full(entries: list[dict], endpoint: str, *, send=None, timeout: floa
     then handed to `reject(reply)` so nothing runs and the session does not stay open; the
     rejected task's closing text becomes the answer when the rejection returns one.
     The gate never approves. A task handed back before it settled is polled with
-    `wait(endpoint, task_id, timeout=, token_file=)` (GetTask) and `polled` records that."""
+    `wait(endpoint, task_id, timeout=, token_file=)` (GetTask) and `polled` records that.
+    `error` is why the question failed, cut to 300 characters: a failed task's status text or the
+    client's exception. eval-gate reads it for the model gateway's budget refusal (§T.137)."""
     send = send or send_message
     out: dict[str, dict] = {}
     for e in entries:
-        row = {"answer": None, "tool_calls": [], "pending": [], "state": None, "polled": False}
+        row = {"answer": None, "tool_calls": [], "pending": [], "state": None, "polled": False, "error": None}
         try:
             reply = a2a.parse_result(send(endpoint, e["question"], timeout=timeout, token_file=token_file))
             reply, polled = settle(reply, endpoint, wait=wait, timeout=timeout, token_file=token_file)
             row.update(answer=reply.answer, tool_calls=list(reply.tool_calls), state=reply.state, polled=polled)
+            if reply.state in a2a.FAILED_STATES:
+                row["error"] = (reply.status_text or reply.state)[:300]
             if reply.waiting and reply.pending_calls:
                 row["pending"] = reply.pending_calls
                 row["tool_calls"] = row["tool_calls"] + [{"name": c["name"], "args": c["args"], "pending": True}
@@ -102,6 +107,7 @@ def capture_full(entries: list[dict], endpoint: str, *, send=None, timeout: floa
                         row["state"] = after.state
                         row["answer"] = after.answer or row["answer"]
         except (RuntimeError, OSError, ValueError) as err:
+            row["error"] = str(err)[:300]
             if log:
                 log({"event": "eval-capture", "id": e["id"], "error": str(err)[:300]})
         out[e["id"]] = row
