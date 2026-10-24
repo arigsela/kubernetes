@@ -1,5 +1,5 @@
 # tests/alert_demo/test_alert_demo.py
-"""scripts/alert_demo.py: the hk demo's workload holds a fixed amount of memory on request (§T.139)."""
+"""scripts/alert_demo.py: the hk demo's workload holds a fixed amount of memory on request (§T.140)."""
 from pathlib import Path
 import importlib.util
 import json

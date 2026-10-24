@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""alert-demo: the hk demo's workload (base-apps/alert-demo/, §T.139).
+"""alert-demo: the hk demo's workload (base-apps/alert-demo/, §T.140).
 
 It sits idle until the hk demo page's Start button asks it to fill. A demo run then holds a fixed
 amount of memory (FILL_MIB, 236 MiB by default) for HOLD_SECONDS (30 minutes) and lets it go. The

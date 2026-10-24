@@ -6,7 +6,7 @@ app: hk-demo
 catalog_entity: hk-demo
 kind: runbook
 namespace: hk-demo
-last_reviewed: 2026-10-23
+last_reviewed: 2026-10-24
 status: stable
 tags: [agents, observability, fastapi, oauth2-proxy]
 sources:
@@ -58,6 +58,30 @@ Logs: `kubectl -n hk-demo logs deploy/hk-demo -c app` (one JSON line per run pha
 - Fix: no trace at all → the collector (`tracing/otel-collector`) or Tempo is down (`tracing`
   namespace); a trace without `a2a.request` → it arrives last, the page waits 30 s for it. Logs
   missing → Loki ingestion lag; open the run again from Recent runs a minute later.
+
+## Before a meeting: a demo run (On its own)
+
+1. **At least 6 hours before:** rehearse once, or roll `alert-demo` between the rehearsal and the
+   meeting. The dispatcher investigates the same pod only once every 6 hours, so a run within 6
+   hours of the last one fires an alert that nobody investigates (`skip-repeat`).
+2. **About 20 minutes before:** open the On its own tab and press **Start a demo run**. The status
+   line shows when the alert is expected, about 16 minutes after the press. The run is listed about
+   2 minutes after the alert.
+3. **After the meeting:** close the demo pull request (below). The workload lets its memory go
+   after 30 minutes, and the alert resolves.
+
+**Start is disabled:** the status line says why.
+- A run is already on.
+- The implementer has 3 open pull requests: close the demo ones.
+- The dispatcher looked at this pod in the last 6 hours: roll the pod or wait.
+- "The demo workload did not answer": check `alert-demo` (its runbook).
+
+**The run ends without a pull request:** that is the implementer's own verdict, and the page shows
+it as it happened. If it was `leak`, the restarter waits for approval: reject it on the approvals
+page. Do not reword `alert-demo`'s docs to get a PR (design 2026-10-24).
+
+**A demo pull request was merged:** `alert-demo`'s limit grew by half, so the next run stays under
+90% and fires nothing. Put the limit back with a PR (`base-apps/alert-demo/runbook.md`).
 
 ## After a rehearsal: close the demo pull requests
 

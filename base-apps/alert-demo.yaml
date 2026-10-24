@@ -3,7 +3,7 @@
 # alert-demo: the hk demo's workload. Idle until the hk demo page's Start button asks; a demo run
 # then holds a fixed amount of memory near its limit for 30 minutes, so the real "Container near
 # memory limit" alert fires and the platform handles it end to end (dispatcher → implementer → PR).
-# Design: docs/superpowers/specs/2026-10-24-hk-demo-on-its-own-design.md. §T.139.
+# Design: docs/superpowers/specs/2026-10-24-hk-demo-on-its-own-design.md. §T.140.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

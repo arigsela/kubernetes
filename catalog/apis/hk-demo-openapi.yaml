@@ -6,7 +6,7 @@
 openapi: 3.0.3
 info:
   title: hk-demo
-  version: 0.3.0
+  version: 0.4.0
   description: |
     The API behind the hk demo page. Ask the homelab-knowledge (hk) agent a question, then
     follow the run as server-sent events: the agent's progress, its answer, then eight evidence
@@ -17,6 +17,11 @@ info:
     up: the turn continues its agent's session. A question that starts with `implementer:` goes
     to the implementer agent (it opens a pull request on arigsela/kubernetes; a human merges)
     instead of hk, and carries hk's latest answer as evidence. hk stays read-only.
+
+    **On its own.** `/api/journeys` lists alerts the platform handled by itself (the dispatcher
+    handed them to the implementer, which usually opened a pull request); a journey's events give
+    ten boxes and the run's steps. `POST /api/journeys/demo` starts a real demo run on the
+    cluster's alert-demo workload.
 
     **Who can call it.** The host answers only addresses on the Gateway's allow-list. An
     oauth2-proxy sidecar sits in front of the app: a request without a session is redirected
@@ -40,6 +45,8 @@ servers:
 tags:
   - name: runs
     description: Ask a question and follow its run.
+  - name: journeys
+    description: On its own, alerts the platform handled by itself, and the demo trigger.
   - name: page
     description: The page itself.
   - name: health
@@ -189,6 +196,159 @@ paths:
           $ref: "#/components/responses/LoginRequired"
         "404":
           description: The run id is not 32 hex characters (`no such run`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/journeys:
+    get:
+      tags: [journeys]
+      summary: Alerts the platform handled by itself
+      operationId: listJourneys
+      description: >-
+        The On its own tab's list: the dispatcher's investigations by the implementer from the
+        last 7 days, newest first, joined from the dispatcher's own log lines, each with the pull
+        request the run opened (from GitHub; null when GitHub did not answer or there is none).
+      responses:
+        "200":
+          description: The runs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/JourneySummary"
+        "401":
+          $ref: "#/components/responses/LoginRequired"
+        "503":
+          description: Loki did not answer (`could not read the dispatcher's log (Loki); try again`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/journeys/demo:
+    get:
+      tags: [journeys]
+      summary: The demo workload's status
+      operationId: demoStatus
+      description: >-
+        The alert-demo workload (kubernetes base-apps/alert-demo) and whether Start would be
+        accepted now, with the reason in words when not.
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoStatus"
+        "401":
+          $ref: "#/components/responses/LoginRequired"
+    post:
+      tags: [journeys]
+      summary: Start a demo run
+      operationId: startDemo
+      description: >-
+        Asks the demo workload to hold its memory near its limit for 30 minutes, so the real
+        "Container near memory limit" alert fires (about 16 minutes later) and the dispatcher
+        hands it to the implementer. A real alert, finding and pull request follow. The app logs
+        who started it. Refused while a run is on, while the implementer has 3 open pull
+        requests (the dispatcher would skip the alert), or within 6 hours of the dispatcher last
+        looking at the same pod.
+      responses:
+        "202":
+          description: Started; the status after the fill.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoStatus"
+        "401":
+          $ref: "#/components/responses/LoginRequired"
+        "403":
+          description: Sent from another site (`Sec-Fetch-Site` other than `same-origin`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Refused, with the reason (a run is on, open pull requests, the 6 h repeat).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: The workload answered something other than 202 or 409.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: The demo workload did not answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/journeys/demo/stop:
+    post:
+      tags: [journeys]
+      summary: Stop a demo run
+      operationId: stopDemo
+      description: >-
+        Ends a demo run early (a Start pressed by mistake): the workload lets its memory go, so the
+        alert does not fire, or resolves. The app logs who stopped it.
+      responses:
+        "200":
+          description: Stopped; the status after.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DemoStatus"
+        "401":
+          $ref: "#/components/responses/LoginRequired"
+        "403":
+          description: Sent from another site (`Sec-Fetch-Site` other than `same-origin`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: The demo workload did not answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/journeys/{journey_id}/events:
+    get:
+      tags: [journeys]
+      summary: Follow an alert the platform handled
+      operationId: journeyEvents
+      description: |
+        Server-sent events, as for a run: `journey` (the run's summary and its steps in order),
+        then `boxes` and `journey` again after each piece of evidence arrives (the memory series,
+        the waypoint's line, the implementer's trace, the pull request); the last of each is
+        final. `done` is always last. An unknown id gives `failed` then `done`.
+      parameters:
+        - name: journey_id
+          in: path
+          required: true
+          description: The id from `GET /api/journeys` (the alert's fingerprint and the dispatch time).
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{8,32}-[0-9]{9,11}$"
+      responses:
+        "200":
+          description: The event stream.
+          content:
+            text/event-stream:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/JourneyEvent"
+                  - $ref: "#/components/schemas/BoxesEvent"
+                  - $ref: "#/components/schemas/FailedEvent"
+                  - $ref: "#/components/schemas/DoneEvent"
+        "401":
+          $ref: "#/components/responses/LoginRequired"
+        "404":
+          description: The id is not in the journey id format (`no such run`).
           content:
             application/json:
               schema:
@@ -441,8 +601,8 @@ components:
     BoxesEvent:
       type: object
       description: >-
-        The eight evidence boxes, in map order. Sent more than once as the trace and
-        log lines arrive; the last one is final.
+        The evidence boxes, in map order: eight for a run, ten for an alert the platform handled
+        (On its own). Sent more than once as the trace and log lines arrive; the last one is final.
       required: [event, data]
       properties:
         event:
@@ -455,7 +615,7 @@ components:
             boxes:
               type: array
               minItems: 8
-              maxItems: 8
+              maxItems: 10
               items:
                 $ref: "#/components/schemas/Box"
     FailedEvent:
@@ -484,17 +644,132 @@ components:
         data:
           type: object
           additionalProperties: false
+    JourneySummary:
+      type: object
+      required: [journey_id, fired, alertname, rule, target, verdict, state, pr]
+      properties:
+        journey_id:
+          type: string
+          example: c61debdd8f53759f-1792765632
+        fired:
+          type: string
+          format: date-time
+          description: When the dispatcher received the alert from Grafana.
+        alertname:
+          type: string
+        rule:
+          type: string
+          description: The dispatch table's row.
+        target:
+          type: string
+          nullable: true
+          example: alert-demo/alert-demo-6d5f9c7b8-x2kqp (alert-demo)
+        verdict:
+          type: string
+          nullable: true
+          enum: [limit-too-low, leak, contention, rollout-pending, inconclusive, null]
+        state:
+          type: string
+          nullable: true
+          description: The implementer's task state; null while it is investigating.
+        pr:
+          type: object
+          nullable: true
+          required: [number, state, merged]
+          properties:
+            number:
+              type: integer
+            state:
+              type: string
+              enum: [open, closed]
+            merged:
+              type: boolean
+    JourneyStep:
+      type: object
+      required: [at, who, text, boxes, state]
+      properties:
+        at:
+          type: string
+          format: date-time
+          nullable: true
+        who:
+          type: string
+          enum: [Grafana, Dispatcher, Implementer, Slack, Human]
+        text:
+          type: string
+          description: Masked. The implementer's answer step carries the pull request's title and body.
+        boxes:
+          type: array
+          description: The boxes this step touched.
+          items:
+            type: string
+        state:
+          type: string
+          enum: [ok, failed, waiting, human]
+    JourneyEvent:
+      type: object
+      description: The run's summary and its steps. Sent first, then again with each `boxes`.
+      required: [event, data]
+      properties:
+        event:
+          type: string
+          enum: [journey]
+        data:
+          type: object
+          required: [journey, steps]
+          properties:
+            journey:
+              $ref: "#/components/schemas/JourneySummary"
+            steps:
+              type: array
+              items:
+                $ref: "#/components/schemas/JourneyStep"
+    DemoStatus:
+      type: object
+      required: [workload, reachable, open_prs, last_investigated, can_start, reason, alert_expected]
+      properties:
+        workload:
+          type: object
+          nullable: true
+          description: The workload's own `/status` (state idle or holding, times, bytes, pod).
+          additionalProperties: true
+        reachable:
+          type: boolean
+        open_prs:
+          type: integer
+          nullable: true
+          description: The implementer's open pull requests; null when GitHub did not answer.
+        last_investigated:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the dispatcher last investigated this pod.
+        can_start:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+          description: Why Start would be refused now, in words.
+        alert_expected:
+          type: string
+          format: date-time
+          nullable: true
+          description: While a run is on, about when the alert should fire.
     Box:
       type: object
       description: >-
         One piece of the platform the request went through, with what this run's
         evidence shows about it.
       required: [id, title, what, checks, numbers, logs, spans, config, state, grafana_url,
-                 failed_lines]
+                 failed_lines, link_text]
       properties:
         id:
           type: string
-          enum: [gateway, login, app, identity, kagent, sandbox, model, tools]
+          enum: [gateway, login, app, identity, kagent, sandbox, model, tools, alert, dispatcher, pr,
+                 slack, human]
+          description: >-
+            The Ask hk tab's eight boxes, and the On its own tab's ten (alert, dispatcher, identity,
+            kagent, sandbox, model, tools, pr, slack, human).
         title:
           type: string
         what:
@@ -530,11 +805,18 @@ components:
             $ref: "#/components/schemas/ConfigExcerpt"
         state:
           type: string
-          enum: [waiting, partial, done, failed]
-          description: "`failed` when any check saw a failure."
+          enum: [waiting, partial, done, failed, human, decided]
+          description: "`failed` when any check saw a failure. On its own only: `human` waits for a
+            person (an open pull request, a restart to approve); `decided`: a person merged or
+            closed it (never a platform ✓)."
         grafana_url:
           type: string
-          description: Grafana Explore, opened on this run's trace and log lines.
+          description: >-
+            Where the box's link goes: Grafana, opened on this run's trace and log lines, or for
+            the On its own tab's pull request and human boxes, the pull request.
+        link_text:
+          type: string
+          description: The link's label, such as "Open in Grafana →".
         failed_lines:
           type: array
           description: Indexes into `logs` of the lines that report a failure.

@@ -1270,7 +1270,7 @@ def test_config_reads_the_release_path_from_env():
     assert dp.Config.from_env({}).release_path == "/etc/eval-release/release.json"
 
 
-# ---------------------------------------------------------------- the hk demo's join keys (§T.139)
+# ---------------------------------------------------------------- the hk demo's join keys (§T.140)
 # The "On its own" tab joins a dispatch line to its finding and remediate lines and reads the
 # alert's target from them. The lines still never carry the answer text (design 2026-10-12).
 

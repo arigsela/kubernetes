@@ -1,6 +1,6 @@
 # base-apps/alert-demo/network-policy.yaml
 # Who may reach the workload: only the hk demo app's pod, whose Start button asks it to fill
-# (§T.139). Anything else that could POST /fill could raise an alert and open an implementer
+# (§T.140). Anything else that could POST /fill could raise an alert and open an implementer
 # pull request. authorization-policy.yaml adds the principal check on top.
 ---
 apiVersion: networking.k8s.io/v1

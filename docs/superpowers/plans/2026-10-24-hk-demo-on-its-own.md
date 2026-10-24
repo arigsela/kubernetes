@@ -92,7 +92,7 @@
   - `python3 scripts/gen-dispatcher-configmap.py --check --repo-root .`
 
   Expected: all pass, in sync.
-- [ ] **Step 5: Commit, PR, merge.** Commit as `feat(dispatcher): finding and remediate lines carry fingerprint, task, verdict and target (§T.139)`. The PR body says the n8n payload and the no-answer-text rule are unchanged. After the merge, confirm one fresh dispatcher pod (`checksum/code` rolled).
+- [ ] **Step 5: Commit, PR, merge.** Commit as `feat(dispatcher): finding and remediate lines carry fingerprint, task, verdict and target (§T.140)`. The PR body says the n8n payload and the no-answer-text rule are unchanged. After the merge, confirm one fresh dispatcher pod (`checksum/code` rolled).
 
 ### Task 2: The alert-demo service (K)
 
@@ -137,7 +137,7 @@
   - **Logs:** one JSON line per state change, through `log`. `main()` reads `PORT`, `FILL_MIB` and `HOLD_SECONDS` from the environment, logs with `print(json.dumps(...), flush=True)`, and `pod` = `socket.gethostname()`.
   - **Docstring:** say what it is: the hk demo's workload, which holds memory on purpose so that "Container near memory limit" fires.
 - [ ] **Step 4: Run** `python -m pytest tests/alert_demo/ -q`. Expected: PASS.
-- [ ] **Step 5: Commit** as `feat(alert-demo): a service that holds 92% of its memory limit on request (§T.139)`. It ships in Task 3's PR.
+- [ ] **Step 5: Commit** as `feat(alert-demo): a service that holds 92% of its memory limit on request (§T.140)`. It ships in Task 3's PR.
 
 ### Task 3: The alert-demo app in the cluster (K)
 
@@ -187,7 +187,7 @@
 
   Expected: all pass.
 - [ ] **Step 5: Commit, PR (Tasks 2 + 3), merge.**
-  - Commit as `feat(alert-demo): demo workload for the hk demo's On its own tab (§T.139)`. The PR body names the side effects (it never alerts unless started).
+  - Commit as `feat(alert-demo): demo workload for the hk demo's On its own tab (§T.140)`. The PR body names the side effects (it never alerts unless started).
   - After the merge, check the pod: `kubectl -n alert-demo get pods`, and `kubectl -n alert-demo exec deploy/alert-demo -- python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8080/status').read())"`. The second must print `"state": "idle"`.
 
 ### Task 4: Journey records from the dispatcher's lines (H)
@@ -475,7 +475,7 @@
   - press Start about 20 minutes before;
   - close the demo PR after;
   - a merged demo PR raises the limit.
-- `SPEC.md`: row `T139`, citing the design and plan, and amending V107 with the second tab.
+- `SPEC.md`: row `T140`, citing the design and plan, and amending V107 with the second tab.
 
 - [ ] **Step 1:** Make the edits. Then:
   - check the API copy with `diff <(cd ~/git/hk-demo && git show v0.4.0:openapi.yaml | tail -n +5) <(tail -n +6 catalog/apis/hk-demo-openapi.yaml)`;
@@ -484,7 +484,7 @@
   - run yamllint and kubeconform on the Deployment.
 
   Expected: all pass.
-- [ ] **Step 2:** Commit as `feat(hk-demo): v0.4.0, the On its own tab (§T.139)`, open the PR and merge. Confirm Argo CD shows hk-demo Synced and Healthy, with the pod on the new digest.
+- [ ] **Step 2:** Commit as `feat(hk-demo): v0.4.0, the On its own tab (§T.140)`, open the PR and merge. Confirm Argo CD shows hk-demo Synced and Healthy, with the pod on the new digest.
 
 ### Task 11: Rehearsal, end to end
 
@@ -495,5 +495,5 @@
   - the steps show the PR's title and body;
   - a `/api/journeys/<id>/events` body scan finds no email, IP or token (as §T.136 did).
 - [ ] **Step 4:** Close the demo PR. Within 300 s of cache, the Human box says "Closed without merging". The workload releases at 30 minutes, and the alert-resolved step appears.
-- [ ] **Step 5:** Record the run (journey id, PR number, times) in SPEC.md `T139` and mark it done. This is a docs-only PR.
+- [ ] **Step 5:** Record the run (journey id, PR number, times) in SPEC.md `T140` and mark it done. This is a docs-only PR.
 - [ ] **If the run ends without a PR:** keep the page as it is (it shows that ending). Report the verdict and the PR-less journey to the owner, and stop. Do not reword the workload's docs or comments to get a PR; the spec forbids steering, and every retry waits 6 h or needs a pod roll.

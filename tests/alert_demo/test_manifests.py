@@ -1,5 +1,5 @@
 # tests/alert_demo/test_manifests.py
-"""base-apps/alert-demo/: never restarts mid-run, sized for the demo, reachable only from hk-demo (§T.139)."""
+"""base-apps/alert-demo/: never restarts mid-run, sized for the demo, reachable only from hk-demo (§T.140)."""
 from pathlib import Path
 import hashlib
 import json

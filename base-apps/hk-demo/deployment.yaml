@@ -40,7 +40,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/hk-demo:v0.3.0@sha256:7cb9ecd3cd6a8ebf4f1336ac35fcfe9906ff588b56fd1f3e5cce1037c4058225
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/hk-demo:v0.4.0@sha256:c05ce9a86c31882befee933c4588f3a3c22685a32efd101e6f57514594a5c33f
           env:
             - name: HK_AGENT
               value: kagent/homelab-knowledge
@@ -68,6 +68,10 @@ spec:
             # base-apps/model-gateway/budgets.yaml): the Model API box shows spend against it.
             - name: MODEL_BUDGETS
               value: '{"hk": 6.0, "build": 10.0, "implementer": 4.0, "restarter": 4.0, "docs-checker": 2.5, "k8s-reader": 0.5, "skill-suggester": 0.5, "dcc": 0.5, "ui-default": 0.5}'
+            # On its own (§T.140): the demo workload the Start button fills. Its AuthorizationPolicy
+            # admits only this app's principal (base-apps/alert-demo/authorization-policy.yaml).
+            - name: ALERT_DEMO_URL
+              value: http://alert-demo.alert-demo.svc.cluster.local:8080
           resources:
             requests:
               cpu: 20m
