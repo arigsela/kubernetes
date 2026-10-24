@@ -158,7 +158,7 @@ email as the record of who asked.
 
 | What | Where |
 |---|---|
-| Image | `base-apps/hk-demo/deployment.yaml`, pinned `tag@digest`; built by `arigsela/hk-demo` `release.yml` on a `v*` tag through the ECR push role `github-actions-hk-demo-ecr` |
+| Image | `base-apps/hk-demo/deployment.yaml`, pinned `tag@digest`; built by `arigsela/hk-demo` `release.yml` on a `v*` tag through the ECR push role `github-actions-hk-demo-ecr`; a version bump merged to hk-demo's `main` tags itself, and the release opens the pin PR here as the GitHub App `arigsela-hk-demo-release` (a person merges it) |
 | Login | Dex static client `hk-demo` (`base-apps/dex/configmap.yaml`); client secret in Vault `k8s-secrets/dex:hk-demo-client-secret` and `k8s-secrets/hk-demo:oauth2-client-secret` (same value); cookie secret and the allowed email in `k8s-secrets/hk-demo`, written by `scripts/provision-hk-demo-vault.sh` |
 | Who may call kagent | the namespace's ambient label, the kagent waypoint's `RequestAuthentication` (service-account issuer, audience `kagent`) and `network-policy-controller.yaml` |
 | Data stores | env in `deployment.yaml`: Loki, Tempo, Prometheus in-cluster (GET only); Grafana links |
