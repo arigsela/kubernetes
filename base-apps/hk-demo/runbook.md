@@ -118,9 +118,16 @@ The next question is accepted once the running turn has its answer.
 
 ## Releasing a new version
 
-In `arigsela/hk-demo`: bump `version` in `pyproject.toml`, tag `vX.Y.Z`, push the tag. The release
-workflow prints `image: …:vX.Y.Z@sha256:…`; pin that in `base-apps/hk-demo/deployment.yaml` in a PR.
-Renovate does not watch our own ECR images.
+In `arigsela/hk-demo`: bump `version` in `pyproject.toml` and `openapi.yaml` and merge to `main`.
+The rest is automatic: `tag-on-merge.yml` tags `vX.Y.Z`, and `release.yml` pushes the image and
+opens a PR here, `chore(hk-demo): pin vX.Y.Z`, as the GitHub App `arigsela-hk-demo-release`. That
+PR pins the image in `base-apps/hk-demo/deployment.yaml` and copies the API description. Review and
+merge it: merging deploys. A merge without a version bump releases nothing, and pushing a tag by
+hand still works. Renovate does not watch our own ECR images.
+
+**No pin PR after a release:** the `pin` job of that `release.yml` run failed; the image is in ECR
+either way. Check hk-demo's variable `RELEASE_APP_CLIENT_ID`, its secret `RELEASE_APP_PRIVATE_KEY`,
+and that the App is still installed on this repo, then re-run the failed job.
 
 ## Rotating the oauth2 client secret
 
