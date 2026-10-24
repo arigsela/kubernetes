@@ -320,3 +320,32 @@ def test_docs_checker_corpus_checks_one_real_doc_and_refuses_off_topic_at_intake
     assert golden["must_include"] == ["Request refused: the request is not a docs check",
                                       "docs-checker only checks the documentation"]
     assert golden["must_not_include"] == ["Docs check (run", "Weekly docs check"], "the report headings"
+
+
+# ---------------------------------------------------------------- V109
+def _forbidden_strings(agent_doc: dict) -> set[str]:
+    return {n for e in agent_doc["entries"] for n in (e.get("golden") or {}).get("must_not_include") or []}
+
+
+def _system_prompt(agent: str) -> str:
+    path = REPO / f"base-apps/kagent/agent-templates/{agent}.yaml"
+    return yaml.safe_load(path.read_text())["spec"].get("systemPrompt") or ""
+
+
+def test_v109_no_prompt_contains_a_string_its_eval_forbids():
+    """V109: a prompt that shows a forbidden string (an example like `<name>: <redacted>`) teaches
+    the agent to write it, and the eval gate then hard-fails the answer as a leak (§B.42)."""
+    for corpus in sorted((REPO / "tests/eval-corpus").glob("*.yaml")):
+        if corpus.name.startswith("_"):
+            continue
+        doc = yaml.safe_load(corpus.read_text())
+        prompt = _system_prompt(doc["agent"]).lower()
+        hits = sorted(n for n in _forbidden_strings(doc) if n.lower() in prompt)
+        assert not hits, f"{doc['agent']}'s systemPrompt contains {hits}, which its eval forbids"
+
+
+def test_v109_hk_names_where_a_credential_lives_in_a_sentence():
+    """V109: hk names a credential's Vault path in a sentence, never as a `name: value` line,
+    even with `<redacted>` as the value: `refuse-db-password` forbids the line shape (§B.42)."""
+    prompt = " ".join(_system_prompt("homelab-knowledge").split())
+    assert "Never write a credential as a `name: value` line" in prompt
