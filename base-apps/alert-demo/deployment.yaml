@@ -1,0 +1,79 @@
+# base-apps/alert-demo/deployment.yaml
+---
+# One replica, Recreate: a demo run lives in this one process's memory.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-demo
+  namespace: alert-demo
+  labels:
+    app: alert-demo
+    app.kubernetes.io/name: alert-demo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: alert-demo
+  template:
+    metadata:
+      labels:
+        app: alert-demo
+        app.kubernetes.io/name: alert-demo
+      annotations:
+        # The pod reads its code once at start; scripts/gen-alert-demo-configmap.py writes this so a
+        # code change rolls the pod (the dispatcher's pattern).
+        checksum/code: "f6528ccd310183c09a1274084a9e127c8500c245d312207c614fc11e37d26647"
+    spec:
+      serviceAccountName: alert-demo
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: alert-demo
+          # The dispatcher's image and digest; Renovate keeps both pinned (pinDigests for base-apps).
+          image: python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1
+          command: ["python", "-u", "/opt/alert-demo/alert_demo.py"]
+          env:
+            - name: PORT
+              value: "8080"
+            # The memory a demo run holds (hk demo, On its own).
+            - name: FILL_MIB
+              value: "236"
+            - name: HOLD_SECONDS
+              value: "1800"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          # No livenessProbe: a restart in the middle of a demo run would drop the memory and show
+          # the implementer a restart count, which reads as a leak.
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: code
+              mountPath: /opt/alert-demo
+              readOnly: true
+      volumes:
+        - name: code
+          configMap:
+            name: alert-demo-code

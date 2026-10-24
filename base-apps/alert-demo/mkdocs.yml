@@ -1,0 +1,7 @@
+site_name: alert-demo
+docs_dir: docs
+nav:
+  - Overview: index.md
+  - Runbook: runbook.md
+plugins:
+  - techdocs-core
