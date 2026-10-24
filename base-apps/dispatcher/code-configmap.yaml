@@ -485,6 +485,22 @@ data:
             resp.read()
 
 
+    def _fingerprint(alert: dict) -> str:
+        """The alert's fingerprint as decide() logs it on the dispatch line."""
+        return alert.get("fingerprint") or (alert.get("labels") or {}).get("alertname") or "?"
+
+
+    def _join_keys(alert: dict, reply, verdict: str | None) -> dict:
+        """What a finding line carries so the hk demo can join it to its dispatch line and find the
+        alert's target (§T.139). Never the answer text: that goes to Slack and lives in the
+        session (design 2026-10-12, Observability)."""
+        labels = alert.get("labels") or {}
+        return {"fingerprint": _fingerprint(alert),
+                "task_id": getattr(reply, "task_id", None) if reply is not None else None,
+                "verdict": verdict,
+                "target": {k: labels.get(k) for k in ("namespace", "pod", "container")}}
+
+
     class Dispatcher:
         def __init__(self, table: dict, config: Config, *, budget: Budget | None = None,
                      send=a2a.send_message, post=post_json, log=log_line, run_async: bool = True,
@@ -637,8 +653,9 @@ data:
                     else:
                         decision, remediate = "remediate", True
                 self.log({"event": "remediate", "rule": rule["id"], "verdict": finding["verdict"],
-                          "decision": decision})
-            self._post_finding(finding, rule)
+                          "decision": decision, "fingerprint": _fingerprint(alert),
+                          "session": finding["session"]})
+            self._post_finding(finding, rule, **_join_keys(alert, reply, finding["verdict"]))
             if remediate:
                 self.remediate(alert, rule, finding["verdict"], finding["session"], finding["text"])
             return finding
@@ -656,6 +673,7 @@ data:
                        "labels": labels, "agent": agent, "session": None, "state": None, "text": None,
                        "ui": None, "error": None, "verdict": verdict, "evidence_session": evidence_session,
                        "pending": []}
+            reply = None
             try:
                 prompt = render_text(rem["prompt"], alert, verdict=verdict or "?", session=evidence_session or "?")
                 reply = self._open_session(agent, prompt, finding)
@@ -695,7 +713,7 @@ data:
                                        "is deleted. The restart was charged to today's budget.")
             except Exception as err:  # noqa: BLE001 - a remediation must always produce a finding
                 finding["error"] = f"unexpected {type(err).__name__}: {scrub(str(err))[:400]}"
-            self._post_finding(finding, rule, kind="remediation")
+            self._post_finding(finding, rule, kind="remediation", **_join_keys(alert, reply, verdict))
             return finding
         def decide_pending(self, ctx: str, nonce: str, *, approved: bool, reason: str | None,
                            approver: str, background: bool = False) -> dict:
