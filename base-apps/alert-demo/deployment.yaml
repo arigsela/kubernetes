@@ -60,10 +60,12 @@ spec:
           resources:
             requests:
               cpu: 10m
-              memory: 64Mi
+              # Raised 64Mi -> 96Mi with the limit (same 1:4 ratio): Container near memory limit, 2026-10-24.
+              memory: 96Mi
             limits:
               cpu: 100m
-              memory: 256Mi
+              # Raised 256Mi -> 384Mi: Container near memory limit alert, 2026-10-24 (93% of limit, no OOMKilled, 0 restarts).
+              memory: 384Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
