@@ -472,7 +472,7 @@ def _fingerprint(alert: dict) -> str:
 
 def _join_keys(alert: dict, reply, verdict: str | None) -> dict:
     """What a finding line carries so the hk demo can join it to its dispatch line and find the
-    alert's target (§T.139). Never the answer text: that goes to Slack and lives in the
+    alert's target (§T.140). Never the answer text: that goes to Slack and lives in the
     session (design 2026-10-12, Observability)."""
     labels = alert.get("labels") or {}
     return {"fingerprint": _fingerprint(alert),

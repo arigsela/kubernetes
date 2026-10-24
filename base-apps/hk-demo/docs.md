@@ -1,12 +1,12 @@
 ---
 type: "Kubernetes App Guide"
 title: "hk demo"
-description: "hk demo page: a conversation with kagent/homelab-knowledge shown end to end (checks, cost, logs, trace), where an implementer: turn has kagent/implementer open the pull request; behind the IP allow-list and Dex login"
+description: "hk demo page: a conversation with kagent/homelab-knowledge shown end to end (checks, cost, logs, trace), where an implementer: turn has kagent/implementer open the pull request, and an On its own tab that replays an alert the platform fixed by itself; behind the IP allow-list and Dex login"
 app: hk-demo
 catalog_entity: hk-demo
 kind: docs
 namespace: hk-demo
-last_reviewed: 2026-10-23
+last_reviewed: 2026-10-24
 status: stable
 tags: [agents, observability, fastapi, oauth2-proxy]
 sources:
@@ -18,6 +18,10 @@ sources:
   - base-apps/hk-demo/secret-store.yaml
   - base-apps/hk-demo/httproute.yaml
   - base-apps/hk-demo-aws-infrastructure/ecr-push.yaml
+  - base-apps/alert-demo/deployment.yaml
+  - base-apps/alert-demo/authorization-policy.yaml
+  - scripts/dispatch.py
+  - docs/superpowers/specs/2026-10-24-hk-demo-on-its-own-design.md
   - base-apps/dex/configmap.yaml
   - base-apps/kagent/request-authentication.yaml
   - base-apps/kagent/authorization-policy.yaml
@@ -107,6 +111,43 @@ Every implementer turn opens a real pull request (or updates its open one for th
 most three files. The dispatcher skips alert-driven fixes while the implementer has
 `open_prs_max` (3) pull requests open, so close demo pull requests after a rehearsal (runbook).
 
+## On its own
+
+A second tab replays an alert the platform handled with nobody at the keyboard. Design:
+`docs/superpowers/specs/2026-10-24-hk-demo-on-its-own-design.md` (§T.140). The journey:
+
+1. Grafana fires.
+2. The dispatcher hands the alert to the implementer.
+3. The implementer diagnoses it and usually opens a pull request.
+4. The finding goes to `#oncall-alerts`.
+5. A person merges or closes the PR.
+
+- **Runs:** the dispatcher's investigations by the implementer from the last 7 days. They are joined
+  from the dispatcher's own `dispatch`, `finding` and `remediate` lines by the alert's fingerprint;
+  those lines carry `fingerprint`, `task_id`, `verdict` and `target` since 2026-10-24. Earlier
+  lines cannot be joined and are not listed.
+- **Ten boxes:**
+  - **Grafana alert:** the dispatch line, the target's memory ratio from Prometheus and the
+    resolved line.
+  - **Dispatcher:** its decision, the open-PR check and the verdict.
+  - **Identity check:** the waypoint's line for the dispatcher's call.
+  - **kagent, Sandbox, Model gateway and Tools:** the Ask hk tab's own builders, on the
+    implementer's trace, found by its session.
+  - **Pull request:** from GitHub.
+  - **Slack:** n8n accepted the finding; Slack's own delivery is not visible.
+  - **Human decision:** amber while the PR is open or a restart awaits approval.
+- **The answer:** the dispatcher never logs the implementer's answer (its design, 2026-10-12), so
+  the journey shows the PR's title and body instead; the implementer puts its detail there.
+- **Start a demo run** asks `alert-demo` (`base-apps/alert-demo/`) to hold 236Mi of its 256Mi limit
+  for 30 minutes.
+  - The real "Container near memory limit" alert fires about 16 minutes later, and a pull request
+    follows about 2 minutes after that.
+  - The app sends one HTTP request, admitted by alert-demo's AuthorizationPolicy only from this
+    app's principal. It writes nothing to the cluster API.
+  - It refuses while a run is on, while the implementer has 3 open pull requests, or within 6 hours
+    of the dispatcher last looking at the same pod, and says why.
+  - It logs `hk-demo-journey-start` with who pressed it.
+
 ## What never reaches the screen
 
 Emails (shown as `a•••@domain`), full client IPs (shown as /24), tokens, cookies and tool
@@ -123,6 +164,7 @@ email as the record of who asked.
 | Data stores | env in `deployment.yaml`: Loki, Tempo, Prometheus in-cluster (GET only); Grafana links |
 | Model budgets | `MODEL_BUDGETS` in `deployment.yaml`, generated from `base-apps/model-gateway/budgets.yaml` by `scripts/gen-model-budgets.py --write` |
 | The Config tab's excerpts | `arigsela/hk-demo` `src/hk_demo/config_excerpts.yaml`, copied from this repo's files: refresh them in the release after those files change |
+| On its own | the demo workload's URL `ALERT_DEMO_URL` in `deployment.yaml` (`base-apps/alert-demo/`); the implementer's PRs read unauthenticated from GitHub (`arigsela/kubernetes`, author `arigsela-implementer[bot]`) |
 | The API description | `catalog/apis/hk-demo-openapi.yaml`, shown in Backstage as API `hk-demo-api` (the API tab): a copy of `arigsela/hk-demo` `openapi.yaml`, which that repo's tests check against the code; copy it over in the release PR when it changes |
 
 ## Cost and load
@@ -130,4 +172,9 @@ email as the record of who asked.
 Each question is one agent run: $0.001-$0.21 seen so far for hk (a run with many repo reads costs
 more). The page allows one agent call at a time; the evidence lookups of the previous turn may still
 be running. Loki has half a CPU and Tempo one, so every query is
-bounded to the run and the only polling is the trace lookup (every 3 s, at most 2 min).
+bounded to the run and the only polling is the trace lookup (every 3 s, at most 2 min). On its own
+reads the dispatcher's 7-day lines at most every 10 s, polls Tempo only for a run answered in the last
+3 minutes, and refreshes its status line every 15 s only while a demo run is on and the tab is
+visible. GitHub is read unauthenticated: 60 requests an hour per egress address, shared with the
+dispatcher's open-PR count, so the PR list and each PR are cached 5 minutes and the open count 1
+minute.

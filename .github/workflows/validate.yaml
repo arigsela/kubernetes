@@ -417,7 +417,7 @@ jobs:
       - name: Check the dispatcher ConfigMap is in sync with the scripts
         run: python scripts/gen-dispatcher-configmap.py --check --repo-root .
 
-  # The hk demo's workload (§T.139): it must never restart mid-run, hold a fixed amount near its
+  # The hk demo's workload (§T.140): it must never restart mid-run, hold a fixed amount near its
   # limit, admit only hk-demo's principal, and run the code that was tested. See tests/alert_demo/
   # and scripts/gen-alert-demo-configmap.py.
   alert-demo-validate:

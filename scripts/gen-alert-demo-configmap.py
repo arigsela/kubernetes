@@ -26,7 +26,7 @@ DEPLOYMENT = "base-apps/alert-demo/deployment.yaml"
 
 HEADER = """\
 ---
-# alert-demo code (the hk demo's workload, §T.139).
+# alert-demo code (the hk demo's workload, §T.140).
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Source:     scripts/alert_demo.py

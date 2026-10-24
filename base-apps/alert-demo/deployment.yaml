@@ -24,7 +24,7 @@ spec:
       annotations:
         # The pod reads its code once at start; scripts/gen-alert-demo-configmap.py writes this so a
         # code change rolls the pod (the dispatcher's pattern).
-        checksum/code: "f6528ccd310183c09a1274084a9e127c8500c245d312207c614fc11e37d26647"
+        checksum/code: "af129fb4234cc0d3cadb6721fbba901aff6ddd8a1293aa06b2fbcd52a93531b3"
     spec:
       serviceAccountName: alert-demo
       automountServiceAccountToken: false
