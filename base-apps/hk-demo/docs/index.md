@@ -111,6 +111,22 @@ Every implementer turn opens a real pull request (or updates its open one for th
 most three files. The dispatcher skips alert-driven fixes while the implementer has
 `open_prs_max` (3) pull requests open, so close demo pull requests after a rehearsal (runbook).
 
+## The agent-platform picture
+
+Since v0.5.0 the Ask hk tab opens on a picture of the agent platform, not the request path. Design:
+`docs/superpowers/specs/2026-10-24-hk-demo-agent-platform-picture-design.md`. The picture shows:
+
+- the callers and the identity check;
+- the agent's definition and context;
+- a sandbox per conversation;
+- the model gateway and the tools;
+- a person, guardrails, evaluation and the record.
+
+The presenter steps through it, with product names behind a "Show technical names" toggle. A run's
+own events light its pieces. Afterwards each piece carries the ✓ / ✗ of its evidence boxes, and only
+what they show: Context ✓ only when a docs, catalog or memory tool ran, and no claim while the trace
+is pending or lost. Clicking a piece opens those boxes. **Boxes** switches to the eight-box map.
+
 ## On its own
 
 A second tab replays an alert the platform handled with nobody at the keyboard. Design:
