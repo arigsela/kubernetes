@@ -417,6 +417,24 @@ jobs:
       - name: Check the dispatcher ConfigMap is in sync with the scripts
         run: python scripts/gen-dispatcher-configmap.py --check --repo-root .
 
+  # The hk demo's workload (§T.139): it must never restart mid-run, hold a fixed amount near its
+  # limit, admit only hk-demo's principal, and run the code that was tested. See tests/alert_demo/
+  # and scripts/gen-alert-demo-configmap.py.
+  alert-demo-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run alert-demo tests
+        run: python -m pytest tests/alert_demo/ -q
+      - name: Check the alert-demo ConfigMap is in sync with the script
+        run: python scripts/gen-alert-demo-configmap.py --check --repo-root .
+
   # The Slack bridge's code ConfigMap must match the tested script, and the two doors it
   # knocks on (the controller, the dispatcher's decide port) must admit exactly its principal
   # (§T.120, §V.98). See tests/slack_bridge/ and scripts/gen-slack-bridge-configmap.py.

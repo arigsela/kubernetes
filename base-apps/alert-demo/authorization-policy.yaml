@@ -1,0 +1,22 @@
+# base-apps/alert-demo/authorization-policy.yaml
+# The namespace is ambient, so ztunnel enforces this at L4: port 8080 only from the hk demo app's
+# own principal (§T.139). ALLOW semantics: anything that matches no rule is refused. The kubelet's
+# readiness probe is exempt in ambient mode.
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: alert-demo
+  namespace: alert-demo
+spec:
+  selector:
+    matchLabels:
+      app: alert-demo
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/hk-demo/sa/hk-demo"]
+      to:
+        - operation:
+            ports: ["8080"]

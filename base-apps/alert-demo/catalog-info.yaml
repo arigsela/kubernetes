@@ -1,0 +1,23 @@
+# base-apps/alert-demo/catalog-info.yaml
+# Structured facts for alert-demo. Authoritative for owner, dependencies, namespace and
+# lifecycle; the markdown docs do not restate them.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: alert-demo
+  namespace: alert-demo
+  description: The hk demo's workload; on request it holds memory near its limit so a real alert runs through the platform end to end
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app=alert-demo'
+    backstage.io/kubernetes-namespace: alert-demo
+    github.com/project-slug: arigsela/kubernetes
+  tags: [agents, demo]
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/platform
+  system: default/platform-observability
+  dependsOn:
+    - component:hk-demo/hk-demo

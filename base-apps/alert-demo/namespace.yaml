@@ -1,0 +1,9 @@
+# base-apps/alert-demo/namespace.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: alert-demo
+  labels:
+    app.kubernetes.io/part-of: agent-guardrails
+    istio.io/dataplane-mode: ambient   # in the mesh: authorization-policy.yaml admits only hk-demo's principal

@@ -1,0 +1,33 @@
+# base-apps/alert-demo/network-policy.yaml
+# Who may reach the workload: only the hk demo app's pod, whose Start button asks it to fill
+# (§T.139). Anything else that could POST /fill could raise an alert and open an implementer
+# pull request. authorization-policy.yaml adds the principal check on top.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alert-demo-ingress
+  namespace: alert-demo
+  labels:
+    app: alert-demo
+spec:
+  podSelector:
+    matchLabels:
+      app: alert-demo
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: hk-demo
+          podSelector:
+            matchLabels:
+              app: hk-demo
+      ports:
+        - port: 8080
+          protocol: TCP
+        # hk-demo is in the mesh, so it arrives over HBONE on 15008; NetworkPolicy is enforced
+        # before ztunnel unwraps it (the dispatcher's network-policy.yaml says the same).
+        - port: 15008
+          protocol: TCP

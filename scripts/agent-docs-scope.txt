@@ -30,3 +30,4 @@ beacon-tenants
 tracing
 hk-demo
 model-gateway
+alert-demo
