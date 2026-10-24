@@ -1268,3 +1268,41 @@ def test_config_reads_the_release_path_from_env():
     cfg = dp.Config.from_env({"EVAL_RELEASE_PATH": "/x/release.json"})
     assert cfg.release_path == "/x/release.json"
     assert dp.Config.from_env({}).release_path == "/etc/eval-release/release.json"
+
+
+# ---------------------------------------------------------------- the hk demo's join keys (§T.139)
+# The "On its own" tab joins a dispatch line to its finding and remediate lines and reads the
+# alert's target from them. The lines still never carry the answer text (design 2026-10-12).
+
+N8N_FINDING_KEYS = {"rule", "alertname", "labels", "agent", "session", "state", "text", "ui", "error",
+                    "verdict"}
+
+
+def test_finding_line_carries_join_keys_not_text():
+    fake = Seq(completed_task(text="https://github.com/arigsela/kubernetes/pull/9\nverdict: limit-too-low"))
+    alert_ = mem_alert(fp="c61debdd8f53759f", pod="brave-0", namespace="kagent")
+    alert_["labels"]["container"] = "mcp-server"
+    make_remediate(fake).handle_grafana({"alerts": [alert_]})
+    dispatch = next(x for x in fake.logged if x["event"] == "dispatch")
+    line = next(x for x in fake.logged if x["event"] == "finding")
+    assert line["fingerprint"] == dispatch["fingerprint"] == "c61debdd8f53759f"
+    assert line["task_id"] == "task-1"
+    assert line["verdict"] == "limit-too-low"
+    assert line["target"] == {"namespace": "kagent", "pod": "brave-0", "container": "mcp-server"}
+    assert all("text" not in x for x in fake.logged)
+
+
+def test_remediate_line_carries_fingerprint_and_session():
+    fake = Seq(completed_task(text=LEAK, session="sess-1"), approval_task())
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert(fp="fp-9")]})
+    rem = next(x for x in fake.logged if x["event"] == "remediate")
+    assert rem["session"] == "sess-1" and rem["fingerprint"] == "fp-9"
+    restart = [x for x in fake.logged if x["event"] == "finding" and x.get("kind") == "remediation"]
+    assert restart and restart[0]["fingerprint"] == "fp-9" and restart[0]["task_id"] == "task-r"
+    assert all("text" not in x for x in fake.logged)
+
+
+def test_n8n_payload_keys_unchanged():
+    fake = Seq(completed_task(text="verdict: limit-too-low"))
+    make_remediate(fake).handle_grafana({"alerts": [mem_alert()]})
+    assert set(fake.posted[0][1]) == N8N_FINDING_KEYS
