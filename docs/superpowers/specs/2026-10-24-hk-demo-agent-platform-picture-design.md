@@ -1,3 +1,6 @@
+> **Superseded** by `2026-10-25-hk-demo-platform-tab-design.md` (hk-demo v0.6.0): the picture
+> moved to its own tab, "The platform", without any run data; Ask hk shows its eight boxes again.
+
 # hk demo: the agent-platform picture on the Ask hk tab
 
 Date: 2026-10-24. Owner-approved in conversation (mockups at `.superpowers/brainstorm/`, the last one
