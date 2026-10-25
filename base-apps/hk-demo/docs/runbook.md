@@ -67,7 +67,11 @@ Logs: `kubectl -n hk-demo logs deploy/hk-demo -c app` (one JSON line per run pha
 2. **About 20 minutes before:** open the On its own tab and press **Start a demo run**. The status
    line shows when the alert is expected, about 16 minutes after the press. The run is listed about
    2 minutes after the alert.
-3. **After the meeting:** close the demo pull request (below). The workload lets its memory go
+3. **In the meeting:** start on **The platform** tab and walk through the components (Next ▶);
+   nothing there depends on a run. Then Ask hk for a live question, and On its own for the run.
+   A browser that used an earlier version reopens on its last tab: click The platform once, and it
+   is remembered.
+4. **After the meeting:** close the demo pull request (below). The workload lets its memory go
    after 30 minutes, and the alert resolves.
 
 **Start is disabled:** the status line says why.

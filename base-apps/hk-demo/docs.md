@@ -1,7 +1,7 @@
 ---
 type: "Kubernetes App Guide"
 title: "hk demo"
-description: "hk demo page: a conversation with kagent/homelab-knowledge shown end to end (checks, cost, logs, trace), where an implementer: turn has kagent/implementer open the pull request, and an On its own tab that replays an alert the platform fixed by itself; behind the IP allow-list and Dex login"
+description: "hk demo page: a walkthrough of the agent platform (The platform tab), a conversation with kagent/homelab-knowledge shown end to end (checks, cost, logs, trace), where an implementer: turn has kagent/implementer open the pull request, and an On its own tab that replays an alert the platform fixed by itself; behind the IP allow-list and Dex login"
 app: hk-demo
 catalog_entity: hk-demo
 kind: docs
@@ -111,21 +111,28 @@ Every implementer turn opens a real pull request (or updates its open one for th
 most three files. The dispatcher skips alert-driven fixes while the implementer has
 `open_prs_max` (3) pull requests open, so close demo pull requests after a rehearsal (runbook).
 
-## The agent-platform picture
+## The platform tab
 
-Since v0.5.0 the Ask hk tab opens on a picture of the agent platform, not the request path. Design:
-`docs/superpowers/specs/2026-10-24-hk-demo-agent-platform-picture-design.md`. The picture shows:
+Since v0.6.0 the page opens on **The platform**, a walkthrough of the whole agent platform that is not
+tied to any run. Design: `docs/superpowers/specs/2026-10-25-hk-demo-platform-tab-design.md`, which
+supersedes v0.5.0's picture on the Ask hk tab. The tab shows:
 
-- the callers and the identity check;
-- the agent's definition and context;
-- a sandbox per conversation;
-- the model gateway and the tools;
-- a person, guardrails, evaluation and the record.
+- two ways in: people (this demo, Slack, a terminal), and an alert through the dispatcher (plain
+  code, with its rules and limits);
+- the shared middle: identity check, agent definition, context, a sandbox per conversation,
+  guardrails and evaluation;
+- two ways out: an answer, or a pull request and a Slack finding for a person to decide;
+- the model gateway, the tools and the record.
 
-The presenter steps through it, with product names behind a "Show technical names" toggle. A run's
-own events light its pieces. Afterwards each piece carries the ✓ / ✗ of its evidence boxes, and only
-what they show: Context ✓ only when a docs, catalog or memory tool ran, and no claim while the trace
-is pending or lost. Clicking a piece opens those boxes. **Boxes** switches to the eight-box map.
+Selecting a component (a step button, Prev/Next, or a click) shows three things:
+
+- what it is;
+- how it is set up here: the configuration excerpts from hk-demo's `config_excerpts.yaml`, the same
+  ones the boxes' Config tab shows, rendered and masked by the server;
+- where it shows up on the run tabs.
+
+Product names stay behind a "Show technical names" toggle. A first visit opens on this tab; after
+that, the last tab used. Ask hk and On its own show one run's evidence boxes, as before.
 
 ## On its own
 
