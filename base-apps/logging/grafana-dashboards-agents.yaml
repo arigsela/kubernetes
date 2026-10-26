@@ -9417,7 +9417,7 @@ data:
         {
           "type": "timeseries",
           "title": "Pull request lead time by author",
-          "description": "Median opened \u2192 merged per interval. owner = a person, implementer = the agent, renovate = dependency bumps (most merged by the promotion rule).",
+          "description": "Median opened \u2192 merged per interval. owner = a person, implementer = the agent, renovate = dependency bumps (the promotion rule merges some unattended).",
           "datasource": {
             "type": "loki",
             "uid": "loki"
