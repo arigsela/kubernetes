@@ -6,7 +6,7 @@ app: backstage
 catalog_entity: backstage
 kind: docs
 namespace: backstage
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-25
 status: stable
 tags: [backstage, developer-portal, catalog, kubernetes-ingestor]
 sources:
@@ -28,8 +28,8 @@ sources:
 
 ## What it is
 The internal developer portal / software catalog (Backstage), running a custom
-image, `backstage-portal`, from ECR (tag in `deployments.yaml`, `v1.5.0` since
-2026-10-11; `imagePullPolicy: Always`). The image is built from the portal repo,
+image, `backstage-portal`, from ECR (tag in `deployments.yaml`, `v1.6.0` since
+2026-10-25; `imagePullPolicy: Always`). The image is built from the portal repo,
 `arigsela/backstage` (checked out at `~/git/backstage`). It is the platform's
 software catalog UI, scaffolder and TechDocs site, and (per the RBAC below) also
 ingests live cluster/Crossplane resources and renders kagent agent detail cards.
@@ -39,8 +39,10 @@ launchpad at `/` (v1.4.8), removal of the `smoketestapp` XRD (whose template
 the ingestor generated) and of the old Node.js/application/decommission/kagent
 example templates (v1.4.10), the **New Application** scaffolder template (v1.4.11, name
 availability check v1.4.12; the template itself lives in this repo at
-`templates/new-app/template.yaml`, see below), and kagent 1.0 support (v1.5.0,
-`arigsela/backstage#41`: agent entities, the agent card and the A2A client).
+`templates/new-app/template.yaml`, see below), kagent 1.0 support (v1.5.0,
+`arigsela/backstage#41`: agent entities, the agent card and the A2A client), and
+the scorecard plus the `readiness` MCP server (v1.6.0, `arigsela/backstage#44`;
+see **Scorecard** below).
 
 **Backstage's config is not in this directory.** `app-config.yaml` and
 `app-config.production.yaml` (catalog locations, the TeraSky
@@ -81,8 +83,40 @@ both wired in via `envFrom`:
   actions `aws:ecr:create`/`aws:ecr:build-push`, region `us-east-2` per
   `AWS_DEFAULT_REGION`), a Vault token (the `vault:setup` scaffolder action),
   and an `MCP_TOKEN` (static bearer token the MCP Actions backend accepts on
-  `/api/mcp-actions/v1/catalog`; kagent's `backstage-catalog` MCP server
-  holds a copy in Vault key `kagent-backstage-mcp`).
+  `/api/mcp-actions/v1/catalog` and `/api/mcp-actions/v1/readiness`; kagent's
+  `backstage-catalog` MCP server holds a copy in Vault key
+  `kagent-backstage-mcp`).
+
+## Scorecard
+Since v1.6.0 the portal runs the Red Hat Developer Hub Scorecard plugin at
+**4.2.0** (the last release whose core dependencies fit the portal's Backstage
+1.52; newer ones wait for a Backstage upgrade). Each component's **Scorecard**
+tab shows its metrics with a success/warning/error status, from three providers:
+- **`github.openPRs`**: open pull requests in the repo named by
+  `github.com/project-slug`. Hourly.
+- **`dependabot.alerts{Critical,High,Medium,Low}`**: open Dependabot alerts by
+  severity. An entity opts in with the annotation `github.com/dependabot: 'true'`
+  (that exact string), and the repo must have Dependabot alerts turned on.
+  Hourly.
+- **`filecheck.runbook` / `filecheck.docs`**: whether `runbook.md` and `docs.md`
+  exist in the folder named by the entity's `backstage.io/source-location`. For
+  apps catalogued from this repo that is `base-apps/<app>/`, which is where the
+  agent-docs contract puts both files. **Daily at 06:00**, not hourly: the GitHub
+  reader downloads the whole repo archive (about 105 MB for this repo) once per
+  entity per run.
+
+Do not repoint `backstage.io/source-location` to make filecheck read an app's
+own repo: TechDocs resolves `backstage.io/techdocs-ref: dir:.` against the same
+annotation, so that would break the app's Docs tab.
+
+The data is read over REST at
+`GET /api/scorecard/metrics/catalog/<kind>/<namespace>/<name>` (the
+`/production-readiness` skill in `arigsela/claude-agents` does this), and over
+MCP at `/api/mcp-actions/v1/readiness`. That server serves the scorecard's
+read-only `get-entity-metrics` and `list-metrics` plus `get-catalog-entity` and
+`query-catalog-entities`; the `catalog` server is unchanged. The portal repo's
+`scripts/check-scorecard-contract.sh` checks the metrics, both tool lists and,
+with `ENTITY_REF`, one entity's values.
 
 ## Exposure
 `backstage.arigsela.com` is the Gateway API `HTTPRoute` `backstage`
