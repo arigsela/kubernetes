@@ -107,13 +107,16 @@ spec:
         # 2026-10-14: alert "Container near memory limit" (logging/prometheus-0, 90% of
         # the 3Gi limit, no OOMKilled, steady) -> limit 3Gi -> 4608Mi, request 2Gi -> 3Gi
         # (same 2:3 ratio).
+        # 2026-10-26: alert "Container near memory limit" (logging/prometheus-0, 91% of
+        # the 4608Mi limit, no OOMKilled, 0 restarts) -> limit 4608Mi -> 6912Mi, request
+        # 3Gi -> 4608Mi (same 2:3 ratio).
         resources:
           requests:
             cpu: 250m
-            memory: 3Gi
+            memory: 4608Mi
           limits:
             cpu: 1000m
-            memory: 4608Mi
+            memory: 6912Mi
         # Resize in place without restarting the container (the default, stated so the
         # intent is explicit). In-place resize is GA in k8s 1.35.
         resizePolicy:
