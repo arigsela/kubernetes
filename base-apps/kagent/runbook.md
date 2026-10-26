@@ -149,10 +149,17 @@ it, possibly on the other node.
   (`managedNamespaceMetadata`); the controller is then reachable as before 2026-10-13.
 
 ### Symptom: A2A returns `-32004` / `KAGENT_SEND_NOT_ACCEPTED`
-- **Cause:** the session was busy pausing or suspending, and the message was provably not
-  dispatched.
-- **Fix:** resend the identical request (`scripts/kagent_a2a.py` retries for 30 s). Don't blindly
-  retry any other error: the input may already be running.
+- **Cause:** the message was provably not dispatched. Either the session was busy pausing or
+  suspending, or its sandbox did not start within Substrate's restore window. atenet-router gives
+  `ResumeActor` 5 s, and a cold start can pass that. Seen 2026-10-26 02:02 UTC: atelet's image-cache GC on
+  k3s-worker-01 had evicted the agent image (`golang-adk`) the day before, the first new session
+  there re-pulled it in 5.4 s, and the router gave up 0.6 s before the pull finished.
+- **Check:** `kubectl -n ate-system logs deploy/atenet-router | grep 'ResumeActor'`
+  (`timed out after 5s`), then the atelet on the picked node:
+  `grep -E 'Image cache (miss|evicting)|GC could not reach target'`.
+- **Fix:** resend the identical request. `scripts/kagent_a2a.py` and the Slack bridge retry for
+  30 s, and the image is cached once the first pull completes. Don't blindly retry any other
+  error: the input may already be running.
 
 ### Symptom: `homelab-knowledge` can't read the repo (GitHub MCP 401 "Bad credentials")
 The token is a fine-grained PAT and expires (SPEC T101, 2026-10-11: expired; fixed 2026-10-12).

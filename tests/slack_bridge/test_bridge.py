@@ -69,7 +69,7 @@ class FakeAgent:
         self.sent.append({"url": url, "text": msg["parts"][0]["text"], "context_id": msg.get("contextId"),
                           "task_id": msg.get("taskId"), "metadata": msg.get("metadata"), "user": headers.get("X-User-Id"),
                           "auth": headers.get("Authorization"), "method": req["method"], "accept": headers.get("Accept"),
-                          "timeout": timeout})
+                          "timeout": timeout, "payload": payload})
         r = self.replies.pop(0)
         if isinstance(r, BaseException):
             raise r
@@ -673,6 +673,87 @@ def test_a_stream_that_ends_without_ids_is_an_error():
     bridge, api, _, _ = make(agent)
     bridge.handle_event(dm("hey", ts="26.1"))
     assert "without a task" in api.of("chat.postMessage")[0]["text"]
+
+
+# kagent's proven rejection, as recorded on the wire: the session could not take the input and
+# nothing was dispatched. 2026-10-26: a new homelab-knowledge session's sandbox needed a cold image
+# pull (5.4 s), Substrate's router gives a restore 5 s, and Slack got this error with session "?".
+NOT_ACCEPTED = json.loads((REPO / "tests" / "eval-corpus" / "fixtures" / "a2a-v1" / "error-send-not-accepted.json").read_text())
+
+
+def test_a_not_accepted_rejection_is_resent_identically_and_the_answer_lands():
+    agent = FakeAgent([NOT_ACCEPTED], completed("answer", session="sess-r"))
+    bridge, api, logs, _ = make(agent)
+    slept = []
+    bridge.sleep = slept.append
+    bridge.handle_event(dm("hello", ts="27.1"))
+    assert len(agent.sent) == 2
+    assert agent.sent[0]["payload"] == agent.sent[1]["payload"], "the resend is byte-identical (same messageId)"
+    assert slept == [0.1], "waits the rejection's retryAfterMs"
+    assert api.of("chat.postMessage")[0]["text"].startswith("answer\n_session sess-r")
+    assert any(x["event"] == "retry" and x["agent"] == "homelab-knowledge" for x in logs)
+    assert logs[-1]["event"] == "ask" and logs[-1]["error"] is None
+
+
+def test_a_rejection_past_the_retry_deadline_is_reported_without_a_session_line():
+    agent = FakeAgent(*[[NOT_ACCEPTED]] * 10)
+    bridge, api, logs, _ = make(agent)
+    now = [0.0]
+    bridge.clock = lambda: now[0]
+    bridge.sleep = lambda s: now.__setitem__(0, now[0] + 10.0)   # each wait stands for a slow attempt
+    bridge.handle_event(dm("hello", ts="28.1"))
+    assert len(agent.sent) == 4, "sends at t=0, 10, 20, 30; the next wait would pass the 30 s deadline"
+    text = api.of("chat.postMessage")[0]["text"]
+    assert text.startswith(":x:") and "input was not accepted" in text
+    assert "_session" not in text and "--context ?" not in text, "no session was started: nothing to continue"
+    assert logs[-1]["session"] is None and "-32004" in logs[-1]["error"]
+
+
+def test_minus_32004_without_kagents_reason_is_not_resent():
+    other = {"jsonrpc": "2.0", "id": "1", "error": {"code": -32004, "message": "this operation is not supported"}}
+    agent = FakeAgent([other])
+    bridge, api, _, _ = make(agent)
+    bridge.sleep = lambda s: pytest.fail("resent an error that is not a proven rejection")
+    bridge.handle_event(dm("hello", ts="29.1"))
+    assert len(agent.sent) == 1 and "not supported" in api.of("chat.postMessage")[0]["text"]
+
+
+def test_a_rejection_after_the_ids_is_not_resent():
+    """Once kagent named the task, the input may be running: never send it twice."""
+    final = completed("from the store", session="sess-t", task="task-t")
+    agent = FakeAgent([submitted(final["task"]), NOT_ACCEPTED])
+    agent.tasks["task-t"] = [final]
+    bridge, api, _, _ = make(agent)
+    bridge.handle_event(dm("hello", ts="30.1"))
+    assert len(agent.sent) == 1 and agent.fetched == ["task-t"]
+    assert api.of("chat.postMessage")[0]["text"].startswith("from the store\n_session sess-t")
+
+
+def test_after_an_error_without_a_session_the_next_answer_carries_the_session_line():
+    agent = FakeAgent(a2a.A2AError("HTTP 503 from x: upstream connect error"), completed("second", session="sess-n"))
+    bridge, api, _, _ = make(agent)
+    bridge.handle_event(mention("first", ts="31.1"))
+    assert "_session" not in api.of("chat.postMessage")[0]["text"]
+    bridge.handle_event({"type": "message", "channel": "C1", "user": OWNER, "text": "again", "ts": "31.2", "thread_ts": "31.1"})
+    assert agent.sent[1]["context_id"] is None, "still no session to continue"
+    assert api.of("chat.postMessage")[1]["text"].startswith("second\n_session sess-n")
+
+
+def test_a_still_working_note_before_the_ids_has_no_session_line_and_the_answer_carries_it():
+    final = completed("done", session="sess-q", task="task-q")
+    FakeTimer.armed.clear()
+
+    def events():
+        FakeTimer.armed[-1].fire()          # two minutes pass before kagent names the session
+        yield submitted(final["task"])
+        yield {"result": final}
+    agent = FakeAgent(events())
+    agent.tasks["task-q"] = [final]
+    bridge, api, _, _ = make(agent)
+    bridge.handle_event(dm("slow start", ts="32.1"))
+    msgs = api.of("chat.postMessage")
+    assert "still working" in msgs[0]["text"] and "_session" not in msgs[0]["text"]
+    assert msgs[1]["text"].startswith("done\n_session sess-q")
 
 
 def test_sse_events_parses_data_lines_and_skips_comments_and_blanks():
