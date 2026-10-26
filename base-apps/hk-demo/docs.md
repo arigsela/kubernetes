@@ -181,10 +181,11 @@ Valkey in this namespace (`valkey.yaml`). Design:
 `docs/superpowers/specs/2026-10-25-hk-demo-saved-runs-design.md` (§T.143).
 
 - **What is kept:** a settled run's trace and log lines, saved 5 minutes after it ended, for 8
-  days. A copy that is missing its trace is kept for 1 hour, then tried again. Without the copy, a
-  pick took 11-31 s of reads against Loki and Tempo.
-- **What is read on every pick:** the "today" totals, the eval score and an alert run's pull
-  request.
+  days. A copy that is missing its trace is kept for 1 hour, then tried again. A build that saw a
+  failed read (a Loki or Tempo timeout) is not saved. Without the copy, a pick took 11-31 s of
+  reads against Loki and Tempo.
+- **What is read on every pick:** the "today" totals, the eval score, an alert run's memory series
+  and its pull request.
 - **The saver:** a background task in the app copies runs nobody has opened yet, every 5
   minutes. It never calls GitHub, and it steps aside while a question runs.
 - **A cache only:** no disk. A Valkey restart empties it and the saver refills it. When Valkey is
