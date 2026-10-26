@@ -6,7 +6,7 @@ app: backstage
 catalog_entity: backstage
 kind: docs
 namespace: backstage
-last_reviewed: 2026-10-25
+last_reviewed: 2026-10-26
 status: stable
 tags: [backstage, developer-portal, catalog, kubernetes-ingestor]
 sources:
@@ -28,8 +28,8 @@ sources:
 
 ## What it is
 The internal developer portal / software catalog (Backstage), running a custom
-image, `backstage-portal`, from ECR (tag in `deployments.yaml`, `v1.6.0` since
-2026-10-25; `imagePullPolicy: Always`). The image is built from the portal repo,
+image, `backstage-portal`, from ECR (tag in `deployments.yaml`, `v1.6.1` since
+2026-10-26; `imagePullPolicy: Always`). The image is built from the portal repo,
 `arigsela/backstage` (checked out at `~/git/backstage`). It is the platform's
 software catalog UI, scaffolder and TechDocs site, and (per the RBAC below) also
 ingests live cluster/Crossplane resources and renders kagent agent detail cards.
@@ -40,9 +40,10 @@ the ingestor generated) and of the old Node.js/application/decommission/kagent
 example templates (v1.4.10), the **New Application** scaffolder template (v1.4.11, name
 availability check v1.4.12; the template itself lives in this repo at
 `templates/new-app/template.yaml`, see below), kagent 1.0 support (v1.5.0,
-`arigsela/backstage#41`: agent entities, the agent card and the A2A client), and
+`arigsela/backstage#41`: agent entities, the agent card and the A2A client),
 the scorecard plus the `readiness` MCP server (v1.6.0, `arigsela/backstage#44`;
-see **Scorecard** below).
+see **Scorecard** below), and v1.6.1 (`arigsela/backstage#45`), which drops the
+scorecard's file check after it stalled the portal.
 
 **Backstage's config is not in this directory.** `app-config.yaml` and
 `app-config.production.yaml` (catalog locations, the TeraSky
@@ -91,23 +92,28 @@ both wired in via `envFrom`:
 Since v1.6.0 the portal runs the Red Hat Developer Hub Scorecard plugin at
 **4.2.0** (the last release whose core dependencies fit the portal's Backstage
 1.52; newer ones wait for a Backstage upgrade). Each component's **Scorecard**
-tab shows its metrics with a success/warning/error status, from three providers:
+tab shows its metrics with a success/warning/error status, from two providers:
 - **`github.openPRs`**: open pull requests in the repo named by
   `github.com/project-slug`. Hourly.
 - **`dependabot.alerts{Critical,High,Medium,Low}`**: open Dependabot alerts by
   severity. An entity opts in with the annotation `github.com/dependabot: 'true'`
   (that exact string), and the repo must have Dependabot alerts turned on.
   Hourly.
-- **`filecheck.runbook` / `filecheck.docs`**: whether `runbook.md` and `docs.md`
-  exist in the folder named by the entity's `backstage.io/source-location`. For
-  apps catalogued from this repo that is `base-apps/<app>/`, which is where the
-  agent-docs contract puts both files. **Daily at 06:00**, not hourly: the GitHub
-  reader downloads the whole repo archive (about 105 MB for this repo) once per
-  entity per run.
 
-Do not repoint `backstage.io/source-location` to make filecheck read an app's
-own repo: TechDocs resolves `backstage.io/techdocs-ref: dir:.` against the same
-annotation, so that would break the app's Docs tab.
+Metrics are collected on that schedule and stored, starting 1 minute after the
+pod starts; until then an entity's metrics read `[]`.
+
+**No file check.** v1.6.0 also shipped the `filecheck` provider (`runbook.md` /
+`docs.md` in each entity's `backstage.io/source-location` folder). Its first run,
+5 minutes after startup, downloaded this repo's ~105 MB archive once per entity,
+stalled the backend until the liveness probe killed it (exit 137, not an OOM),
+and would have retried every 15 minutes. v1.6.1 removes it; the portal repo's
+contract script fails if it comes back. The `/production-readiness` skill
+checks both files from this repo directly.
+
+Do not repoint `backstage.io/source-location` at an app's own repo: TechDocs
+resolves `backstage.io/techdocs-ref: dir:.` against it, so that would break the
+app's Docs tab.
 
 The data is read over REST at
 `GET /api/scorecard/metrics/catalog/<kind>/<namespace>/<name>` (the
