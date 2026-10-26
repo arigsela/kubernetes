@@ -61,6 +61,15 @@ data:
           "icon": "dashboard",
           "keepTime": true,
           "targetBlank": false
+        },
+        {
+          "title": "Agent KPIs",
+          "type": "link",
+          "url": "/d/agent-kpis",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
         }
       ],
       "panels": [
@@ -2256,6 +2265,15 @@ data:
           "icon": "dashboard",
           "keepTime": true,
           "targetBlank": false
+        },
+        {
+          "title": "Agent KPIs",
+          "type": "link",
+          "url": "/d/agent-kpis",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
         }
       ],
       "panels": [
@@ -3109,6 +3127,15 @@ data:
           "icon": "dashboard",
           "keepTime": true,
           "targetBlank": false
+        },
+        {
+          "title": "Agent KPIs",
+          "type": "link",
+          "url": "/d/agent-kpis",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
         }
       ],
       "panels": [
@@ -4256,6 +4283,15 @@ data:
           "icon": "dashboard",
           "keepTime": true,
           "targetBlank": false
+        },
+        {
+          "title": "Agent KPIs",
+          "type": "link",
+          "url": "/d/agent-kpis",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
         }
       ],
       "panels": [
@@ -4748,6 +4784,15 @@ data:
           "icon": "dashboard",
           "keepTime": true,
           "targetBlank": false
+        },
+        {
+          "title": "Agent KPIs",
+          "type": "link",
+          "url": "/d/agent-kpis",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
         }
       ],
       "panels": [
@@ -5777,6 +5822,15 @@ data:
           "icon": "dashboard",
           "keepTime": true,
           "targetBlank": false
+        },
+        {
+          "title": "Agent KPIs",
+          "type": "link",
+          "url": "/d/agent-kpis",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
         }
       ],
       "panels": [
@@ -6624,6 +6678,15 @@ data:
           "icon": "dashboard",
           "keepTime": true,
           "targetBlank": false
+        },
+        {
+          "title": "Agent KPIs",
+          "type": "link",
+          "url": "/d/agent-kpis",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
         }
       ],
       "panels": [
@@ -7386,6 +7449,15 @@ data:
           "icon": "dashboard",
           "keepTime": true,
           "targetBlank": false
+        },
+        {
+          "title": "Agent KPIs",
+          "type": "link",
+          "url": "/d/agent-kpis",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
         }
       ],
       "panels": [
@@ -8082,6 +8154,1821 @@ data:
             "w": 24,
             "x": 0,
             "y": 33
+          }
+        }
+      ],
+      "templating": {
+        "list": [
+          {
+            "type": "datasource",
+            "name": "prometheus",
+            "label": "Prometheus",
+            "query": "prometheus",
+            "hide": 2,
+            "refresh": 1,
+            "current": {},
+            "options": [],
+            "regex": ""
+          }
+        ]
+      },
+      "annotations": {
+        "list": []
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-agent-kpis
+  namespace: logging
+  labels:
+    grafana_dashboard: "1"
+data:
+  agent-kpis.json: |
+    {
+      "uid": "agent-kpis",
+      "title": "Agent KPIs",
+      "description": "The agent-first IDP playbook's eight agent-scenario KPIs, measured: capabilities open to agents, intent success, time to a safe change, cost per scenario, approval cycle time, policy violations, support load absorbed, completed without escalation.",
+      "tags": [
+        "agents"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "graphTooltip": 1,
+      "refresh": "1m",
+      "time": {
+        "from": "now-7d",
+        "to": "now"
+      },
+      "links": [
+        {
+          "title": "Agent Platform",
+          "type": "link",
+          "url": "/d/agent-platform",
+          "icon": "dashboard",
+          "keepTime": true,
+          "targetBlank": false,
+          "tooltip": "The landing page"
+        },
+        {
+          "title": "Agents",
+          "type": "dashboards",
+          "tags": [
+            "agents"
+          ],
+          "asDropdown": true,
+          "keepTime": true,
+          "includeVars": false,
+          "targetBlank": false
+        },
+        {
+          "title": "Cluster Overview",
+          "type": "link",
+          "url": "/d/cluster-overview",
+          "icon": "dashboard",
+          "keepTime": true,
+          "targetBlank": false
+        },
+        {
+          "title": "Agent KPIs",
+          "type": "link",
+          "url": "/d/agent-kpis",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
+        }
+      ],
+      "panels": [
+        {
+          "type": "row",
+          "title": "The playbook's eight agent-scenario KPIs, over the dashboard's time range (default 7 days)",
+          "id": 1,
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "panels": []
+        },
+        {
+          "type": "stat",
+          "title": "1 \u00b7 Capabilities open to agents (of 8)",
+          "description": "The playbook's eight capability areas (provision, deploy, observe, secure, govern, approve, remediate, explain), from scripts/agent-capability-map.yaml. Open: an agent serves the area. Safely open: every agent in it also has golden tasks of its own in the eval corpus. Changes with a pull request; see the table below.",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus"
+              },
+              "refId": "A",
+              "expr": "vector(4)",
+              "legendFormat": "",
+              "instant": true,
+              "range": false
+            },
+            {
+              "datasource": {
+                "type": "prometheus"
+              },
+              "refId": "B",
+              "expr": "vector(6)",
+              "legendFormat": "",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "0",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "safely open"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "open"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 2,
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 0,
+            "y": 1
+          }
+        },
+        {
+          "type": "stat",
+          "title": "2 \u00b7 Intent success rate",
+          "description": "Agent tasks that ended completed, of all that ended (completed, failed, canceled, rejected), for every caller but the eval gate. A task that paused for an approval and then finished is one success. From kagent's task states (agent-kpis job).",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "(sum(count_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | caller!=\"eval\" | state=\"completed\" [$__range])) / sum(count_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | caller!=\"eval\" [$__range])))",
+              "legendFormat": "",
+              "queryType": "instant"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "B",
+              "expr": "sum(count_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | caller!=\"eval\" [$__range])) or vector(0)",
+              "legendFormat": "",
+              "queryType": "instant"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "completed"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "percentunit"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "tasks"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 3,
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 6,
+            "y": 1
+          }
+        },
+        {
+          "type": "stat",
+          "title": "3 \u00b7 Time to a safe change",
+          "description": "Medians. Alert to proposal: the implementer's investigation of an alert, ending in a pull request. Agent PR to merge: that pull request until a person merges it (CI and review). People's PRs: the owner's own changes, for comparison. GitHub's merge times (agent-kpis job).",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "quantile_over_time(0.5, {namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | agent=\"implementer\" | caller=\"dispatcher\" | unwrap duration_s | __error__=\"\" [$__range]) by ()",
+              "legendFormat": "",
+              "queryType": "instant"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "B",
+              "expr": "quantile_over_time(0.5, {namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"change\" | outcome=\"merged\" | author=\"implementer\" | unwrap lead_s | __error__=\"\" [$__range]) by ()",
+              "legendFormat": "",
+              "queryType": "instant"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "C",
+              "expr": "quantile_over_time(0.5, {namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"change\" | outcome=\"merged\" | author=\"owner\" | unwrap lead_s | __error__=\"\" [$__range]) by ()",
+              "legendFormat": "",
+              "queryType": "instant"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "alert \u2192 proposal"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "s"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "agent PR \u2192 merge"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "s"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "C"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "people's PRs"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "s"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 4,
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 12,
+            "y": 1
+          }
+        },
+        {
+          "type": "stat",
+          "title": "4 \u00b7 Cost per scenario",
+          "description": "Estimated model cost of one agent run (one turn: a question answered, an alert investigated), averaged over every run, and the total. List prices, from the collector; per agent below.",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus"
+              },
+              "refId": "A",
+              "expr": "sum by () (((last_over_time(agent_cost_estimate_usd_total[$__range]) - last_over_time(agent_cost_estimate_usd_total[1d] offset $__range)) >= 0) or last_over_time(agent_cost_estimate_usd_total[$__range])) / sum by () (((last_over_time(agent_runs_total[$__range]) - last_over_time(agent_runs_total[1d] offset $__range)) >= 0) or last_over_time(agent_runs_total[$__range]))",
+              "legendFormat": "",
+              "instant": true,
+              "range": false
+            },
+            {
+              "datasource": {
+                "type": "prometheus"
+              },
+              "refId": "B",
+              "expr": "sum by () (((last_over_time(agent_cost_estimate_usd_total[$__range]) - last_over_time(agent_cost_estimate_usd_total[1d] offset $__range)) >= 0) or last_over_time(agent_cost_estimate_usd_total[$__range]))",
+              "legendFormat": "",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "decimals": 3
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "per run"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "currencyUSD"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "total"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "currencyUSD"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 5,
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 18,
+            "y": 1
+          }
+        },
+        {
+          "type": "stat",
+          "title": "5 \u00b7 Approval cycle time",
+          "description": "How long a gated call waited for a person's decision: median and 90th percentile, and the number of decisions (the eval gate's automatic rejections of its own tests left out). From the approval request and decision kagent stores (agent-kpis job).",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "quantile_over_time(0.5, {namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"approval\" | caller!=\"eval\" | unwrap wait_s | __error__=\"\" [$__range]) by ()",
+              "legendFormat": "",
+              "queryType": "instant"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "B",
+              "expr": "quantile_over_time(0.9, {namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"approval\" | caller!=\"eval\" | unwrap wait_s | __error__=\"\" [$__range]) by ()",
+              "legendFormat": "",
+              "queryType": "instant"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "C",
+              "expr": "sum(count_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"approval\" | caller!=\"eval\" [$__range])) or vector(0)",
+              "legendFormat": "",
+              "queryType": "instant"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "median"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "s"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "p90"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "s"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "C"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "decisions"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 6,
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 0,
+            "y": 6
+          }
+        },
+        {
+          "type": "stat",
+          "title": "6 \u00b7 Policy violation rate",
+          "description": "Tool calls that broke a rule, of all tool calls: a write that ran without an approved decision (the audit's rule, should always be 0) plus calls an MCP adapter refused (a tool off its allow-list). Agent definitions the API server denied at admission are counted beside it: those are changes stopped before any agent ran them.",
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Mixed --"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "((sum(sum_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"window\" | db=\"ok\" | unwrap ungated_writes | __error__=\"\" [$__range])) or vector(0)) + (sum(count_over_time({namespace=\"kagent\", container=\"mcp-server\"} |= \"mcp.method.name=tools/call\" |= \"Unknown tool\" [$__range])) or vector(0))) / sum(sum_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"window\" | db=\"ok\" | unwrap tool_calls | __error__=\"\" [$__range]))",
+              "legendFormat": "",
+              "queryType": "instant"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "B",
+              "expr": "sum(sum_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"window\" | db=\"ok\" | unwrap ungated_writes | __error__=\"\" [$__range])) or vector(0)",
+              "legendFormat": "",
+              "queryType": "instant"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "C",
+              "expr": "sum(count_over_time({namespace=\"kagent\", container=\"mcp-server\"} |= \"mcp.method.name=tools/call\" |= \"Unknown tool\" [$__range])) or vector(0)",
+              "legendFormat": "",
+              "queryType": "instant"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "refId": "D",
+              "expr": "sum by () (((last_over_time(apiserver_validating_admission_policy_check_total{policy=~\"agent-.*\", enforcement_action=\"deny\"}[$__range]) - last_over_time(apiserver_validating_admission_policy_check_total{policy=~\"agent-.*\", enforcement_action=\"deny\"}[1d] offset $__range)) >= 0) or last_over_time(apiserver_validating_admission_policy_check_total{policy=~\"agent-.*\", enforcement_action=\"deny\"}[$__range])) or vector(0)",
+              "legendFormat": "",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "violation rate"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "percentunit"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "writes w/o approval"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "C"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "refused calls"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "D"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "denied at admission"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 7,
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 6,
+            "y": 6
+          }
+        },
+        {
+          "type": "stat",
+          "title": "7 \u00b7 Support load absorbed",
+          "description": "Firing alerts (distinct) that reached a person already investigated by an agent, and all firing alerts. 2 of the 14 alert rules route to an agent (base-apps/dispatcher/dispatch-table.yaml); the rest go to people only, some by design (no agent investigates the agents).",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "(count(sum by (fingerprint) (count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | decision=\"investigate\" [$__range]))) / count(sum by (fingerprint) (count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | status=\"firing\" [$__range]))))",
+              "legendFormat": "",
+              "queryType": "instant"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "B",
+              "expr": "count(sum by (fingerprint) (count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | status=\"firing\" [$__range]))) or vector(0)",
+              "legendFormat": "",
+              "queryType": "instant"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "investigated first"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "percentunit"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "alerts fired"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 8,
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 12,
+            "y": 6
+          }
+        },
+        {
+          "type": "stat",
+          "title": "8 \u00b7 Completed without escalation",
+          "description": "Alert investigations that ended in a diagnosis the platform acts on (limit too low \u2192 a pull request, leak or pending rollout \u2192 a restart a person approves, contention), of all of them. Inconclusive, failed or timed out: a person has to look. From the dispatcher's remediate lines.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "(sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" | verdict=~`limit-too-low|leak|contention|rollout-pending` [$__range])) / sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" [$__range])))",
+              "legendFormat": "",
+              "queryType": "instant"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "B",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" [$__range])) or vector(0)",
+              "legendFormat": "",
+              "queryType": "instant"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "no escalation"
+                  },
+                  {
+                    "id": "unit",
+                    "value": "percentunit"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "investigations"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 9,
+          "gridPos": {
+            "h": 5,
+            "w": 6,
+            "x": 18,
+            "y": 6
+          }
+        },
+        {
+          "type": "row",
+          "title": "Capability map: the playbook's eight areas (scripts/agent-capability-map.yaml)",
+          "id": 10,
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 11
+          },
+          "panels": []
+        },
+        {
+          "type": "text",
+          "title": "4 of 8 areas safely open, 6 open",
+          "options": {
+            "mode": "markdown",
+            "content": "| area | how agents serve it | verdict |\n|---|---|---|\n| deploy | recommend: implementer | safely open |\n| govern | read: docs-checker | safely open |\n| remediate | recommend: implementer; act: restarter, k8s-agent, istio-agent | safely open |\n| explain | read: homelab-knowledge | safely open |\n| provision | read: skill-suggester | open, no golden tasks for skill-suggester |\n| observe | read: k8s-reader, homelab-knowledge | open, no golden tasks for k8s-reader |\n| secure | closed | closed: Security findings (Falco, policy reports, CVE scans, the agent audit) are read by people |\n| approve | closed | closed: By design |"
+          },
+          "id": 11,
+          "gridPos": {
+            "h": 9,
+            "w": 16,
+            "x": 0,
+            "y": 12
+          }
+        },
+        {
+          "type": "text",
+          "title": "Where these numbers come from",
+          "options": {
+            "mode": "markdown",
+            "content": "The KPIs are the ones the playbook [Agent-first IDP](https://platformengineering.org/blog/agent-first-idp-how-big-tech-and-the-clouds-are-preparing-platforms-for-agents) (platformengineering.org, 2026-10-16, practice 9) asks an agent platform to report instead of portal usage.\n\n- **agent-kpis** (CronJob in `postgresql`, hourly at :05, the SELECT-only audit role): how each agent task ended, how long each approval waited, how long each pull request took to merge (GitHub). Argument-free; callers as a class, never an identity.\n- **Prometheus**: model cost and runs (the collector), admission denials (the API server).\n- **Loki**: the dispatcher's alerts and verdicts, the MCP adapters' refusals.\n\nThe eval gate's own test sessions are left out of every scenario KPI."
+          },
+          "id": 12,
+          "gridPos": {
+            "h": 9,
+            "w": 8,
+            "x": 16,
+            "y": 12
+          }
+        },
+        {
+          "type": "row",
+          "title": "Over time",
+          "id": 13,
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 21
+          },
+          "panels": []
+        },
+        {
+          "type": "timeseries",
+          "title": "Agent tasks by how they ended",
+          "description": "Every caller but the eval gate. Per interval.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "sum by (state) (count_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | caller!=\"eval\" [$__interval]))",
+              "legendFormat": "{{state}}",
+              "queryType": "range"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "bars",
+                "lineWidth": 1,
+                "fillOpacity": 60,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "noValue": "No data yet: the agent-kpis job prints each hour at :05"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "sum"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "interval": "1h",
+          "id": 14,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 22
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Agent tasks by caller",
+          "description": "Who asks: person (CLI), slack, dispatcher (alerts), demo, backstage, docs-check, eval (the eval gate's tests), ui.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "sum by (caller) (count_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" [$__interval]))",
+              "legendFormat": "{{caller}}",
+              "queryType": "range"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "bars",
+                "lineWidth": 1,
+                "fillOpacity": 60,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "normal"
+                }
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "noValue": "No data yet: the agent-kpis job prints each hour at :05"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "sum"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "interval": "1h",
+          "id": 15,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 22
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Approval wait, each decision",
+          "description": "Seconds from the approval request to the decision.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "max_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"approval\" | caller!=\"eval\" | unwrap wait_s | __error__=\"\" [$__interval]) by (agent)",
+              "legendFormat": "{{agent}}",
+              "queryType": "range"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "noValue": "No data yet: the agent-kpis job prints each hour at :05"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "interval": "1h",
+          "id": 16,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 30
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Pull request lead time by author",
+          "description": "Median opened \u2192 merged per interval. owner = a person, implementer = the agent, renovate = dependency bumps (most merged by the promotion rule).",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "quantile_over_time(0.5, {namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"change\" | outcome=\"merged\" | unwrap lead_s | __error__=\"\" [$__interval]) by (author)",
+              "legendFormat": "{{author}}",
+              "queryType": "range"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "noValue": "No data yet: the agent-kpis job prints each hour at :05"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "interval": "6h",
+          "id": 17,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 30
+          }
+        },
+        {
+          "type": "bargauge",
+          "title": "Cost per run, by agent",
+          "description": "Estimated model cost of one run of each agent (list prices).",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus"
+              },
+              "refId": "A",
+              "expr": "sum by (service_name) (((last_over_time(agent_cost_estimate_usd_total[$__range]) - last_over_time(agent_cost_estimate_usd_total[1d] offset $__range)) >= 0) or last_over_time(agent_cost_estimate_usd_total[$__range])) / sum by (service_name) (((last_over_time(agent_runs_total[$__range]) - last_over_time(agent_runs_total[1d] offset $__range)) >= 0) or last_over_time(agent_runs_total[$__range]))",
+              "legendFormat": "{{service_name}}",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "min": 0,
+              "noValue": "0",
+              "color": {
+                "mode": "continuous-BlPu"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "decimals": 3
+            },
+            "overrides": []
+          },
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "gradient",
+            "showUnfilled": true,
+            "valueMode": "color",
+            "namePlacement": "left",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            }
+          },
+          "id": 18,
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 30
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Rule-breaking tool calls",
+          "description": "Per interval. A write without an approval also raises the audit's own alert.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "sum(sum_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"window\" | db=\"ok\" | unwrap ungated_writes | __error__=\"\" [$__interval]))",
+              "legendFormat": "writes w/o approval",
+              "queryType": "range"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "B",
+              "expr": "sum(count_over_time({namespace=\"kagent\", container=\"mcp-server\"} |= \"mcp.method.name=tools/call\" |= \"Unknown tool\" [$__interval]))",
+              "legendFormat": "refused by an adapter",
+              "queryType": "range"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "bars",
+                "lineWidth": 1,
+                "fillOpacity": 60,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "noValue": "0"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "sum"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "interval": "1h",
+          "id": 19,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 38
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "Alerts: fired, investigated, diagnosed",
+          "description": "Alert notifications the dispatcher received, the ones it sent to an agent, and the investigations that ended in a diagnosis.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | status=\"firing\" [$__interval]))",
+              "legendFormat": "fired",
+              "queryType": "range"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "B",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | decision=\"investigate\" [$__interval]))",
+              "legendFormat": "investigated",
+              "queryType": "range"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "C",
+              "expr": "sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" | verdict=~`limit-too-low|leak|contention|rollout-pending` [$__interval]))",
+              "legendFormat": "diagnosed",
+              "queryType": "range"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "bars",
+                "lineWidth": 1,
+                "fillOpacity": 60,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "noValue": "No alerts in this time range"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "sum"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "interval": "6h",
+          "id": 20,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 38
+          }
+        },
+        {
+          "type": "row",
+          "title": "The facts",
+          "id": 21,
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 46
+          },
+          "panels": []
+        },
+        {
+          "type": "table",
+          "title": "Approvals",
+          "description": "Every decision on a gated call, newest first (the eval gate's included, caller eval).",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "{namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"approval\"",
+              "legendFormat": "",
+              "queryType": "range"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "No data yet: the agent-kpis job prints each hour at :05"
+            },
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": [
+              {
+                "displayName": "at",
+                "desc": true
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "extractFields",
+              "options": {
+                "source": "Line",
+                "format": "json"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {},
+                "includeByName": {
+                  "at": true,
+                  "agent": true,
+                  "tool": true,
+                  "caller": true,
+                  "decision": true,
+                  "wait_s": true
+                },
+                "indexByName": {
+                  "at": 0,
+                  "agent": 1,
+                  "tool": 2,
+                  "caller": 3,
+                  "decision": 4,
+                  "wait_s": 5
+                },
+                "renameByName": {
+                  "wait_s": "waited (s)"
+                }
+              }
+            }
+          ],
+          "id": 22,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 47
+          }
+        },
+        {
+          "type": "table",
+          "title": "Pull requests merged or closed",
+          "description": "Newest first; lead time = opened \u2192 merged or closed.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "{namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"change\"",
+              "legendFormat": "",
+              "queryType": "range"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "No data yet: the agent-kpis job prints each hour at :05"
+            },
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": [
+              {
+                "displayName": "at",
+                "desc": true
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "extractFields",
+              "options": {
+                "source": "Line",
+                "format": "json"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {},
+                "includeByName": {
+                  "at": true,
+                  "number": true,
+                  "author": true,
+                  "outcome": true,
+                  "lead_s": true
+                },
+                "indexByName": {
+                  "at": 0,
+                  "number": 1,
+                  "author": 2,
+                  "outcome": 3,
+                  "lead_s": 4
+                },
+                "renameByName": {
+                  "lead_s": "lead time (s)",
+                  "number": "PR"
+                }
+              }
+            }
+          ],
+          "id": 23,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 47
+          }
+        },
+        {
+          "type": "table",
+          "title": "Agent tasks that did not complete",
+          "description": "Failed, canceled or rejected tasks, newest first. task_id finds the session in the audit UI.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "{namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | state!=\"completed\"",
+              "legendFormat": "",
+              "queryType": "range"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "noValue": "Every task completed in this time range"
+            },
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": [
+              {
+                "displayName": "at",
+                "desc": true
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "extractFields",
+              "options": {
+                "source": "Line",
+                "format": "json"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {},
+                "includeByName": {
+                  "at": true,
+                  "agent": true,
+                  "caller": true,
+                  "state": true,
+                  "paused": true,
+                  "duration_s": true,
+                  "task_id": true
+                },
+                "indexByName": {
+                  "at": 0,
+                  "agent": 1,
+                  "caller": 2,
+                  "state": 3,
+                  "paused": 4,
+                  "duration_s": 5,
+                  "task_id": 6
+                },
+                "renameByName": {
+                  "duration_s": "ran (s)"
+                }
+              }
+            }
+          ],
+          "id": 24,
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 55
           }
         }
       ],

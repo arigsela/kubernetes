@@ -35,6 +35,7 @@ SCRIPT = "scripts/agent-audit.py"
 TAXONOMY = "base-apps/admission-policies/agent-capability-taxonomy.yaml"
 ACKNOWLEDGED = "scripts/agent-audit-acknowledged.yaml"
 RISK_SCRIPT = "scripts/agent-audit-risk.py"
+KPIS_SCRIPT = "scripts/agent-kpis.py"
 OUT = "base-apps/postgresql/agent-audit-cronjob.yaml"
 
 HEADER = """\
@@ -46,6 +47,7 @@ HEADER = """\
 #             base-apps/admission-policies/agent-capability-taxonomy.yaml
 #             scripts/agent-audit-acknowledged.yaml
 #             scripts/agent-audit-risk.py
+#             scripts/agent-kpis.py
 # Regenerate: ./scripts/gen-agent-audit-cronjob.py
 # CI fails if this file drifts from any source.
 #
@@ -108,6 +110,21 @@ HEADER = """\
 #
 # It reads the database as kagent_audit_ro — the SELECT-only role. It cannot mutate
 # the evidence it audits. Proven: DELETE/UPDATE/INSERT/DDL are all denied by Postgres.
+#
+# AGENT KPIs (the fifth CronJob, §T.144)
+#
+# agent-kpis runs at :05 every hour and prints the clock hour that just ended as
+# argument-free JSON lines (check=agent-kpi): how each agent task ended, how long each
+# gated call waited for its decision, which pull requests merged and how long they
+# took (GitHub's public API, unauthenticated, like the dispatcher's open-PR count),
+# and an hourly roll-up. The Agent KPIs dashboard reads them from Loki
+# ({namespace="postgresql", app="agent-kpis"}). Its own pod label keeps them out of
+# the audit's Grafana rules. No retries: a retry after a partial print would count
+# the hour twice. Same SELECT-only role, same mounted taxonomy, never an argument.
+# agent-kpis-backfill is the same script over the 168 hours before that, SUSPENDED;
+# run it once after the first deploy so the dashboard opens on a week:
+#
+#   kubectl create job -n postgresql --from=cronjob/agent-kpis-backfill agent-kpis-backfill-1
 #
 # WHICH DATABASE
 #
@@ -216,7 +233,8 @@ def _cronjob(name, schedule, container, *, backoff=0, failed_history=7, app="age
     }
 
 
-def build(script_src: str, taxonomy_src: str, acknowledged_src: str, risk_src: str) -> list[dict]:
+def build(script_src: str, taxonomy_src: str, acknowledged_src: str, risk_src: str,
+          kpis_src: str = "") -> list[dict]:
     code_cm = {
         "apiVersion": "v1",
         "kind": "ConfigMap",
@@ -228,6 +246,7 @@ def build(script_src: str, taxonomy_src: str, acknowledged_src: str, risk_src: s
         "data": {
             "agent-audit.py": script_src,
             "agent-audit-risk.py": risk_src,
+            "agent-kpis.py": kpis_src,
             "agent-capability-taxonomy.yaml": taxonomy_src,
             "agent-audit-acknowledged.yaml": acknowledged_src,
         },
@@ -350,7 +369,22 @@ def build(script_src: str, taxonomy_src: str, acknowledged_src: str, risk_src: s
         failed_history=1,
     )
 
-    return [code_cm, ungated, export, risk, archive]
+    # --- the agent KPIs (§T.144). Hourly at :05: the clock hour that just ended, so runs
+    # neither overlap nor leave gaps. backoff 0: a retry after a partial print would count
+    # the hour twice. Its own app label: the audit's Grafana rules read app=agent-audit.
+    kpi_cmd = ("exec python /opt/audit/agent-kpis.py "
+               "--taxonomy /opt/audit/agent-capability-taxonomy.yaml")
+    kpi_pkgs = "'psycopg[binary]==3.2.3' 'pyyaml==6.0.2'"
+    kpis = _cronjob("agent-kpis", "5 * * * *", _container("agent-kpis", kpi_pkgs, kpi_cmd + "\n"),
+                    backoff=0, failed_history=3, app="agent-kpis")
+    # The same over the 168 hours before the hourly job's hour, on demand only (see the header).
+    # Same app label: its lines are the dashboard's first week.
+    kpis_backfill = _cronjob(
+        "agent-kpis-backfill", "5 * * * *",
+        _container("agent-kpis-backfill", kpi_pkgs, kpi_cmd + " --backfill-hours 168\n"),
+        backoff=0, failed_history=1, app="agent-kpis", suspend=True)
+
+    return [code_cm, ungated, export, risk, archive, kpis, kpis_backfill]
 
 
 def render(repo: Path) -> str:
@@ -358,7 +392,8 @@ def render(repo: Path) -> str:
     taxonomy_src = (repo / TAXONOMY).read_text()
     acknowledged_src = (repo / ACKNOWLEDGED).read_text()
     risk_src = (repo / RISK_SCRIPT).read_text()
-    docs = build(script_src, taxonomy_src, acknowledged_src, risk_src)
+    kpis_src = (repo / KPIS_SCRIPT).read_text()
+    docs = build(script_src, taxonomy_src, acknowledged_src, risk_src, kpis_src)
     body = "\n---\n".join(
         yaml.safe_dump(d, sort_keys=False, width=10_000, default_flow_style=False)
         for d in docs
@@ -385,7 +420,7 @@ def main(argv=None) -> int:
     have = path.read_text() if path.exists() else ""
     if have == want:
         print("agent-audit CronJob is in sync with agent-audit.py, agent-audit-risk.py, "
-              "the taxonomy and the acknowledged findings")
+              "agent-kpis.py, the taxonomy and the acknowledged findings")
         return 0
 
     print(f"{OUT} is STALE — regenerate with ./scripts/gen-agent-audit-cronjob.py",
