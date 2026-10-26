@@ -32,7 +32,10 @@ sources:
    `network-policy-controller.yaml`); `no answer after 900s` = the agent outlived
    `A2A_TIMEOUT`; the run goes on server-side, so reply in the thread (the session is kept)
    or use the ask-hk command the error message carries. The "still working" note after two
-   minutes is normal for an investigation.
+   minutes is normal for an investigation. `A2A error -32004: input was not accepted` = kagent
+   refused the input for 30 s of resends (`grep '"event": "retry"'` counts them): no session was
+   started, so ask again. If it repeats, find the cause in kagent's runbook ("A2A returns
+   `-32004`").
 5. Did the agent review the wrong alert? Mention the bot *in the alert's thread*: the alert text
    goes to the agent as context. A top-level mention carries only your words and the time zone,
    and the agent guesses from live Grafana state.

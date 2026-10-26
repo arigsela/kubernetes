@@ -727,8 +727,8 @@ class Bridge:
             if done.is_set():
                 return
             with self._lock:
-                line = "" if thread.replied else "\n" + self._continue_line(thread)
-                thread.replied = True
+                line = "" if thread.replied or not thread.context_id else "\n" + self._continue_line(thread)
+                thread.replied = thread.replied or bool(line)
             self.slack.post_message(channel, f":hourglass_flowing_sand: `{thread.agent}` is still working after "
                                              f"{PROGRESS_AFTER / 60:.0f} min; the answer lands here." + line, thread_ts=thread_ts)
         progress = self.timer(PROGRESS_AFTER, still_working)
@@ -748,7 +748,9 @@ class Bridge:
         if error:
             self.slack.react(channel, ts, "x")
             with self._lock:
-                thread.replied = True       # the error text carries the session line
+                # The error text carries the session line when there is a session; without one, the
+                # next answer in the thread must still show the session it starts.
+                thread.replied = thread.replied or bool(thread.context_id)
             self.slack.post_message(channel, self._error_text(thread, error), thread_ts=thread_ts)
             return
         self.slack.react(channel, ts, "white_check_mark" if reply.completed else "x" if reply.failed else "hourglass_flowing_sand")
@@ -777,35 +779,50 @@ class Bridge:
         user = None if token else self.config.user
         headers = a2a.request_headers(user, token)
         headers["Accept"] = "text/event-stream"
+        payload = json.dumps(request).encode()      # a resend is this exact request (same messageId)
         deadline = self.clock() + self.config.timeout
-        ids = final = None
-        try:
-            for event in self.stream(url, json.dumps(request).encode(), headers, self.config.timeout):
-                error = event.get("error") if isinstance(event, dict) else None
-                if error:
-                    raise a2a.A2AError(f"A2A error {error.get('code')}: {error.get('message', error)}"
-                                       if isinstance(error, dict) else f"A2A error: {error!r:.200}")
-                result = (event.get("result") if isinstance(event, dict) else None) or {}
-                if isinstance(result.get("message"), dict):
-                    final = result            # a direct answer, no task
-                    break
-                kind = next((k for k in ("task", "statusUpdate", "artifactUpdate") if isinstance(result.get(k), dict)), None)
-                if kind is None:
-                    continue
-                inner = result[kind]
-                tid, ctx = inner.get("id") if kind == "task" else inner.get("taskId"), inner.get("contextId")
-                if ids is None and tid and ctx:
-                    ids = (ctx, tid)
-                    on_ids(ctx, tid)
-                state = (inner.get("status") or {}).get("state")
-                if state in TERMINAL_STATES and (kind == "task" or inner.get("final")):
-                    break
-                if self.clock() > deadline:
-                    break
-        except Exception as err:  # noqa: BLE001 - a broken stream is survivable once the ids are known
-            if ids is None:
-                return None, self._describe(err)
-            self.log({"event": "stream", "agent": agent, "session": ids[0], "error": f"{type(err).__name__}: {str(err)[:300]}"})
+        give_up = self.clock() + a2a.RETRY_DEADLINE
+        while True:
+            ids = final = resend = None
+            try:
+                for event in self.stream(url, payload, headers, self.config.timeout):
+                    error = event.get("error") if isinstance(event, dict) else None
+                    if error:
+                        # KAGENT_SEND_NOT_ACCEPTED before any task: the session could not take the input
+                        # (busy, or its sandbox missed Substrate's ~5 s restore on a cold image pull) and
+                        # nothing was dispatched. Resent as kagent_a2a.send_message does, until
+                        # RETRY_DEADLINE. Any other error, or one after the ids, may have a run behind it.
+                        wait = a2a._send_not_accepted(error) if ids is None and isinstance(error, dict) else None
+                        if wait is not None and self.clock() + wait <= give_up:
+                            resend = wait
+                            break
+                        raise a2a.A2AError(f"A2A error {error.get('code')}: {error.get('message', error)}"
+                                           if isinstance(error, dict) else f"A2A error: {error!r:.200}")
+                    result = (event.get("result") if isinstance(event, dict) else None) or {}
+                    if isinstance(result.get("message"), dict):
+                        final = result            # a direct answer, no task
+                        break
+                    kind = next((k for k in ("task", "statusUpdate", "artifactUpdate") if isinstance(result.get(k), dict)), None)
+                    if kind is None:
+                        continue
+                    inner = result[kind]
+                    tid, ctx = inner.get("id") if kind == "task" else inner.get("taskId"), inner.get("contextId")
+                    if ids is None and tid and ctx:
+                        ids = (ctx, tid)
+                        on_ids(ctx, tid)
+                    state = (inner.get("status") or {}).get("state")
+                    if state in TERMINAL_STATES and (kind == "task" or inner.get("final")):
+                        break
+                    if self.clock() > deadline:
+                        break
+            except Exception as err:  # noqa: BLE001 - a broken stream is survivable once the ids are known
+                if ids is None:
+                    return None, self._describe(err)
+                self.log({"event": "stream", "agent": agent, "session": ids[0], "error": f"{type(err).__name__}: {str(err)[:300]}"})
+            if resend is None:
+                break
+            self.log({"event": "retry", "agent": agent, "reason": a2a.REASON_SEND_NOT_ACCEPTED, "wait": resend})
+            self.sleep(resend)
         if final is not None:
             return a2a.parse_result(final), None
         if ids is None:
@@ -828,7 +845,9 @@ class Bridge:
                 f"--as-serviceaccount slack-bridge/slack-bridge --context {thread.context_id or '?'}_")
 
     def _error_text(self, thread: Thread, error: str) -> str:
-        return f":x: `{thread.agent}` failed: {mrkdwn_escape(error)}\n{self._continue_line(thread)}"
+        # No session id = kagent never named one: there is nothing to continue.
+        line = f"\n{self._continue_line(thread)}" if thread.context_id else ""
+        return f":x: `{thread.agent}` failed: {mrkdwn_escape(error)}{line}"
 
     def _render(self, thread: Thread, reply: a2a.Reply, channel: str, thread_ts: str) -> None:
         """What a settled send looks like in the thread."""

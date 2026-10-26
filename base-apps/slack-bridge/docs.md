@@ -73,6 +73,15 @@ A long answer is posted whole, as consecutive numbered parts under Slack's per-m
 (paragraphs kept together while they fit), the session line on the last part. A failed task
 gets the :x: reaction and its status text; a pause gets the hourglass.
 
+A `-32004` carrying `KAGENT_SEND_NOT_ACCEPTED` before the first event means kagent dispatched
+nothing (the session was busy, or a new session's sandbox missed Substrate's ~5 s restore,
+for example on a cold image pull). The bridge resends the identical request (same `messageId`)
+after the rejection's `retryAfterMs`, for up to 30 s, as `scripts/kagent_a2a.py` does, and
+logs each resend (`retry`). Any other error, or one after the ids, is reported, since that
+input may already be running. A message posted before kagent named a session (an error, or
+"still working") carries no session line: there is nothing to continue, and the next answer
+in the thread shows the session it starts.
+
 ## Who may talk
 One Slack user id, `OWNER_SLACK_USER_ID` in `deployment.yaml`. Anyone else who mentions, DMs
 or clicks gets an ephemeral "not for you" and nothing is sent anywhere (§V.98). The bridge is
