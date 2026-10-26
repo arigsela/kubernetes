@@ -107,6 +107,8 @@ def test_the_window_rollup_agrees_with_the_audit(db):
                  if line["kind"] == "window"]
     assert window["ungated_writes"] == len(aa.report_ungated(records, GATED)) == 3
     assert window["tool_calls"] == sum(r["kind"] == "call" and r["tool"] != aa.CONFIRM_TOOL for r in records)
+    assert window["scenario_tool_calls"] == window["tool_calls"]      # no eval gate session in the fixture
+    assert window["run"] == "hourly" and window["window_start_unix"] == int(start.timestamp())
     assert window["sessions"] == len(S) and window["sessions_unknown"] == 1   # idle-deleted: no session row
     assert window["db"] == "ok" and window["check"] == "agent-kpi"
 
@@ -142,6 +144,27 @@ def test_caller_classes(creator, cls):
 def test_the_session_creator_is_read_from_the_session_proto():
     creators = {kpis.session_creator(sdata) for _, _, sdata, _, _, _ in sql_rows() if sdata}
     assert creators == {"ari@example.test"}
+
+
+def _session_proto(creator: str) -> bytes:
+    """A kagent Session with only field 2 (creator) set."""
+    raw = creator.encode()
+    return bytes([0x12, len(raw)]) + raw
+
+
+def test_the_eval_gates_sessions_are_classed_eval_and_left_out_of_scenario_tool_calls():
+    """The fixture's sessions are all a person's; re-own every session as the eval gate and the
+    scenario count must drop to zero while the total stays."""
+    eval_sa = _session_proto("system:serviceaccount:kagent:eval-gate")
+    rows = [(at, sid, eval_sa, name or "homelab-knowledge", ns or "kagent", data)
+            for at, sid, _, name, ns, data in sql_rows()]
+    db = kpis.facts_from_db(rows, GATED)
+    assert {f["caller"] for f in db["facts"]} == {"eval"}
+    start = datetime(2026, 10, 11, 18, tzinfo=timezone.utc)
+    (window,) = [line for line in kpis.window_lines(start, start + timedelta(hours=1), db=db, changes=[],
+                                                    sources={"db": "ok", "github": "ok"}) if line["kind"] == "window"]
+    assert window["tool_calls"] > 0 and window["scenario_tool_calls"] == 0
+    assert window["sessions_eval"] == window["sessions"]
 
 
 def _main(argv, **kw):
@@ -206,8 +229,9 @@ def test_a_database_failure_is_reported_and_github_still_reports(capsys):
     opener, _ = _github([[]])
     rc, lines = _main(["--taxonomy", str(TAXONOMY)], now=AFTER, connect=broken, opener=opener)
     assert rc == 1
-    assert lines == [{"kind": "window", "db": "error", "github": "ok", "check": "agent-kpi",
-                      "window_start": "2026-10-11T18:00:00Z", "window_end": "2026-10-11T19:00:00Z"}]
+    assert lines == [{"kind": "window", "db": "error", "github": "ok", "check": "agent-kpi", "run": "hourly",
+                      "window_start": "2026-10-11T18:00:00Z", "window_end": "2026-10-11T19:00:00Z",
+                      "window_start_unix": int(datetime(2026, 10, 11, 18, tzinfo=timezone.utc).timestamp())}]
     assert "connection refused" in capsys.readouterr().err
 
 
@@ -226,13 +250,88 @@ def test_the_hourly_window_is_the_hour_that_just_ended():
                                   datetime(2026, 10, 26, 14, tzinfo=timezone.utc))]
 
 
-def test_a_backfill_covers_the_hours_before_the_hourly_job_without_overlap():
-    now = datetime(2026, 10, 26, 14, 20, tzinfo=timezone.utc)
-    spans = kpis.windows(now, backfill_hours=168)
-    assert len(spans) == 168
-    assert spans[-1][1] == kpis.windows(now)[0][0]          # ends where the hourly job's hour starts
+def _loki(done=None, earliest=None, fail=False):
+    """A fake Loki for backfill_end: answers the 'already backfilled' and 'earliest hour' queries."""
+    asked = []
+
+    class _Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def opener(req, timeout):
+        if fail:
+            raise OSError("connection refused")
+        asked.append(req.full_url)
+        value = done if 'run%3D%22backfill%22' in req.full_url else earliest
+        result = [] if value is None else [{"metric": {}, "value": [0, str(value)]}]
+        return _Resp(json.dumps({"status": "success", "data": {"resultType": "vector", "result": result}}).encode())
+    return opener, asked
+
+
+def _hourly_runs(first_run: datetime, now: datetime):
+    """The windows every hourly run printed from first_run until now (runs at :05)."""
+    out, t = [], first_run
+    while t <= now:
+        out += kpis.windows(t)
+        t += timedelta(hours=1)
+    return out
+
+
+@pytest.mark.parametrize("late_hours", [0, 1, 5, 30])
+def test_a_late_backfill_never_reprints_an_hour_the_hourly_job_printed(late_hours):
+    """The review's case: hourly runs at 11:05, 12:05, 13:05 and the backfill at 13:20. However late
+    the backfill runs, it ends at the earliest hour any hourly run printed."""
+    first_run = datetime(2026, 10, 26, 11, 5, tzinfo=timezone.utc)
+    now = first_run + timedelta(hours=late_hours, minutes=15)
+    printed = _hourly_runs(first_run, now)
+    opener, _ = _loki(earliest=printed[0][0].timestamp())
+    spans = kpis.backfill_windows(kpis.backfill_end(now, "http://loki", opener), 168)
+    assert len(spans) == 168 and not set(spans) & set(printed)
+    assert spans[-1][1] == printed[0][0]                     # contiguous with the hourly job's first hour
     assert all(a[1] == b[0] for a, b in zip(spans, spans[1:]))
-    assert all(e - s == timedelta(hours=1) for s, e in spans)
+
+
+def test_a_backfill_before_any_hourly_run_ends_at_this_hour():
+    """Nothing printed yet: the next hourly run prints the hour that is running now, so the
+    backfill covers everything before it."""
+    now = datetime(2026, 10, 26, 14, 20, tzinfo=timezone.utc)
+    opener, _ = _loki()
+    end = kpis.backfill_end(now, "http://loki", opener)
+    assert end == datetime(2026, 10, 26, 14, tzinfo=timezone.utc)
+    later = kpis.windows(datetime(2026, 10, 26, 15, 5, tzinfo=timezone.utc))
+    assert later[0][0] == end
+
+
+@pytest.mark.parametrize("case", ["already-backfilled", "loki-down", "minute-5"])
+def test_a_backfill_refuses_rather_than_risk_counting_twice(case):
+    now = datetime(2026, 10, 26, 14, 5 if case == "minute-5" else 20, tzinfo=timezone.utc)
+    opener, _ = _loki(done=168 if case == "already-backfilled" else None, fail=case == "loki-down")
+    with pytest.raises(kpis.BackfillRefused):
+        kpis.backfill_end(now, "http://loki", opener)
+
+
+def test_a_refused_backfill_prints_nothing_and_exits_2(capsys):
+    opener, _ = _loki(done=168)
+    rc, lines = _main(["--no-db", "--backfill-hours", "168"], now=datetime(2026, 10, 26, 14, 20, tzinfo=timezone.utc),
+                      opener=opener)
+    assert rc == 2 and lines == []
+    assert "backfill refused" in capsys.readouterr().err
+
+
+def test_a_backfill_marks_its_lines():
+    loki_opener, _ = _loki(earliest=datetime(2026, 10, 26, 13, tzinfo=timezone.utc).timestamp())
+    gh_opener, _ = _github([[]])
+
+    def opener(req, timeout):
+        return (loki_opener if "/loki/api/v1/query" in req.full_url else gh_opener)(req, timeout)
+    rc, lines = _main(["--no-db", "--backfill-hours", "3"], now=datetime(2026, 10, 26, 14, 20, tzinfo=timezone.utc),
+                      opener=opener)
+    assert rc == 0 and [line["window_start"] for line in lines] == [
+        "2026-10-26T10:00:00Z", "2026-10-26T11:00:00Z", "2026-10-26T12:00:00Z"]
+    assert {line["run"] for line in lines} == {"backfill"}
 
 
 # --- GitHub -----------------------------------------------------------------------------------------
@@ -306,9 +405,13 @@ def test_the_hourly_job_prints_the_hour_that_just_ended_without_retries():
     hourly = jobs["agent-kpis"]
     assert hourly["spec"]["schedule"] == "5 * * * *" and not hourly["spec"].get("suspend")
     assert hourly["spec"]["jobTemplate"]["spec"]["backoffLimit"] == 0
+    # A pod that starts after the next hour would print that run's hour too.
+    assert hourly["spec"]["startingDeadlineSeconds"] < 3300 and hourly["spec"]["timeZone"] == "Etc/UTC"
     script = _pod(hourly)["spec"]["containers"][0]["args"][0]
-    assert "python /opt/audit/agent-kpis.py --taxonomy /opt/audit/agent-capability-taxonomy.yaml" in script
+    assert "python /opt/audit/agent-kpis.py --taxonomy /opt/audit/agent-capability-taxonomy.yaml\n" in script
     assert "--backfill-hours" not in script
+    # Alloy tails Running pods only: the pod waits after printing, then exits with the script's code.
+    assert script.index("RC=$?") < script.index("sleep ") < script.index("exit $RC")
 
 
 def test_the_backfill_is_on_demand_and_feeds_the_same_stream():

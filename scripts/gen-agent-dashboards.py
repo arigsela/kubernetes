@@ -1133,7 +1133,7 @@ def kpis():
     diagnosed = remediate + f" | verdict=~`{DECISIVE}`"
     investigated, firing = 'decision="investigate"', 'status="firing"'
     ungated = f'sum(sum_over_time({windows_} | unwrap ungated_writes | __error__="" [$__range]))'
-    calls = f'sum(sum_over_time({windows_} | unwrap tool_calls | __error__="" [$__range]))'
+    calls = f'sum(sum_over_time({windows_} | unwrap scenario_tool_calls | __error__="" [$__range]))'
 
     def distinct_alerts(sel):
         return f"count(sum by (fingerprint) (count_over_time({DISP} | event=\"dispatch\" | {sel} [$__range])))"
@@ -1148,21 +1148,22 @@ def kpis():
             "with a pull request; see the table below.",
             names={"A": "safely open", "B": "open"})),
         (6, stat("2 · Intent success rate", [
-            loki(f"({lsum(completed)} / {lsum(tasks)})", ref="A", instant=True),
+            loki(f"(({lsum(completed)} or vector(0)) / {lsum(tasks)})", ref="A", instant=True),
             loki(f"{lsum(tasks)} or vector(0)", ref="B", instant=True)],
             "Agent tasks that ended completed, of all that ended (completed, failed, canceled, rejected), "
             "for every caller but the eval gate. A task that paused for an approval and then finished is "
             "one success. From kagent's task states (agent-kpis job).",
             names={"A": "completed", "B": "tasks"}, units={"A": "percentunit"}, no_value="—")),
         (6, stat("3 · Time to a safe change", [
-            loki(median(f'{KPI} | kind="task" | agent="implementer" | caller="dispatcher"', "duration_s"),
-                 ref="A", instant=True),
+            loki(median(f'{KPI} | kind="task" | agent="implementer" | caller="dispatcher" | state="completed"',
+                        "duration_s"), ref="A", instant=True),
             loki(median(merged + ' | author="implementer"', "lead_s"), ref="B", instant=True),
             loki(median(merged + ' | author="owner"', "lead_s"), ref="C", instant=True)],
-            "Medians. Alert to proposal: the implementer's investigation of an alert, ending in a pull "
-            "request. Agent PR to merge: that pull request until a person merges it (CI and review). "
-            "People's PRs: the owner's own changes, for comparison. GitHub's merge times (agent-kpis job).",
-            names={"A": "alert → proposal", "B": "agent PR → merge", "C": "people's PRs"},
+            "Medians. Alert to diagnosis: the implementer's investigation of an alert, from the alert's "
+            "session to its finished answer (a pull request, a restart request or a diagnosis). Agent PR to "
+            "merge: an implementer pull request until a person merges it (CI and review). People's PRs: the "
+            "owner's own changes, for comparison. Task states and GitHub's merge times (agent-kpis job).",
+            names={"A": "alert → diagnosis", "B": "agent PR → merge", "C": "people's PRs"},
             units={"A": "s", "B": "s", "C": "s"}, decimals=0, no_value="—")),
         (6, stat("4 · Cost per scenario", [
             prom(f'{window_total("agent_cost_estimate_usd_total", "", "$__range")} / '
@@ -1184,18 +1185,20 @@ def kpis():
             names={"A": "median", "B": "p90", "C": "decisions"}, units={"A": "s", "B": "s"}, decimals=0,
             no_value="—")),
         (6, stat("6 · Policy violation rate", [
-            loki(f"(({ungated} or vector(0)) + ({lsum(REFUSED)} or vector(0))) / {calls}", ref="A", instant=True),
+            loki(f"(({ungated} or vector(0)) / {calls})", ref="A", instant=True),
             loki(f"{ungated} or vector(0)", ref="B", instant=True),
             loki(f"{lsum(REFUSED)} or vector(0)", ref="C", instant=True),
             prom(window_total(VAP_DENY, "", "$__range") + " or vector(0)", ref="D", instant=True)],
-            "Tool calls that broke a rule, of all tool calls: a write that ran without an approved "
-            "decision (the audit's rule, should always be 0) plus calls an MCP adapter refused (a tool off "
-            "its allow-list). Agent definitions the API server denied at admission are counted beside "
-            "it: those are changes stopped before any agent ran them.",
-            names={"A": "violation rate", "B": "writes w/o approval", "C": "refused calls", "D": "denied at admission"},
+            "Rate: tool calls that broke a rule and ran (a write or destructive tool without an approved "
+            "decision, the audit's rule) of all tool calls, both from the hours the agent-kpis job covered, "
+            "eval gate left out. Beside it, what the guardrails stopped before it ran: calls an MCP adapter "
+            "refused (a tool off its allow-list; its log does not say who asked, so the eval gate's are "
+            "included) and agent definitions the API server denied at admission.",
+            names={"A": "violation rate", "B": "writes w/o approval", "C": "refused before running",
+                   "D": "denied at admission"},
             units={"A": "percentunit"}, no_value="—")),
         (6, stat("7 · Support load absorbed", [
-            loki(f"({distinct_alerts(investigated)} / {distinct_alerts(firing)})", ref="A", instant=True),
+            loki(f"(({distinct_alerts(investigated)} or vector(0)) / {distinct_alerts(firing)})", ref="A", instant=True),
             loki(distinct_alerts(firing) + " or vector(0)", ref="B", instant=True)],
             "Firing alerts (distinct) that reached a person already investigated by an agent, and all "
             "firing alerts. 2 of the 14 alert rules route to an agent (base-apps/dispatcher/"
@@ -1204,7 +1207,7 @@ def kpis():
             names={"A": "investigated first", "B": "alerts fired"}, units={"A": "percentunit"}, decimals=0,
             no_value="—")),
         (6, stat("8 · Completed without escalation", [
-            loki(f"({lsum(diagnosed)} / {lsum(remediate)})", ref="A", instant=True),
+            loki(f"(({lsum(diagnosed)} or vector(0)) / {lsum(remediate)})", ref="A", instant=True),
             loki(f"{lsum(remediate)} or vector(0)", ref="B", instant=True)],
             "Alert investigations that ended in a diagnosis the platform acts on (limit too low → a pull "
             "request, leak or pending rollout → a restart a person approves, contention), of all of them. "
@@ -1224,7 +1227,9 @@ def kpis():
                  "to merge (GitHub). Argument-free; callers as a class, never an identity.\n"
                  "- **Prometheus**: model cost and runs (the collector), admission denials (the API server).\n"
                  "- **Loki**: the dispatcher's alerts and verdicts, the MCP adapters' refusals.\n\n"
-                 "The eval gate's own test sessions are left out of every scenario KPI.")),
+                 "The eval gate's own test sessions are left out of every scenario KPI; only the count of "
+                 "calls an adapter refused includes them, because the adapter's log does not say who asked. "
+                 "A rate shows a dash when nothing is behind it, and 0 % when nothing succeeded.")),
     ])
 
     b.row("Over time")

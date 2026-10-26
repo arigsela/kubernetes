@@ -120,9 +120,17 @@ HEADER = """\
 # and an hourly roll-up. The Agent KPIs dashboard reads them from Loki
 # ({namespace="postgresql", app="agent-kpis"}). Its own pod label keeps them out of
 # the audit's Grafana rules. No retries: a retry after a partial print would count
-# the hour twice. Same SELECT-only role, same mounted taxonomy, never an argument.
-# agent-kpis-backfill is the same script over the 168 hours before that, SUSPENDED;
-# run it once after the first deploy so the dashboard opens on a week:
+# the hour twice. A pod that cannot start within 50 minutes is skipped
+# (startingDeadlineSeconds), so it can never print the next run's hour. Each pod
+# waits after printing: Alloy tails only Running pods, and a pod that exits at once
+# can lose its last lines. Same SELECT-only role, same mounted taxonomy, never an
+# argument.
+#
+# agent-kpis-backfill is the same script over the 168 hours before the earliest hour
+# the hourly job printed, SUSPENDED; run it once after the first deploy so the
+# dashboard opens on a week. It asks Loki what is already printed first, so it never
+# prints an hour twice: it refuses after a previous backfill, when Loki does not
+# answer, and between :00 and :10 (exit 2, nothing printed).
 #
 #   kubectl create job -n postgresql --from=cronjob/agent-kpis-backfill agent-kpis-backfill-1
 #
@@ -205,8 +213,9 @@ def _container(name, pip_pkgs, script, extra_env=(), database_key=V1_DB):
 
 
 def _cronjob(name, schedule, container, *, backoff=0, failed_history=7, app="agent-audit",
-             suspend=False):
+             suspend=False, extra_spec=None):
     spec = {"suspend": True} if suspend else {}
+    spec.update(extra_spec or {})
     return {
         "apiVersion": "batch/v1",
         "kind": "CronJob",
@@ -372,17 +381,25 @@ def build(script_src: str, taxonomy_src: str, acknowledged_src: str, risk_src: s
     # --- the agent KPIs (§T.144). Hourly at :05: the clock hour that just ended, so runs
     # neither overlap nor leave gaps. backoff 0: a retry after a partial print would count
     # the hour twice. Its own app label: the audit's Grafana rules read app=agent-audit.
-    kpi_cmd = ("exec python /opt/audit/agent-kpis.py "
-               "--taxonomy /opt/audit/agent-capability-taxonomy.yaml")
+    def kpi_cmd(extra, drain):
+        # Not exec: the pod waits after printing so Alloy (which tails Running pods only)
+        # reads every line before the pod completes, then exits with the script's code.
+        return ("set +e\n"
+                "python /opt/audit/agent-kpis.py --taxonomy /opt/audit/agent-capability-taxonomy.yaml"
+                f"{extra}\n"
+                "RC=$?\n"
+                f"sleep {drain}\n"
+                "exit $RC\n")
     kpi_pkgs = "'psycopg[binary]==3.2.3' 'pyyaml==6.0.2'"
-    kpis = _cronjob("agent-kpis", "5 * * * *", _container("agent-kpis", kpi_pkgs, kpi_cmd + "\n"),
-                    backoff=0, failed_history=3, app="agent-kpis")
-    # The same over the 168 hours before the hourly job's hour, on demand only (see the header).
-    # Same app label: its lines are the dashboard's first week.
+    kpi_spec = {"timeZone": "Etc/UTC", "startingDeadlineSeconds": 3000}
+    kpis = _cronjob("agent-kpis", "5 * * * *", _container("agent-kpis", kpi_pkgs, kpi_cmd("", 30)),
+                    backoff=0, failed_history=3, app="agent-kpis", extra_spec=kpi_spec)
+    # The 168 hours before the earliest hour the hourly job printed, on demand only (see the
+    # header). Same app label: its lines are the dashboard's first week.
     kpis_backfill = _cronjob(
         "agent-kpis-backfill", "5 * * * *",
-        _container("agent-kpis-backfill", kpi_pkgs, kpi_cmd + " --backfill-hours 168\n"),
-        backoff=0, failed_history=1, app="agent-kpis", suspend=True)
+        _container("agent-kpis-backfill", kpi_pkgs, kpi_cmd(" --backfill-hours 168", 120)),
+        backoff=0, failed_history=1, app="agent-kpis", suspend=True, extra_spec=kpi_spec)
 
     return [code_cm, ungated, export, risk, archive, kpis, kpis_backfill]
 

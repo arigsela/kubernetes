@@ -159,9 +159,31 @@ def test_scenario_kpis_leave_the_eval_gates_tests_out():
             assert gen.PROD in q or re.search(r'caller="(?!eval")\w', q), p["title"]
 
 
-def test_ratios_show_no_data_rather_than_zero():
-    """A rate with nothing behind it is unknown, not 0 %."""
-    for p, t in _targets():
-        q = t.get("expr", "")
-        if " / " in q and t["datasource"]["type"] == "loki":
-            assert not q.rstrip().endswith("or vector(0)"), p["title"]
+def test_ratios_show_a_dash_with_nothing_behind_them_and_zero_when_nothing_succeeded():
+    """Nothing behind a rate (an empty denominator) is unknown: a dash, never 0 %. A denominator with
+    no successes is 0 %: Loki returns an empty vector for a count over no lines, so the numerator
+    falls back to 0 and the denominator never does."""
+    ratios = [(p, t["expr"]) for p, t in _targets() if t["datasource"]["type"] == "loki" and " / " in t["expr"]]
+    assert len(ratios) >= 4
+    for p, q in ratios:
+        assert q.startswith("((") and ") or vector(0)) / " in q, p["title"]
+        assert not q.rstrip().endswith("or vector(0)"), p["title"]
+
+
+def test_the_dispatcher_fields_the_kpis_read_are_the_ones_it_logs():
+    """KPIs 7 and 8 read the dispatcher's dispatch and remediate lines; a renamed field or verdict
+    would quietly zero them."""
+    import sys
+    sys.path.insert(0, str(REPO / "scripts"))
+    spec = importlib.util.spec_from_file_location("dispatch_for_kpis", REPO / "scripts" / "dispatch.py")
+    dispatch = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = dispatch      # its dataclasses look their module up while it loads
+    spec.loader.exec_module(dispatch)
+    assert set(gen.DECISIVE.split("|")) == dispatch.VERDICTS - {"inconclusive"}
+    src = (REPO / "scripts" / "dispatch.py").read_text()
+    for literal in ('"event": "dispatch"', '"fingerprint": fingerprint', '"status": alert.get("status")',
+                    '"decision": "investigate"', '"event": "remediate"', '"verdict": finding["verdict"]'):
+        assert literal in src, literal
+    queries = " ".join(t["expr"] for _, t in _targets())
+    for used in ('event="dispatch"', 'decision="investigate"', 'status="firing"', 'event="remediate"', "fingerprint"):
+        assert used in queries, used

@@ -37,16 +37,22 @@ One JSON line per fact, each with check=agent-kpi and the window it belongs to:
   kind=change    a pull request merged or closed in the window: number, author (owner |
                  implementer | renovate | bot | other), outcome (merged | closed), lead_s
                  (opened to merged or closed)
-  kind=window    the window's roll-up: tool_calls, gated_calls, ungated_writes (a write or
-                 destructive tool that ran without an approved decision, as agent-audit.py
-                 --ungated judges it), sessions per caller, and db / github = ok | error
+  kind=window    the window's roll-up: tool_calls and scenario_tool_calls (every caller but the
+                 eval gate), gated_calls, ungated_writes (a write or destructive tool that ran
+                 without an approved decision, as agent-audit.py --ungated judges it), sessions per
+                 caller, db / github = ok | error, run = hourly | backfill, window_start_unix
 
 Windows are whole clock hours, [start, end). The CronJob runs at :05 and prints the hour that just
-ended, so consecutive runs neither overlap nor leave gaps. A backfill prints the N hours before
-that one, so it never overlaps the hourly job either; run it once. A failed run loses its hour:
-the CronJob has no retries, because a retry after a partial print would count the hour twice.
-Loki stamps each line when it is printed, not when the fact happened, so a backfill lands at one
-instant: totals over 7 days are right, a per-hour bar chart shows one spike.
+ended, so consecutive runs neither overlap nor leave gaps. A failed run loses its hour: the
+CronJob has no retries, because a retry after a partial print would count the hour twice.
+
+A backfill (--backfill-hours N) must not print an hour the hourly job already printed, however
+late it runs. So before printing it asks Loki what the stream already holds: it ends at the
+earliest hour any hourly run printed (or at the current hour when none has), it refuses to run
+when a backfill already printed (run = backfill), and it refuses when Loki does not answer or
+between :00 and :10, while an hourly run may still be printing. Loki stamps each line when it is
+printed, not when the fact happened, so a backfill lands at one instant: totals over 7 days are
+right, a per-hour bar chart shows one spike.
 
 ARGUMENT-FREE, LIKE agent-audit.py --summary
 --------------------------------------------
@@ -64,6 +70,7 @@ import json
 import os
 import struct
 import sys
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -94,6 +101,10 @@ PAUSED = {"input-required", "auth-required"}
 # decision's request can be days older (an approval never expires). Eight days covers a weekend
 # away; an older request still counts its decision, without wait_s.
 LOOKBACK = timedelta(days=8)
+# Rows read past the window's end: a gated call made just before the hour ends has its approval
+# request written a moment later, and without it the call would look ungated. Facts still belong
+# to the window they happened in.
+EVIDENCE_GRACE = timedelta(minutes=5)
 
 # The principals the kagent waypoint writes into x-user-id (base-apps/kagent/request-authentication.yaml),
 # as kagent stores them on the session (Session.creator). Never printed: only the class is.
@@ -166,13 +177,58 @@ def hour_floor(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
 
-def windows(now: datetime, backfill_hours: int = 0) -> list[tuple[datetime, datetime]]:
-    """The hour that just ended; or, for a backfill, the N hours before it (never overlapping it)."""
+def windows(now: datetime) -> list[tuple[datetime, datetime]]:
+    """The hourly job's window: the clock hour that just ended."""
     end = hour_floor(now)
-    if backfill_hours:
-        end -= timedelta(hours=1)
-        return [(end - timedelta(hours=i + 1), end - timedelta(hours=i)) for i in reversed(range(backfill_hours))]
     return [(end - timedelta(hours=1), end)]
+
+
+def backfill_windows(end: datetime, hours: int) -> list[tuple[datetime, datetime]]:
+    """The `hours` whole hours before `end`, oldest first."""
+    return [(end - timedelta(hours=i + 1), end - timedelta(hours=i)) for i in reversed(range(hours))]
+
+
+class BackfillRefused(Exception):
+    """The backfill would print an hour already in Loki, or cannot tell."""
+
+
+LOKI_URL = "http://loki.logging.svc.cluster.local:3100"
+STREAM = '{namespace="postgresql", app="agent-kpis"} | json | __error__="" | check="agent-kpi" | kind="window"'
+
+
+def _loki_value(loki: str, query: str, now: datetime, opener) -> float | None:
+    """An instant LogQL query's single value, or None for an empty result."""
+    url = f"{loki.rstrip('/')}/loki/api/v1/query?" + urllib.parse.urlencode(
+        {"query": query, "time": str(int(now.timestamp() * 1e9))})
+    req = urllib.request.Request(url, headers={"User-Agent": "agent-kpis/1"})
+    with opener(req, timeout=60) as resp:
+        body = json.loads(resp.read() or b"{}")
+    if body.get("status") != "success":
+        raise BackfillRefused(f"Loki answered {str(body)[:200]}")
+    result = (body.get("data") or {}).get("result") or []
+    return float(result[0]["value"][1]) if result else None
+
+
+def backfill_end(now: datetime, loki: str, opener) -> datetime:
+    """Where a backfill must stop: the earliest hour an hourly run printed, else this hour.
+    Raises BackfillRefused when a backfill already printed, when Loki cannot be asked, or in the
+    first ten minutes of an hour (the hourly run may still be printing)."""
+    if now.astimezone(timezone.utc).minute < 10:
+        raise BackfillRefused("an hourly run may still be printing (:00 to :10); run it after :10")
+    try:
+        done = _loki_value(loki, f'sum(count_over_time({STREAM} | run="backfill" [30d]))', now, opener)
+        earliest = _loki_value(loki, f'min(min_over_time({STREAM} | unwrap window_start_unix '
+                                     f'| __error__="" [30d]))', now, opener)
+    except BackfillRefused:
+        raise
+    except Exception as err:  # noqa: BLE001 - not knowing what is printed must not print anything
+        raise BackfillRefused(f"cannot ask Loki what is already printed: {type(err).__name__}: {str(err)[:160]}")
+    if done:
+        raise BackfillRefused("a backfill already printed; a second one would count its hours twice")
+    end = hour_floor(now)
+    if earliest is not None:
+        end = min(end, datetime.fromtimestamp(earliest, timezone.utc))
+    return end
 
 
 # ------------------------------------------------------------------- tasks
@@ -317,14 +373,14 @@ def facts_from_db(rows, gated: set[str]) -> dict:
     calls = [r for r in records if r["kind"] == "call" and r["tool"] != aa.CONFIRM_TOOL]
     return {
         "facts": [f for f in (task_fact(t) for t in tasks.values()) if f] + approval_facts(records, callers),
-        "calls": [(_ts(r["at"]), r["tool"] in gated) for r in calls],
+        "calls": [(_ts(r["at"]), r["tool"] in gated, callers.get(r["session"], "unknown")) for r in calls],
         "ungated": [_ts(f["at"]) for f in aa.report_ungated(records, gated)],
         "sessions": [(at, callers[s]) for s, at in first_seen.items()],
     }
 
 
 def window_lines(start: datetime, end: datetime, *, db: dict | None, changes: list[dict],
-                 sources: dict) -> list[dict]:
+                 sources: dict, run: str = "hourly") -> list[dict]:
     def inside(at: datetime) -> bool:
         return start <= at < end
 
@@ -335,14 +391,15 @@ def window_lines(start: datetime, end: datetime, *, db: dict | None, changes: li
         facts += [c for c in changes if inside(c["_at"])]
     facts.sort(key=lambda f: (f["_at"], f["kind"]))
 
-    rollup = {"kind": "window", **sources}
+    rollup = {"kind": "window", **sources, "run": run, "window_start_unix": int(start.timestamp())}
     if db is not None:
-        calls = [gated for at, gated in db["calls"] if inside(at)]
+        calls = [(gated, caller) for at, gated, caller in db["calls"] if inside(at)]
         sessions: dict[str, int] = {}
         for at, caller in db["sessions"]:
             if inside(at):
                 sessions[caller] = sessions.get(caller, 0) + 1
-        rollup.update(tool_calls=len(calls), gated_calls=sum(calls),
+        rollup.update(tool_calls=len(calls), scenario_tool_calls=sum(caller != "eval" for _, caller in calls),
+                      gated_calls=sum(gated for gated, _ in calls),
                       ungated_writes=sum(inside(at) for at in db["ungated"]),
                       sessions=sum(sessions.values()),
                       **{f"sessions_{caller.replace('-', '_')}": n for caller, n in sorted(sessions.items())})
@@ -360,7 +417,9 @@ def main(argv=None, *, now: datetime | None = None, connect=None, opener=urllib.
          out=sys.stdout) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--backfill-hours", type=int, default=0,
-                    help="print the N whole hours before the one the hourly job prints (run once)")
+                    help="print the N whole hours before the earliest hour the hourly job printed (once)")
+    ap.add_argument("--loki", default=os.environ.get("LOKI_URL", LOKI_URL),
+                    help="where a backfill asks what is already printed")
     ap.add_argument("--no-db", action="store_true", help="skip the sessions database (GitHub only)")
     ap.add_argument("--repo", default=os.environ.get("GITHUB_REPO", GITHUB_REPO))
     ap.add_argument("--taxonomy", type=Path, help="the capability taxonomy ConfigMap (the CronJob mounts it)")
@@ -370,7 +429,15 @@ def main(argv=None, *, now: datetime | None = None, connect=None, opener=urllib.
         ap.error("--backfill-hours must be between 0 and 720")
 
     now = now or datetime.now(timezone.utc)
-    spans = windows(now, args.backfill_hours)
+    run = "backfill" if args.backfill_hours else "hourly"
+    if args.backfill_hours:
+        try:
+            spans = backfill_windows(backfill_end(now, args.loki, opener), args.backfill_hours)
+        except BackfillRefused as err:
+            print(f"agent-kpis: backfill refused, nothing printed: {err}", file=sys.stderr)
+            return 2
+    else:
+        spans = windows(now)
     first, last = spans[0][0], spans[-1][1]
     sources = {"db": "skipped" if args.no_db else "ok", "github": "ok"}
     db, changes = None, []
@@ -383,7 +450,7 @@ def main(argv=None, *, now: datetime | None = None, connect=None, opener=urllib.
                     cur.execute(aa.V1_EVENTS_SELECT + """
                         WHERE e.created_at >= %(since)s::timestamptz AND e.created_at < %(until)s::timestamptz
                         ORDER BY e.created_at, e.sequence
-                    """, {"since": first - LOOKBACK, "until": last})
+                    """, {"since": first - LOOKBACK, "until": min(last + EVIDENCE_GRACE, now)})
                     rows = cur.fetchall()
             db = facts_from_db(rows, gated)
         # SystemExit too: agent-audit.py's connect() exits when AGENT_AUDIT_DSN is unset.
@@ -397,7 +464,7 @@ def main(argv=None, *, now: datetime | None = None, connect=None, opener=urllib.
         print(f"agent-kpis: GitHub: {type(err).__name__}: {str(err)[:200]}", file=sys.stderr)
 
     for start, end in spans:
-        for line in window_lines(start, end, db=db, changes=changes, sources=sources):
+        for line in window_lines(start, end, db=db, changes=changes, sources=sources, run=run):
             print(json.dumps(line, sort_keys=True), file=out)
     out.flush()
     # A source that did not answer must not look like a quiet hour.
