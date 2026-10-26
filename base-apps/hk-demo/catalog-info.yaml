@@ -13,6 +13,8 @@ metadata:
     backstage.io/kubernetes-label-selector: 'app=hk-demo'
     backstage.io/kubernetes-namespace: hk-demo
     github.com/project-slug: arigsela/hk-demo
+    # Opts in to the portal scorecard's Dependabot alert metrics (exact string).
+    github.com/dependabot: 'true'
   tags: [fastapi, agents, oauth2-proxy, observability]
 spec:
   type: service
