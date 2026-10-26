@@ -106,6 +106,11 @@ expires after 8 days. Loki and Tempo hold the same data unmasked for longer.
 - **Arguments instead of a ConfigMap,** so a settings change restarts Valkey.
 - **The settle times:** 5 min, and 30 + 5 min for a timed-out alert run.
 
+Live 2026-10-26 (v0.7.0): the saver's first round saved all 19 Ask hk runs of the week. A saved
+pick shows its boxes 0.4-0.5 s after the click (it took 11-31 s before). The stream ends 1.3-5 s
+in: the second boxes event waits for the live "today" totals, and the refused-calls count is a
+24-hour Loki query that takes 0.2-4.6 s. Caching the totals for a minute would close that gap.
+
 The whole-change review (2026-10-25, before release) found the failed-read, memory-series,
 unbounded-window and stuck-saver problems above; each is fixed with a test that failed first. Left
 as they are:
