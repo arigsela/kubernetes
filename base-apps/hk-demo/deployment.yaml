@@ -40,7 +40,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/hk-demo:v0.6.0@sha256:e4bcdad026b192181808f01c48d5e63921ef5bdff37da026f9a095ecc67654ef
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/hk-demo:v0.7.0@sha256:999f9fb88f84b0166ebd6c04e2ac35f22560921430ac097723711cd48eb3e8aa
           env:
             - name: HK_AGENT
               value: kagent/homelab-knowledge
