@@ -24,6 +24,9 @@ Where the numbers come from:
     Tempo datasource's service map.
   - Mesh traffic: Istio waypoint metrics; sandboxes: Substrate's ate_* metrics; MCP: agentgateway
     and kagent-tools metrics; eval gate and dispatcher: their JSON event lines in Loki.
+  - Agent KPIs (§T.144): scripts/agent-kpis.py's hourly lines in Loki (task outcomes, approval waits,
+    pull request lead times), scripts/agent-capability-map.yaml (read here, at generation time), and
+    the series above.
 
 Datasources: Prometheus unpinned ({"type": "prometheus"}), Loki uid `loki`, Tempo uid `tempo`, the
 uids grafana-deployment.yaml keeps stable.
@@ -59,6 +62,7 @@ DASHBOARDS = {
     "grafana-dashboard-agent-alerts": ("agent-alerts.json", "agent-alerts"),
     "grafana-dashboard-mcp": ("mcp-tool-calls.json", "mcp-tool-calls"),
     "grafana-dashboard-model-gateway": ("model-gateway.json", "model-gateway"),
+    "grafana-dashboard-agent-kpis": ("agent-kpis.json", "agent-kpis"),
 }
 HOME = f"{MOUNT}/agent-platform.json"
 
@@ -344,6 +348,8 @@ LINKS = [
      "includeVars": False, "targetBlank": False},
     {"title": "Cluster Overview", "type": "link", "url": "/d/cluster-overview", "icon": "dashboard",
      "keepTime": True, "targetBlank": False},
+    {"title": "Agent KPIs", "type": "link", "url": "/d/agent-kpis", "icon": "dashboard",
+     "keepTime": False, "targetBlank": False, "tooltip": "The playbook's eight agent-scenario KPIs (§T.144)"},
 ]
 
 
@@ -1057,9 +1063,244 @@ def model_gateway():
                      "and calls (§T.137).", b, time_from="now/d", timezone="utc")
 
 
+# --- Agent KPIs (§T.144) ---------------------------------------------------------------------------
+#
+# The eight agent-scenario KPIs of the playbook "Agent-first IDP" (platformengineering.org,
+# 2026-10-16, practice 9), measured. Three come from scripts/agent-kpis.py's hourly lines (how tasks
+# ended, how long approvals waited, how long pull requests took); the rest from what Prometheus and
+# Loki already hold. The first tile is computed here from scripts/agent-capability-map.yaml.
+
+ARTICLE = "https://platformengineering.org/blog/agent-first-idp-how-big-tech-and-the-clouds-are-preparing-platforms-for-agents"
+REPO = Path(__file__).resolve().parent.parent
+CAPABILITY_MAP = "scripts/agent-capability-map.yaml"
+EVAL_CORPUS = "tests/eval-corpus"
+AREAS = ("provision", "deploy", "observe", "secure", "govern", "approve", "remediate", "explain")
+MODE_CLASS = {"read": "read", "recommend": "propose", "act": "admin"}
+
+KPI = '{namespace="postgresql", app="agent-kpis"} | json | __error__="" | check="agent-kpi"'
+PROD = 'caller!="eval"'   # the eval gate's own test sessions are not scenarios
+DECISIVE = "limit-too-low|leak|contention|rollout-pending"   # dispatch.py VERDICTS minus inconclusive
+VAP_DENY = 'apiserver_validating_admission_policy_check_total{policy=~"agent-.*", enforcement_action="deny"}'
+NO_KPI = "No data yet: the agent-kpis job prints each hour at :05"
+
+
+def capability_areas(root=REPO):
+    """The capability map with each area's verdict. open: some agent serves it. safe: open, and every
+    agent in it has golden tasks of its own (tests/eval-corpus/<agent>.yaml)."""
+    import yaml
+    doc = yaml.safe_load((root / CAPABILITY_MAP).read_text())
+    corpus = {p.stem for p in (root / EVAL_CORPUS).glob("*.yaml") if not p.name.startswith("_")}
+    out = []
+    for a in doc["areas"]:
+        agents = list(dict.fromkeys(ag for m in a["modes"] for ag in m["agents"]))
+        out.append({**a, "agents": agents, "open": bool(agents),
+                    "safe": bool(agents) and all(ag in corpus for ag in agents),
+                    "untested": [ag for ag in agents if ag not in corpus]})
+    return out
+
+
+def _capability_table(areas):
+    rows = []
+    for a in sorted(areas, key=lambda a: (not a["safe"], not a["open"], AREAS.index(a["area"]))):
+        modes = "; ".join(f"{m['mode']}: {', '.join(m['agents'])}" for m in a["modes"]) or "closed"
+        if a["safe"]:
+            verdict = "safely open"
+        elif a["open"]:
+            verdict = "open, no golden tasks for " + ", ".join(a["untested"])
+        else:
+            verdict = "closed: " + a["why"].split(". ")[0].rstrip(".")
+        rows.append(f"| {a['area']} | {modes} | {verdict} |")
+    return "| area | how agents serve it | verdict |\n|---|---|---|\n" + "\n".join(rows)
+
+
+def kpis():
+    areas = capability_areas()
+    safe, open_ = sum(a["safe"] for a in areas), sum(a["open"] for a in areas)
+    b = Layout()
+
+    def lsum(sel):
+        return f"sum(count_over_time({sel} [$__range]))"
+
+    def median(sel, field, q="0.5"):
+        return f"quantile_over_time({q}, {sel} | unwrap {field} | __error__=\"\" [$__range]) by ()"
+
+    tasks = f'{KPI} | kind="task" | {PROD}'
+    completed = tasks + ' | state="completed"'
+    approvals = f'{KPI} | kind="approval" | {PROD}'
+    merged = f'{KPI} | kind="change" | outcome="merged"'
+    windows_ = f'{KPI} | kind="window" | db="ok"'
+    remediate = f'{DISP} | event="remediate"'
+    diagnosed = remediate + f" | verdict=~`{DECISIVE}`"
+    investigated, firing = 'decision="investigate"', 'status="firing"'
+    ungated = f'sum(sum_over_time({windows_} | unwrap ungated_writes | __error__="" [$__range]))'
+    calls = f'sum(sum_over_time({windows_} | unwrap tool_calls | __error__="" [$__range]))'
+
+    def distinct_alerts(sel):
+        return f"count(sum by (fingerprint) (count_over_time({DISP} | event=\"dispatch\" | {sel} [$__range])))"
+
+    b.row("The playbook's eight agent-scenario KPIs, over the dashboard's time range (default 7 days)")
+    b.line(5, [
+        (6, stat(f"1 · Capabilities open to agents (of {len(areas)})", [
+            prom(f"vector({safe})", ref="A", instant=True), prom(f"vector({open_})", ref="B", instant=True)],
+            "The playbook's eight capability areas (provision, deploy, observe, secure, govern, approve, "
+            "remediate, explain), from scripts/agent-capability-map.yaml. Open: an agent serves the area. "
+            "Safely open: every agent in it also has golden tasks of its own in the eval corpus. Changes "
+            "with a pull request; see the table below.",
+            names={"A": "safely open", "B": "open"})),
+        (6, stat("2 · Intent success rate", [
+            loki(f"({lsum(completed)} / {lsum(tasks)})", ref="A", instant=True),
+            loki(f"{lsum(tasks)} or vector(0)", ref="B", instant=True)],
+            "Agent tasks that ended completed, of all that ended (completed, failed, canceled, rejected), "
+            "for every caller but the eval gate. A task that paused for an approval and then finished is "
+            "one success. From kagent's task states (agent-kpis job).",
+            names={"A": "completed", "B": "tasks"}, units={"A": "percentunit"}, no_value="—")),
+        (6, stat("3 · Time to a safe change", [
+            loki(median(f'{KPI} | kind="task" | agent="implementer" | caller="dispatcher"', "duration_s"),
+                 ref="A", instant=True),
+            loki(median(merged + ' | author="implementer"', "lead_s"), ref="B", instant=True),
+            loki(median(merged + ' | author="owner"', "lead_s"), ref="C", instant=True)],
+            "Medians. Alert to proposal: the implementer's investigation of an alert, ending in a pull "
+            "request. Agent PR to merge: that pull request until a person merges it (CI and review). "
+            "People's PRs: the owner's own changes, for comparison. GitHub's merge times (agent-kpis job).",
+            names={"A": "alert → proposal", "B": "agent PR → merge", "C": "people's PRs"},
+            units={"A": "s", "B": "s", "C": "s"}, decimals=0, no_value="—")),
+        (6, stat("4 · Cost per scenario", [
+            prom(f'{window_total("agent_cost_estimate_usd_total", "", "$__range")} / '
+                 f'{window_total("agent_runs_total", "", "$__range")}', ref="A", instant=True),
+            prom(window_total("agent_cost_estimate_usd_total", "", "$__range"), ref="B", instant=True)],
+            "Estimated model cost of one agent run (one turn: a question answered, an alert investigated), "
+            "averaged over every run, and the total. List prices, from the collector; per agent below.",
+            names={"A": "per run", "B": "total"}, units={"A": "currencyUSD", "B": "currencyUSD"}, decimals=3,
+            no_value="—")),
+    ])
+    b.line(5, [
+        (6, stat("5 · Approval cycle time", [
+            loki(median(approvals, "wait_s"), ref="A", instant=True),
+            loki(median(approvals, "wait_s", "0.9"), ref="B", instant=True),
+            loki(f"{lsum(approvals)} or vector(0)", ref="C", instant=True)],
+            "How long a gated call waited for a person's decision: median and 90th percentile, and the "
+            "number of decisions (the eval gate's automatic rejections of its own tests left out). From "
+            "the approval request and decision kagent stores (agent-kpis job).",
+            names={"A": "median", "B": "p90", "C": "decisions"}, units={"A": "s", "B": "s"}, decimals=0,
+            no_value="—")),
+        (6, stat("6 · Policy violation rate", [
+            loki(f"(({ungated} or vector(0)) + ({lsum(REFUSED)} or vector(0))) / {calls}", ref="A", instant=True),
+            loki(f"{ungated} or vector(0)", ref="B", instant=True),
+            loki(f"{lsum(REFUSED)} or vector(0)", ref="C", instant=True),
+            prom(window_total(VAP_DENY, "", "$__range") + " or vector(0)", ref="D", instant=True)],
+            "Tool calls that broke a rule, of all tool calls: a write that ran without an approved "
+            "decision (the audit's rule, should always be 0) plus calls an MCP adapter refused (a tool off "
+            "its allow-list). Agent definitions the API server denied at admission are counted beside "
+            "it: those are changes stopped before any agent ran them.",
+            names={"A": "violation rate", "B": "writes w/o approval", "C": "refused calls", "D": "denied at admission"},
+            units={"A": "percentunit"}, no_value="—")),
+        (6, stat("7 · Support load absorbed", [
+            loki(f"({distinct_alerts(investigated)} / {distinct_alerts(firing)})", ref="A", instant=True),
+            loki(distinct_alerts(firing) + " or vector(0)", ref="B", instant=True)],
+            "Firing alerts (distinct) that reached a person already investigated by an agent, and all "
+            "firing alerts. 2 of the 14 alert rules route to an agent (base-apps/dispatcher/"
+            "dispatch-table.yaml); the rest go to people only, some by design (no agent investigates the "
+            "agents).",
+            names={"A": "investigated first", "B": "alerts fired"}, units={"A": "percentunit"}, decimals=0,
+            no_value="—")),
+        (6, stat("8 · Completed without escalation", [
+            loki(f"({lsum(diagnosed)} / {lsum(remediate)})", ref="A", instant=True),
+            loki(f"{lsum(remediate)} or vector(0)", ref="B", instant=True)],
+            "Alert investigations that ended in a diagnosis the platform acts on (limit too low → a pull "
+            "request, leak or pending rollout → a restart a person approves, contention), of all of them. "
+            "Inconclusive, failed or timed out: a person has to look. From the dispatcher's remediate lines.",
+            names={"A": "no escalation", "B": "investigations"}, units={"A": "percentunit"}, decimals=0,
+            no_value="—")),
+    ])
+
+    b.row("Capability map: the playbook's eight areas (scripts/agent-capability-map.yaml)")
+    b.line(9, [
+        (16, text(f"{safe} of {len(areas)} areas safely open, {open_} open", _capability_table(areas))),
+        (8, text("Where these numbers come from",
+                 f"The KPIs are the ones the playbook [Agent-first IDP]({ARTICLE}) (platformengineering.org, "
+                 "2026-10-16, practice 9) asks an agent platform to report instead of portal usage.\n\n"
+                 "- **agent-kpis** (CronJob in `postgresql`, hourly at :05, the SELECT-only audit role): how "
+                 "each agent task ended, how long each approval waited, how long each pull request took "
+                 "to merge (GitHub). Argument-free; callers as a class, never an identity.\n"
+                 "- **Prometheus**: model cost and runs (the collector), admission denials (the API server).\n"
+                 "- **Loki**: the dispatcher's alerts and verdicts, the MCP adapters' refusals.\n\n"
+                 "The eval gate's own test sessions are left out of every scenario KPI.")),
+    ])
+
+    b.row("Over time")
+    b.line(8, [
+        (12, ts("Agent tasks by how they ended", [
+            loki(f"sum by (state) (count_over_time({tasks} [$__interval]))", "{{state}}")],
+            "Every caller but the eval gate. Per interval.", bars=True, stack=True, calcs=("sum",),
+            interval="1h", no_value=NO_KPI)),
+        (12, ts("Agent tasks by caller", [
+            loki(f'sum by (caller) (count_over_time({KPI} | kind="task" [$__interval]))', "{{caller}}")],
+            "Who asks: person (CLI), slack, dispatcher (alerts), demo, backstage, docs-check, eval (the "
+            "eval gate's tests), ui.", bars=True, stack=True, calcs=("sum",), interval="1h", no_value=NO_KPI)),
+    ])
+    b.line(8, [
+        (8, ts("Approval wait, each decision", [
+            loki(f'max_over_time({approvals} | unwrap wait_s | __error__="" [$__interval]) by (agent)', "{{agent}}")],
+            "Seconds from the approval request to the decision.", unit="s", interval="1h", no_value=NO_KPI)),
+        (8, ts("Pull request lead time by author", [
+            loki(f'quantile_over_time(0.5, {merged} | unwrap lead_s | __error__="" [$__interval]) by (author)',
+                 "{{author}}")],
+            "Median opened → merged per interval. owner = a person, implementer = the agent, renovate = "
+            "dependency bumps (most merged by the promotion rule).", unit="s", interval="6h", no_value=NO_KPI)),
+        (8, bargauge("Cost per run, by agent", [
+            prom(f'{window_total("agent_cost_estimate_usd_total", "service_name", "$__range")} / '
+                 f'{window_total("agent_runs_total", "service_name", "$__range")}', instant=True)
+            | {"legendFormat": "{{service_name}}"}],
+            "Estimated model cost of one run of each agent (list prices).", unit="currencyUSD", decimals=3)),
+    ])
+    b.line(8, [
+        (12, ts("Rule-breaking tool calls", [
+            loki(f'sum(sum_over_time({windows_} | unwrap ungated_writes | __error__="" [$__interval]))', "writes w/o approval", ref="A"),
+            loki(f"sum(count_over_time({REFUSED} [$__interval]))", "refused by an adapter", ref="B")],
+            "Per interval. A write without an approval also raises the audit's own alert.", bars=True,
+            calcs=("sum",), interval="1h", no_value="0")),
+        (12, ts("Alerts: fired, investigated, diagnosed", [
+            loki(f'sum(count_over_time({DISP} | event="dispatch" | status="firing" [$__interval]))', "fired", ref="A"),
+            loki(f'sum(count_over_time({DISP} | event="dispatch" | decision="investigate" [$__interval]))', "investigated", ref="B"),
+            loki(f"sum(count_over_time({diagnosed} [$__interval]))", "diagnosed", ref="C")],
+            "Alert notifications the dispatcher received, the ones it sent to an agent, and the "
+            "investigations that ended in a diagnosis.", bars=True, calcs=("sum",), interval="6h",
+            no_value="No alerts in this time range")),
+    ])
+
+    b.row("The facts")
+    b.line(8, [
+        (12, table("Approvals", [loki(f'{KPI} | kind="approval"')],
+                   "Every decision on a gated call, newest first (the eval gate's included, caller eval).",
+                   transformations=[{"id": "extractFields", "options": {"source": "Line", "format": "json"}},
+                                    _organize(["at", "agent", "tool", "caller", "decision", "wait_s"],
+                                              {"wait_s": "waited (s)"})],
+                   no_value=NO_KPI, sort=[{"displayName": "at", "desc": True}])),
+        (12, table("Pull requests merged or closed", [loki(f'{KPI} | kind="change"')],
+                   "Newest first; lead time = opened → merged or closed.",
+                   transformations=[{"id": "extractFields", "options": {"source": "Line", "format": "json"}},
+                                    _organize(["at", "number", "author", "outcome", "lead_s"],
+                                              {"lead_s": "lead time (s)", "number": "PR"})],
+                   no_value=NO_KPI, sort=[{"displayName": "at", "desc": True}])),
+    ])
+    b.line(8, [(24, table("Agent tasks that did not complete", [loki(f'{KPI} | kind="task" | state!="completed"')],
+                          "Failed, canceled or rejected tasks, newest first. task_id finds the session in the "
+                          "audit UI.",
+                          transformations=[{"id": "extractFields", "options": {"source": "Line", "format": "json"}},
+                                           _organize(["at", "agent", "caller", "state", "paused", "duration_s", "task_id"],
+                                                     {"duration_s": "ran (s)"})],
+                          no_value="Every task completed in this time range",
+                          sort=[{"displayName": "at", "desc": True}]))])
+    return dashboard("agent-kpis", "Agent KPIs",
+                     "The agent-first IDP playbook's eight agent-scenario KPIs, measured: capabilities open to "
+                     "agents, intent success, time to a safe change, cost per scenario, approval cycle time, "
+                     "policy violations, support load absorbed, completed without escalation.",
+                     b, time_from="now-7d")
+
+
 BUILDERS = {"agent-platform": landing, "agent-quality": quality, "agent-tokens": tokens,
             "agent-traffic": traffic, "agent-sandboxes": sandboxes, "agent-alerts": alerts,
-            "mcp-tool-calls": mcp, "model-gateway": model_gateway}
+            "mcp-tool-calls": mcp, "model-gateway": model_gateway, "agent-kpis": kpis}
 
 
 def build_all():

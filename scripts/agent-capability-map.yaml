@@ -1,0 +1,90 @@
+# The agent capability map (§T.144): what the platform lets agents do, by the eight capability
+# areas of the playbook the Agent KPIs dashboard follows (platformengineering.org, "Agent-first IDP:
+# how big tech and the clouds are preparing platforms for agents", 2026-10-16, practice 1):
+# provision, deploy, observe, secure, govern, approve, remediate, explain.
+#
+# Each area lists how agents serve it, in the playbook's trust modes (practice 6), and which agents:
+#
+#   read       answers from what it can see                 AgentTemplate class `read`
+#   recommend  a plan or a pull request, applied by a person   class `propose`
+#   act        changes live state, each write approved       class `admin`
+#
+# An area with no modes is closed to agents, and says why.
+#
+# Read by scripts/gen-agent-dashboards.py into the Agent KPIs dashboard's first tile ("capabilities
+# safely open to agents") and its table. tests/dashboards/test_agent_kpis_dashboard.py fails when an
+# agent named here does not exist or its class does not match its mode. "Safely open" is computed,
+# never written here: every agent in the area has golden tasks of its own in tests/eval-corpus/
+# (every agent also gets the shared attack and canary sample, which is not enough on its own).
+#
+# Change an area's agents here in the same pull request that changes what the agents can do.
+source: https://platformengineering.org/blog/agent-first-idp-how-big-tech-and-the-clouds-are-preparing-platforms-for-agents
+areas:
+  - area: explain
+    ask: "Which apps depend on Ollama, and who owns them?"
+    modes:
+      - mode: read
+        agents: [homelab-knowledge]
+    how: >-
+      hk reads the repo index, each app's docs and runbook, the Backstage catalog and the live cluster
+      through read tools, and names the files it read.
+
+  - area: observe
+    ask: "Which pods restarted today, and why?"
+    modes:
+      - mode: read
+        agents: [k8s-reader, homelab-knowledge]
+    how: >-
+      Read-only Kubernetes tools (get, describe, logs, events); no Secrets through any tool.
+
+  - area: remediate
+    ask: "Container near memory limit"
+    modes:
+      - mode: recommend
+        agents: [implementer]
+      - mode: act
+        agents: [restarter, k8s-agent, istio-agent]
+    how: >-
+      The dispatcher hands a resource alert to the implementer, which opens a pull request a person
+      merges. A leak becomes one gated pod delete by the restarter; k8s-agent and istio-agent change
+      the cluster on request, every write approved with its exact arguments.
+
+  - area: deploy
+    ask: "Raise this workload's memory limit."
+    modes:
+      - mode: recommend
+        agents: [implementer]
+    how: >-
+      Changes ship as pull requests under the implementer's GitHub App; a person merges and Argo CD
+      deploys. No agent merges, syncs or applies.
+
+  - area: govern
+    ask: "Which docs no longer match their manifests?"
+    modes:
+      - mode: read
+        agents: [docs-checker]
+    how: >-
+      docs-checker compares every doc with the files it cites, weekly, and proposes the corrected
+      line. Policy itself (taxonomy, admission, budgets) changes only by a reviewed pull request.
+
+  - area: provision
+    ask: "Which skills should my new agent have?"
+    modes:
+      - mode: read
+        agents: [skill-suggester]
+    how: >-
+      Advice inside the Backstage New App wizard only. Creating apps, databases and AWS resources
+      (Backstage, Crossplane, Terraform) is a person's pull request.
+
+  - area: secure
+    modes: []
+    why: >-
+      Security findings (Falco, policy reports, CVE scans, the agent audit) are read by people. No
+      agent-security alert is routed to an agent: no agent investigates the agents.
+
+  - area: approve
+    modes: []
+    why: >-
+      By design. Only a person approves a gated call or merges a pull request; the dispatcher and
+      the Slack bridge never decide for one, and the eval gate only rejects the calls its own tests
+      raise.

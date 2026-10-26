@@ -30,6 +30,8 @@ sources:
   - base-apps/logging/grafana-dashboard-coraza.yaml
   - base-apps/logging/grafana-dashboards-agents.yaml
   - scripts/gen-agent-dashboards.py
+  - scripts/agent-capability-map.yaml
+  - scripts/agent-kpis.py
   - scripts/agent-demo.sh
   - base-apps/logging/prometheus-config.yaml
   - base-apps/logging/prometheus-statefulset.yaml
@@ -112,7 +114,7 @@ under `base-apps/logging/`.
    `--check`; never hand-edit it). Its ConfigMap keeps the historical name
    `grafana-dashboard-k8s-basic`, which until 2026-09-24 existed only in the cluster with an
    empty placeholder. Also `Istio` (`istio-ambient-dashboard.yaml`), `Security`
-   (`grafana-dashboard-coraza.yaml`, Coraza WAF) and `Agents` (§T.135): seven dashboards,
+   (`grafana-dashboard-coraza.yaml`, Coraza WAF) and `Agents` (§T.135): nine dashboards,
    each its own ConfigMap in `grafana-dashboards-agents.yaml`, **generated** by
    `scripts/gen-agent-dashboards.py` (CI runs `--check`) and mounted through one projected
    volume. **Agent Platform** (uid `agent-platform`) is Grafana's home dashboard
@@ -126,7 +128,15 @@ under `base-apps/logging/`.
    `model-gateway`, §T.137: on the gateway's UTC day, each group's spend against its daily budget,
    refusals, calls and latency from the gateway's own counters, docs-checker included; budgets read
    from `base-apps/model-gateway/budgets.yaml`, so `scripts/gen-model-budgets.py --write`
-   regenerates it). Tokens, cost and calls come
+   regenerates it) and **Agent KPIs** (uid `agent-kpis`, §T.144: the eight agent-scenario KPIs
+   of the platformengineering.org "Agent-first IDP" playbook, over 7 days by default:
+   capabilities safely open to agents (computed at generation time from
+   `scripts/agent-capability-map.yaml` and the eval corpus), intent success rate, time to a safe
+   change, cost per run, approval cycle time, policy violation rate, alerts investigated before a
+   person looked, investigations completed without escalation; task outcomes, approval waits and
+   pull request lead times come from the `agent-kpis` CronJob's lines in Loki, see
+   `base-apps/postgresql/docs.md`; the eval gate's own test sessions are left out). Every Agents
+   dashboard links to it. Tokens, cost and calls come
    from the collector's counters (`base-apps/tracing/docs.md`); only the kagent agents are
    traced, so docs-checker is not in them. `scripts/agent-demo.sh` makes three read-only agent
    runs before a demo.

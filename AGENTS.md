@@ -53,7 +53,7 @@ generator. CI runs each with `--check` and fails on drift.
 | `scripts/gen-techdocs.py --repo-root .` | `base-apps/<app>/mkdocs.yml`, `docs/index.md`, `docs/runbook.md` | each app's `docs.md` and `runbook.md` |
 | `scripts/gen-cluster-overview-dashboard.py --repo-root .` | `base-apps/logging/grafana-dashboard-cluster-overview.yaml` | panel definitions in the script |
 | `scripts/gen-agent-capability-policy.py --repo-root .` | `base-apps/admission-policies/agent-capability.yaml` | `agent-capability-taxonomy.yaml` |
-| `scripts/gen-agent-audit-cronjob.py --repo-root .` | `base-apps/postgresql/agent-audit-cronjob.yaml` | `scripts/agent-audit.py` |
+| `scripts/gen-agent-audit-cronjob.py --repo-root .` | `base-apps/postgresql/agent-audit-cronjob.yaml` | `scripts/agent-audit.py`, `agent-audit-risk.py`, `agent-kpis.py` |
 | `scripts/gen-dispatcher-configmap.py --repo-root .` | `base-apps/dispatcher/code-configmap.yaml` | `scripts/dispatch.py`, `scripts/kagent_a2a.py` |
 | `scripts/gen-alert-demo-configmap.py --repo-root .` | `base-apps/alert-demo/code-configmap.yaml` (+ the Deployment's `checksum/code`) | `scripts/alert_demo.py` |
 | `scripts/gen-eval-gate-configmap.py --repo-root .` | `base-apps/kagent/eval-gate-code-configmap.yaml` (+ the Job's `checksum/code`) | `scripts/eval_gate.py`, `kagent_a2a.py`, `score-eval.py`, `capture-eval-answers.py`, `tests/eval-corpus/*.yaml` |
