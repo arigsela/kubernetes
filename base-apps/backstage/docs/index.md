@@ -28,7 +28,7 @@ sources:
 
 ## What it is
 The internal developer portal / software catalog (Backstage), running a custom
-image, `backstage-portal`, from ECR (tag in `deployments.yaml`, `v1.6.1` since
+image, `backstage-portal`, from ECR (tag in `deployments.yaml`, `v1.7.0` since
 2026-10-26; `imagePullPolicy: Always`). The image is built from the portal repo,
 `arigsela/backstage` (checked out at `~/git/backstage`). It is the platform's
 software catalog UI, scaffolder and TechDocs site, and (per the RBAC below) also
@@ -42,8 +42,10 @@ availability check v1.4.12; the template itself lives in this repo at
 `templates/new-app/template.yaml`, see below), kagent 1.0 support (v1.5.0,
 `arigsela/backstage#41`: agent entities, the agent card and the A2A client),
 the scorecard plus the `readiness` MCP server (v1.6.0, `arigsela/backstage#44`;
-see **Scorecard** below), and v1.6.1 (`arigsela/backstage#45`), which drops the
-scorecard's file check after it stalled the portal.
+see **Scorecard** below), v1.6.1 (`arigsela/backstage#45`), which drops the
+scorecard's file check after it stalled the portal, and v1.7.0
+(`arigsela/backstage#46`): the scorecard's CVE cards, and CVE findings matched to the
+exact running image instead of any tag of its repository.
 
 **Backstage's config is not in this directory.** `app-config.yaml` and
 `app-config.production.yaml` (catalog locations, the TeraSky
@@ -92,16 +94,30 @@ both wired in via `envFrom`:
 Since v1.6.0 the portal runs the Red Hat Developer Hub Scorecard plugin at
 **4.2.0** (the last release whose core dependencies fit the portal's Backstage
 1.52; newer ones wait for a Backstage upgrade). Each component's **Scorecard**
-tab shows its metrics with a success/warning/error status, from two providers:
+tab shows its metrics with a success/warning/error status, from three providers:
 - **`github.openPRs`**: open pull requests in the repo named by
   `github.com/project-slug`. Hourly.
 - **`dependabot.alerts{Critical,High,Medium,Low}`**: open Dependabot alerts by
   severity. An entity opts in with the annotation `github.com/dependabot: 'true'`
   (that exact string), and the repo must have Dependabot alerts turned on.
   Hourly.
+- **`cve.*`** (since v1.7.0, the portal's own module): container CVEs from the
+  weekly Trivy scan (`argo-workflow-tasks/image-scan.yaml`, Sundays 04:00 UTC)
+  of the images the component runs, for every component with a
+  `backstage.io/kubernetes-label-selector` or `kubernetes-id` annotation. Daily
+  at 05:00 UTC.
+  - **Critical CVEs with a fix** and **Actively exploited CVEs with a fix**
+    (CISA KEV, any severity) turn red at 1: a rebuilt or newer image fixes them.
+  - **Critical CVEs with no fix yet** and **Images not scanned yet** stop at
+    amber, for awareness. An image deployed since the last scan counts as not
+    scanned until the next Sunday; its CVEs are not in the other cards.
+  - A component with no running pods (kagent agents between conversations,
+    CronJobs, scaled-down apps) shows an error on these cards, not zeros.
+  - Non-exploited highs, mediums and lows get no card; the Security tab still
+    lists fixable criticals and highs.
 
-Metrics are collected on that schedule and stored, starting 1 minute after the
-pod starts; until then an entity's metrics read `[]`.
+Metrics are collected on those schedules and stored, starting 1-2 minutes after
+the pod starts; until then an entity's metrics read `[]`.
 
 **No file check.** v1.6.0 also shipped the `filecheck` provider (`runbook.md` /
 `docs.md` in each entity's `backstage.io/source-location` folder). Its first run,
