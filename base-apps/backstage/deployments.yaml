@@ -24,7 +24,7 @@ spec:
         runAsNonRoot: true
       containers:
       - name: backstage
-        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/backstage-portal:v1.6.1@sha256:dcfe8af09a12483dd4753f1eab70741a2ec408e30e42870ab5acf3033d0486a1
+        image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/backstage-portal:v1.7.0@sha256:83de599a9f45ed0cd2e295c51d7184b511a72860ae118ca891dd872a7efb0d08
         imagePullPolicy: Always
         ports:
         - containerPort: 7007
