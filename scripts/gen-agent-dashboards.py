@@ -1246,7 +1246,7 @@ def kpis():
             loki(f'quantile_over_time(0.5, {merged} | unwrap lead_s | __error__="" [$__interval]) by (author)',
                  "{{author}}")],
             "Median opened → merged per interval. owner = a person, implementer = the agent, renovate = "
-            "dependency bumps (most merged by the promotion rule).", unit="s", interval="6h", no_value=NO_KPI)),
+            "dependency bumps (the promotion rule merges some unattended).", unit="s", interval="6h", no_value=NO_KPI)),
         (8, bargauge("Cost per run, by agent", [
             prom(f'{window_total("agent_cost_estimate_usd_total", "service_name", "$__range")} / '
                  f'{window_total("agent_runs_total", "service_name", "$__range")}', instant=True)
