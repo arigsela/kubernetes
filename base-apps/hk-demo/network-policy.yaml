@@ -23,3 +23,30 @@ spec:
           protocol: TCP
         - port: 15008
           protocol: TCP
+---
+# Saved runs (§T.143): only the hk-demo pod reaches the Valkey, over HBONE (15008) as the
+# namespace is in the mesh; 6379 for the same pod should it ever talk to it outside the mesh. The
+# AuthorizationPolicy (authorization-policy.yaml) checks the caller's principal on top of this.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: valkey-ingress
+  namespace: hk-demo
+  labels:
+    app: valkey
+spec:
+  podSelector:
+    matchLabels:
+      app: valkey
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: hk-demo
+      ports:
+        - port: 6379
+          protocol: TCP
+        - port: 15008
+          protocol: TCP

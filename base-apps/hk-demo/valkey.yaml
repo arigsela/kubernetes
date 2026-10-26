@@ -1,0 +1,144 @@
+# Saved runs (§T.143): a small Valkey that keeps a settled run's evidence (its trace and log
+# lines, ~40-75 KB compressed each) so a run picked on the page opens at once instead of being
+# rebuilt from Loki and Tempo (11-31 s). Design: docs/superpowers/specs/2026-10-25-hk-demo-saved-runs-design.md.
+#
+# A cache and nothing more: no disk, no backups, no persistence. When it restarts it starts empty,
+# and the app's saver copies the runs again over the next few minutes; when it is down, every
+# pick is built from the stores as before. Its own pod, so an hk-demo release keeps the copies.
+#
+# Who may connect: only hk-demo's principal (authorization-policy.yaml, enforced by ztunnel), and
+# only from the hk-demo pod (network-policy.yaml). No password, so nothing to keep in Vault. The
+# one user may run GET, SET, EXISTS and PING on keys under hk-demo: only (no FLUSHALL, KEYS,
+# CONFIG, EVAL or DEBUG), so even a caller that got in could not reconfigure or empty it.
+#
+# The settings are arguments, not a ConfigMap: a change to them changes the pod template, so Argo
+# CD rolls the pod (Valkey reads its settings only at start).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: valkey
+  namespace: hk-demo
+  labels:
+    app: valkey
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: valkey
+  namespace: hk-demo
+  labels:
+    app: valkey
+    app.kubernetes.io/name: valkey
+    app.kubernetes.io/part-of: hk-demo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # a cache with no disk: nothing to hand over between pods
+  selector:
+    matchLabels:
+      app: valkey
+  template:
+    metadata:
+      labels:
+        app: valkey
+        app.kubernetes.io/name: valkey
+        app.kubernetes.io/part-of: hk-demo
+    spec:
+      serviceAccountName: valkey   # its mesh identity; the hk-demo principal is the only caller allowed
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999    # the image's valkey user
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: valkey
+          image: valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+          args:
+            - valkey-server
+            - --bind
+            - "* -::*"
+            - --port
+            - "6379"
+            # The mesh and the NetworkPolicy decide who connects; protected mode would refuse
+            # every non-loopback client of a user without a password.
+            - --protected-mode
+            - "no"
+            # A cache: never write to disk.
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+            # About 20 Ask hk runs and a week of alert runs take a few MB; the oldest copy goes
+            # first if it ever fills (every copy has a TTL, 8 days or 1 h, set by the app).
+            - --maxmemory
+            - 32mb
+            - --maxmemory-policy
+            - allkeys-lru
+            # The app's three commands plus PING (the probes), on its own keys only.
+            - --user
+            - default
+            - "on"
+            - nopass
+            - "~hk-demo:*"
+            - resetchannels
+            - "-@all"
+            - "+get"
+            - "+set"
+            - "+exists"
+            - "+ping"
+          ports:
+            - name: tcp-valkey
+              containerPort: 6379
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          readinessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data   # the working directory; nothing is written to it (no persistence)
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: valkey
+  namespace: hk-demo
+  labels:
+    app: valkey
+spec:
+  selector:
+    app: valkey
+  ports:
+    - name: tcp-valkey
+      port: 6379
+      targetPort: 6379
+      protocol: TCP

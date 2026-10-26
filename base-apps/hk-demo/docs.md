@@ -1,12 +1,12 @@
 ---
 type: "Kubernetes App Guide"
 title: "hk demo"
-description: "hk demo page: a walkthrough of the agent platform (The platform tab), a conversation with kagent/homelab-knowledge shown end to end (checks, cost, logs, trace), where an implementer: turn has kagent/implementer open the pull request, and an On its own tab that replays an alert the platform fixed by itself; behind the IP allow-list and Dex login"
+description: "hk demo page: a walkthrough of the agent platform (The platform tab), a conversation with kagent/homelab-knowledge shown end to end (checks, cost, logs, trace), where an implementer: turn has kagent/implementer open the pull request, and an On its own tab that replays an alert the platform fixed by itself; past runs open at once from copies in a small Valkey; behind the IP allow-list and Dex login"
 app: hk-demo
 catalog_entity: hk-demo
 kind: docs
 namespace: hk-demo
-last_reviewed: 2026-10-24
+last_reviewed: 2026-10-25
 status: stable
 tags: [agents, observability, fastapi, oauth2-proxy]
 sources:
@@ -14,6 +14,8 @@ sources:
   - base-apps/hk-demo/deployment.yaml
   - base-apps/hk-demo/namespace.yaml
   - base-apps/hk-demo/network-policy.yaml
+  - base-apps/hk-demo/valkey.yaml
+  - base-apps/hk-demo/authorization-policy.yaml
   - base-apps/hk-demo/external-secrets.yaml
   - base-apps/hk-demo/secret-store.yaml
   - base-apps/hk-demo/httproute.yaml
@@ -32,6 +34,7 @@ sources:
   - scripts/provision-hk-demo-vault.sh
   - docs/superpowers/specs/2026-10-22-hk-demo-design.md
   - docs/superpowers/specs/2026-10-23-hk-demo-follow-ups-design.md
+  - docs/superpowers/specs/2026-10-25-hk-demo-saved-runs-design.md
 ---
 
 # hk demo
@@ -171,6 +174,28 @@ A second tab replays an alert the platform handled with nobody at the keyboard. 
     of the dispatcher last looking at the same pod, and says why.
   - It logs `hk-demo-journey-start` with who pressed it.
 
+## Saved runs
+
+A past run picked on Ask hk or On its own opens at once from a copy of its evidence in a small
+Valkey in this namespace (`valkey.yaml`). Design:
+`docs/superpowers/specs/2026-10-25-hk-demo-saved-runs-design.md` (§T.143).
+
+- **What is kept:** a settled run's trace and log lines, saved 5 minutes after it ended, for 8
+  days. A copy that is missing its trace is kept for 1 hour, then tried again. Without the copy, a
+  pick took 11-31 s of reads against Loki and Tempo.
+- **What is read on every pick:** the "today" totals, the eval score and an alert run's pull
+  request.
+- **The saver:** a background task in the app copies runs nobody has opened yet, every 5
+  minutes. It never calls GitHub, and it steps aside while a question runs.
+- **A cache only:** no disk. A Valkey restart empties it and the saver refills it. When Valkey is
+  down, every pick is built from the stores as before. Because it is its own pod, an hk-demo
+  release keeps the copies.
+- **Who may connect:** only hk-demo's principal, over the mesh (`authorization-policy.yaml`), and
+  only from the hk-demo pod (`network-policy.yaml`). There is no password. Its one user may run
+  GET, SET, EXISTS and PING on `hk-demo:*` keys and nothing else.
+- **Masking:** the copies are not masked. Masking happens when the page renders. They stay in
+  memory, readable only by this app.
+
 ## What never reaches the screen
 
 Emails (shown as `a•••@domain`), full client IPs (shown as /24), tokens, cookies and tool
@@ -187,6 +212,7 @@ email as the record of who asked.
 | Data stores | env in `deployment.yaml`: Loki, Tempo, Prometheus in-cluster (GET only); Grafana links |
 | Model budgets | `MODEL_BUDGETS` in `deployment.yaml`, generated from `base-apps/model-gateway/budgets.yaml` by `scripts/gen-model-budgets.py --write` |
 | The Config tab's excerpts | `arigsela/hk-demo` `src/hk_demo/config_excerpts.yaml`, copied from this repo's files: refresh them in the release after those files change |
+| Saved runs | `VALKEY_URL` in `deployment.yaml`; Valkey's settings are its container arguments in `valkey.yaml` (a change rolls the pod); who may connect in `authorization-policy.yaml` and `network-policy.yaml`; what is kept and for how long in `arigsela/hk-demo` `src/hk_demo/saved.py` |
 | On its own | the demo workload's URL `ALERT_DEMO_URL` in `deployment.yaml` (`base-apps/alert-demo/`); the implementer's PRs read unauthenticated from GitHub (`arigsela/kubernetes`, author `arigsela-implementer[bot]`) |
 | The API description | `catalog/apis/hk-demo-openapi.yaml`, shown in Backstage as API `hk-demo-api` (the API tab): a copy of `arigsela/hk-demo` `openapi.yaml`, which that repo's tests check against the code; copy it over in the release PR when it changes |
 
@@ -195,7 +221,9 @@ email as the record of who asked.
 Each question is one agent run: $0.001-$0.21 seen so far for hk (a run with many repo reads costs
 more). The page allows one agent call at a time; the evidence lookups of the previous turn may still
 be running. Loki has half a CPU and Tempo one, so every query is
-bounded to the run and the only polling is the trace lookup (every 3 s, at most 2 min). On its own
+bounded to the run and the only polling is the trace lookup (every 3 s, at most 2 min), for a run that
+ended in the last 3 minutes; an older run is looked up once. The saver reads one run at a time, only
+runs not yet saved. On its own
 reads the dispatcher's 7-day lines at most every 10 s, polls Tempo only for a run answered in the last
 3 minutes, and refreshes its status line every 15 s only while a demo run is on and the tab is
 visible. GitHub is read unauthenticated: 60 requests an hour per egress address, shared with the
