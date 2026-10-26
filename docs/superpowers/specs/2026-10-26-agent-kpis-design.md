@@ -30,8 +30,10 @@ check it.
 
 ## Anti-goals
 
-- A number that looks confident and means nothing: a ratio with nothing behind it shows "—", not
-  0 %; the eval gate's adversarial test sessions are never counted as scenarios.
+- A number that looks confident and means nothing: a ratio with nothing behind it shows "—", and
+  0 % only when there was something and none of it succeeded; the eval gate's adversarial test
+  sessions are never counted as scenarios (the adapters' refusal count is the one exception,
+  because their log does not say who asked).
 - A hand-written score. The capability tile is computed from files CI checks.
 
 ## The KPIs and where each comes from
@@ -40,10 +42,10 @@ check it.
 |---|---|---|---|
 | 1 | Share of capabilities safely available to agents | The playbook's eight capability areas; *open* = an agent serves it; *safely open* = every agent in it has golden tasks of its own | `scripts/agent-capability-map.yaml` + `tests/eval-corpus/`, computed at generation |
 | 2 | Intent success rate | Agent tasks that ended `completed`, of all that ended, eval gate excluded | `agent-kpis` (kagent task states) |
-| 3 | Time to a safe change | Medians: the implementer's alert investigation; its PR opened → merged; people's PRs for comparison | `agent-kpis` (tasks, GitHub) |
+| 3 | Time to a safe change | Medians: the implementer's finished alert investigations (alert → diagnosis); its PRs opened → merged; people's PRs for comparison | `agent-kpis` (tasks, GitHub) |
 | 4 | Cost per scenario | Estimated model cost per agent run, and per agent | collector counters |
 | 5 | Approval cycle time | Request → decision on a gated call: median, p90, count; eval gate excluded | `agent-kpis` (HITL records) |
-| 6 | Policy violation rate | (writes without an approved decision + adapter refusals) / tool calls; admission denials beside it | `agent-kpis`, adapter logs, API server metrics |
+| 6 | Policy violation rate | Writes that ran without an approved decision / tool calls, both from the job's hours, eval gate excluded; calls refused by adapters and admission denials beside it (stopped before running) | `agent-kpis`, adapter logs, API server metrics |
 | 7 | Reduction in platform support load | Distinct firing alerts an agent investigated before a person looked, of all firing alerts | dispatcher lines |
 | 8 | Scenarios completed without manual escalation | Alert investigations ending in a diagnosis the platform acts on, of all | dispatcher `remediate` lines |
 
@@ -52,6 +54,10 @@ check it.
 1. **A CronJob that prints Loki lines, not an exporter.** Same pattern as the audit jobs
    (`gen-agent-audit-cronjob.py`, script in a ConfigMap, SELECT-only role, stdout → Loki). Hourly
    at :05 over the previous clock hour; a suspended backfill job covers the week before, run once.
+   The backfill asks Loki what is already printed and ends at the hourly job's earliest hour, and
+   refuses after a previous backfill, when Loki does not answer and between :00 and :10, so a
+   late or repeated run can't count an hour twice (found in review: ending "one hour before now"
+   did overlap every hour printed since the deploy).
 2. **kagent's task states, not trace errors, for intent success.** A task that paused for an
    approval and then finished is one success; a span error says nothing about that.
 3. **"Safely open" = golden tasks of its own.** Every agent gets the shared attack and canary

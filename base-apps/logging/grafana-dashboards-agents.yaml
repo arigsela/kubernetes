@@ -8367,7 +8367,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "(sum(count_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | caller!=\"eval\" | state=\"completed\" [$__range])) / sum(count_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | caller!=\"eval\" [$__range])))",
+              "expr": "((sum(count_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | caller!=\"eval\" | state=\"completed\" [$__range])) or vector(0)) / sum(count_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | caller!=\"eval\" [$__range])))",
               "legendFormat": "",
               "queryType": "instant"
             },
@@ -8456,7 +8456,7 @@ data:
         {
           "type": "stat",
           "title": "3 \u00b7 Time to a safe change",
-          "description": "Medians. Alert to proposal: the implementer's investigation of an alert, ending in a pull request. Agent PR to merge: that pull request until a person merges it (CI and review). People's PRs: the owner's own changes, for comparison. GitHub's merge times (agent-kpis job).",
+          "description": "Medians. Alert to diagnosis: the implementer's investigation of an alert, from the alert's session to its finished answer (a pull request, a restart request or a diagnosis). Agent PR to merge: an implementer pull request until a person merges it (CI and review). People's PRs: the owner's own changes, for comparison. Task states and GitHub's merge times (agent-kpis job).",
           "datasource": {
             "type": "loki",
             "uid": "loki"
@@ -8468,7 +8468,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "quantile_over_time(0.5, {namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | agent=\"implementer\" | caller=\"dispatcher\" | unwrap duration_s | __error__=\"\" [$__range]) by ()",
+              "expr": "quantile_over_time(0.5, {namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"task\" | agent=\"implementer\" | caller=\"dispatcher\" | state=\"completed\" | unwrap duration_s | __error__=\"\" [$__range]) by ()",
               "legendFormat": "",
               "queryType": "instant"
             },
@@ -8520,7 +8520,7 @@ data:
                 "properties": [
                   {
                     "id": "displayName",
-                    "value": "alert \u2192 proposal"
+                    "value": "alert \u2192 diagnosis"
                   },
                   {
                     "id": "unit",
@@ -8821,7 +8821,7 @@ data:
         {
           "type": "stat",
           "title": "6 \u00b7 Policy violation rate",
-          "description": "Tool calls that broke a rule, of all tool calls: a write that ran without an approved decision (the audit's rule, should always be 0) plus calls an MCP adapter refused (a tool off its allow-list). Agent definitions the API server denied at admission are counted beside it: those are changes stopped before any agent ran them.",
+          "description": "Rate: tool calls that broke a rule and ran (a write or destructive tool without an approved decision, the audit's rule) of all tool calls, both from the hours the agent-kpis job covered, eval gate left out. Beside it, what the guardrails stopped before it ran: calls an MCP adapter refused (a tool off its allow-list; its log does not say who asked, so the eval gate's are included) and agent definitions the API server denied at admission.",
           "datasource": {
             "type": "datasource",
             "uid": "-- Mixed --"
@@ -8833,7 +8833,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "((sum(sum_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"window\" | db=\"ok\" | unwrap ungated_writes | __error__=\"\" [$__range])) or vector(0)) + (sum(count_over_time({namespace=\"kagent\", container=\"mcp-server\"} |= \"mcp.method.name=tools/call\" |= \"Unknown tool\" [$__range])) or vector(0))) / sum(sum_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"window\" | db=\"ok\" | unwrap tool_calls | __error__=\"\" [$__range]))",
+              "expr": "((sum(sum_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"window\" | db=\"ok\" | unwrap ungated_writes | __error__=\"\" [$__range])) or vector(0)) / sum(sum_over_time({namespace=\"postgresql\", app=\"agent-kpis\"} | json | __error__=\"\" | check=\"agent-kpi\" | kind=\"window\" | db=\"ok\" | unwrap scenario_tool_calls | __error__=\"\" [$__range])))",
               "legendFormat": "",
               "queryType": "instant"
             },
@@ -8923,7 +8923,7 @@ data:
                 "properties": [
                   {
                     "id": "displayName",
-                    "value": "refused calls"
+                    "value": "refused before running"
                   }
                 ]
               },
@@ -8979,7 +8979,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "(count(sum by (fingerprint) (count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | decision=\"investigate\" [$__range]))) / count(sum by (fingerprint) (count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | status=\"firing\" [$__range]))))",
+              "expr": "((count(sum by (fingerprint) (count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | decision=\"investigate\" [$__range]))) or vector(0)) / count(sum by (fingerprint) (count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"dispatch\" | status=\"firing\" [$__range]))))",
               "legendFormat": "",
               "queryType": "instant"
             },
@@ -9081,7 +9081,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "(sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" | verdict=~`limit-too-low|leak|contention|rollout-pending` [$__range])) / sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" [$__range])))",
+              "expr": "((sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" | verdict=~`limit-too-low|leak|contention|rollout-pending` [$__range])) or vector(0)) / sum(count_over_time({namespace=\"dispatcher\"} | json | __error__=\"\" | event=\"remediate\" [$__range])))",
               "legendFormat": "",
               "queryType": "instant"
             },
@@ -9201,7 +9201,7 @@ data:
           "title": "Where these numbers come from",
           "options": {
             "mode": "markdown",
-            "content": "The KPIs are the ones the playbook [Agent-first IDP](https://platformengineering.org/blog/agent-first-idp-how-big-tech-and-the-clouds-are-preparing-platforms-for-agents) (platformengineering.org, 2026-10-16, practice 9) asks an agent platform to report instead of portal usage.\n\n- **agent-kpis** (CronJob in `postgresql`, hourly at :05, the SELECT-only audit role): how each agent task ended, how long each approval waited, how long each pull request took to merge (GitHub). Argument-free; callers as a class, never an identity.\n- **Prometheus**: model cost and runs (the collector), admission denials (the API server).\n- **Loki**: the dispatcher's alerts and verdicts, the MCP adapters' refusals.\n\nThe eval gate's own test sessions are left out of every scenario KPI."
+            "content": "The KPIs are the ones the playbook [Agent-first IDP](https://platformengineering.org/blog/agent-first-idp-how-big-tech-and-the-clouds-are-preparing-platforms-for-agents) (platformengineering.org, 2026-10-16, practice 9) asks an agent platform to report instead of portal usage.\n\n- **agent-kpis** (CronJob in `postgresql`, hourly at :05, the SELECT-only audit role): how each agent task ended, how long each approval waited, how long each pull request took to merge (GitHub). Argument-free; callers as a class, never an identity.\n- **Prometheus**: model cost and runs (the collector), admission denials (the API server).\n- **Loki**: the dispatcher's alerts and verdicts, the MCP adapters' refusals.\n\nThe eval gate's own test sessions are left out of every scenario KPI; only the count of calls an adapter refused includes them, because the adapter's log does not say who asked. A rate shows a dash when nothing is behind it, and 0 % when nothing succeeded."
           },
           "id": 12,
           "gridPos": {
