@@ -1,0 +1,22 @@
+# Who may connect to the saved-runs Valkey (§T.143, valkey.yaml). The namespace is ambient, so
+# ztunnel enforces this at L4 on the Valkey pod: port 6379 only from hk-demo's own principal.
+# ALLOW semantics: once a policy selects the workload, anything that matches no rule is refused,
+# including plaintext from outside the mesh (it carries no principal). The probes run valkey-cli
+# inside the pod over loopback, which ztunnel never sees. The NetworkPolicy is the L4 belt under this.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: valkey
+  namespace: hk-demo
+spec:
+  selector:
+    matchLabels:
+      app: valkey
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/hk-demo/sa/hk-demo"]
+      to:
+        - operation:
+            ports: ["6379"]

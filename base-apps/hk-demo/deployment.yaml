@@ -72,6 +72,11 @@ spec:
             # admits only this app's principal (base-apps/alert-demo/authorization-policy.yaml).
             - name: ALERT_DEMO_URL
               value: http://alert-demo.alert-demo.svc.cluster.local:8080
+            # Saved runs (§T.143): a settled run's evidence in the Valkey next to this app
+            # (valkey.yaml), so a picked run opens at once. Only this app's principal may connect.
+            # Unset, or Valkey down: every pick is built from Loki and Tempo as before.
+            - name: VALKEY_URL
+              value: redis://valkey.hk-demo.svc.cluster.local:6379/0
           resources:
             requests:
               cpu: 20m

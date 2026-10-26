@@ -51,13 +51,33 @@ Logs: `kubectl -n hk-demo logs deploy/hk-demo -c app` (one JSON line per run pha
   network policy entry the controller refuses the connection. Both are in Git: sync, then delete
   the pod.
 
-## Boxes stay "waiting", or "trace not found after 2 min"
+## Boxes stay "waiting", or "trace not found in Tempo"
 
 - Check: the app log's `end` line has a `task_id`; in Grafana Explore, Tempo search
   `{span.a2a.task.id="<task_id>"}`. A trace normally appears 15-30 s after the answer.
 - Fix: no trace at all → the collector (`tracing/otel-collector`) or Tempo is down (`tracing`
   namespace); a trace without `a2a.request` → it arrives last, the page waits 30 s for it. Logs
-  missing → Loki ingestion lag; open the run again from Recent runs a minute later.
+  missing → Loki ingestion lag; open the run again from Recent runs a minute later. A run that
+  ended over 3 minutes ago is looked up once, not waited for; one past Tempo's 7 days has no trace.
+
+## A past run opens slowly (saved runs)
+
+A saved run opens in about a second. A run that ended in the last 5 minutes is not saved yet, so it
+is built from the stores (10-30 s).
+
+- Check:
+  - the Valkey pod is Running (`kubectl -n hk-demo get pods -l app=valkey`);
+  - the app log has no `saved runs: Valkey failed` line. After a failure the app leaves Valkey
+    alone for 30 s and builds every pick meanwhile.
+  - The app logs `saved runs: saved N ... run(s)` when the saver copies runs.
+- Fix:
+  - **Valkey down:** the page still works, only slower. Look at the pod's events (image pull,
+    OOM at 64Mi). Once it is back, the saver refills it within a few minutes.
+  - **A copy is wrong or stale:** delete the Valkey pod (an owner step; it holds nothing else).
+    It comes back empty and the saver copies the runs again. A copy expires by itself after
+    8 days, or after 1 hour if its trace was missing.
+- **What it may hold:** GET, SET, EXISTS and PING on `hk-demo:*` keys only. `valkey-cli` inside
+  the pod can PING, but not INFO, KEYS or FLUSHALL.
 
 ## Before a meeting: a demo run (On its own)
 
