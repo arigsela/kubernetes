@@ -114,6 +114,7 @@ CALLERS = {
     "system:serviceaccount:slack-bridge:slack-bridge": "slack",
     "system:serviceaccount:hk-demo:hk-demo": "demo",
     "system:serviceaccount:kagent:docs-checker-trigger": "docs-check",
+    "system:serviceaccount:kagent:bug-investigator-trigger": "bug-trigger",
     # The controller's identity for a request without x-user-id: kagent's own UI, through the
     # UI's own principal (go/core/internal/httpserver/auth/authn.go).
     "admin@kagent.dev": "ui",
