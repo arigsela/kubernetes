@@ -53,7 +53,7 @@ def test_real_kagent_manifests_update_without_warnings(cluster, path):
 
 
 def test_real_kagent_manifests_are_all_there():
-    """The harness must exercise the real agents, not a subset: nine Agents and their nine
+    """The harness must exercise the real agents, not a subset: ten Agents and their ten
     AgentTemplates, and the one byo Harness (docs-checker's, the object the byo exception of
     agent-capability-runtime admits; SPEC §V.101). A glob that silently found nothing would make
     the test above vacuous."""
@@ -63,7 +63,8 @@ def test_real_kagent_manifests_are_all_there():
             if d:
                 kinds.setdefault(d["kind"], set()).add(d["metadata"]["name"])
     want = {"homelab-knowledge", "k8s-reader", "k8s-agent", "istio-agent", "skill-suggester",
-            "dungeon-crawler-carl-agent", "implementer", "restarter", "docs-checker"}
+            "dungeon-crawler-carl-agent", "implementer", "restarter", "docs-checker",
+            "bug-investigator"}
     assert kinds.get("Agent") == want, kinds.get("Agent")
     assert kinds.get("AgentTemplate") == want, kinds.get("AgentTemplate")
     assert "docs-checker" in kinds.get("Harness", set()), kinds.get("Harness")
