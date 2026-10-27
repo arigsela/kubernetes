@@ -135,8 +135,14 @@ under `base-apps/logging/`.
    change, cost per run, approval cycle time, policy violation rate, alerts investigated before a
    person looked, investigations completed without escalation; task outcomes, approval waits and
    pull request lead times come from the `agent-kpis` CronJob's lines in Loki, see
-   `base-apps/postgresql/docs.md`; the eval gate's own test sessions are left out). Every Agents
-   dashboard links to it. Tokens, cost and calls come
+   `base-apps/postgresql/docs.md`; the eval gate's own test sessions are left out) and
+   **Bug Investigation · live** (uid `bug-investigation-live`, §T.149: a Taskboard bug report or
+   5xx alert as the platform handles it, for a live demo: 30 minutes, refreshing every 10 s. The
+   latest investigation's step, verdict, verified evidence, recalled memory and fix PR; a journey
+   state timeline with one lane per stage (the trigger's JSON step lines in Loki, the collector's
+   per-agent model and tool-call counters, Taskboard's 5xx counter, MCP adapter refusals); the
+   trigger's steps and the MCP tool calls as readable lines; the agents' turns in Tempo; spend,
+   tokens and the eval score). Every Agents dashboard links to both. Tokens, cost and calls come
    from the collector's counters (`base-apps/tracing/docs.md`); only the kagent agents are
    traced, so docs-checker is not in them. `scripts/agent-demo.sh` makes three read-only agent
    runs before a demo.
