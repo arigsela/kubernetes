@@ -55,14 +55,17 @@ spec:
               mountPath: /root/.ollama
           resources:
             requests:
-              cpu: 250m
+              # Raised 250m -> 375m with the limit (same 1:12 ratio): Pod CPU starved alert, 2026-10-27.
+              cpu: 375m
               memory: 1Gi
             limits:
               # CPU-only embedding is CPU-bound and the node has ample headroom;
               # more cores cut warm-embed latency (was ~1-7s/call) and the one-time
               # model load on pod restart. Memory raised so the always-resident
               # model can't OOM the pod.
-              cpu: "3"
+              # Raised 3 -> 4500m: Pod CPU starved alert (69% of 5m waiting for CPU, pod
+              # pinned at its 3-core limit, node not contended), 2026-10-27.
+              cpu: 4500m
               memory: 2Gi
           # Keep serving for the ~1s kube-proxy needs to drop this pod from the Service when
           # a rollout replaces it (qwen's first surge rollout lost one request without this).
