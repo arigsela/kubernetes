@@ -3,7 +3,7 @@
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-taskboard-configmap.py
-# Source:     arigsela/taskboard@02d4ad7f65ecc0e6fe3e5ee1831bc3ab40f92676
+# Source:     arigsela/taskboard@d7b37f21c045fc252f4033ef10501cbd582141f8
 #             (taskboard/* and traffic/simulate.py)
 # Regenerate: ./scripts/gen-taskboard-configmap.py --source <taskboard checkout> --commit <sha>
 # tests/taskboard/ fails if this file and deployment.yaml's checksum/code or source-commit disagree.
@@ -18,7 +18,7 @@ metadata:
   labels:
     app: taskboard
   annotations:
-    taskboard.arigsela.com/source-commit: 02d4ad7f65ecc0e6fe3e5ee1831bc3ab40f92676
+    taskboard.arigsela.com/source-commit: d7b37f21c045fc252f4033ef10501cbd582141f8
     taskboard.arigsela.com/source-repo: arigsela/taskboard
 data:
   app.js: |
@@ -1338,7 +1338,7 @@ data:
     POLICY = {
         "read": ("P1", lambda user, task: True),
         "create": ("P3", lambda user, task: user.is_editor),
-        "change_status": ("P4", lambda user, task: user.is_editor and _owns(user, task)),
+        "change_status": ("P4", lambda user, task: user.is_editor and task["assignee"] == user.name),
         "reassign": ("P5", lambda user, task: False),
         "edit": ("P6", lambda user, task: user.is_editor and _works_on(user, task)),
         "reopen": ("S4", lambda user, task: False),
