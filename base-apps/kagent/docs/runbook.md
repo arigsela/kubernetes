@@ -332,6 +332,9 @@ Close the issue instead (or fix the bug). Rehearsals: close, do not delete.
 - **Re-run one issue:** remove `investigated` (and `investigation-failed`) from the issue. The next
   run edits its own comment in place. A second fix PR is never requested while `fix-proposed` is
   on the issue.
+- **Read or reset its memory:** `kubectl -n kagent get cm bug-investigator-memory -o jsonpath='{.data.outcomes\.json}' | jq`.
+  To forget everything (for example after rehearsals), delete the ConfigMap; Argo CD recreates it empty.
+  To forget one outcome, edit `outcomes.json` and remove that entry.
 - **Run now** instead of waiting for the schedule:
   `kubectl -n kagent create job --from=cronjob/bug-investigator-trigger bug-investigator-trigger-manual-$(date +%s)`.
 - **Change the core** (scope, gather, verify, render, MCP server): commit in arigsela/claude-agents

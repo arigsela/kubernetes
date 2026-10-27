@@ -2,8 +2,9 @@
 # prompt, tools, class) is its AgentTemplate in ../agent-templates/.
 #
 # kagent-memory: the Go ADK runtime with long-term memory, no compaction. Used by the tool-loop
-# agents (homelab-knowledge, k8s-agent, istio-agent; all three had memory on kagent 0.10) and,
-# since §T.148, bug-investigator (verified outcomes only, saved at the trigger's request). A
+# agents (homelab-knowledge, k8s-agent, istio-agent); all three had memory on kagent 0.10. Embeddings
+# run on CPU-only Ollama: fine for short texts, minutes for many large ones at once (bug-investigator
+# tried it on 2026-10-27 and moved its memory into its trigger, §T.148). A
 # shared subagent runs inside its parent's runtime and gets no runtime policy of its own, so the
 # parent's Harness is what applies to it there (no agent binds one since build-orchestrator was
 # retired on 2026-10-23).

@@ -28,8 +28,53 @@ metadata:
   namespace: kagent
   labels:
     app: bug-investigator-trigger
-# No Kubernetes API calls: the projected kagent-audience token below is the only one the pod needs.
+# No automounted token. The pod gets two projected ones below: audience kagent (the A2A calls) and
+# the API server's (one call pair per run: get/update ConfigMap bug-investigator-memory, §T.148).
 automountServiceAccountToken: false
+---
+# The trigger's memory of verified outcomes (§T.148): outcomes.json, the newest 60 investigations
+# a script verified (issue, title, verdict, cause or rule, fix PR, verified n/m, one summary line).
+# Before asking the agent, the trigger adds the outcomes that share terms with the new report to
+# the facts as "Remembered outcomes" (leads, never evidence); after verify it saves the new one.
+# Git declares NO data on purpose: the kagent-secrets app syncs with ServerSideApply, so Argo CD
+# owns only the fields written here and selfHeal never reverts what the trigger writes (the
+# docs-checker-memory pattern). To reset the memory, delete the ConfigMap; Argo CD recreates it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bug-investigator-memory
+  namespace: kagent
+  labels:
+    app: bug-investigator-trigger
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bug-investigator-trigger
+  namespace: kagent
+  labels:
+    app: bug-investigator-trigger
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["bug-investigator-memory"]
+    verbs: ["get", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bug-investigator-trigger
+  namespace: kagent
+  labels:
+    app: bug-investigator-trigger
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: bug-investigator-trigger
+subjects:
+  - kind: ServiceAccount
+    name: bug-investigator-trigger
+    namespace: kagent
 ---
 # An installation token for arigsela-implementer (App ID 5316560, installation 171383761: not
 # secrets, docs/platform/implementer.md), narrowed to one repository and four permissions. ESO
@@ -108,7 +153,7 @@ spec:
           annotations:
             # sha256 (first 16 hex) over the bug-investigator-trigger-code ConfigMap's values,
             # sorted by key; written by scripts/gen-bug-investigator-trigger-configmap.py.
-            checksum/code: 0d13816e66a9100b
+            checksum/code: 47daad84bb29c35f
         spec:
           serviceAccountName: bug-investigator-trigger
           restartPolicy: Never
@@ -198,6 +243,9 @@ spec:
                 - name: kagent-token
                   mountPath: /var/run/kagent
                   readOnly: true
+                - name: kube-token
+                  mountPath: /var/run/kube
+                  readOnly: true
                 - name: github-token
                   mountPath: /var/run/github
                   readOnly: true
@@ -218,6 +266,18 @@ spec:
                       audience: kagent
                       expirationSeconds: 3600
                       path: token
+            # The API server's audience (none given), for the memory ConfigMap only (Role above).
+            - name: kube-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      expirationSeconds: 3600
+                      path: token
+                  - configMap:
+                      name: kube-root-ca.crt
+                      items:
+                        - key: ca.crt
+                          path: ca.crt
             - name: github-token
               secret:
                 secretName: bug-investigator-trigger-github
