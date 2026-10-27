@@ -280,7 +280,8 @@ In v1alpha3 an AgentTemplate MCP binding accepts only a same-namespace `RemoteMC
 | `brave-search` (`brave-search-mcp-remote.yaml`) | `http://brave-search-mcp.kagent:3000/mcp`, the official Brave Search MCP server behind the plain Deployment `brave-search-mcp` (`brave-search-mcp.yaml`: agentgateway 1.6.0 wrapping the stdio server, served on :3000) (`docker.io/mcp/brave-search`, digest-pinned; key from Secret `brave-search-mcp-api-key`; only 2 of its 8 tools enabled). Web results are untrusted text, so it is bound to read-class agents only, never to the operator agents | `brave_web_search`, `brave_news_search` |
 | `backstage-catalog` (`backstage-catalog-mcp.yaml`) | Backstage's MCP actions endpoint, `http://backstage.backstage.svc.cluster.local/api/mcp-actions/v1/catalog`; the `Authorization` header comes from Secret `backstage-mcp-token` and is injected by Substrate's egress gateway | `get-catalog-entity` |
 | `kagent-tool-server` (chart) | `http://kagent-tools.kagent:8084/mcp`, the `kagent-tools` Deployment | read: `k8s_get_resources`, `k8s_get_resource_yaml`, `k8s_get_pod_logs`, `k8s_describe_resource`, `k8s_get_events`, `k8s_get_cluster_configuration`, `k8s_get_available_api_resources`, `k8s_check_service_connectivity`; the admin agents add the write/destructive tools in a gated binding |
-| `implementer` (`implementer-mcp-remote.yaml`) | `http://implementer-mcp.kagent:3000/mcp`, a second GitHub MCP server (`implementer-mcp.yaml`) under GitHub App auth (Secret `implementer-github-app`, Vault `implementer-github-app`), `--tools` naming 11 tools and no toolset; merge, update (close/retarget), review and delete tools are never loaded | the 7 read and 4 propose tools listed in `tests/implementer/conftest.py` |
+| `implementer` (`implementer-mcp-remote.yaml`) | `http://implementer-mcp.kagent:3000/mcp`, a second GitHub MCP server (`implementer-mcp.yaml`) under GitHub App auth (Secret `implementer-github-app`, Vault `implementer-github-app`), `--tools` naming 11 tools and no toolset; merge, update (close/retarget), review and delete tools are never loaded. The App is installed on `arigsela/kubernetes` and `arigsela/taskboard` (since 2026-10-27, §T.146) | the 7 read and 4 propose tools listed in `tests/implementer/conftest.py`; `bug-investigator` binds 6 of the read tools (`get_file_contents`, `search_code`, `list_commits`, `get_commit`, `list_pull_requests`, `pull_request_read`) |
+| `taskboard-telemetry` (`taskboard-telemetry-mcp-remote.yaml`) | `http://taskboard-telemetry-mcp.kagent:3000/mcp`, a stdio MCP server from arigsela/claude-agents `bug-investigator/` (`mcp_server.py`, run by agentgateway on `python:3.12-slim` from the generated ConfigMap `bug-investigator-core`; `taskboard-telemetry-mcp.yaml`). It queries Loki and Prometheus in `logging` directly with no credential, and refuses any query that is not scoped to `namespace="taskboard"` (the Action's `scope.py`, before any HTTP call) | `query_loki_logs`, `query_loki_stats`, `query_prometheus`, `list_loki_label_names`, `list_loki_label_values` (mcp-grafana's names, already classified read); bound by `bug-investigator` only |
 | `kagent-api` (chart) | the controller's own `/mcp` | none |
 
 A server Deployment registers no tools with agents; the `RemoteMCPServer` that points at its Service does.
@@ -536,6 +537,53 @@ skipped, the Job is killed after 30 minutes, one retry).
   dismissed finding until its evidence changes (or the entry expires).
 - **Cost.** One run is capped by docs-checker's own budget ($1.00 for `all`) and a 15-minute
   timeout; unchanged docs are skipped from memory, so a quiet week costs little.
+
+## Bug investigator (Taskboard)
+The kagent version of the bug investigator GitHub Action (arigsela/claude-agents
+`bug-investigator/`; §T.146, V111). A bug report on `arigsela/taskboard` gets one comment whose
+every evidence link has been checked by a script, and a verified cause gets a fix pull request
+that a person merges.
+
+| Piece | What it does |
+|---|---|
+| Agent `bug-investigator` (`agent-templates/bug-investigator.yaml`, `agents/`) | Class `read`, `kagent-stateless` (no memory: each report starts from its facts), Sonnet 5.5 on budget group `bug-investigator` ($8/day). Binds 6 read tools of the `implementer` GitHub server and the 5 `taskboard-telemetry` tools. Answers with the findings JSON only (`findings.schema.json`); it cannot write anywhere, not even a comment |
+| Tool server `taskboard-telemetry` (`taskboard-telemetry-mcp.yaml`) | Loki and Prometheus, every query refused unless scoped to `namespace="taskboard"` before any HTTP call. No credential (see "Tools via MCP servers") |
+| Trigger `bug-investigator-trigger` (`bug-investigator-trigger.yaml`, code `scripts/bug_investigator_trigger.py`) | CronJob every 2 minutes, `concurrencyPolicy: Forbid`, killed after 20 minutes. Files alert issues, gathers facts, asks the agent, verifies, posts, hands off the fix. The only piece that writes to GitHub |
+| Core ConfigMap `bug-investigator-core` (generated) | The Action's own package at a pinned claude-agents commit: scope check, gather, verify, render, post, the telemetry adapter and the MCP server. The trigger and the tool server mount it; the Action runs the same files |
+
+**One run of the trigger** (at most one investigation):
+1. **Alert-first.** Prometheus `5xx by route` on Taskboard (the same expression as the Grafana rule
+   "Taskboard server errors"; a test keeps them equal). A route with errors and no `from-alert`
+   issue open or closed in the last 6 hours gets one, labelled `bug` and `from-alert`. The
+   Grafana rule still reaches Slack through n8n; its dispatch row is `none`.
+2. **Pick** the oldest open `bug` issue without `investigated`, `rehearsal` or
+   `investigation-failed`, whose `bug` label was added by someone with write access (or the App).
+3. **Gather** in full mode on fresh clones (taskboard, and the taskboard folder of this repo for
+   the deploy timeline): the ticket, PRs merged in the last 14 days, when each went live, past
+   bugs and their fixes, the docs index.
+4. **Ask** `kagent/bug-investigator` over A2A as service account `kagent/bug-investigator-trigger`
+   (projected token, audience `kagent`), up to 8 minutes.
+5. **Verify** every evidence item (commits, PRs, file lines and quotes, doc quotes; every
+   Loki/Prometheus query re-run in its window), render, and **post** one comment (marker mode
+   `kagent`, so it never edits the Action's comment) plus the `investigated` label.
+6. **Fix.** A verified likely cause (change and code line both verified) goes to
+   `kagent/implementer`: one PR on `agent/taskboard-issue-<N>` with a regression test, nothing under
+   `docs/` or `.github/`, body `Fixes #N`. A follow-up comment links the PR and the issue gets
+   `fix-proposed`. A person merges; taskboard CI runs on the PR (the implementer cannot run tests).
+
+**Credentials.** The agent and its sandbox hold none. The trigger holds one: an installation token
+of the `arigsela-implementer` App, minted every 30 minutes by an External Secrets
+`GithubAccessToken` generator, limited to `arigsela/taskboard` (issues write; contents and pull
+requests read). It shares the implementer's private key Secret (owner's call, 2026-10-27).
+
+**Labels on Taskboard:** `bug` (investigate), `investigated` (done), `investigation-failed` (the
+agent was asked and something failed; remove it to retry), `fix-proposed`, `from-alert`,
+`rehearsal` (never investigated, never cited as a past bug). The Action in taskboard runs only by
+hand once taskboard#28 merges, so one issue never gets two investigations.
+
+**Changing the core.** Commit in claude-agents, then
+`scripts/gen-bug-investigator-core.py --source ../claude-agents --commit <sha>`; CI cannot read
+that checkout, so `tests/taskboard/` checks the committed ConfigMap, checksums and commit agree.
 
 ## Gotchas & tribal knowledge
 - **Every alpha bump is a clean-database migration** so far (alpha11 itself needed one):

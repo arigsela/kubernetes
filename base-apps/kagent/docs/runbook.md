@@ -305,7 +305,38 @@ group to the role, and note it in the manifest header's dated list.
 - **Fix:** fix the cause, then run it again as a NEW run ("Weekly docs check" How-to). Re-running
   the same Job never posts.
 
+### Symptom: a Taskboard `bug` issue gets no comment within about 5 minutes
+- **Check the issue's labels.** `investigated` = done (look for the comment marked `kagent`);
+  `investigation-failed` = the agent was asked and the answer, verify or post failed;
+  `rehearsal` = skipped by design. With none of them, the trigger has not picked it yet: it takes
+  one issue per run, oldest first, and only when the `bug` label was added by someone with write
+  access (or the App).
+- **Read the run:** `kubectl -n kagent get jobs --sort-by=.metadata.creationTimestamp | grep bug-investigator-trigger | tail -3`,
+  then `kubectl -n kagent logs job/<name>` (one JSON line per step, token scrubbed). The same
+  lines are in Loki: `{namespace="kagent", pod=~"bug-investigator-trigger-.*"}`.
+- **Token:** `kubectl -n kagent get externalsecret bug-investigator-trigger-github` must be
+  `SecretSynced`. A failure there means the App lost its Taskboard installation or the
+  `implementer-github-app` Secret changed.
+- **Agent:** an `agent run failed … failed to init MCP session` names a tool server that is down
+  (`implementer-mcp` or `taskboard-telemetry-mcp`; "an agent run fails at start" above).
+- **Fix (owner):** remove `investigation-failed` to retry on the next run (every 2 minutes).
+
+### Symptom: the trigger keeps filing `from-alert` issues
+It files one per route that answers 5xx with no `from-alert` issue open or closed in the last 6
+hours. A **deleted** issue no longer counts, so the next run files it again while the errors last.
+Close the issue instead (or fix the bug). Rehearsals: close, do not delete.
+
 ## How-to
+
+### Bug investigator: re-run an investigation, change the core
+- **Re-run one issue:** remove `investigated` (and `investigation-failed`) from the issue. The next
+  run edits its own comment in place. A second fix PR is never requested while `fix-proposed` is
+  on the issue.
+- **Run now** instead of waiting for the schedule:
+  `kubectl -n kagent create job --from=cronjob/bug-investigator-trigger bug-investigator-trigger-manual-$(date +%s)`.
+- **Change the core** (scope, gather, verify, render, MCP server): commit in arigsela/claude-agents
+  `bug-investigator/`, then `scripts/gen-bug-investigator-core.py --source ../claude-agents --commit <sha>`
+  and open a PR; the tool server rolls on its `checksum/core`, the CronJob picks it up on its next run.
 
 ### Weekly docs check: run it now, read it, reset its memory, dismiss a finding
 - **Run now:** `kubectl -n kagent create job --from=cronjob/docs-checker-trigger

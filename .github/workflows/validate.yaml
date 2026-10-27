@@ -601,6 +601,25 @@ jobs:
       - name: Check the docs-checker trigger ConfigMap is in sync with the scripts
         run: python scripts/gen-docs-checker-trigger-configmap.py --repo-root . --check
 
+  # The bug-investigator trigger (§T.146, §V.111): one investigation per run, only on a `bug`
+  # label added by someone with write access, every answer verified before it is posted, at most
+  # one fix request per issue; its code ConfigMap must match the tested script.
+  # tests/bug_investigator_trigger/. (The core ConfigMap it imports is checked in tests/taskboard/.)
+  bug-investigator-trigger-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run bug-investigator trigger tests
+        run: python -m pytest tests/bug_investigator_trigger/ -q
+      - name: Check the bug-investigator trigger ConfigMap is in sync with the scripts
+        run: python scripts/gen-bug-investigator-trigger-configmap.py --repo-root . --check
+
   implementer-validate:
     runs-on: ubuntu-latest
     steps:
