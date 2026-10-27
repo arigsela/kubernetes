@@ -1,0 +1,226 @@
+# base-apps/kagent/bug-investigator-trigger.yaml
+# The bug investigator's trigger: every 2 minutes the CronJob runs
+# scripts/bug_investigator_trigger.py (code: the generated bug-investigator-trigger-code
+# ConfigMap; the bug-investigator package it imports: the generated bug-investigator-core
+# ConfigMap, the code the GitHub Action runs). One run:
+#   a. alert-first: Prometheus 5xx-by-route on Taskboard (the Grafana rule "Taskboard server
+#      errors" has the same expression); a route with errors and no open `from-alert` issue gets
+#      one, labelled `bug`;
+#   b. picks the oldest open `bug` issue on arigsela/taskboard without `investigated`,
+#      `rehearsal` or `investigation-failed`, labelled by someone with write access or the App;
+#   c. clones taskboard and the taskboard folder of this repo (the deploy timeline) into /work;
+#   d. gathers the facts, asks kagent/bug-investigator over A2A as service account
+#      kagent/bug-investigator-trigger (projected token, audience kagent; the waypoint admits any
+#      service-account token on /agents/*, authorization-policy.yaml rule 2; the controller's
+#      NetworkPolicy already admits namespace kagent);
+#   e. verifies every evidence link (telemetry re-run against Loki/Prometheus directly), posts one
+#      comment and labels the issue `investigated`;
+#   f. hands a verified likely cause to kagent/implementer for one fix pull request on Taskboard,
+#      then comments the PR link and labels `fix-proposed`. A person merges.
+# The agent holds no credential. This pod holds one: a Taskboard-only GitHub installation token
+# (issues write; contents and pull requests read) that External Secrets mints from the
+# arigsela-implementer App every 30 minutes (ExternalSecret below). It never reaches the agent.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bug-investigator-trigger
+  namespace: kagent
+  labels:
+    app: bug-investigator-trigger
+# No Kubernetes API calls: the projected kagent-audience token below is the only one the pod needs.
+automountServiceAccountToken: false
+---
+# An installation token for arigsela-implementer (App ID 5316560, installation 171383761: not
+# secrets, docs/platform/implementer.md), narrowed to one repository and four permissions. ESO
+# signs the App JWT with the private key already in Secret implementer-github-app (Vault
+# k8s-secrets/implementer-github-app, implementer-mcp-external-secret.yaml); the key never leaves
+# the ESO controller. Installation tokens live 1 h, so the token is re-minted every 30 minutes.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: GithubAccessToken
+metadata:
+  name: bug-investigator-trigger
+  namespace: kagent
+  labels:
+    app: bug-investigator-trigger
+spec:
+  appID: "5316560"
+  installID: "171383761"
+  repositories:
+    - taskboard
+  permissions:
+    issues: write
+    contents: read
+    pull_requests: read
+    metadata: read
+  auth:
+    privateKey:
+      secretRef:
+        name: implementer-github-app
+        key: GITHUB_APP_PRIVATE_KEY
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: bug-investigator-trigger-github
+  namespace: kagent
+  labels:
+    app: bug-investigator-trigger
+spec:
+  refreshInterval: 30m
+  target:
+    name: bug-investigator-trigger-github
+    creationPolicy: Owner
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: GithubAccessToken
+          name: bug-investigator-trigger
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bug-investigator-trigger
+  namespace: kagent
+  labels:
+    app: bug-investigator-trigger
+spec:
+  schedule: "*/2 * * * *"
+  timeZone: Etc/UTC
+  # One run at a time: a run that investigates (minutes) makes the next ones skip, not queue.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      # No retry: a failed investigation labels the issue `investigation-failed` (or is retried by
+      # the next scheduled run when it failed before the agent was asked).
+      backoffLimit: 0
+      # The investigation (AGENT_TIMEOUT 480 s) and the implementer's pull request (FIX_TIMEOUT
+      # 480 s) plus the clones and verify, with time left to log before the pod is killed.
+      activeDeadlineSeconds: 1200
+      template:
+        metadata:
+          labels:
+            app: bug-investigator-trigger
+          annotations:
+            # sha256 (first 16 hex) over the bug-investigator-trigger-code ConfigMap's values,
+            # sorted by key; written by scripts/gen-bug-investigator-trigger-configmap.py.
+            checksum/code: 8608cd96a2b0775b
+        spec:
+          serviceAccountName: bug-investigator-trigger
+          restartPolicy: Never
+          nodeSelector:
+            node.kubernetes.io/workload: application
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            fsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: trigger
+              # The FULL python image (not -slim): it ships git, which gather and verify run on the
+              # clones. gh is fetched at a pinned version and sha256-checked by the script itself,
+              # only when a run investigates.
+              image: python:3.12@sha256:98d8fe4e28bb2efeed9d9bce6a4705e80a6764367b65aea1dc4b96ded7b05620
+              command: ["python", "-u", "-B", "/opt/bug-investigator-trigger/bug_investigator_trigger.py"]
+              env:
+                - name: RUN_ID
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['batch.kubernetes.io/job-name']
+                - name: KAGENT_A2A_BASE
+                  value: http://kagent-controller.kagent.svc.cluster.local:8083
+                - name: KAGENT_TOKEN_FILE
+                  value: /var/run/kagent/token
+                - name: GH_TOKEN_FILE
+                  value: /var/run/github/token
+                - name: PROMETHEUS_URL
+                  value: http://prometheus.logging.svc.cluster.local:9090
+                - name: LOKI_URL
+                  value: http://loki.logging.svc.cluster.local:3100
+                - name: NAMESPACE
+                  value: taskboard
+                - name: CORE_DIR
+                  value: /core
+                - name: PYTHONPATH
+                  value: /core/src
+                - name: PYTHONDONTWRITEBYTECODE
+                  value: "1"
+                - name: WORK_DIR
+                  value: /work
+                # git and gh write their config and caches under these (the root filesystem is read-only).
+                - name: HOME
+                  value: /work/home
+                - name: GH_CONFIG_DIR
+                  value: /work/gh
+                - name: XDG_CACHE_HOME
+                  value: /work/cache
+                - name: AGENT_TIMEOUT
+                  value: "480"
+                - name: FIX_TIMEOUT
+                  value: "480"
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: code
+                  mountPath: /opt/bug-investigator-trigger
+                  readOnly: true
+                # The core ConfigMap's keys are basenames: the package mounts whole, the two data
+                # files beside it at /core (gen-bug-investigator-core.py, mount contract).
+                - name: core
+                  mountPath: /core/src/bug_investigator
+                  readOnly: true
+                - name: core
+                  mountPath: /core/prompt.md
+                  subPath: prompt.md
+                  readOnly: true
+                - name: core
+                  mountPath: /core/findings.schema.json
+                  subPath: findings.schema.json
+                  readOnly: true
+                - name: work
+                  mountPath: /work
+                - name: kagent-token
+                  mountPath: /var/run/kagent
+                  readOnly: true
+                - name: github-token
+                  mountPath: /var/run/github
+                  readOnly: true
+          volumes:
+            - name: code
+              configMap:
+                name: bug-investigator-trigger-code
+            - name: core
+              configMap:
+                name: bug-investigator-core
+            - name: work
+              emptyDir:
+                sizeLimit: 2Gi
+            - name: kagent-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      audience: kagent
+                      expirationSeconds: 3600
+                      path: token
+            - name: github-token
+              secret:
+                secretName: bug-investigator-trigger-github
+                items:
+                  - key: token
+                    path: token
