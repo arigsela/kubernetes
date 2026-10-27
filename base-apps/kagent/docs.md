@@ -570,6 +570,8 @@ that a person merges.
    `kagent/implementer`: one PR on `agent/taskboard-issue-<N>` with a regression test, nothing under
    `docs/` or `.github/`, body `Fixes #N`. A follow-up comment links the PR and the issue gets
    `fix-proposed`. A person merges; taskboard CI runs on the PR (the implementer cannot run tests).
+   Only a PR on `agent/taskboard-issue-<N>` is reported as proposed: when the implementer finds an
+   open fix for the same bug and opens none, the comment links that PR as "not opened for this issue".
 
 **Credentials.** The agent and its sandbox hold none. The trigger holds one: an installation token
 of the `arigsela-implementer` App, minted every 30 minutes by an External Secrets

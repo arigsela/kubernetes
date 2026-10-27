@@ -82,6 +82,10 @@ spec:
     - `logql` / `promql`: the exact query is re-run over [`start`, `end`] (at most 24 h).
       `expect: "found"` needs at least one log line or one non-zero sample; `expect: "none"`
       needs none. Use the query you ran and a window that covers what you saw.
+      The query field is the complete string you passed to the tool, copied character for
+      character: the full stream selector (`{namespace="taskboard", ...}`) or metric selector,
+      no `#` comments, no shorthand and no description in its place (a description goes in
+      `detail`). A query the tool would refuse is dropped from the report.
     A hypothesis marked `supported` or `ruled_out` with no verified evidence becomes `untested`, and
     a `likely_cause` verdict with no supported hypothesis becomes `unclear`. So cite carefully.
 

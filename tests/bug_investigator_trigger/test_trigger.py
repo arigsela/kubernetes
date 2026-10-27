@@ -23,8 +23,9 @@ PR_URL = "https://github.com/arigsela/taskboard/pull/31"
 # ---------------------------------------------------------------- fakes
 
 class FakeGitHub:
-    def __init__(self, issues=(), events=None, perms=None):
+    def __init__(self, issues=(), events=None, perms=None, pulls=None):
         self.store = {i["number"]: dict(i) for i in issues}
+        self.pulls = pulls or {}
         self.events_by = events or {}
         self.perms = perms or {}
         self.created, self.comments, self.labelled = [], [], []
@@ -57,6 +58,11 @@ class FakeGitHub:
     def comment(self, repo, number, body):
         self.comments.append((number, body))
         return {"id": 1}
+
+    def pull(self, repo, number):
+        if number not in self.pulls:
+            raise RuntimeError("HTTP 404")
+        return {"number": number, "head": {"ref": self.pulls[number]}}
 
     def add_labels(self, repo, number, labels):
         self.labelled.append((number, list(labels)))
@@ -297,7 +303,7 @@ def trusted(n, *labels):
 
 def test_a_run_investigates_posts_and_hands_a_verified_cause_to_the_implementer():
     i, ev, perms = trusted(24)
-    gh = FakeGitHub([i], events=ev, perms=perms)
+    gh = FakeGitHub([i], events=ev, perms=perms, pulls={31: "agent/taskboard-issue-24"})
     cfg, d, asked, holder = make(gh, answers={t.IMPLEMENTER: reply(f"Opened {PR_URL}")})
     assert t.run(cfg, TOKEN, d) == 0
     core = holder["core"]
@@ -488,3 +494,29 @@ def test_config_from_env():
     assert c.kagent_base == "http://k:8083" and c.fix_enabled is False and c.alert_enabled is True
     assert c.agent_timeout == 60.0 and c.trusted_bots == ("a[bot]", "b[bot]") and c.gh_token_file == "/x"
     assert t.Config.from_env({"KAGENT_A2A_BASE": "http://j"}).kagent_base == "http://j"
+
+
+def test_a_reply_naming_someone_elses_pr_is_not_claimed_as_proposed():
+    """taskboard#32: the implementer found the Action's open fix PR #29 for the same bug and opened
+    none; the trigger must not say the implementer proposed #29."""
+    other = "https://github.com/arigsela/taskboard/pull/29"
+    for pulls in ({29: "bug-investigator/issue-26"}, {}):
+        i, ev, perms = trusted(32)
+        gh = FakeGitHub([i], events=ev, perms=perms, pulls=pulls)
+        logs = []
+        cfg, d, _, _ = make(gh, answers={t.IMPLEMENTER: reply(f"No new PR: {other} already fixes this.")}, logs=logs)
+        assert t.run(cfg, TOKEN, d) == 0
+        body = gh.comments[-1][1]
+        assert "Fix proposed by" not in body and other in body and "not opened for this issue" in body
+        assert (32, ["fix-proposed"]) in gh.labelled
+        assert any(x.get("event") == "fix_handoff" and x["outcome"] == "existing pull request" for x in logs)
+
+
+def test_a_no_pull_request_reply_that_mentions_a_pr_is_quoted_not_linked_as_ours():
+    i, ev, perms = trusted(33)
+    gh = FakeGitHub([i], events=ev, perms=perms, pulls={29: "bug-investigator/issue-26"})
+    logs = []
+    cfg, d, _, _ = make(gh, answers={t.IMPLEMENTER: reply("no pull request: #29 (https://github.com/arigsela/taskboard/pull/29) already fixes it")}, logs=logs)
+    assert t.run(cfg, TOKEN, d) == 0
+    assert "opened no pull request:" in gh.comments[-1][1]
+    assert any(x.get("event") == "fix_handoff" and x["outcome"] == "no pull request" for x in logs)

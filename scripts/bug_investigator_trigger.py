@@ -296,6 +296,9 @@ class GitHub:
     def add_labels(self, repo: str, number: int, labels: list[str]):
         return self.request("POST", f"repos/{repo}/issues/{number}/labels", {"labels": labels})
 
+    def pull(self, repo: str, number: int) -> dict:
+        return self.request("GET", f"repos/{repo}/pulls/{number}") or {}
+
 
 def prom_query(base: str, expr: str, *, opener=None, timeout: float = 20.0) -> list[dict]:
     """A Prometheus instant query: the `result` vector."""
@@ -641,15 +644,31 @@ def hand_off_fix(cfg: Config, gh: GitHub, issue: dict, verified: dict, d: Deps) 
     try:
         reply = d.ask(cfg, cfg.implementer, fix_request(issue, verified), cfg.fix_timeout)
         answer = answer_of(cfg.implementer, reply, cfg.fix_timeout)
-        m = PR_URL_RE.search(answer)
-        if m:
-            text = (f"🛠️ Fix proposed by `{cfg.implementer}`: {m.group(0)}\n\nIt fixes the verified "
+        quoted = "\n\n> " + d.scrub(answer.strip())[:800].replace("\n", "\n> ")
+        # Only a PR on the implementer's own branch for this issue counts as proposed. Its reply may
+        # name another PR (taskboard#32 got #29, an open fix from the Action for the same bug).
+        ours, others = None, []
+        if not answer.strip().lower().startswith("no pull request"):
+            for url in dict.fromkeys(PR_URL_RE.findall(answer)):
+                try:
+                    head = ((gh.pull(cfg.repo, int(url.rsplit("/", 1)[1])) or {}).get("head") or {}).get("ref")
+                except Exception:  # noqa: BLE001 - an unreadable PR is not claimed as ours
+                    head = None
+                if head == f"agent/taskboard-issue-{n}":
+                    ours = url
+                    break
+                others.append(url)
+        if ours:
+            text = (f"🛠️ Fix proposed by `{cfg.implementer}`: {ours}\n\nIt fixes the verified "
                     "likely cause above and adds a regression test. A person reviews and merges it; "
                     "nothing merges automatically.")
-            outcome = m.group(0)
+            outcome = ours
+        elif others:
+            text = (f"🛠️ `{cfg.implementer}` opened no new pull request; it pointed to an existing one, "
+                    f"not opened for this issue: {others[0]}" + quoted)
+            outcome = "existing pull request"
         else:
-            text = (f"🛠️ `{cfg.implementer}` opened no pull request:\n\n> "
-                    + d.scrub(answer.strip())[:800].replace("\n", "\n> "))
+            text = f"🛠️ `{cfg.implementer}` opened no pull request:" + quoted
             outcome = "no pull request"
     except (Failure, a2a.A2AError, OSError, ValueError) as e:
         text = (f"🛠️ The fix hand-off to `{cfg.implementer}` failed: {d.scrub(str(e))[:400]}\n\n"

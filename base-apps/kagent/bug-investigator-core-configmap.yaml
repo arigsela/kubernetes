@@ -3,7 +3,7 @@
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-bug-investigator-core.py
-# Source:     arigsela/claude-agents@b20d53947660b322f3e6fd7b320dc926f5313cd0
+# Source:     arigsela/claude-agents@bf05291f5dd88871156ecf0687917965333fee26
 #             (bug-investigator/src/bug_investigator/*.py, bug-investigator/prompt.md, bug-investigator/findings.schema.json)
 # Regenerate: ./scripts/gen-bug-investigator-core.py --source <claude-agents checkout> --commit <sha>
 # tests/taskboard/test_bug_investigator_core.py fails if this file and the consumers' checksum/core disagree.
@@ -20,7 +20,7 @@ metadata:
     app.kubernetes.io/part-of: kagent
     app.kubernetes.io/name: bug-investigator-core
   annotations:
-    bug-investigator.arigsela.com/source-commit: b20d53947660b322f3e6fd7b320dc926f5313cd0
+    bug-investigator.arigsela.com/source-commit: bf05291f5dd88871156ecf0687917965333fee26
     bug-investigator.arigsela.com/source-repo: arigsela/claude-agents
 data:
   __init__.py: |
@@ -2311,6 +2311,7 @@ data:
 
     import argparse
     import os
+    import re
 
     from bug_investigator.tickets import MARKER
     from bug_investigator.trail import load_messages
@@ -2325,10 +2326,22 @@ data:
     MAX_TRAIL = 40
 
 
+    CODE_SPAN = re.compile(r"(`+)(.+?)\1", re.S)
+
+
     def t(s) -> str:
-        """Model-written text: no HTML, no @-mentions, no fake markers."""
+        """Model-written text: no HTML, no @-mentions, no fake markers.
+
+        GitHub shows a `code span` literally, so an escaped &lt; there would read "&lt;": inside a
+        code span `<` stays, except that `<!--` is broken so no span can carry a marker."""
         s = str(s or "").strip()
-        return s.replace("<", "&lt;").replace("@", "@\u200b")
+        out, last = [], 0
+        for m in CODE_SPAN.finditer(s):
+            out.append(s[last:m.start()].replace("<", "&lt;"))
+            out.append(m.group(0).replace("<!--", "<\u200b!--"))
+            last = m.end()
+        out.append(s[last:].replace("<", "&lt;"))
+        return "".join(out).replace("@", "@\u200b")
 
 
     def inline(s) -> str:
