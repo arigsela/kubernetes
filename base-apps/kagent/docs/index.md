@@ -573,6 +573,12 @@ that a person merges.
    Only a PR on `agent/taskboard-issue-<N>` is reported as proposed: when the implementer finds an
    open fix for the same bug and opens none, the comment links that PR as "not opened for this issue".
 
+**Log contract.** The trigger's JSON lines are what the hk-demo "Bug investigator" tab reads (the
+repo is private): every line carries `run` (the Job name); `answered` carries the agent's trail
+(tool, target, ok; never results), `posted` the verified findings (evidence kept and dropped, with
+reasons), `fix_handoff` the implementer's session and PR. Fields, limits and masking:
+`docs/superpowers/specs/2026-10-27-hk-demo-bug-investigator-tab-design.md` ("Log contract", §T.147).
+
 **Credentials.** The agent and its sandbox hold none. The trigger holds one: an installation token
 of the `arigsela-implementer` App, minted every 30 minutes by an External Secrets
 `GithubAccessToken` generator, limited to `arigsela/taskboard` (issues write; contents and pull

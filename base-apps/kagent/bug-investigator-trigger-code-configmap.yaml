@@ -62,7 +62,7 @@ data:
     import urllib.error
     import urllib.parse
     import urllib.request
-    from dataclasses import dataclass, field
+    from dataclasses import dataclass, field, replace
     from datetime import datetime, timedelta, timezone
     from pathlib import Path
 
@@ -116,6 +116,13 @@ data:
     ALERT_MARKER_RE = re.compile(r"<!-- bug-investigator alert route=(\S+?) -->")
     FIX_MARKER = "<!-- bug-investigator fix -->"
     PR_URL_RE = re.compile(r"https://github\.com/arigsela/taskboard/pull/\d+")
+    COMMENT_MARKER = f"<!-- bug-investigator mode={MODE} -->"   # render's marker, relabelled (PackageCore.render)
+    # The log contract the hk-demo "Bug investigator" tab reads (it never reads the private repo):
+    # docs/superpowers/specs/2026-10-27-hk-demo-bug-investigator-tab-design.md, "Log contract".
+    LINE_LIMIT = 15800                         # bytes of one JSON line; kept whole under 16 KB
+    TRAIL_MAX = 40
+    EMAIL_RE = re.compile(r"([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})")
+    NOT_EVIDENCE = {"docs_rule", "likely_cause.change_ref", "likely_cause.code_ref", "verdict", "similar_past_bugs"}
 
     # gh, pinned (2.102.0, released 2026-09-30) and checked before it runs.
     GH_VERSION = "2.102.0"
@@ -163,9 +170,10 @@ data:
         so the issue is labelled `investigation-failed` (a retry would spend the budget again); a
         failure before that (gh, clones, gather) is retried by the next run."""
 
-        def __init__(self, message: str, *, spent: bool = False):
+        def __init__(self, message: str, *, spent: bool = False, stage: str | None = None):
             super().__init__(message)
             self.spent = spent
+            self.stage = stage      # prepare | ask | answer | post (the log contract's `stage`)
 
 
     # ---------------------------------------------------------------- small pieces
@@ -189,6 +197,161 @@ data:
 
     def labels_of(issue: dict) -> set[str]:
         return {(lb.get("name") if isinstance(lb, dict) else str(lb)) for lb in issue.get("labels") or []}
+
+
+    def mask_emails(text) -> str:
+        """`alex@example.com` -> `a•••@example.com` (hk-demo never shows an address; neither do our lines)."""
+        return EMAIL_RE.sub(lambda m: f"{m.group(1)}\u2022\u2022\u2022@{m.group(2)}", str(text))
+
+
+    def clip(text, limit: int, scrub=None):
+        """Model or ticket text for a log line: token scrubbed, emails masked, at most `limit` chars."""
+        if text is None:
+            return None
+        s = mask_emails(scrub(text) if scrub else str(text)).strip()
+        return s if len(s) <= limit else s[: limit - 1] + "\u2026"
+
+
+    def fit(obj: dict, limit: int = LINE_LIMIT) -> dict:
+        """Keep one log line under `limit` bytes: shorten lists from the end, then long text, never split."""
+        def size(o):
+            return len(json.dumps(o, default=str).encode())
+        if size(obj) <= limit:
+            return obj
+        obj = dict(obj)
+        # Trim the largest list first, one item at a time (sizes tracked, not re-serialised), so a long
+        # evidence list does not empty itself while the hypotheses stay whole.
+        lists = {k: list(obj[k]) for k in ("trail", "evidence", "hypotheses", "dropped_other")
+                 if isinstance(obj.get(k), list)}
+        sizes = {k: len(json.dumps(v, default=str)) for k, v in lists.items()}
+        total = size(obj) + 30 * len(lists)            # room for the `<key>_truncated` flags
+        while total > limit and any(lists.values()):
+            k = max((k for k in lists if lists[k]), key=sizes.get)
+            cut = len(json.dumps(lists[k].pop(), default=str)) + 2
+            total, sizes[k] = total - cut, sizes[k] - cut
+            obj[f"{k}_truncated"] = True
+        obj.update(lists)
+        for key in ("ticket", "summary", "next_step", "error"):
+            if size(obj) > limit and isinstance(obj.get(key), str):
+                obj[key] = obj[key][:120] + "\u2026"
+        if size(obj) > limit:
+            keep = ("time", "component", "run", "event", "issue", "verdict", "verified", "total", "session", "outcome")
+            obj = {**{k: obj[k] for k in keep if k in obj}, "truncated": True}
+        return obj
+
+
+    def target_of(name: str, args) -> str:
+        """What a tool call was about, in a few words: a path, a PR, a query, a ref. Never a result."""
+        a = args if isinstance(args, dict) else {}
+        repo = a.get("repo")
+        if a.get("pullNumber") is not None or a.get("pull_number") is not None:
+            t = f"#{a.get('pullNumber', a.get('pull_number'))}" + (f" {a['method']}" if a.get("method") else "")
+        elif a.get("path"):
+            t = str(a["path"])
+        elif any(a.get(k) for k in ("logql", "expr", "query", "matcher")):
+            t = str(next(a[k] for k in ("logql", "expr", "query", "matcher") if a.get(k)))
+            if a.get("labelName"):
+                t = f"{a['labelName']} {t}"
+        elif a.get("sha"):
+            t = str(a["sha"])[:12]
+        elif a.get("labelName"):
+            t = f"label {a['labelName']}"
+        else:
+            return json.dumps({k: v for k, v in sorted(a.items()) if k != "owner"}, default=str)
+        return f"{repo}:{t}" if repo else t
+
+
+    def _result_ok(response) -> bool:
+        if isinstance(response, dict):
+            if response.get("isError") or response.get("is_error") or response.get("error"):
+                return False
+            inner = response.get("result")
+            if isinstance(inner, dict) and (inner.get("isError") or inner.get("error")):
+                return False
+            return True
+        return not str(response or "").lstrip().lower().startswith("error")
+
+
+    def trail_of(reply, scrub=None) -> list[dict]:
+        """The agent's tool calls in order, `{tool, target, ok}`: from the raw A2A task (call parts and
+        result parts, matched by id, else by order per tool name), else from Reply.tool_calls with
+        `ok` null. Tool results are read for success only, never logged."""
+        raw = getattr(reply, "raw", None)
+        calls, results, by_name = [], {}, {}
+        task = raw.get("task") if isinstance(raw, dict) else None
+        if isinstance(task, dict):
+            for a in task.get("artifacts") or []:
+                for part in (a.get("parts") or []) if isinstance(a, dict) else []:
+                    d = part.get("data") if isinstance(part, dict) else None
+                    if not isinstance(d, dict) or not isinstance(d.get("name"), str):
+                        continue
+                    if "response" in d:
+                        if d.get("id"):
+                            results[d["id"]] = d["response"]
+                        else:
+                            by_name.setdefault(d["name"], []).append(d["response"])
+                    elif "args" in d:
+                        calls.append(d)
+        if not calls:
+            calls = [dict(c) for c in (getattr(reply, "tool_calls", None) or []) if isinstance(c, dict)]
+        out = []
+        for c in calls[:TRAIL_MAX]:
+            name = str(c.get("name") or "?")
+            if c.get("id") and c["id"] in results:
+                ok = _result_ok(results[c["id"]])
+            elif by_name.get(name):
+                ok = _result_ok(by_name[name].pop(0))
+            else:
+                ok = None
+            out.append({"tool": name, "target": clip(target_of(name, c.get("args")), 120, scrub), "ok": ok})
+        return out
+
+
+    def evidence_rows(verified: dict, scrub=None) -> tuple[list[dict], list[dict]]:
+        """Every evidence item the agent cited, kept or dropped, in id order; plus the other drops
+        (docs rule, likely-cause refs, verdict, past bugs)."""
+        def ref_of(e):
+            ref = e.get("ref")
+            if e.get("kind") == "file" and e.get("line"):
+                ref = f"{ref}:{e.get('line')}"
+            return clip(ref, 160, scrub)
+        rows = [{"id": e.get("id"), "kind": e.get("kind"), "ref": ref_of(e), "verified": True, "reason": None}
+                for e in verified.get("evidence") or [] if isinstance(e, dict)]
+        other = []
+        for x in (verified.get("verification") or {}).get("dropped") or []:
+            if not isinstance(x, dict):
+                continue
+            row = {"id": x.get("id"), "kind": x.get("kind"), "ref": clip(x.get("ref"), 160, scrub),
+                   "verified": False, "reason": clip(x.get("reason"), 200, scrub)}
+            (other if str(x.get("id")) in NOT_EVIDENCE else rows).append(row)
+
+        def order(r):
+            m = re.match(r"[A-Za-z]*(\d+)$", str(r.get("id") or ""))
+            return (int(m.group(1)) if m else 10 ** 6, str(r.get("id")))
+        return sorted(rows, key=order), [{k: r[k] for k in ("id", "ref", "reason")} for r in other]
+
+
+    def posted_fields(issue: dict, verified: dict, scrub=None) -> dict:
+        """The `posted` line's findings, as verified (what the comment shows), for the hk-demo tab."""
+        lc, dr = verified.get("likely_cause"), verified.get("docs_rule")
+        evidence, other = evidence_rows(verified, scrub)
+        return {
+            "title": clip(issue.get("title"), 200, scrub),
+            "ticket": clip(issue.get("body") or "", 600, scrub),
+            "confidence": verified.get("confidence"),
+            "summary": clip(verified.get("summary"), 600, scrub),
+            "likely_cause": ({"change_ref": clip(lc.get("change_ref"), 80, scrub),
+                              "live_since": clip(lc.get("live_since"), 40, scrub),
+                              "code_ref": clip(lc.get("code_ref"), 160, scrub)} if isinstance(lc, dict) else None),
+            "docs_rule": ({"path": clip(dr.get("path"), 160, scrub), "rule_id": clip(dr.get("rule_id"), 40, scrub),
+                           "quote": clip(dr.get("quote"), 200, scrub)} if isinstance(dr, dict) else None),
+            "hypotheses": [{"id": h.get("id"), "statement": clip(h.get("statement"), 200, scrub),
+                            "status": h.get("status"), "evidence": list(h.get("evidence_ids") or [])}
+                           for h in verified.get("hypotheses") or [] if isinstance(h, dict)],
+            "evidence": evidence,
+            "dropped_other": other,
+            "next_step": clip(verified.get("next_step"), 300, scrub),
+        }
 
 
     class Scrubber:
@@ -313,6 +476,9 @@ data:
         def pull(self, repo: str, number: int) -> dict:
             return self.request("GET", f"repos/{repo}/pulls/{number}") or {}
 
+        def list_comments(self, repo: str, number: int) -> list[dict]:
+            return self.request("GET", f"repos/{repo}/issues/{number}/comments?per_page=100") or []
+
 
     def prom_query(base: str, expr: str, *, opener=None, timeout: float = 20.0) -> list[dict]:
         """A Prometheus instant query: the `result` vector."""
@@ -415,10 +581,12 @@ data:
                 "Filed by the bug-investigator trigger from the Taskboard server-errors alert. "
                 "The investigation follows as a comment.",
             ])
-            issue = gh.create_issue(cfg.repo, f"Server errors on {route}", body, [BUG_LABEL, ALERT_LABEL])
+            title = f"Server errors on {route}"
+            issue = gh.create_issue(cfg.repo, title, body, [BUG_LABEL, ALERT_LABEL])
             blocked.add(route)
             filed.append(issue.get("number"))
-            log({"event": "alert_issue_filed", "issue": issue.get("number"), "route": route, "count": count})
+            log({"event": "alert_issue_filed", "issue": issue.get("number"), "route": route, "count": count,
+                 "title": title, "first_seen": iso(now)})
         return filed
 
 
@@ -451,7 +619,7 @@ data:
                 continue
             login = labelled_by(gh, cfg.repo, issue)
             if may_trigger(cfg, gh, login):
-                return issue
+                return {**issue, "_filed_by": login}
             log({"event": "skipped_untrusted", "issue": issue["number"], "labelled_by": login})
         return None
 
@@ -566,12 +734,14 @@ data:
         wait = wait or a2a.wait_for_task
         url = a2a.resolve_endpoint(cfg.kagent_base, agent)
         deadline = clock() + timeout
-        reply = a2a.parse_result(send(url, text, user=None, token_file=cfg.kagent_token_file, timeout=timeout))
+        raw = send(url, text, user=None, token_file=cfg.kagent_token_file, timeout=timeout)
+        reply = a2a.parse_result(raw)
         if reply.kind == "task" and reply.task_id and not reply.settled:
             remaining = deadline - clock()
             if remaining > 0:
-                reply = a2a.parse_result(wait(url, reply.task_id, user=None, token_file=cfg.kagent_token_file,
-                                              timeout=remaining))
+                raw = wait(url, reply.task_id, user=None, token_file=cfg.kagent_token_file, timeout=remaining)
+                reply = a2a.parse_result(raw)
+        reply.raw = raw     # trail_of reads the call and result parts; the raw result is never logged
         return reply
 
 
@@ -607,32 +777,34 @@ data:
     def investigate(cfg: Config, issue: dict, token: str, core, d: Deps) -> dict:
         n = issue["number"]
         work = Path(cfg.work_dir) / f"issue-{n}"
+        begun = d.clock()
         try:
             d.ensure_gh(Path(cfg.work_dir) / "tools")
             app_dir, deploy_dir = d.clone(cfg, token, work, scrub=d.scrub)
             facts, facts_md = core.gather(n, app_dir, deploy_dir)
-        except Failure:
+        except Failure as e:
+            e.stage = e.stage or "prepare"
             raise
         except Exception as e:  # noqa: BLE001 - any crash before the agent is asked is retried next run
-            raise Failure(f"preparing the investigation failed: {type(e).__name__}: {e}") from None
+            raise Failure(f"preparing the investigation failed: {type(e).__name__}: {e}", stage="prepare") from None
         d.log({"event": "gathered", "issue": n, "prs": len(facts.get("merged_prs") or []),
-               "deploys": len(facts.get("deploys") or []), "problems": facts.get("problems") or []})
+               "deploys": len(facts.get("deploys") or []), "problems": facts.get("problems") or [],
+               "seconds": round(float(d.clock() - begun), 1)})
 
         started = d.clock()
         try:
             reply = d.ask(cfg, cfg.agent, MESSAGE.format(issue=n, repo=cfg.repo, facts=facts_md), cfg.agent_timeout)
         except (a2a.A2AError, OSError, ValueError) as e:
             # The input may have run (a timeout after the send): count it as spent.
-            raise Failure(f"the A2A call to {cfg.agent} failed: {str(e)[:300]}", spent=True) from None
+            raise Failure(f"the A2A call to {cfg.agent} failed: {str(e)[:300]}", spent=True, stage="ask") from None
         elapsed_ms = int((d.clock() - started) * 1000)
         try:
             findings = parse_findings(answer_of(cfg.agent, reply, cfg.agent_timeout))
-        except Failure as e:
-            raise Failure(str(e), spent=True) from None
-        except ValueError as e:
-            raise Failure(str(e), spent=True) from None
+        except (Failure, ValueError) as e:
+            raise Failure(str(e), spent=True, stage="answer") from None
         d.log({"event": "answered", "issue": n, "session": reply.context_id, "verdict": findings.get("verdict"),
-               "tool_calls": len(reply.tool_calls or []), "seconds": round(elapsed_ms / 1000)})
+               "tool_calls": len(reply.tool_calls or []), "seconds": round(elapsed_ms / 1000),
+               "trail": trail_of(reply, d.scrub)})
 
         try:
             verified = core.verify(findings, facts, n, app_dir, deploy_dir)
@@ -640,13 +812,23 @@ data:
                                                   "duration_ms": elapsed_ms}))
             done = core.post(n, body, work / "comment")
         except Exception as e:  # noqa: BLE001 - nothing (or only the edit of our own comment) was posted
-            raise Failure(f"verify/render/post failed: {type(e).__name__}: {e}", spent=True) from None
+            raise Failure(f"verify/render/post failed: {type(e).__name__}: {e}", spent=True, stage="post") from None
         if not done:
-            raise Failure("post wrote no comment", spent=True)
+            raise Failure("post wrote no comment", spent=True, stage="post")
         v = verified.get("verification") or {}
         d.log({"event": "posted", "issue": n, "verdict": verified.get("verdict"), "done": done,
-               "verified": v.get("verified"), "total": v.get("total"), "session": reply.context_id})
+               "verified": v.get("verified"), "total": v.get("total"), "session": reply.context_id,
+               **posted_fields(issue, verified, d.scrub), "comment_url": comment_url(cfg, d.github, n)})
         return verified
+
+
+    def comment_url(cfg: Config, gh: GitHub, n: int) -> str | None:
+        """The link to the comment just posted (the last one carrying our marker); None if unreadable."""
+        try:
+            mine = [c for c in gh.list_comments(cfg.repo, n) or [] if COMMENT_MARKER in (c.get("body") or "")]
+        except Exception:  # noqa: BLE001 - the link is a convenience; the line is logged without it
+            return None
+        return (mine[-1].get("html_url") if mine else None) or None
 
 
     def hand_off_fix(cfg: Config, gh: GitHub, issue: dict, verified: dict, d: Deps) -> str:
@@ -655,8 +837,10 @@ data:
         current = gh.issue(cfg.repo, n)
         if FIX_LABEL in labels_of(current):
             return "already proposed"
+        started, session, pr, existing = d.clock(), None, None, None
         try:
             reply = d.ask(cfg, cfg.implementer, fix_request(issue, verified), cfg.fix_timeout)
+            session = reply.context_id
             answer = answer_of(cfg.implementer, reply, cfg.fix_timeout)
             quoted = "\n\n> " + d.scrub(answer.strip())[:800].replace("\n", "\n> ")
             # Only a PR on the implementer's own branch for this issue counts as proposed. Its reply may
@@ -664,14 +848,16 @@ data:
             ours, others = None, []
             if not answer.strip().lower().startswith("no pull request"):
                 for url in dict.fromkeys(PR_URL_RE.findall(answer)):
+                    number = int(url.rsplit("/", 1)[1])
                     try:
-                        head = ((gh.pull(cfg.repo, int(url.rsplit("/", 1)[1])) or {}).get("head") or {}).get("ref")
+                        head = ((gh.pull(cfg.repo, number) or {}).get("head") or {}).get("ref")
                     except Exception:  # noqa: BLE001 - an unreadable PR is not claimed as ours
                         head = None
                     if head == f"agent/taskboard-issue-{n}":
-                        ours = url
+                        ours, pr = url, {"url": url, "number": number, "head": head}
                         break
                     others.append(url)
+                    existing = existing or {"url": url, "number": number, "head": head}
             if ours:
                 text = (f"🛠️ Fix proposed by `{cfg.implementer}`: {ours}\n\nIt fixes the verified "
                         "likely cause above and adds a regression test. A person reviews and merges it; "
@@ -690,11 +876,14 @@ data:
             outcome = "failed"
         gh.comment(cfg.repo, n, f"{FIX_MARKER}\n{text}")
         gh.add_labels(cfg.repo, n, [FIX_LABEL])
-        d.log({"event": "fix_handoff", "issue": n, "outcome": outcome})
+        d.log({"event": "fix_handoff", "issue": n, "outcome": outcome, "session": session, "pr": pr,
+               "existing_pr": existing, "seconds": round(d.clock() - started)})
         return outcome
 
 
     def run(cfg: Config, token: str, d: Deps) -> int:
+        base_log = d.log
+        d = replace(d, log=lambda obj: base_log({"run": cfg.run_id or None, **obj}))   # `run` on every line
         gh, log, status = d.github, d.log, 0
         if cfg.alert_enabled:
             try:
@@ -712,11 +901,14 @@ data:
         except Exception as e:  # noqa: BLE001 - a broken package is the deploy's fault, not the issue's
             log({"event": "core_unavailable", "issue": n, "error": d.scrub(e)[:400]})
             return 1
-        log({"event": "investigating", "issue": n, "title": str(issue.get("title", ""))[:120]})
+        log({"event": "investigating", "issue": n, "title": clip(issue.get("title", ""), 120, d.scrub),
+             "alert": ALERT_LABEL in labels_of(issue), "filed_by": issue.get("_filed_by"),
+             "opened_at": issue.get("created_at")})
         try:
             verified = investigate(cfg, issue, token, core, d)
         except Failure as e:
-            log({"event": "investigation_failed", "issue": n, "spent": e.spent, "error": d.scrub(e)[:600]})
+            log({"event": "investigation_failed", "issue": n, "spent": e.spent, "stage": e.stage,
+                 "error": clip(e, 600, d.scrub)})
             if e.spent:
                 try:
                     gh.add_labels(cfg.repo, n, [FAILED_LABEL])
@@ -732,8 +924,20 @@ data:
         return status
 
 
+    def masked(o):
+        """Every string in a log object with emails masked (before json.dumps, so escapes stay intact)."""
+        if isinstance(o, str):
+            return mask_emails(o)
+        if isinstance(o, dict):
+            return {k: masked(v) for k, v in o.items()}
+        if isinstance(o, (list, tuple)):
+            return [masked(v) for v in o]
+        return o
+
+
     def log_line(obj: dict, scrub=None) -> None:
-        line = json.dumps({"time": iso(utc_now()), "component": "bug-investigator-trigger", **obj}, default=str)
+        line = json.dumps(fit(masked({"time": iso(utc_now()), "component": "bug-investigator-trigger", **obj})),
+                          default=str)
         print(scrub(line) if scrub else line, flush=True)
 
 
@@ -753,7 +957,7 @@ data:
                                "GIT_TERMINAL_PROMPT": "0"})
             return run(cfg, token, Deps(github=GitHub(token), core=PackageCore, log=log, scrub=scrub))
         except Exception as e:  # noqa: BLE001 - one line in Loki says what broke, never the token
-            log({"event": "crashed", "error": scrub(f"{type(e).__name__}: {e}")[:600],
+            log({"event": "crashed", "run": cfg.run_id or None, "error": scrub(f"{type(e).__name__}: {e}")[:600],
                  "trace": scrub(traceback.format_exc())[-1500:]})
             return 1
 

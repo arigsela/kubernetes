@@ -406,7 +406,7 @@ def test_an_idle_run_exits_zero():
     cfg, d, asked, _ = make(gh)
     logs = []
     d.log = logs.append
-    assert t.run(cfg, TOKEN, d) == 0 and not asked and logs[-1] == {"event": "idle"}
+    assert t.run(cfg, TOKEN, d) == 0 and not asked and logs[-1] == {"run": None, "event": "idle"}
 
 
 # ---------------------------------------------------------------- the token
