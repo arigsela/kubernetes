@@ -601,6 +601,117 @@ data:
                         params:
                           - 90
 
+          # Nothing alerted when a workload was down or crash-looping: the two rules above
+          # watch pressure, not availability, and Beacon's probe of hk-demo's /ping is answered
+          # by its oauth2-proxy sidecar, not the app. Found by the hk-demo production-readiness
+          # review (2026-10-27). Both read kube-state-metrics (bundled in Coroot's cluster agent)
+          # and cover every namespace.
+          #
+          # for: 10m, not 5m: a Recreate rollout leaves its Deployment with no available replica
+          # for up to ~4 minutes (hk-demo, 7-day backtest on 2026-10-27). With 10m, that week
+          # would have fired only for model-gateway's 10-minute outage (its own rule fired too).
+          - uid: deployment-unavailable
+            title: Deployment has no available replicas
+            condition: threshold
+            for: 10m
+            annotations:
+              summary: >-
+                {{ $labels.namespace }}/{{ $labels.deployment }} wants
+                {{ with $values.query }}{{ .Value | printf "%.0f" }}{{ else }}n/a{{ end }} replica(s)
+                and has none available.
+              runbook: >-
+                kubectl -n <namespace> get pods and their events (image pull, failing probes,
+                Pending), then the app's base-apps/<app>/runbook.md. Container crash-looping
+                often fires with it.
+            labels:
+              severity: critical
+              pillar: availability
+            noDataState: OK
+            # KeepLast for the same reason as the memory rule: Prometheus moves during node patching.
+            execErrState: KeepLast
+            data:
+              - refId: query
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: PBFA97CFB590B2093
+                model:
+                  refId: query
+                  datasource:
+                    type: prometheus
+                    uid: PBFA97CFB590B2093
+                  instant: true
+                  range: false
+                  # The desired replica count of every Deployment that wants some and has none
+                  # available. A Deployment scaled to 0 is not down.
+                  expr: >-
+                    max by (namespace, deployment) (kube_deployment_spec_replicas > 0)
+                    unless on (namespace, deployment)
+                    max by (namespace, deployment) (kube_deployment_status_replicas_available > 0)
+              - refId: threshold
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: query
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 0
+
+          # max_over_time over 5m: between back-offs a crash-looping container runs for a few
+          # seconds, and one Running sample would reset `for`.
+          - uid: container-crash-looping
+            title: Container crash-looping
+            condition: threshold
+            for: 10m
+            annotations:
+              summary: >-
+                {{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) has been in
+                CrashLoopBackOff for at least 10 minutes.
+              runbook: >-
+                kubectl -n <namespace> logs <pod> -c <container> --previous, and describe the pod
+                for OOMKilled or a failing probe; then the app's base-apps/<app>/runbook.md.
+            labels:
+              severity: warning
+              pillar: availability
+            noDataState: OK
+            execErrState: KeepLast
+            data:
+              - refId: query
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: PBFA97CFB590B2093
+                model:
+                  refId: query
+                  datasource:
+                    type: prometheus
+                    uid: PBFA97CFB590B2093
+                  instant: true
+                  range: false
+                  expr: >-
+                    max by (namespace, pod, container)
+                    (max_over_time(kube_pod_container_status_waiting_reason{reason="CrashLoopBackOff"}[5m]))
+              - refId: threshold
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: threshold
+                  type: threshold
+                  expression: query
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 0
+
       # ----------------------------------------------------------------------
       # Agent Substrate (kagent 1.0's runtime, base-apps/substrate/). Its CAs are valid 365
       # days and nothing renews them; when one lapses every Substrate call fails. The
