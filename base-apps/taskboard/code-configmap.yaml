@@ -3,7 +3,7 @@
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-taskboard-configmap.py
-# Source:     arigsela/taskboard@eb97a0bd6f49ebe233ed5694b82e49d6564454ae
+# Source:     arigsela/taskboard@ffa44c37f87aceea2889e7f9f2cb2d9eeb97b1c0
 #             (taskboard/* and traffic/simulate.py)
 # Regenerate: ./scripts/gen-taskboard-configmap.py --source <taskboard checkout> --commit <sha>
 # tests/taskboard/ fails if this file and deployment.yaml's checksum/code or source-commit disagree.
@@ -18,7 +18,7 @@ metadata:
   labels:
     app: taskboard
   annotations:
-    taskboard.arigsela.com/source-commit: eb97a0bd6f49ebe233ed5694b82e49d6564454ae
+    taskboard.arigsela.com/source-commit: ffa44c37f87aceea2889e7f9f2cb2d9eeb97b1c0
     taskboard.arigsela.com/source-repo: arigsela/taskboard
 data:
   app.js: |
@@ -468,7 +468,7 @@ data:
         def archive_now(self, now=None):
             """One run of the archive job (S7). Returns how many tasks it archived."""
             with self.connection() as conn:
-                archived = archive.run_once(conn, self.config.archive_done_after_days, now)
+                archived = archive.run_once(conn, self.config.archive_done_after_seconds, now)
             self.archive_runs_total.inc()
             self.tasks_archived_total.inc(amount=archived)
             return archived
@@ -758,16 +758,17 @@ data:
     log = logging.getLogger("taskboard.archive")
 
 
-    def run_once(conn, after_days, now=None):
-        """Archive done tasks whose done_at is before now - after_days. Returns how many."""
+    def run_once(conn, after_seconds, now=None):
+        """Archive done tasks whose done_at is before now - after_seconds. Returns how many."""
         now = now or tasks.utcnow()
-        cutoff = now - timedelta(days=after_days)
+        cutoff = now - timedelta(seconds=after_seconds)
         with db.transaction(conn):
             archived = conn.execute(
                 "UPDATE tasks SET archived_at = ? WHERE status = 'done' AND archived_at IS NULL AND done_at < ?",
                 (tasks.iso(now), tasks.iso(cutoff)),
             ).rowcount
-        logs.event(log, "archive_run", archived=archived, threshold_days=after_days, cutoff=tasks.iso(cutoff))
+        threshold_days = round(after_seconds / 86400, 2)
+        logs.event(log, "archive_run", archived=archived, threshold_days=threshold_days, cutoff=tasks.iso(cutoff))
         return archived
 
 
@@ -799,12 +800,16 @@ data:
     """
 
     import os
+    import re
     from dataclasses import asdict, dataclass
 
     DEFAULT_USERS = "dana:editor,lee:editor,priya:editor,sam:viewer,alex:admin"
     ROLES = ("viewer", "editor", "admin")
     LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
     MAX_PAGE_SIZE = 200
+
+    _DURATION = re.compile(r"^(\d+(?:\.\d+)?)\s*([smhd]?)$")
+    _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
 
     class ConfigError(ValueError):
@@ -815,7 +820,7 @@ data:
     class Config:
         users: dict  # C1: name -> role
         wip_limit: int  # C2
-        archive_done_after_days: int  # C3
+        archive_done_after_seconds: float  # C3 (ARCHIVE_DONE_AFTER_DAYS)
         archive_interval_seconds: int  # C4
         page_size: int  # C5
         seed_demo_data: bool  # C6
@@ -863,6 +868,26 @@ data:
         return value
 
 
+    def parse_duration(text, default_unit="h"):
+        """Seconds in a duration such as '36h', '14d', '90m' or '45s'."""
+        match = _DURATION.match(text.strip().lower())
+        if not match:
+            raise ValueError(f"{text!r} is not a duration like 14d or 36h")
+        number, unit = match.groups()
+        return float(number) * _UNIT_SECONDS[unit or default_unit]
+
+
+    def _duration(env, name, default):
+        raw = env.get(name, "").strip() or default
+        try:
+            seconds = parse_duration(raw)
+        except ValueError as exc:
+            raise ConfigError(f"{name}: {exc}") from None
+        if seconds <= 0:
+            raise ConfigError(f"{name}: must be more than zero")
+        return seconds
+
+
     def _bool(env, name, default):
         raw = env.get(name, "").strip().lower()
         if not raw:
@@ -882,7 +907,7 @@ data:
         return Config(
             users=_users(env.get("TASKBOARD_USERS", DEFAULT_USERS)),
             wip_limit=_int(env, "WIP_LIMIT", 3),
-            archive_done_after_days=_int(env, "ARCHIVE_DONE_AFTER_DAYS", 14),
+            archive_done_after_seconds=_duration(env, "ARCHIVE_DONE_AFTER_DAYS", "14"),
             archive_interval_seconds=_int(env, "ARCHIVE_INTERVAL_SECONDS", 60),
             page_size=min(_int(env, "PAGE_SIZE", 50), MAX_PAGE_SIZE),
             seed_demo_data=_bool(env, "SEED_DEMO_DATA", True),
