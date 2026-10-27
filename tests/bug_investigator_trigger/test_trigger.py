@@ -5,6 +5,7 @@ hand-off guard, failure handling, and that the GitHub token never reaches a log 
 import hashlib
 import io
 import json
+from dataclasses import replace
 import tarfile
 from datetime import datetime, timedelta, timezone
 
@@ -128,9 +129,12 @@ def make(gh, *, core=None, prom=None, answers=None, clone=None, logs=None, cfg=N
     asked = []
     answers = dict(answers or {})
 
-    def ask(cfg_, agent, text, timeout):
+    def ask(cfg_, agent, text, timeout, context_id=None):
         asked.append((agent, text))
-        value = answers.get(agent, reply(FINDINGS_JSON))
+        if context_id:                       # the memory turn: same session as the investigation
+            value = answers.get("memory", reply("saved", tool_calls=[{"name": "save_memory", "args": {}}]))
+        else:
+            value = answers.get(agent, reply(FINDINGS_JSON))
         if isinstance(value, Exception):
             raise value
         return value
@@ -308,8 +312,9 @@ def test_a_run_investigates_posts_and_hands_a_verified_cause_to_the_implementer(
     assert t.run(cfg, TOKEN, d) == 0
     core = holder["core"]
     assert core.posted and core.posted[0][0] == 24
-    assert [a for a, _ in asked] == [t.AGENT, t.IMPLEMENTER]
+    assert [a for a, _ in asked] == [t.AGENT, t.IMPLEMENTER, t.AGENT]     # investigate, fix, remember
     assert "# Facts gathered by script" in asked[0][1]
+    assert "save_memory" in asked[2][1] and PR_URL in asked[2][1] and "taskboard/permissions.py:56" in asked[2][1]
     assert gh.comments and PR_URL in gh.comments[-1][1] and t.FIX_MARKER in gh.comments[-1][1]
     assert (24, ["fix-proposed"]) in gh.labelled
 
@@ -326,7 +331,7 @@ def test_no_hand_off_without_a_verified_cause_or_when_already_proposed():
     cfg, d, asked, _ = make(gh)
     gh.store[26]["labels"].append({"name": "fix-proposed"})   # labelled between pick and hand-off
     t.run(cfg, TOKEN, d)
-    assert [a for a, _ in asked] == [t.AGENT]
+    assert [a for a, _ in asked] == [t.AGENT, t.AGENT]         # no second fix request; the memory turn
 
 
 def test_an_implementer_without_a_pr_or_that_fails_still_comments_and_labels():
@@ -520,3 +525,69 @@ def test_a_no_pull_request_reply_that_mentions_a_pr_is_quoted_not_linked_as_ours
     assert t.run(cfg, TOKEN, d) == 0
     assert "opened no pull request:" in gh.comments[-1][1]
     assert any(x.get("event") == "fix_handoff" and x["outcome"] == "no pull request" for x in logs)
+
+
+# ---------------------------------------------------------------- memory (§T.148)
+
+def _capturing(d):
+    """Wrap Deps.ask to record each call's context_id."""
+    seen = []
+    inner = d.ask
+
+    def ask(cfg_, agent, text, timeout, context_id=None):
+        seen.append((agent, context_id))
+        return inner(cfg_, agent, text, timeout, context_id=context_id)
+    return replace(d, ask=ask), seen
+
+
+def test_the_verified_outcome_is_saved_in_the_investigations_own_session():
+    i, ev, perms = trusted(40)
+    gh = FakeGitHub([i], events=ev, perms=perms, pulls={31: "agent/taskboard-issue-40"})
+    logs = []
+    cfg, d, asked, _ = make(gh, answers={t.IMPLEMENTER: reply(f"Opened {PR_URL}")}, logs=logs)
+    d, seen = _capturing(d)
+    assert t.run(cfg, TOKEN, d) == 0
+    assert seen[0] == (t.AGENT, None) and seen[-1] == (t.AGENT, "ctx-1")   # same session as the answer
+    line = [x for x in logs if x["event"] == "remembered"][0]
+    assert line["ok"] is True and line["session"] == "ctx-1"
+    assert "#15" in line["memory"] and "P4" in line["memory"] and PR_URL in line["memory"]
+
+
+def test_no_memory_for_an_unclear_outcome_or_when_disabled():
+    i, ev, perms = trusted(41)
+    gh = FakeGitHub([i], events=ev, perms=perms)
+    logs = []
+    cfg, d, asked, _ = make(gh, core=FakeCore(None, verified={**VERIFIED_FIXABLE, "verdict": "unclear"}), logs=logs)
+    assert t.run(cfg, TOKEN, d) == 0
+    assert [a for a, _ in asked] == [t.AGENT]
+    assert [x for x in logs if x["event"] == "remembered"][0]["reason"] == "no verified outcome"
+
+    i, ev, perms = trusted(42)
+    gh = FakeGitHub([i], events=ev, perms=perms)
+    cfg = t.Config.from_env({"MEMORY_ENABLED": "false", "FIX_ENABLED": "false"})
+    cfg.work_dir = "/tmp/bit-test-work"
+    cfg, d, asked, _ = make(gh, cfg=cfg)
+    assert t.run(cfg, TOKEN, d) == 0
+    assert [a for a, _ in asked] == [t.AGENT]
+
+
+def test_a_failed_memory_turn_is_logged_and_changes_nothing_else():
+    i, ev, perms = trusted(43)
+    gh = FakeGitHub([i], events=ev, perms=perms, pulls={31: "agent/taskboard-issue-43"})
+    logs = []
+    cfg, d, _, holder = make(gh, answers={t.IMPLEMENTER: reply(f"Opened {PR_URL}"),
+                                          "memory": a2a.A2AError("HTTP 503")}, logs=logs)
+    assert t.run(cfg, TOKEN, d) == 0
+    assert holder["core"].posted and (43, ["fix-proposed"]) in gh.labelled
+    line = [x for x in logs if x["event"] == "remembered"][0]
+    assert line["ok"] is False and "503" in line["error"] and TOKEN not in json.dumps(logs)
+
+
+def test_memory_text_is_one_bounded_masked_line():
+    issue_ = {"number": 33, "title": "Sam (sam@example.com) can't add tasks", "created_at": "2026-10-27T18:13:00Z"}
+    v = {"verdict": "not_a_bug", "summary": "Viewers may not create tasks (P3). " + "x" * 2000,
+         "docs_rule": {"path": "docs/permissions.md", "rule_id": "P3"}, "verification": {"verified": 2, "total": 4}}
+    text = t.memory_text(issue_, v, None)
+    assert text.startswith("Taskboard #33") and "not a bug" in text and "rule P3" in text
+    assert "sam@example.com" not in text and len(text) <= 900 and "\n" not in text
+    assert t.memory_text(issue_, {**v, "verdict": "needs_info"}, None) is None
