@@ -86,10 +86,22 @@ def test_mounts_follow_the_core_contract_and_the_two_tokens():
     assert "emptyDir" in vols["work"]
 
 
-def test_the_service_account_mounts_no_api_token():
+def test_the_only_api_access_is_get_and_update_on_its_memory_configmap():
+    """§T.148: no automounted token; one Role, get/update on ConfigMap bug-investigator-memory only,
+    bound to this service account; no ClusterRole. The memory ConfigMap carries no data in git."""
     sa = _one("ServiceAccount", "bug-investigator-trigger")
     assert sa["automountServiceAccountToken"] is False
-    assert not [d for d in _docs(TRIGGER) if d["kind"] in ("Role", "RoleBinding", "ClusterRole")]
+    docs = _docs(TRIGGER)
+    assert not [d for d in docs if d["kind"] in ("ClusterRole", "ClusterRoleBinding")]
+    roles = [d for d in docs if d["kind"] == "Role"]
+    assert len(roles) == 1 and roles[0]["rules"] == [
+        {"apiGroups": [""], "resources": ["configmaps"], "resourceNames": ["bug-investigator-memory"],
+         "verbs": ["get", "update"]}]
+    rb = _one("RoleBinding", "bug-investigator-trigger")
+    assert rb["roleRef"]["name"] == roles[0]["metadata"]["name"]
+    assert rb["subjects"] == [{"kind": "ServiceAccount", "name": "bug-investigator-trigger", "namespace": "kagent"}]
+    cm = _one("ConfigMap", "bug-investigator-memory")
+    assert "data" not in cm
 
 
 def test_the_github_token_is_taskboard_only_and_narrow():

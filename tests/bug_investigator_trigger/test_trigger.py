@@ -124,17 +124,43 @@ def reply(text, state=a2a.STATE_COMPLETED, tool_calls=None):
 FINDINGS_JSON = json.dumps({"verdict": "likely_cause", "summary": "s", "evidence": [], "hypotheses": []})
 
 
-def make(gh, *, core=None, prom=None, answers=None, clone=None, logs=None, cfg=None):
+class FakeKube:
+    """The memory ConfigMap: GET returns a copy; PUT needs the resourceVersion it read (else 409)."""
+
+    def __init__(self, items=None, conflicts=0, broken=False):
+        data = {t.MEMORY_KEY: json.dumps(items)} if items is not None else {}
+        self.obj = {"metadata": {"name": t.MEMORY_CONFIGMAP, "resourceVersion": "1"}, "data": data}
+        self.conflicts, self.broken, self.puts = conflicts, broken, 0
+
+    def get(self, path):
+        if self.broken:
+            raise t.KubeError(403, path)
+        return json.loads(json.dumps(self.obj))
+
+    def put(self, path, obj):
+        self.puts += 1
+        if self.conflicts:
+            self.conflicts -= 1
+            self.obj["metadata"]["resourceVersion"] = str(int(self.obj["metadata"]["resourceVersion"]) + 1)
+            raise t.KubeError(409, path)
+        if obj["metadata"]["resourceVersion"] != self.obj["metadata"]["resourceVersion"]:
+            raise t.KubeError(409, path)
+        self.obj = {**obj, "metadata": {**obj["metadata"],
+                                        "resourceVersion": str(int(obj["metadata"]["resourceVersion"]) + 1)}}
+        return self.obj
+
+    def outcomes(self):
+        return json.loads((self.obj.get("data") or {}).get(t.MEMORY_KEY) or "[]")
+
+
+def make(gh, *, core=None, prom=None, answers=None, clone=None, logs=None, cfg=None, kube=None):
     cfg = cfg or t.Config(work_dir="/tmp/bit-test-work")
     asked = []
     answers = dict(answers or {})
 
     def ask(cfg_, agent, text, timeout, context_id=None):
         asked.append((agent, text))
-        if context_id:                       # the memory turn: same session as the investigation
-            value = answers.get("memory", reply("saved", tool_calls=[{"name": "save_memory", "args": {}}]))
-        else:
-            value = answers.get(agent, reply(FINDINGS_JSON))
+        value = answers.get(agent, reply(FINDINGS_JSON))
         if isinstance(value, Exception):
             raise value
         return value
@@ -150,7 +176,8 @@ def make(gh, *, core=None, prom=None, answers=None, clone=None, logs=None, cfg=N
     d = t.Deps(github=gh, prom=prom or (lambda url, expr: []), core=core_factory,
                clone=clone or (lambda cfg, token, work, scrub: ("/w/app", "/w/deploy")),
                ensure_gh=lambda tools: "/usr/bin/gh", ask=ask, log=log, now=lambda: NOW,
-               clock=iter(range(0, 10_000, 30)).__next__, scrub=scrub)
+               clock=iter(range(0, 10_000, 30)).__next__, scrub=scrub,
+               kube=kube if kube is not None else FakeKube())
     return cfg, d, asked, holder
 
 
@@ -312,9 +339,8 @@ def test_a_run_investigates_posts_and_hands_a_verified_cause_to_the_implementer(
     assert t.run(cfg, TOKEN, d) == 0
     core = holder["core"]
     assert core.posted and core.posted[0][0] == 24
-    assert [a for a, _ in asked] == [t.AGENT, t.IMPLEMENTER, t.AGENT]     # investigate, fix, remember
+    assert [a for a, _ in asked] == [t.AGENT, t.IMPLEMENTER]
     assert "# Facts gathered by script" in asked[0][1]
-    assert "save_memory" in asked[2][1] and PR_URL in asked[2][1] and "taskboard/permissions.py:56" in asked[2][1]
     assert gh.comments and PR_URL in gh.comments[-1][1] and t.FIX_MARKER in gh.comments[-1][1]
     assert (24, ["fix-proposed"]) in gh.labelled
 
@@ -331,7 +357,7 @@ def test_no_hand_off_without_a_verified_cause_or_when_already_proposed():
     cfg, d, asked, _ = make(gh)
     gh.store[26]["labels"].append({"name": "fix-proposed"})   # labelled between pick and hand-off
     t.run(cfg, TOKEN, d)
-    assert [a for a, _ in asked] == [t.AGENT, t.AGENT]         # no second fix request; the memory turn
+    assert [a for a, _ in asked] == [t.AGENT]                  # no second fix request
 
 
 def test_an_implementer_without_a_pr_or_that_fails_still_comments_and_labels():
@@ -529,58 +555,100 @@ def test_a_no_pull_request_reply_that_mentions_a_pr_is_quoted_not_linked_as_ours
 
 # ---------------------------------------------------------------- memory (§T.148)
 
-def _capturing(d):
-    """Wrap Deps.ask to record each call's context_id."""
-    seen = []
-    inner = d.ask
-
-    def ask(cfg_, agent, text, timeout, context_id=None):
-        seen.append((agent, context_id))
-        return inner(cfg_, agent, text, timeout, context_id=context_id)
-    return replace(d, ask=ask), seen
+def outcome(n, title, text, saved="2026-10-27T18:00:00Z", **kw):
+    return {"issue": n, "title": title, "text": text, "saved_at": saved, **kw}
 
 
-def test_the_verified_outcome_is_saved_in_the_investigations_own_session():
+OVERDUE = outcome(30, "Server errors on /api/tasks",
+                  'Taskboard #30 "Server errors on /api/tasks" (2026-10-27); likely cause #21 live since '
+                  "2026-10-27 15:57 UTC at taskboard/tasks.py:58; symptom and cause: GET /api/tasks with "
+                  "due_before returns 500, no such column: due_date; fix PR https://github.com/arigsela/taskboard/pull/31",
+                  code_ref="taskboard/tasks.py:58")
+ARCHIVE = outcome(32, "Done column lost everything we finished before today",
+                  'Taskboard #32 "Done column lost everything" (2026-10-27); likely cause #18 at '
+                  "taskboard/config.py:75; rule C3 (docs/configuration.md); archive threshold read as hours",
+                  code_ref="taskboard/config.py:75", rule_id="C3")
+
+
+def test_the_verified_outcome_is_saved_to_the_memory_configmap():
     i, ev, perms = trusted(40)
     gh = FakeGitHub([i], events=ev, perms=perms, pulls={31: "agent/taskboard-issue-40"})
-    logs = []
-    cfg, d, asked, _ = make(gh, answers={t.IMPLEMENTER: reply(f"Opened {PR_URL}")}, logs=logs)
-    d, seen = _capturing(d)
+    kube, logs = FakeKube(items=[]), []
+    cfg, d, asked, _ = make(gh, answers={t.IMPLEMENTER: reply(f"Opened {PR_URL}")}, logs=logs, kube=kube)
     assert t.run(cfg, TOKEN, d) == 0
-    assert seen[0] == (t.AGENT, None) and seen[-1] == (t.AGENT, "ctx-1")   # same session as the answer
+    saved = kube.outcomes()
+    assert [o["issue"] for o in saved] == [40]
+    assert saved[0]["change_ref"] == "#15" and saved[0]["rule_id"] == "P4" and saved[0]["fix"] == PR_URL
     line = [x for x in logs if x["event"] == "remembered"][0]
-    assert line["ok"] is True and line["session"] == "ctx-1"
-    assert "#15" in line["memory"] and "P4" in line["memory"] and PR_URL in line["memory"]
+    assert line["ok"] is True and line["entries"] == 1 and "#15" in line["memory"]
+    assert [a for a, _ in asked] == [t.AGENT, t.IMPLEMENTER]          # no extra agent turn
+
+
+def test_a_matching_outcome_is_recalled_into_the_facts_and_this_issue_is_never_its_own_memory():
+    report = issue(50, "bug", title="Overdue button shows an error",
+                   body="The Overdue view (due_before) answers 500 since 4pm UTC.")
+    gh = FakeGitHub([report], events={50: labelled("arigsela")},
+                    perms={"arigsela": {"permission": "admin", "role_name": "admin"}})
+    kube, logs = FakeKube(items=[OVERDUE, ARCHIVE, outcome(50, "same issue", "due_before 500 overdue")]), []
+    cfg, d, asked, _ = make(gh, logs=logs, kube=kube)
+    t.run(cfg, TOKEN, d)
+    message = asked[0][1]
+    section = message.split("## Remembered outcomes", 1)[1] if "## Remembered outcomes" in message else ""
+    assert section and "- #30:" in section
+    message = section
+    assert "- #32:" not in message and "- #50:" not in message
+    line = [x for x in logs if x["event"] == "recalled"][0]
+    assert line["issues"] == [30] and line["remembered"] == 3
+
+
+def test_no_match_no_section_and_an_unreadable_memory_never_blocks():
+    report = issue(51, "bug", title="Sam can't add tasks", body="Every attempt says forbidden.")
+    gh = FakeGitHub([report], events={51: labelled("arigsela")},
+                    perms={"arigsela": {"permission": "admin", "role_name": "admin"}})
+    cfg, d, asked, _ = make(gh, kube=FakeKube(items=[OVERDUE]))
+    t.run(cfg, TOKEN, d)
+    assert "## Remembered outcomes" not in asked[0][1]
+
+    gh = FakeGitHub([issue(52, "bug")], events={52: labelled("arigsela")},
+                    perms={"arigsela": {"permission": "admin", "role_name": "admin"}})
+    logs = []
+    cfg, d, asked, holder = make(gh, kube=FakeKube(broken=True), logs=logs)
+    assert t.run(cfg, TOKEN, d) == 0
+    assert holder["core"].posted                                     # investigated and posted anyway
+    assert any(x["event"] == "recall_failed" for x in logs)
+    assert any(x["event"] == "remembered" and x["ok"] is False for x in logs)
+
+
+def test_save_retries_a_conflict_replaces_a_rerun_and_keeps_the_newest():
+    i, ev, perms = trusted(41)
+    gh = FakeGitHub([i], events=ev, perms=perms)
+    old = [outcome(n, f"t{n}", f"x{n}", saved=f"2026-10-0{1 + n % 9}T00:00:00Z") for n in range(100, 100 + t.MEMORY_KEEP)]
+    kube = FakeKube(items=old + [outcome(41, "older run of 41", "stale")], conflicts=1)
+    cfg, d, _, _ = make(gh, kube=kube, cfg=t.Config(work_dir="/tmp/bit-test-work", fix_enabled=False))
+    assert t.run(cfg, TOKEN, d) == 0
+    saved = kube.outcomes()
+    assert len(saved) == t.MEMORY_KEEP and kube.puts == 2
+    mine = [o for o in saved if o["issue"] == 41]
+    assert len(mine) == 1 and mine[0]["text"] != "stale"
 
 
 def test_no_memory_for_an_unclear_outcome_or_when_disabled():
-    i, ev, perms = trusted(41)
+    i, ev, perms = trusted(42)
     gh = FakeGitHub([i], events=ev, perms=perms)
-    logs = []
-    cfg, d, asked, _ = make(gh, core=FakeCore(None, verified={**VERIFIED_FIXABLE, "verdict": "unclear"}), logs=logs)
+    kube, logs = FakeKube(items=[]), []
+    cfg, d, _, _ = make(gh, core=FakeCore(None, verified={**VERIFIED_FIXABLE, "verdict": "unclear"}), logs=logs, kube=kube)
     assert t.run(cfg, TOKEN, d) == 0
-    assert [a for a, _ in asked] == [t.AGENT]
+    assert kube.outcomes() == [] and kube.puts == 0
     assert [x for x in logs if x["event"] == "remembered"][0]["reason"] == "no verified outcome"
 
-    i, ev, perms = trusted(42)
+    i, ev, perms = trusted(43)
     gh = FakeGitHub([i], events=ev, perms=perms)
     cfg = t.Config.from_env({"MEMORY_ENABLED": "false", "FIX_ENABLED": "false"})
     cfg.work_dir = "/tmp/bit-test-work"
-    cfg, d, asked, _ = make(gh, cfg=cfg)
+    kube, logs = FakeKube(items=[OVERDUE]), []
+    cfg, d, _, _ = make(gh, cfg=cfg, kube=kube, logs=logs)
     assert t.run(cfg, TOKEN, d) == 0
-    assert [a for a, _ in asked] == [t.AGENT]
-
-
-def test_a_failed_memory_turn_is_logged_and_changes_nothing_else():
-    i, ev, perms = trusted(43)
-    gh = FakeGitHub([i], events=ev, perms=perms, pulls={31: "agent/taskboard-issue-43"})
-    logs = []
-    cfg, d, _, holder = make(gh, answers={t.IMPLEMENTER: reply(f"Opened {PR_URL}"),
-                                          "memory": a2a.A2AError("HTTP 503")}, logs=logs)
-    assert t.run(cfg, TOKEN, d) == 0
-    assert holder["core"].posted and (43, ["fix-proposed"]) in gh.labelled
-    line = [x for x in logs if x["event"] == "remembered"][0]
-    assert line["ok"] is False and "503" in line["error"] and TOKEN not in json.dumps(logs)
+    assert kube.puts == 0 and not any(x["event"] in ("recalled", "remembered") for x in logs)
 
 
 def test_memory_text_is_one_bounded_masked_line():
