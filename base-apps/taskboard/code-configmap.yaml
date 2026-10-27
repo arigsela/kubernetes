@@ -3,7 +3,7 @@
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-taskboard-configmap.py
-# Source:     arigsela/taskboard@ffa44c37f87aceea2889e7f9f2cb2d9eeb97b1c0
+# Source:     arigsela/taskboard@02d4ad7f65ecc0e6fe3e5ee1831bc3ab40f92676
 #             (taskboard/* and traffic/simulate.py)
 # Regenerate: ./scripts/gen-taskboard-configmap.py --source <taskboard checkout> --commit <sha>
 # tests/taskboard/ fails if this file and deployment.yaml's checksum/code or source-commit disagree.
@@ -18,7 +18,7 @@ metadata:
   labels:
     app: taskboard
   annotations:
-    taskboard.arigsela.com/source-commit: ffa44c37f87aceea2889e7f9f2cb2d9eeb97b1c0
+    taskboard.arigsela.com/source-commit: 02d4ad7f65ecc0e6fe3e5ee1831bc3ab40f92676
     taskboard.arigsela.com/source-repo: arigsela/taskboard
 data:
   app.js: |
@@ -970,6 +970,14 @@ data:
                 "CREATE INDEX task_events_task ON task_events (task_id)",
             ],
         ),
+        (
+            3,
+            "rename tasks.due_date to due_at",
+            [
+                # Same naming as created_at, updated_at, done_at and archived_at.
+                "ALTER TABLE tasks RENAME COLUMN due_date TO due_at",
+            ],
+        ),
     ]
 
 
@@ -1436,7 +1444,7 @@ data:
                 due_date = (now + timedelta(days=due_in)).date().isoformat() if due_in is not None else None
                 cursor = conn.execute(
                     "INSERT INTO tasks (project, title, status, assignee, created_by, created_at, updated_at,"
-                    " done_at, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " done_at, due_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         project,
                         title,
@@ -1834,10 +1842,12 @@ data:
         "created_at",
         "updated_at",
         "done_at",
-        "due_date",
+        "due_at",
         "archived_at",
     )
     _SELECT = f"SELECT {', '.join(COLUMNS)} FROM tasks"
+    # API field -> column, where they differ. The API keeps due_date (docs/api.md).
+    _FIELD_COLUMNS = {"due_date": "due_at"}
 
 
     def utcnow():
@@ -1849,7 +1859,9 @@ data:
 
 
     def to_dict(row):
-        return {name: row[name] for name in COLUMNS}
+        task = {name: row[name] for name in COLUMNS}
+        task["due_date"] = task.pop("due_at")
+        return task
 
 
     def get_task(conn, task_id):
@@ -1889,7 +1901,7 @@ data:
     def create_task(conn, *, project, title, created_by, assignee, due_date=None, now=None):
         stamp = iso(now or utcnow())
         cursor = conn.execute(
-            "INSERT INTO tasks (project, title, status, assignee, created_by, created_at, updated_at, due_date)"
+            "INSERT INTO tasks (project, title, status, assignee, created_by, created_at, updated_at, due_at)"
             " VALUES (?, ?, 'open', ?, ?, ?, ?, ?)",
             (project, title, assignee, created_by, stamp, stamp, due_date),
         )
@@ -1904,7 +1916,7 @@ data:
         Reopening an archived task brings it back to the board.
         """
         stamp = iso(now or utcnow())
-        fields = dict(changes)
+        fields = {_FIELD_COLUMNS.get(name, name): value for name, value in changes.items()}
         if "status" in fields and fields["status"] != task["status"]:
             fields["done_at"] = stamp if fields["status"] == "done" else None
             if task["status"] == "done":
