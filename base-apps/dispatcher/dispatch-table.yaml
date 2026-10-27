@@ -175,6 +175,13 @@ data:
           "why": "Not a fault: an approval for the owner, who opens the XTenant PR; nothing for an agent to investigate (beacon §V.54)."
         },
         {
+          "id": "taskboard-server-errors",
+          "source": "grafana",
+          "match": {"alertname": "Taskboard server errors"},
+          "route": "none",
+          "why": "The bug-investigator trigger files and investigates it: same expression, a `bug` issue on arigsela/taskboard (base-apps/kagent/bug-investigator-trigger.yaml)."
+        },
+        {
           "id": "agent-budget-near",
           "source": "grafana",
           "match": {"alertname": "Agent near its daily budget"},

@@ -23,7 +23,7 @@
 #                istio_generate_manifest, istio_generate_waypoint) are `read` —
 #                they return YAML to the caller.
 #   propose      changes a PROPOSAL surface only: a branch or a pull request on
-#                arigsela/kubernetes, never a cluster, an account or a merge. May be
+#                arigsela/kubernetes or arigsela/taskboard, never a cluster, an account or a merge. May be
 #                bound without requireApproval; the merge is the human gate (§V.94).
 #                A `read` template may not bind it; `propose`, `write` and `admin` may.
 #   write        mutates state. May only be bound in an MCP binding with
@@ -122,8 +122,8 @@ data:
     ]
 
   # ------------------------------------------------------------- propose (4)
-  # Branches and pull requests on arigsela/kubernetes, through the implementer GitHub MCP
-  # server (base-apps/kagent/implementer-mcp.yaml). Nothing here touches a cluster or merges
+  # Branches and pull requests on arigsela/kubernetes and arigsela/taskboard (the App is installed
+  # on both), through the implementer GitHub MCP server (base-apps/kagent/implementer-mcp.yaml). Nothing here touches a cluster or merges
   # anything: merge_pull_request, update_pull_request (close/retarget), delete_file and the
   # review tools are never loaded there.
   propose: |
