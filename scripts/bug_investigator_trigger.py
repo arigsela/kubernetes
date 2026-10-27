@@ -118,6 +118,7 @@ GH_MEMBER = f"gh_{GH_VERSION}_linux_amd64/bin/gh"
 
 AGENT_TIMEOUT = 480.0                      # seconds for the investigation
 FIX_TIMEOUT = 480.0                        # seconds for the implementer's pull request
+MEMORY_TIMEOUT = 180.0                     # seconds for the save-to-memory turn
 CLONE_TIMEOUT = 300
 
 MESSAGE = """\
@@ -496,6 +497,7 @@ class Config:
     fix_timeout: float = FIX_TIMEOUT
     alert_enabled: bool = True
     fix_enabled: bool = True
+    memory_enabled: bool = True
     trusted_bots: tuple = TRUSTED_BOTS
     skip_labels: frozenset = frozenset({DONE_LABEL, REHEARSAL_LABEL, FAILED_LABEL})
     run_id: str = ""
@@ -519,6 +521,7 @@ class Config:
                 setattr(c, attr, float(env[name]))
         c.alert_enabled = flag("ALERT_ENABLED", True)
         c.fix_enabled = flag("FIX_ENABLED", True)
+        c.memory_enabled = flag("MEMORY_ENABLED", True)
         if env.get("TRUSTED_BOTS"):
             c.trusted_bots = tuple(x.strip() for x in env["TRUSTED_BOTS"].split(",") if x.strip())
         return c
@@ -714,13 +717,15 @@ class PackageCore:
 
 # ---------------------------------------------------------------- e. A2A
 
-def ask(cfg: Config, agent: str, text: str, timeout: float, *, send=None, wait=None, clock=time.monotonic):
-    """One A2A message to an agent as this pod's service account; waits until it settles."""
+def ask(cfg: Config, agent: str, text: str, timeout: float, *, context_id: str | None = None,
+        send=None, wait=None, clock=time.monotonic):
+    """One A2A message to an agent as this pod's service account; waits until it settles.
+    `context_id` continues that session (the memory step speaks to the investigation's session)."""
     send = send or a2a.send_message
     wait = wait or a2a.wait_for_task
     url = a2a.resolve_endpoint(cfg.kagent_base, agent)
     deadline = clock() + timeout
-    raw = send(url, text, user=None, token_file=cfg.kagent_token_file, timeout=timeout)
+    raw = send(url, text, context_id=context_id, user=None, token_file=cfg.kagent_token_file, timeout=timeout)
     reply = a2a.parse_result(raw)
     if reply.kind == "task" and reply.task_id and not reply.settled:
         remaining = deadline - clock()
@@ -760,7 +765,7 @@ class Deps:
     scrub: Scrubber = field(default_factory=Scrubber)
 
 
-def investigate(cfg: Config, issue: dict, token: str, core, d: Deps) -> dict:
+def investigate(cfg: Config, issue: dict, token: str, core, d: Deps) -> tuple[dict, str | None]:
     n = issue["number"]
     work = Path(cfg.work_dir) / f"issue-{n}"
     begun = d.clock()
@@ -805,7 +810,7 @@ def investigate(cfg: Config, issue: dict, token: str, core, d: Deps) -> dict:
     d.log({"event": "posted", "issue": n, "verdict": verified.get("verdict"), "done": done,
            "verified": v.get("verified"), "total": v.get("total"), "session": reply.context_id,
            **posted_fields(issue, verified, d.scrub), "comment_url": comment_url(cfg, d.github, n)})
-    return verified
+    return verified, reply.context_id
 
 
 def comment_url(cfg: Config, gh: GitHub, n: int) -> str | None:
@@ -891,7 +896,7 @@ def run(cfg: Config, token: str, d: Deps) -> int:
          "alert": ALERT_LABEL in labels_of(issue), "filed_by": issue.get("_filed_by"),
          "opened_at": issue.get("created_at")})
     try:
-        verified = investigate(cfg, issue, token, core, d)
+        verified, session = investigate(cfg, issue, token, core, d)
     except Failure as e:
         log({"event": "investigation_failed", "issue": n, "spent": e.spent, "stage": e.stage,
              "error": clip(e, 600, d.scrub)})
@@ -901,13 +906,77 @@ def run(cfg: Config, token: str, d: Deps) -> int:
             except RuntimeError as le:
                 log({"event": "label_failed", "issue": n, "error": d.scrub(le)[:300]})
         return 1
+    fix = None
     if cfg.fix_enabled and fixable(verified):
         try:
-            hand_off_fix(cfg, gh, issue, verified, d)
+            fix = hand_off_fix(cfg, gh, issue, verified, d)
         except RuntimeError as e:   # the GitHub calls around the hand-off
             log({"event": "fix_handoff_failed", "issue": n, "error": d.scrub(e)[:400]})
-            return 1
+            status = 1
+    if cfg.memory_enabled:
+        remember(cfg, issue, verified, fix, session, d)
     return status
+
+
+# ---------------------------------------------------------------- memory (§T.148)
+
+REMEMBER = """The investigation of {repo} #{issue} is finished and a script has verified it link by link.
+Save this verified outcome: call save_memory once with exactly the text between the markers,
+then reply `saved`. Do not save anything else and do not investigate further.
+
+<<<
+{memory}
+>>>"""
+
+
+def memory_text(issue: dict, verified: dict, fix: str | None, scrub=None) -> str | None:
+    """One line a later investigation can recall: what was reported, what verify confirmed, the fix.
+    Only for an outcome verify upheld (likely cause or not a bug); None otherwise."""
+    verdict = verified.get("verdict")
+    if verdict not in ("likely_cause", "not_a_bug"):
+        return None
+    v = verified.get("verification") or {}
+    lc, dr = verified.get("likely_cause"), verified.get("docs_rule")
+    parts = [f"Taskboard #{issue['number']} \"{clip(issue.get('title'), 120, scrub)}\""
+             f" ({str(issue.get('created_at') or '')[:10]})"]
+    if verdict == "likely_cause" and isinstance(lc, dict):
+        parts.append(f"likely cause {clip(lc.get('change_ref'), 40, scrub)}"
+                     f" live since {clip(lc.get('live_since'), 30, scrub)} at {clip(lc.get('code_ref'), 120, scrub)}")
+    else:
+        parts.append("not a bug: works as documented")
+    if isinstance(dr, dict) and (dr.get("rule_id") or dr.get("path")):
+        parts.append(f"rule {clip(dr.get('rule_id') or '-', 30, scrub)} ({clip(dr.get('path'), 80, scrub)})")
+    parts.append(f"symptom and cause: {clip(verified.get('summary'), 280, scrub)}")
+    if fix and fix.startswith("https://"):
+        parts.append(f"fix PR {fix}")
+    elif fix:
+        parts.append(f"fix: {fix}")
+    parts.append(f"verified {v.get('verified')}/{v.get('total')}")
+    return mask_emails("; ".join(parts))[:900]
+
+
+def remember(cfg: Config, issue: dict, verified: dict, fix: str | None, session: str | None, d: Deps) -> None:
+    """Ask the investigation's own session to save its VERIFIED outcome to memory (kagent-memory).
+    The agent never saves during an investigation (its prompt), so memory holds only outcomes a
+    script checked. Best effort: a failure is logged and changes nothing else."""
+    n = issue["number"]
+    text = memory_text(issue, verified, fix, d.scrub)
+    if not text or not session:
+        d.log({"event": "remembered", "issue": n, "ok": False,
+               "reason": "no verified outcome" if not text else "no session"})
+        return
+    started = d.clock()
+    try:
+        reply = d.ask(cfg, cfg.agent, REMEMBER.format(repo=cfg.repo, issue=n, memory=text),
+                      MEMORY_TIMEOUT, context_id=session)
+        answer = answer_of(cfg.agent, reply, MEMORY_TIMEOUT)
+        saved = any((c or {}).get("name") == "save_memory" for c in (reply.tool_calls or [])) \
+            or "saved" in answer.lower()
+        d.log({"event": "remembered", "issue": n, "session": session, "ok": bool(saved),
+               "memory": text, "seconds": round(float(d.clock() - started), 1)})
+    except (Failure, a2a.A2AError, OSError, ValueError) as e:
+        d.log({"event": "remembered", "issue": n, "session": session, "ok": False,
+               "error": clip(e, 300, d.scrub)})
 
 
 def masked(o):

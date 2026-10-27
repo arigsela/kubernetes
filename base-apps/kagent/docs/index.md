@@ -180,6 +180,7 @@ group moves all five charts in one PR, and only after approval on the Dependency
 | `implementer` | `anthropic-claude-sonnet-5-5-implementer` | `kagent-stateless` | propose | `implementer` (7 read + the 4 propose tools, ungated: the merge is the gate) and the 8 read tools of `kagent-tool-server` (not `agent-docs` too: a tool name bound twice is refused by the runtime). Opens PRs under GitHub App `arigsela-implementer`; called by a human (ask-hk) or the dispatcher (§T.116) |
 | `restarter` | `anthropic-claude-sonnet-5-5-restarter` | `kagent-stateless` | admin | `kagent-tool-server` bound twice: the 8 read tools `requireApproval: false`, and ONLY `k8s_delete_resource` `requireApproval: true`. Restarts the one pod a request names; the dispatcher opens its session after the implementer's `leak` or `rollout-pending` verdict and the owner approves the pending delete on the approvals page `https://dispatcher.arigsela.com/approvals` (Dex login; fallback `ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --task <task> --approve`) (§T.118, §T.119) |
 | `docs-checker` | `anthropic-claude-sonnet-5-5-docs-checker` | `docs-checker` (byo) | read | `agent-docs` (`get_file_contents`, `search_code`, `list_commits`, `get_commit`), nothing else. Finds lines in this repo's docs that no longer match the manifests they describe and proposes the corrected line; it never edits. A LangGraph app on kagent's BYO contract (code in `arigsela/claude-agents` `docs-checker/`) that picks its model per graph node (Haiku 5.5, Sonnet 5.5 to escalate): the ModelConfig decides the key the egress gateway injects, not the model of every call. Ask it `check all` or `check <path>` (§T.131); every Monday the `docs-checker-trigger` CronJob runs it over every doc and posts the findings to Slack (§T.132, "Weekly docs check" below) |
+| `bug-investigator` | `anthropic-claude-sonnet-5-5-bug-investigator` | `kagent-memory` | read | `implementer` (6 read tools only) and `taskboard-telemetry` (5 scoped Loki/Prometheus tools); memory of verified outcomes (§T.146, §T.148) |
 
 The class label lives on the AgentTemplate and is checked against the capability taxonomy
 (`base-apps/admission-policies/agent-capability-taxonomy.yaml`): a `read` template binds only
@@ -213,7 +214,7 @@ snapshot location `s3://ate-snapshots/kagent/`. They differ only in `spec.kagent
 
 | Harness | Memory | Compaction | Used by |
 |---|---|---|---|
-| `kagent-memory` | `embedding-model-config` | none | homelab-knowledge, k8s-agent, istio-agent |
+| `kagent-memory` | `embedding-model-config` | none | homelab-knowledge, k8s-agent, istio-agent, bug-investigator |
 | `kagent-stateless` | none | none | k8s-reader |
 | `kagent-chat` | `embedding-model-config` | every 5 user turns, overlap 2 | skill-suggester, dungeon-crawler-carl-agent |
 
@@ -546,7 +547,7 @@ that a person merges.
 
 | Piece | What it does |
 |---|---|
-| Agent `bug-investigator` (`agent-templates/bug-investigator.yaml`, `agents/`) | Class `read`, `kagent-stateless` (no memory: each report starts from its facts), Sonnet 5.5 on budget group `bug-investigator` ($8/day). Binds 6 read tools of the `implementer` GitHub server and the 5 `taskboard-telemetry` tools. Answers with the findings JSON only (`findings.schema.json`); it cannot write anywhere, not even a comment |
+| Agent `bug-investigator` (`agent-templates/bug-investigator.yaml`, `agents/`) | Class `read`, `kagent-memory` (since §T.148: it recalls the verified outcomes of earlier investigations; see "Memory" below), Sonnet 5.5 on budget group `bug-investigator` ($8/day). Binds 6 read tools of the `implementer` GitHub server and the 5 `taskboard-telemetry` tools. Answers with the findings JSON only (`findings.schema.json`); it cannot write anywhere, not even a comment |
 | Tool server `taskboard-telemetry` (`taskboard-telemetry-mcp.yaml`) | Loki and Prometheus, every query refused unless scoped to `namespace="taskboard"` before any HTTP call. No credential (see "Tools via MCP servers") |
 | Trigger `bug-investigator-trigger` (`bug-investigator-trigger.yaml`, code `scripts/bug_investigator_trigger.py`) | CronJob every 2 minutes, `concurrencyPolicy: Forbid`, killed after 20 minutes. Files alert issues, gathers facts, asks the agent, verifies, posts, hands off the fix. The only piece that writes to GitHub |
 | Core ConfigMap `bug-investigator-core` (generated) | The Action's own package at a pinned claude-agents commit: scope check, gather, verify, render, post, the telemetry adapter and the MCP server. The trigger and the tool server mount it; the Action runs the same files |
@@ -578,6 +579,17 @@ repo is private): every line carries `run` (the Job name); `answered` carries th
 (tool, target, ok; never results), `posted` the verified findings (evidence kept and dropped, with
 reasons), `fix_handoff` the implementer's session and PR. Fields, limits and masking:
 `docs/superpowers/specs/2026-10-27-hk-demo-bug-investigator-tab-design.md` ("Log contract", §T.147).
+
+**Memory** (§T.148). The agent runs on `kagent-memory` and calls `load_memory` once at the start
+with the symptom (route, rule, file or config key), so a report that matches an earlier one is
+named as "the same pattern as #N" and re-checked with tools. It never saves while it
+investigates: after verify, post and the fix hand-off, the trigger sends the same session one
+line it built from the verified findings (issue, cause or rule, fix PR, verified n/m) and asks it
+to save exactly that (`remembered` log line). So memory holds only outcomes a script checked; a
+recalled outcome is a lead, never evidence (verify cannot check it, the prompt forbids citing
+it). Memory is per caller: the trigger's runs share one memory; the eval gate (its own identity)
+and a person's ask-hk session start empty. Memories expire after 15 days and reset at every
+kagent alpha bump. `MEMORY_ENABLED=false` on the CronJob turns the save step off.
 
 **Credentials.** The agent and its sandbox hold none. The trigger holds one: an installation token
 of the `arigsela-implementer` App, minted every 30 minutes by an External Secrets
