@@ -79,7 +79,9 @@ spec:
               value: redis://valkey.hk-demo.svc.cluster.local:6379/0
           resources:
             requests:
-              cpu: 20m
+              # Measured 2026-10-27: a steady ~105m even when idle, flat for 10 days across
+              # 8 releases (3-day median 103m, p95 110m, max 146m). 150m covers the max.
+              cpu: 150m
               memory: 96Mi
             limits:
               cpu: 500m
