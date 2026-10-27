@@ -33,7 +33,7 @@ Each suite has its own conftest; `pytest tests/` as a whole is not what CI runs.
 
 | Suite | Extra needs |
 |---|---|
-| `agent-docs`, `catalog-refs`, `waf`, `techdocs`, `dashboards`, `resize`, `models`, `wan_ip`, `istio_logging`, `cve_report`, `okf`, `agent-identity`, `agent-capability`, `agent-audit`, `eval-corpus`, `eval_gate`, `docs_checker_trigger`, `identity`, `implementer`, `appset`, `substrate`, `alert_demo` | none |
+| `agent-docs`, `catalog-refs`, `waf`, `techdocs`, `dashboards`, `resize`, `models`, `wan_ip`, `istio_logging`, `cve_report`, `okf`, `agent-identity`, `agent-capability`, `agent-audit`, `eval-corpus`, `eval_gate`, `docs_checker_trigger`, `identity`, `implementer`, `appset`, `substrate`, `alert_demo`, `taskboard` | none |
 | `new-app-template` | `jinja2==3.1.4`, `yamllint==1.35.1`, kubeconform v0.6.7 |
 | `admission-policies` | Docker (boots a real k3s and server-side dry-runs the fixtures) |
 | `ansible` | Docker; `ansible-core==2.21.4 ansible-lint==26.9.0 kubernetes==36.0.3`, then `ansible-galaxy collection install -r ansible/requirements.yml` |
@@ -56,6 +56,7 @@ generator. CI runs each with `--check` and fails on drift.
 | `scripts/gen-agent-audit-cronjob.py --repo-root .` | `base-apps/postgresql/agent-audit-cronjob.yaml` | `scripts/agent-audit.py`, `agent-audit-risk.py`, `agent-kpis.py` |
 | `scripts/gen-dispatcher-configmap.py --repo-root .` | `base-apps/dispatcher/code-configmap.yaml` | `scripts/dispatch.py`, `scripts/kagent_a2a.py` |
 | `scripts/gen-alert-demo-configmap.py --repo-root .` | `base-apps/alert-demo/code-configmap.yaml` (+ the Deployment's `checksum/code`) | `scripts/alert_demo.py` |
+| `scripts/gen-taskboard-configmap.py --source <checkout> --commit <sha>` | `base-apps/taskboard/code-configmap.yaml` (+ both Deployments' `checksum/code` and the app's `taskboard.arigsela.com/source-commit`) | an `arigsela/taskboard` commit (private, so CI checks only that the committed pair agrees; `tests/taskboard/`) |
 | `scripts/gen-eval-gate-configmap.py --repo-root .` | `base-apps/kagent/eval-gate-code-configmap.yaml` (+ the Job's `checksum/code`) | `scripts/eval_gate.py`, `kagent_a2a.py`, `score-eval.py`, `capture-eval-answers.py`, `tests/eval-corpus/*.yaml` |
 | `scripts/gen-docs-checker-trigger-configmap.py --repo-root .` | `base-apps/kagent/docs-checker-trigger-code-configmap.yaml` (+ the CronJob's `checksum/code`) | `scripts/docs_checker_trigger.py`, `kagent_a2a.py` |
 

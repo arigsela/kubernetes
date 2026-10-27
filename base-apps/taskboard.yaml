@@ -1,0 +1,31 @@
+# base-apps/taskboard.yaml
+---
+# Taskboard: a deliberately simple task tracker, the target of the bug investigator demo. Its code
+# lives in arigsela/taskboard and runs here from a generated ConfigMap (alert-demo's pattern); a
+# pin commit (scripts/gen-taskboard-configmap.py) is a deploy. §T.145.
+# Design: arigsela/claude-agents docs/superpowers/specs/2026-10-27-bug-investigator-design.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  name: taskboard
+  namespace: argo-cd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arigsela/kubernetes
+    targetRevision: main
+    path: base-apps/taskboard
+    directory:
+      # The agent-docs contract: catalog-info.yaml and the generated mkdocs.yml are not manifests.
+      exclude: '{catalog-info.yaml,mkdocs.yml}'
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: taskboard
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

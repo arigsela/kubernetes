@@ -1,0 +1,10 @@
+# base-apps/taskboard/namespace.yaml
+---
+# Not in the mesh: nothing here calls another service, and the only callers (the traffic pod and
+# Prometheus) are admitted by network-policy.yaml.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: taskboard
+  labels:
+    app.kubernetes.io/part-of: bug-investigator

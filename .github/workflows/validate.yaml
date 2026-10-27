@@ -435,6 +435,24 @@ jobs:
       - name: Check the alert-demo ConfigMap is in sync with the script
         run: python scripts/gen-alert-demo-configmap.py --check --repo-root .
 
+  # Taskboard, the bug investigator's target app (§T.145): two locked-down Deployments on one code
+  # ConfigMap, reachable only from the traffic generator and Prometheus. The ConfigMap is generated
+  # from a commit of the private arigsela/taskboard, which CI cannot read, so the tests check that
+  # the committed ConfigMap, checksums and source-commit annotations agree. See tests/taskboard/
+  # and scripts/gen-taskboard-configmap.py.
+  taskboard-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install pyyaml==6.0.2 pytest==8.3.3
+      - name: Run Taskboard tests
+        run: python -m pytest tests/taskboard/ -q
+
   # The Slack bridge's code ConfigMap must match the tested script, and the two doors it
   # knocks on (the controller, the dispatcher's decide port) must admit exactly its principal
   # (§T.120, §V.98). See tests/slack_bridge/ and scripts/gen-slack-bridge-configmap.py.
