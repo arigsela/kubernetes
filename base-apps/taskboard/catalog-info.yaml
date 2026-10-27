@@ -1,0 +1,20 @@
+# Structured facts for taskboard. Authoritative for owner, dependencies, namespace and
+# lifecycle; the markdown docs do not restate them.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: taskboard
+  namespace: taskboard
+  description: A deliberately simple demo task tracker, the target of the bug investigator demo; its code and product docs live in arigsela/taskboard
+  annotations:
+    agent-docs/path: docs.md
+    backstage.io/techdocs-ref: dir:.
+    backstage.io/kubernetes-label-selector: 'app in (taskboard,taskboard-traffic)'
+    backstage.io/kubernetes-namespace: taskboard
+    github.com/project-slug: arigsela/taskboard
+  tags: [demo, bug-investigator]
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/platform
+  system: default/platform-observability

@@ -1,0 +1,48 @@
+# base-apps/taskboard/network-policy.yaml
+# Who may reach Taskboard: the traffic generator (its only user in the cluster) and Prometheus
+# (scrapes /metrics), both on 8080. People reach the page with kubectl port-forward, which enters
+# the pod's own network namespace and is not subject to this policy; kubelet probes are not
+# affected either (beacon's policies). Ingress-only like the repo's other policies.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: taskboard-ingress
+  namespace: taskboard
+  labels:
+    app: taskboard
+spec:
+  podSelector:
+    matchLabels:
+      app: taskboard
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: taskboard-traffic
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - port: 8080
+          protocol: TCP
+---
+# The traffic generator serves nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: taskboard-traffic-ingress
+  namespace: taskboard
+  labels:
+    app: taskboard-traffic
+spec:
+  podSelector:
+    matchLabels:
+      app: taskboard-traffic
+  policyTypes:
+    - Ingress
