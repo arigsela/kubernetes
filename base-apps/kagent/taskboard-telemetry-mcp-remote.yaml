@@ -1,0 +1,17 @@
+# Registers the Taskboard telemetry tool server (taskboard-telemetry-mcp.yaml) with kagent so the
+# bug-investigator AgentTemplate can bind its tools by name. Same shape as implementer-mcp-remote.yaml.
+apiVersion: api.kagent.dev/v1alpha3
+kind: RemoteMCPServer
+metadata:
+  name: taskboard-telemetry
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: taskboard-telemetry
+spec:
+  description: Taskboard's Loki logs and Prometheus metrics for the bug investigator, scoped to namespace taskboard (read only, no credential)
+  protocol: STREAMABLE_HTTP
+  url: http://taskboard-telemetry-mcp.kagent:3000/mcp
+  timeout: 30s
+  sseReadTimeout: 5m0s
+  terminateOnClose: true

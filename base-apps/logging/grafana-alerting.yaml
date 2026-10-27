@@ -925,7 +925,7 @@ data:
                   range: false
                   expr: |-
                     (sum by (group) (
-                    label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(
+                    label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(
                     sum by (service_name) (((last_over_time(agent_cost_estimate_usd_total[24h]) - last_over_time(agent_cost_estimate_usd_total[1d] offset 24h)) >= 0)
                       or last_over_time(agent_cost_estimate_usd_total[24h])),
                       "group", "hk", "service_name", "homelab-knowledge"),
@@ -933,6 +933,7 @@ data:
                       "group", "implementer", "service_name", "implementer"),
                       "group", "restarter", "service_name", "restarter"),
                       "group", "docs-checker", "service_name", "docs-checker"),
+                      "group", "bug-investigator", "service_name", "bug-investigator"),
                       "group", "k8s-reader", "service_name", "k8s-reader"),
                       "group", "skill-suggester", "service_name", "skill-suggester"),
                       "group", "dcc", "service_name", "dungeon-crawler-carl-agent")
@@ -966,6 +967,12 @@ data:
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
                       "budget_usd", "2.50", "", ""),
+                      "enforced", "true", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(8.0),
+                      "group", "bug-investigator", "", ""),
+                      "agents", "bug-investigator", "", ""),
+                      "budget_usd", "8.00", "", ""),
                       "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
@@ -1006,7 +1013,7 @@ data:
                   range: false
                   expr: |-
                     (sum by (group) (
-                    label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(
+                    label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(
                     sum by (service_name) (((last_over_time(agent_cost_estimate_usd_total[24h]) - last_over_time(agent_cost_estimate_usd_total[1d] offset 24h)) >= 0)
                       or last_over_time(agent_cost_estimate_usd_total[24h])),
                       "group", "hk", "service_name", "homelab-knowledge"),
@@ -1014,6 +1021,7 @@ data:
                       "group", "implementer", "service_name", "implementer"),
                       "group", "restarter", "service_name", "restarter"),
                       "group", "docs-checker", "service_name", "docs-checker"),
+                      "group", "bug-investigator", "service_name", "bug-investigator"),
                       "group", "k8s-reader", "service_name", "k8s-reader"),
                       "group", "skill-suggester", "service_name", "skill-suggester"),
                       "group", "dcc", "service_name", "dungeon-crawler-carl-agent")
@@ -1047,6 +1055,12 @@ data:
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
                       "budget_usd", "2.50", "", ""),
+                      "enforced", "true", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(8.0),
+                      "group", "bug-investigator", "", ""),
+                      "agents", "bug-investigator", "", ""),
+                      "budget_usd", "8.00", "", ""),
                       "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
@@ -1118,7 +1132,7 @@ data:
                   range: false
                   expr: |-
                     (sum by (group) (
-                    label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(
+                    label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(
                     sum by (service_name) (((last_over_time(agent_cost_estimate_usd_total[24h]) - last_over_time(agent_cost_estimate_usd_total[1d] offset 24h)) >= 0)
                       or last_over_time(agent_cost_estimate_usd_total[24h])),
                       "group", "hk", "service_name", "homelab-knowledge"),
@@ -1126,6 +1140,7 @@ data:
                       "group", "implementer", "service_name", "implementer"),
                       "group", "restarter", "service_name", "restarter"),
                       "group", "docs-checker", "service_name", "docs-checker"),
+                      "group", "bug-investigator", "service_name", "bug-investigator"),
                       "group", "k8s-reader", "service_name", "k8s-reader"),
                       "group", "skill-suggester", "service_name", "skill-suggester"),
                       "group", "dcc", "service_name", "dungeon-crawler-carl-agent")
@@ -1159,6 +1174,12 @@ data:
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
                       "budget_usd", "2.50", "", ""),
+                      "enforced", "true", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(8.0),
+                      "group", "bug-investigator", "", ""),
+                      "agents", "bug-investigator", "", ""),
+                      "budget_usd", "8.00", "", ""),
                       "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
@@ -1199,7 +1220,7 @@ data:
                   range: false
                   expr: |-
                     (sum by (group) (
-                    label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(
+                    label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(label_replace(
                     sum by (service_name) (((last_over_time(agent_cost_estimate_usd_total[24h]) - last_over_time(agent_cost_estimate_usd_total[1d] offset 24h)) >= 0)
                       or last_over_time(agent_cost_estimate_usd_total[24h])),
                       "group", "hk", "service_name", "homelab-knowledge"),
@@ -1207,6 +1228,7 @@ data:
                       "group", "implementer", "service_name", "implementer"),
                       "group", "restarter", "service_name", "restarter"),
                       "group", "docs-checker", "service_name", "docs-checker"),
+                      "group", "bug-investigator", "service_name", "bug-investigator"),
                       "group", "k8s-reader", "service_name", "k8s-reader"),
                       "group", "skill-suggester", "service_name", "skill-suggester"),
                       "group", "dcc", "service_name", "dungeon-crawler-carl-agent")
@@ -1240,6 +1262,12 @@ data:
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
                       "budget_usd", "2.50", "", ""),
+                      "enforced", "true", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(8.0),
+                      "group", "bug-investigator", "", ""),
+                      "agents", "bug-investigator", "", ""),
+                      "budget_usd", "8.00", "", ""),
                       "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),
@@ -1339,6 +1367,12 @@ data:
                       "group", "docs-checker", "", ""),
                       "agents", "docs-checker", "", ""),
                       "budget_usd", "2.50", "", ""),
+                      "enforced", "true", "", "")
+                    or
+                    label_replace(label_replace(label_replace(label_replace(vector(8.0),
+                      "group", "bug-investigator", "", ""),
+                      "agents", "bug-investigator", "", ""),
+                      "budget_usd", "8.00", "", ""),
                       "enforced", "true", "", "")
                     or
                     label_replace(label_replace(label_replace(label_replace(vector(0.5),

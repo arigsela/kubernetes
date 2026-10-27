@@ -164,6 +164,20 @@ data:
                   window:
                     rolling: 24h
                   onBudgetExceeded: Block
+            - key: $MODEL_GATEWAY_KEY_BUG_INVESTIGATOR
+              metadata:
+                name: bug-investigator
+                group: bug-investigator
+              allowedModels:
+                - claude-sonnet-5-5
+              budgets:
+                - name: daily
+                  limit:
+                    unit: USD
+                    amount: 8.0
+                  window:
+                    rolling: 24h
+                  onBudgetExceeded: Block
             - key: $MODEL_GATEWAY_KEY_K8S_READER
               metadata:
                 name: k8s-reader

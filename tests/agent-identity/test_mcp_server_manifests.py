@@ -1,9 +1,9 @@
-"""The three stdio MCP servers are plain Deployments (§T.126): agentgateway wraps the stdio
-server and serves it on :3000, under the names kmcp used, so the RemoteMCPServers' URLs and the
+"""The stdio MCP servers are plain Deployments (§T.126): agentgateway wraps the stdio server
+and serves it on :3000, under the names kmcp used, so the RemoteMCPServers' URLs and the
 container-name-keyed alerts keep working. kagent 1.0.0-alpha14 removed kmcp (kagent#3223).
 
 The adapter image is built here (§T.133): scripts/build-agentgateway-image.sh pins the version,
-and the three Deployments must pin that version's image, all by the same digest. A Renovate PR
+and every Deployment must pin that version's image, all by the same digest. A Renovate PR
 that bumps only the script therefore fails here until the image is rebuilt and re-pinned."""
 from pathlib import Path
 import re
@@ -15,6 +15,8 @@ SERVERS = {
     "agent-docs-mcp": ("agent-docs-mcp-remote.yaml", "agent-docs", "agent-docs-github-mcp-token"),
     "brave-search-mcp": ("brave-search-mcp-remote.yaml", "brave-search", "brave-search-mcp-api-key"),
     "implementer-mcp": ("implementer-mcp-remote.yaml", "implementer", "implementer-github-app"),
+    # No credential at all: Loki and Prometheus are queried in-cluster, scoped by the server.
+    "taskboard-telemetry-mcp": ("taskboard-telemetry-mcp-remote.yaml", "taskboard-telemetry", None),
 }
 BUILD_SCRIPT = REPO / "scripts" / "build-agentgateway-image.sh"
 AGW_VERSION = re.search(r"^AGW_VERSION=(\S+)$", BUILD_SCRIPT.read_text(), re.M).group(1)
@@ -77,11 +79,12 @@ def test_deployment_runs_agentgateway_around_the_stdio_server(name):
     assert main["ports"] == [{"name": "http", "containerPort": 3000}]
     assert "@sha256:" in main["image"]
     assert pod["serviceAccountName"] == name
-    assert main["envFrom"] == [{"secretRef": {"name": SERVERS[name][2]}}]
+    secret = SERVERS[name][2]
+    assert main.get("envFrom") == ([{"secretRef": {"name": secret}}] if secret else None)
 
 
-def test_one_adapter_image_for_all_three():
-    """One binary, three Deployments: they move together (what the old Renovate group did)."""
+def test_one_adapter_image_for_all_servers():
+    """One binary, every Deployment: they move together (what the old Renovate group did)."""
     images = {one(n, "Deployment")["spec"]["template"]["spec"]["initContainers"][0]["image"] for n in SERVERS}
     assert len(images) == 1, images
 
@@ -165,7 +168,7 @@ def test_traces_go_to_the_cluster_collector(name):
     assert tracing["host"] == OTLP_COLLECTOR and tracing["protocol"] == "grpc"
     # Sample everything here; the collector's tail sampling cuts the volume (beacon §V.43).
     assert tracing["randomSampling"] == "true"
-    # One Tempo service per server instead of three spans all named "agentgateway".
+    # One Tempo service per server instead of every span all named "agentgateway".
     assert tracing["resources"] == {"service.name": f'"{name}"'}
 
 

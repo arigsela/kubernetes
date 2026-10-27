@@ -107,7 +107,7 @@ The third option, one Anthropic workspace per agent group, was not chosen.
 - How eval-gate treats a budget refusal (§6).
 - How the gateway learns the virtual keys (§3.3).
 - **The console limit is the monthly backstop. It is not sized against the sum of the budgets.**
-  The budgets add up to $28.50 a day, about $883 a month, far above any sensible console limit.
+  The budgets add up to $36.50 a day, about $1131 a month, far above any sensible console limit.
   A group stuck at its cap every day is announced every day by the "blocked" alert, so it cannot
   run unnoticed for long. The owner confirms the console limit leaves room for normal spend plus
   about a week of the largest budget (about $70). The cost if this is wrong: after several days of
