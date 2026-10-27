@@ -105,6 +105,20 @@ data:
           "why": "Only 'limit too low' is a manifest number and becomes a pull request. A leak, or a merged raise the pod has not picked up, is a restart the owner approves; one a day per workload."
         },
         {
+          "id": "deployment-unavailable",
+          "source": "grafana",
+          "match": {"alertname": "Deployment has no available replicas"},
+          "route": "none",
+          "why": "New 2026-10-27 (hk-demo readiness review). A human reads the pod's events and the app's runbook first; once a few have fired, decide whether an investigation adds anything."
+        },
+        {
+          "id": "container-crash-looping",
+          "source": "grafana",
+          "match": {"alertname": "Container crash-looping"},
+          "route": "none",
+          "why": "Same as above: the previous container's logs say why it exits, and a crash loop is a code, config or dependency fault more often than a manifest number."
+        },
+        {
           "id": "agent-ungated-tool",
           "source": "grafana",
           "match": {"alertname": "Agent invoked a gated tool with NO approval"},

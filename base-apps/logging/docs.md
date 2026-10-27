@@ -146,8 +146,10 @@ under `base-apps/logging/`.
    Alert rules (`grafana-alerting.yaml`, delivered to n8n → Slack) cover agent guardrails
    (the ungated-tool rule's runbook links `https://agent-audit.arigsela.com/?days=730`)
    and Falco from Loki, and cluster health from Prometheus: **Pod CPU starved** (PSI CPU
-   stall > 20% for 30m) and **Container near memory limit** (working set > 90% of the
-   limit for 15m). **Agent near its daily budget** and **Agent over its daily budget** (folder
+   stall > 20% for 30m), **Container near memory limit** (working set > 90% of the
+   limit for 15m), **Deployment has no available replicas** (one that wants replicas has none
+   available for 10m) and **Container crash-looping** (CrashLoopBackOff for 10m). The last two
+   read kube-state-metrics from Coroot's cluster agent and cover every namespace. **Agent near its daily budget** and **Agent over its daily budget** (folder
    Agent Budgets) compare each agent group's estimated spend over the last 24 hours with its
    daily budget, **Agent blocked by its daily budget** counts the model gateway's refusals and
    **Model gateway down** fires when no gateway replica is up; all four are generated from
