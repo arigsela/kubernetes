@@ -326,6 +326,9 @@ spec:
               name: grafana-dashboard-model-gateway
           - configMap:
               name: grafana-dashboard-agent-kpis
+          # §T.149: a Taskboard bug investigation, live, for demos.
+          - configMap:
+              name: grafana-dashboard-bug-investigation-live
       - name: alerting
         configMap:
           name: grafana-alerting

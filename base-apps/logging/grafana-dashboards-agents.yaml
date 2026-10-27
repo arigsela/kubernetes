@@ -70,6 +70,15 @@ data:
           "keepTime": false,
           "targetBlank": false,
           "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
+        },
+        {
+          "title": "Bug Investigation \u00b7 live",
+          "type": "link",
+          "url": "/d/bug-investigation-live",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "A Taskboard bug report or alert, step by step, as the platform handles it (\u00a7T.149)"
         }
       ],
       "panels": [
@@ -2274,6 +2283,15 @@ data:
           "keepTime": false,
           "targetBlank": false,
           "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
+        },
+        {
+          "title": "Bug Investigation \u00b7 live",
+          "type": "link",
+          "url": "/d/bug-investigation-live",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "A Taskboard bug report or alert, step by step, as the platform handles it (\u00a7T.149)"
         }
       ],
       "panels": [
@@ -3136,6 +3154,15 @@ data:
           "keepTime": false,
           "targetBlank": false,
           "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
+        },
+        {
+          "title": "Bug Investigation \u00b7 live",
+          "type": "link",
+          "url": "/d/bug-investigation-live",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "A Taskboard bug report or alert, step by step, as the platform handles it (\u00a7T.149)"
         }
       ],
       "panels": [
@@ -4292,6 +4319,15 @@ data:
           "keepTime": false,
           "targetBlank": false,
           "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
+        },
+        {
+          "title": "Bug Investigation \u00b7 live",
+          "type": "link",
+          "url": "/d/bug-investigation-live",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "A Taskboard bug report or alert, step by step, as the platform handles it (\u00a7T.149)"
         }
       ],
       "panels": [
@@ -4793,6 +4829,15 @@ data:
           "keepTime": false,
           "targetBlank": false,
           "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
+        },
+        {
+          "title": "Bug Investigation \u00b7 live",
+          "type": "link",
+          "url": "/d/bug-investigation-live",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "A Taskboard bug report or alert, step by step, as the platform handles it (\u00a7T.149)"
         }
       ],
       "panels": [
@@ -5831,6 +5876,15 @@ data:
           "keepTime": false,
           "targetBlank": false,
           "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
+        },
+        {
+          "title": "Bug Investigation \u00b7 live",
+          "type": "link",
+          "url": "/d/bug-investigation-live",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "A Taskboard bug report or alert, step by step, as the platform handles it (\u00a7T.149)"
         }
       ],
       "panels": [
@@ -6687,6 +6741,15 @@ data:
           "keepTime": false,
           "targetBlank": false,
           "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
+        },
+        {
+          "title": "Bug Investigation \u00b7 live",
+          "type": "link",
+          "url": "/d/bug-investigation-live",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "A Taskboard bug report or alert, step by step, as the platform handles it (\u00a7T.149)"
         }
       ],
       "panels": [
@@ -7458,6 +7521,15 @@ data:
           "keepTime": false,
           "targetBlank": false,
           "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
+        },
+        {
+          "title": "Bug Investigation \u00b7 live",
+          "type": "link",
+          "url": "/d/bug-investigation-live",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "A Taskboard bug report or alert, step by step, as the platform handles it (\u00a7T.149)"
         }
       ],
       "panels": [
@@ -8240,6 +8312,15 @@ data:
           "keepTime": false,
           "targetBlank": false,
           "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
+        },
+        {
+          "title": "Bug Investigation \u00b7 live",
+          "type": "link",
+          "url": "/d/bug-investigation-live",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "A Taskboard bug report or alert, step by step, as the platform handles it (\u00a7T.149)"
         }
       ],
       "panels": [
@@ -9969,6 +10050,1644 @@ data:
             "w": 24,
             "x": 0,
             "y": 55
+          }
+        }
+      ],
+      "templating": {
+        "list": [
+          {
+            "type": "datasource",
+            "name": "prometheus",
+            "label": "Prometheus",
+            "query": "prometheus",
+            "hide": 2,
+            "refresh": 1,
+            "current": {},
+            "options": [],
+            "regex": ""
+          }
+        ]
+      },
+      "annotations": {
+        "list": []
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-bug-investigation-live
+  namespace: logging
+  labels:
+    grafana_dashboard: "1"
+data:
+  bug-investigation-live.json: |
+    {
+      "uid": "bug-investigation-live",
+      "title": "Bug Investigation \u00b7 live",
+      "description": "A Taskboard bug report (or a Taskboard 5xx alert), step by step, as the platform handles it: trigger, memory, the read-only agent's model and tool calls, verify, the comment, the implementer's fix PR. For a live demo: 30 minutes, refreshing every 10 s.",
+      "tags": [
+        "agents"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "graphTooltip": 1,
+      "refresh": "10s",
+      "time": {
+        "from": "now-30m",
+        "to": "now"
+      },
+      "links": [
+        {
+          "title": "Agent Platform",
+          "type": "link",
+          "url": "/d/agent-platform",
+          "icon": "dashboard",
+          "keepTime": true,
+          "targetBlank": false,
+          "tooltip": "The landing page"
+        },
+        {
+          "title": "Agents",
+          "type": "dashboards",
+          "tags": [
+            "agents"
+          ],
+          "asDropdown": true,
+          "keepTime": true,
+          "includeVars": false,
+          "targetBlank": false
+        },
+        {
+          "title": "Cluster Overview",
+          "type": "link",
+          "url": "/d/cluster-overview",
+          "icon": "dashboard",
+          "keepTime": true,
+          "targetBlank": false
+        },
+        {
+          "title": "Agent KPIs",
+          "type": "link",
+          "url": "/d/agent-kpis",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "The playbook's eight agent-scenario KPIs (\u00a7T.144)"
+        },
+        {
+          "title": "Bug Investigation \u00b7 live",
+          "type": "link",
+          "url": "/d/bug-investigation-live",
+          "icon": "dashboard",
+          "keepTime": false,
+          "targetBlank": false,
+          "tooltip": "A Taskboard bug report or alert, step by step, as the platform handles it (\u00a7T.149)"
+        }
+      ],
+      "panels": [
+        {
+          "type": "text",
+          "title": "",
+          "options": {
+            "mode": "markdown",
+            "content": "**A Taskboard bug report, from issue to verified comment and fix pull request, as the platform runs it.** Read the journey top to bottom, left to right: the alert signal; the trigger (a CronJob, plain code, no model) picking the issue and gathering facts; its memory of verified outcomes; the read-only agent's model calls and tool calls (GitHub reads, Loki and Prometheus queries held to namespace `taskboard`); the script that verifies every evidence link before anything is posted; the fix pull request from `kagent/implementer`; the outcome remembered for the next report. Refreshes every 10 s."
+          },
+          "id": 1,
+          "gridPos": {
+            "h": 3,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "type": "row",
+          "title": "Now: the latest investigation in the time range",
+          "id": 2,
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 3
+          },
+          "panels": []
+        },
+        {
+          "type": "stat",
+          "title": "Issue",
+          "description": "The Taskboard issue of the trigger's latest step (its JSON lines in Loki).",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "last_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} != `\"event\": \"idle\"` | json issue | __error__=\"\" | issue!=\"\" | unwrap issue [$__range]) by (app)",
+              "legendFormat": "",
+              "queryType": "instant"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "-",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "prefix:#"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 3,
+          "gridPos": {
+            "h": 4,
+            "w": 2,
+            "x": 0,
+            "y": 4
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Step now",
+          "description": "The trigger's latest step: picked, facts gathered, memory recalled, agent answered, comment posted, fix PR handed off, outcome remembered (or failed).",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "{namespace=\"kagent\", app=\"bug-investigator-trigger\"} != `\"event\": \"idle\"` | json event | line_format `{{ .event }}`",
+              "legendFormat": "",
+              "queryType": "range",
+              "maxLines": 1
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "alert_issue_filed": {
+                      "text": "Alert filed an issue",
+                      "color": "orange",
+                      "index": 0
+                    },
+                    "investigating": {
+                      "text": "Picked the issue",
+                      "color": "blue",
+                      "index": 1
+                    },
+                    "gathered": {
+                      "text": "Facts gathered",
+                      "color": "blue",
+                      "index": 2
+                    },
+                    "recalled": {
+                      "text": "Memory recalled",
+                      "color": "blue",
+                      "index": 3
+                    },
+                    "answered": {
+                      "text": "Agent answered",
+                      "color": "blue",
+                      "index": 4
+                    },
+                    "posted": {
+                      "text": "Comment posted",
+                      "color": "green",
+                      "index": 5
+                    },
+                    "fix_handoff": {
+                      "text": "Fix PR handed off",
+                      "color": "green",
+                      "index": 6
+                    },
+                    "remembered": {
+                      "text": "Outcome remembered",
+                      "color": "green",
+                      "index": 7
+                    },
+                    "investigation_failed": {
+                      "text": "Failed: nothing posted",
+                      "color": "red",
+                      "index": 8
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "/^Line$/",
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 4,
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 2,
+            "y": 4
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Verdict",
+          "description": "The verdict of the latest comment, after verify: a claim it could not re-check is dropped, and a cause left without verified evidence becomes `unclear`.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "{namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"posted\"` | json verdict | line_format `{{ .verdict }}`",
+              "legendFormat": "",
+              "queryType": "range",
+              "maxLines": 1
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "likely_cause": {
+                      "text": "Likely cause",
+                      "color": "green",
+                      "index": 0
+                    },
+                    "not_a_bug": {
+                      "text": "Not a bug",
+                      "color": "blue",
+                      "index": 1
+                    },
+                    "needs_info": {
+                      "text": "Needs info",
+                      "color": "orange",
+                      "index": 2
+                    },
+                    "unclear": {
+                      "text": "Unclear",
+                      "color": "orange",
+                      "index": 3
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "/^Line$/",
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 5,
+          "gridPos": {
+            "h": 4,
+            "w": 3,
+            "x": 6,
+            "y": 4
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Evidence verified",
+          "description": "Evidence links the script re-checked (commits, PRs, file lines and quotes, doc quotes, every Loki/Prometheus query re-run) out of those the agent cited.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "{namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"posted\"` | json verified, total | line_format `{{ .verified }} of {{ .total }}`",
+              "legendFormat": "",
+              "queryType": "range",
+              "maxLines": 1
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "/^Line$/",
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "none",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 6,
+          "gridPos": {
+            "h": 4,
+            "w": 3,
+            "x": 9,
+            "y": 4
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Memory recalled",
+          "description": "Verified outcomes of earlier investigations the trigger matched to this report and added to the facts (\u00a7T.148): leads for the agent, never evidence.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "{namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"recalled\"` | json count, remembered, first=\"issues[0]\", second=\"issues[1]\" | line_format `{{ if eq .count \"0\" }}no match ({{ .remembered }} kept){{ else }}#{{ .first }}{{ if .second }}, #{{ .second }}{{ end }} ({{ .remembered }} kept){{ end }}`",
+              "legendFormat": "",
+              "queryType": "range",
+              "maxLines": 1
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "/^Line$/",
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "none",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 7,
+          "gridPos": {
+            "h": 4,
+            "w": 4,
+            "x": 12,
+            "y": 4
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Fix PR",
+          "description": "The pull request kagent/implementer opened for the latest verified cause, or the open one it found instead of opening a duplicate. A person merges.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "{namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"fix_handoff\"` | json | line_format `{{ if .pr_url }}#{{ .pr_number }} opened{{ else if .existing_pr_url }}#{{ .existing_pr_number }} (existing){{ else }}{{ regexReplaceAll \".*/pull/\" .outcome \"#\" }}{{ end }}`",
+              "legendFormat": "",
+              "queryType": "range",
+              "maxLines": 1
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "\u2014",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "/^Line$/",
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "none",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 8,
+          "gridPos": {
+            "h": 4,
+            "w": 3,
+            "x": 16,
+            "y": 4
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Agent time",
+          "description": "How long the agent took on the latest report, from the A2A request to its answer.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "last_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"answered\"` | json seconds | __error__=\"\" | seconds!=\"\" | unwrap seconds [$__range]) by (app)",
+              "legendFormat": "",
+              "queryType": "instant"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "-",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "suffix: s"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 9,
+          "gridPos": {
+            "h": 4,
+            "w": 2,
+            "x": 19,
+            "y": 4
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Tool calls",
+          "description": "Tool calls the agent made for the latest report: GitHub reads and Loki/Prometheus queries; read-only, with no credential in its sandbox.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "last_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"answered\"` | json tool_calls | __error__=\"\" | tool_calls!=\"\" | unwrap tool_calls [$__range]) by (app)",
+              "legendFormat": "",
+              "queryType": "instant"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "-",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 10,
+          "gridPos": {
+            "h": 4,
+            "w": 3,
+            "x": 21,
+            "y": 4
+          }
+        },
+        {
+          "type": "row",
+          "title": "The journey: each lane lights up in the 30 s its stage happens",
+          "id": 11,
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 8
+          },
+          "panels": []
+        },
+        {
+          "type": "state-timeline",
+          "title": "Journey",
+          "description": "One lane per stage, top to bottom in the order a report travels; a lane is coloured in each 30 s its stage happened. Trigger stages: its JSON step lines (Loki). Agent and implementer calls: the collector's per-agent counters (agent_model_calls_total, agent_tool_calls_total). Alert signal: Taskboard's 5xx counter, the trigger's alert expression. Refused tool call: an MCP adapter's `Unknown tool` (a tool off its allowlist); a Loki/Prometheus query outside namespace taskboard comes back to the agent as a tool error instead (`ok: false` in the trigger's AGENT line). The agent lanes also show the eval gate's test sessions, and the implementer lane its work for other callers, such as resource alerts.",
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Mixed --"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "refId": "A",
+              "expr": "sum(rate(taskboard_http_requests_total{namespace=\"taskboard\", status=~\"5..\"}[$__rate_interval])) * 60",
+              "legendFormat": "Alert signal: Taskboard 5xx",
+              "instant": false,
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "B",
+              "expr": "sum(count_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"alert_issue_filed\"` [$__interval])) or vector(0)",
+              "legendFormat": "Alert check files an issue",
+              "queryType": "range"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "C",
+              "expr": "sum(count_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"investigating\"` [$__interval])) or vector(0)",
+              "legendFormat": "Trigger picks the issue",
+              "queryType": "range"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "D",
+              "expr": "sum(count_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"gathered\"` [$__interval])) or vector(0)",
+              "legendFormat": "Gather facts: PRs, deploys, docs",
+              "queryType": "range"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "E",
+              "expr": "sum(count_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"recalled\"` [$__interval])) or vector(0)",
+              "legendFormat": "Recall verified outcomes",
+              "queryType": "range"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "refId": "F",
+              "expr": "sum by () (((last_over_time(agent_model_calls_total{service_name=\"bug-investigator\"}[$__interval] offset -$__interval) - last_over_time(agent_model_calls_total{service_name=\"bug-investigator\"}[1h])) >= 0) or last_over_time(agent_model_calls_total{service_name=\"bug-investigator\"}[$__interval] offset -$__interval))",
+              "legendFormat": "Agent: model calls",
+              "instant": false,
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "refId": "G",
+              "expr": "sum by () (((last_over_time(agent_tool_calls_total{service_name=\"bug-investigator\", gen_ai_tool_name=~\"get_file_contents|search_code|list_commits|get_commit|list_pull_requests|pull_request_read\"}[$__interval] offset -$__interval) - last_over_time(agent_tool_calls_total{service_name=\"bug-investigator\", gen_ai_tool_name=~\"get_file_contents|search_code|list_commits|get_commit|list_pull_requests|pull_request_read\"}[1h])) >= 0) or last_over_time(agent_tool_calls_total{service_name=\"bug-investigator\", gen_ai_tool_name=~\"get_file_contents|search_code|list_commits|get_commit|list_pull_requests|pull_request_read\"}[$__interval] offset -$__interval))",
+              "legendFormat": "Agent: GitHub reads",
+              "instant": false,
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "refId": "H",
+              "expr": "sum by () (((last_over_time(agent_tool_calls_total{service_name=\"bug-investigator\", gen_ai_tool_name=~\"query_loki_logs|query_loki_stats|query_prometheus|list_loki_label_names|list_loki_label_values\"}[$__interval] offset -$__interval) - last_over_time(agent_tool_calls_total{service_name=\"bug-investigator\", gen_ai_tool_name=~\"query_loki_logs|query_loki_stats|query_prometheus|list_loki_label_names|list_loki_label_values\"}[1h])) >= 0) or last_over_time(agent_tool_calls_total{service_name=\"bug-investigator\", gen_ai_tool_name=~\"query_loki_logs|query_loki_stats|query_prometheus|list_loki_label_names|list_loki_label_values\"}[$__interval] offset -$__interval))",
+              "legendFormat": "Agent: Loki + Prometheus (taskboard only)",
+              "instant": false,
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "I",
+              "expr": "sum(count_over_time({namespace=\"kagent\", container=\"mcp-server\", pod=~\"(taskboard-telemetry|implementer)-mcp-.*\"} |= \"mcp.method.name=tools/call\" |= \"Unknown tool\" [$__interval])) or vector(0)",
+              "legendFormat": "Refused tool call",
+              "queryType": "range"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "J",
+              "expr": "sum(count_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"posted\"` [$__interval])) or vector(0)",
+              "legendFormat": "Verify every link, post the comment",
+              "queryType": "range"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "refId": "K",
+              "expr": "sum by () (((last_over_time(agent_tool_calls_total{service_name=\"implementer\"}[$__interval] offset -$__interval) - last_over_time(agent_tool_calls_total{service_name=\"implementer\"}[1h])) >= 0) or last_over_time(agent_tool_calls_total{service_name=\"implementer\"}[$__interval] offset -$__interval))",
+              "legendFormat": "Fix PR: kagent/implementer",
+              "instant": false,
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "L",
+              "expr": "sum(count_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"remembered\"` [$__interval])) or vector(0)",
+              "legendFormat": "Remember the verified outcome",
+              "queryType": "range"
+            },
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "M",
+              "expr": "sum(count_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"investigation_failed\"` [$__interval])) or vector(0)",
+              "legendFormat": "Failed: nothing posted",
+              "queryType": "range"
+            }
+          ],
+          "interval": "30s",
+          "transformations": [
+            {
+              "id": "joinByField",
+              "options": {
+                "byField": "Time",
+                "mode": "outer"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "indexByName": {
+                  "Time": 0,
+                  "Alert signal: Taskboard 5xx": 1,
+                  "Alert check files an issue": 2,
+                  "Trigger picks the issue": 3,
+                  "Gather facts: PRs, deploys, docs": 4,
+                  "Recall verified outcomes": 5,
+                  "Agent: model calls": 6,
+                  "Agent: GitHub reads": 7,
+                  "Agent: Loki + Prometheus (taskboard only)": 8,
+                  "Refused tool call": 9,
+                  "Verify every link, post the comment": 10,
+                  "Fix PR: kagent/implementer": 11,
+                  "Remember the verified outcome": 12,
+                  "Failed: nothing posted": 13
+                },
+                "excludeByName": {},
+                "renameByName": {}
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "transparent",
+                    "value": null
+                  },
+                  {
+                    "color": "blue",
+                    "value": 0.001
+                  }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "-",
+                      "color": "transparent",
+                      "index": 0
+                    }
+                  }
+                }
+              ],
+              "custom": {
+                "fillOpacity": 90,
+                "lineWidth": 0,
+                "spanNulls": false,
+                "insertNulls": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Alert signal: Taskboard 5xx"
+                },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "transparent",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 0.001
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Alert check files an issue"
+                },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "transparent",
+                          "value": null
+                        },
+                        {
+                          "color": "orange",
+                          "value": 0.001
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Refused tool call"
+                },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "transparent",
+                          "value": null
+                        },
+                        {
+                          "color": "red",
+                          "value": 0.001
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Verify every link, post the comment"
+                },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "transparent",
+                          "value": null
+                        },
+                        {
+                          "color": "green",
+                          "value": 0.001
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Fix PR: kagent/implementer"
+                },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "transparent",
+                          "value": null
+                        },
+                        {
+                          "color": "green",
+                          "value": 0.001
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Remember the verified outcome"
+                },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "transparent",
+                          "value": null
+                        },
+                        {
+                          "color": "green",
+                          "value": 0.001
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Failed: nothing posted"
+                },
+                "properties": [
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "transparent",
+                          "value": null
+                        },
+                        {
+                          "color": "red",
+                          "value": 0.001
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "mergeValues": false,
+            "showValue": "never",
+            "alignValue": "center",
+            "rowHeight": 0.85,
+            "legend": {
+              "showLegend": false
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "id": 12,
+          "gridPos": {
+            "h": 15,
+            "w": 24,
+            "x": 0,
+            "y": 9
+          }
+        },
+        {
+          "type": "row",
+          "title": "Behind the scenes, line by line",
+          "id": 13,
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 24
+          },
+          "panels": []
+        },
+        {
+          "type": "logs",
+          "title": "What the trigger did",
+          "description": "The trigger's step lines, newest first, one readable line each. Expand a line for every field, including the agent's tool trail on the AGENT line.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "{namespace=\"kagent\", app=\"bug-investigator-trigger\"} != `\"event\": \"idle\"` | json | __error__=\"\" | line_format `{{ if eq .event \"alert_issue_filed\" }}ALERT   {{ .route }} answered 5xx ({{ .count }} in 10 min): filed #{{ .issue }}{{ else if eq .event \"investigating\" }}PICKED  #{{ .issue }} \"{{ .title }}\"{{ if eq .alert \"true\" }} (filed by the alert){{ end }}{{ else if eq .event \"gathered\" }}FACTS   {{ .prs }} merged PRs, {{ .deploys }} deploys ({{ .seconds }} s){{ else if eq .event \"recalled\" }}MEMORY  {{ .count }} of {{ .remembered }} remembered outcomes match{{ else if eq .event \"answered\" }}AGENT   {{ .verdict }} after {{ .tool_calls }} tool calls ({{ .seconds }} s){{ else if eq .event \"posted\" }}POSTED  {{ .verdict }}: {{ .verified }} of {{ .total }} evidence links verified{{ else if eq .event \"fix_handoff\" }}FIX     {{ if .pr_url }}PR #{{ .pr_number }} opened by kagent/implementer{{ else if .existing_pr_url }}PR #{{ .existing_pr_number }} already open: no duplicate{{ else }}{{ .outcome }}{{ end }}{{ else if eq .event \"remembered\" }}MEMORY  {{ if eq .ok \"true\" }}outcome saved ({{ .entries }} kept){{ else }}not saved: {{ .reason }}{{ .error }}{{ end }}{{ else if eq .event \"investigation_failed\" }}FAILED  at {{ .stage }}: {{ .error }}{{ else }}{{ .event }}{{ end }}` | line_format `{{ regexReplaceAll \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}\" __line__ \"<email>\" }}`",
+              "legendFormat": "",
+              "queryType": "range"
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true,
+            "dedupStrategy": "none",
+            "prettifyLogMessage": false
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "No investigation in this time range: label a Taskboard issue bug"
+            },
+            "overrides": []
+          },
+          "id": 14,
+          "gridPos": {
+            "h": 11,
+            "w": 12,
+            "x": 0,
+            "y": 25
+          }
+        },
+        {
+          "type": "logs",
+          "title": "Tool calls through the MCP adapters",
+          "description": "Every tools/call through the two servers these agents use: implementer-mcp (GitHub: the agent's reads, the implementer's branch and PR) and taskboard-telemetry-mcp (Loki and Prometheus, held to namespace taskboard). Arguments and results are never shown.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "{namespace=\"kagent\", container=\"mcp-server\", pod=~\"(taskboard-telemetry|implementer)-mcp-.*\"} |= \"mcp.method.name=tools/call\" | logfmt | line_format `{{ .mcp_target }}  {{ .gen_ai_tool_name }}  HTTP {{ .http_status }}  {{ .duration }}`",
+              "legendFormat": "",
+              "queryType": "range"
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true,
+            "dedupStrategy": "none",
+            "prettifyLogMessage": false
+          },
+          "fieldConfig": {
+            "defaults": {
+              "noValue": "No tool calls in this time range"
+            },
+            "overrides": []
+          },
+          "id": 15,
+          "gridPos": {
+            "h": 11,
+            "w": 12,
+            "x": 12,
+            "y": 25
+          }
+        },
+        {
+          "type": "row",
+          "title": "Agent sessions: open one for every model and tool call",
+          "id": 16,
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 36
+          },
+          "panels": []
+        },
+        {
+          "type": "table",
+          "title": "Turns of bug-investigator and implementer",
+          "description": "One row per agent turn in the time range (Tempo), newest first, including the eval gate's test turns. Click its trace id for the sandbox, each model call through the gateway and each tool call, in order.",
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "tempo",
+                "uid": "tempo"
+              },
+              "refId": "A",
+              "queryType": "traceql",
+              "query": "{resource.service.name=~\"bug-investigator|implementer\" && name=~\"invoke_agent .*\"}",
+              "filters": [],
+              "limit": 20,
+              "spss": 5,
+              "tableType": "spans"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false
+            },
+            "sortBy": []
+          },
+          "transformations": [],
+          "id": 17,
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 37
+          }
+        },
+        {
+          "type": "row",
+          "title": "Signal, spend and score",
+          "id": 18,
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 45
+          },
+          "panels": []
+        },
+        {
+          "type": "timeseries",
+          "title": "Taskboard 5xx per minute, by route",
+          "description": "Taskboard's own server errors (taskboard_http_requests_total): the signal the trigger's alert check and the Grafana rule \"Taskboard server errors\" watch.",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus"
+              },
+              "refId": "A",
+              "expr": "sum by (route) (rate(taskboard_http_requests_total{namespace=\"taskboard\", status=~\"5..\"}[$__rate_interval])) * 60",
+              "legendFormat": "{{route}}",
+              "instant": false,
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                }
+              },
+              "color": {
+                "mode": "palette-classic"
+              },
+              "noValue": "0"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "calcs": [
+                "lastNotNull",
+                "max"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "id": 19,
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 46
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Agent spend",
+          "description": "Estimated model cost of the bug-investigator's calls in the time range (list prices, the collector's estimate). Its daily budget at the model gateway is $8.",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus"
+              },
+              "refId": "A",
+              "expr": "sum by () (((last_over_time(agent_cost_estimate_usd_total{service_name=\"bug-investigator\"}[$__range]) - last_over_time(agent_cost_estimate_usd_total{service_name=\"bug-investigator\"}[1d] offset $__range)) >= 0) or last_over_time(agent_cost_estimate_usd_total{service_name=\"bug-investigator\"}[$__range])) or vector(0)",
+              "legendFormat": "",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "0",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              },
+              "decimals": 2
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "currencyUSD"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 20,
+          "gridPos": {
+            "h": 7,
+            "w": 4,
+            "x": 12,
+            "y": 46
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Agent tokens",
+          "description": "Input tokens of its model calls in the time range, and how many came from the prompt cache.",
+          "datasource": {
+            "type": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus"
+              },
+              "refId": "A",
+              "expr": "sum by () (((last_over_time(agent_tokens_input_total{service_name=\"bug-investigator\"}[$__range]) - last_over_time(agent_tokens_input_total{service_name=\"bug-investigator\"}[1d] offset $__range)) >= 0) or last_over_time(agent_tokens_input_total{service_name=\"bug-investigator\"}[$__range])) or vector(0)",
+              "legendFormat": "",
+              "instant": true,
+              "range": false
+            },
+            {
+              "datasource": {
+                "type": "prometheus"
+              },
+              "refId": "B",
+              "expr": "sum by () (((last_over_time(agent_tokens_cache_read_total{service_name=\"bug-investigator\"}[$__range]) - last_over_time(agent_tokens_cache_read_total{service_name=\"bug-investigator\"}[1d] offset $__range)) >= 0) or last_over_time(agent_tokens_cache_read_total{service_name=\"bug-investigator\"}[$__range])) or vector(0)",
+              "legendFormat": "",
+              "instant": true,
+              "range": false
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "0",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "blue",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "input"
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "B"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "from cache"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value_and_name",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 21,
+          "gridPos": {
+            "h": 7,
+            "w": 4,
+            "x": 16,
+            "y": 46
+          }
+        },
+        {
+          "type": "stat",
+          "title": "Eval gate score",
+          "description": "The eval gate's latest score for bug-investigator: its corpus (smoke test, bug 2, bug 3) and the shared adversarial cases, scored on every change to the agent.",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "refId": "A",
+              "expr": "last_over_time({namespace=\"kagent\", container=\"eval-gate\"} | json | __error__=\"\" | event=\"eval-gate\" | agent=\"bug-investigator\" | pass_rate!=\"\" | unwrap pass_rate [30d]) by (agent)",
+              "legendFormat": "",
+              "queryType": "instant"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "-",
+              "color": {
+                "mode": "thresholds"
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "orange",
+                    "value": null
+                  },
+                  {
+                    "color": "green",
+                    "value": 0.8
+                  }
+                ]
+              },
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byFrameRefID",
+                  "options": "A"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percentunit"
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "center",
+            "orientation": "vertical",
+            "wideLayout": true
+          },
+          "id": 22,
+          "gridPos": {
+            "h": 7,
+            "w": 4,
+            "x": 20,
+            "y": 46
           }
         }
       ],

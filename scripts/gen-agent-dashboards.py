@@ -63,6 +63,7 @@ DASHBOARDS = {
     "grafana-dashboard-mcp": ("mcp-tool-calls.json", "mcp-tool-calls"),
     "grafana-dashboard-model-gateway": ("model-gateway.json", "model-gateway"),
     "grafana-dashboard-agent-kpis": ("agent-kpis.json", "agent-kpis"),
+    "grafana-dashboard-bug-investigation-live": ("bug-investigation-live.json", "bug-investigation-live"),
 }
 HOME = f"{MOUNT}/agent-platform.json"
 
@@ -143,11 +144,13 @@ def prom(expr, legend="", ref="A", instant=False, interval=None, fmt=None):
     return t
 
 
-def loki(expr, legend="", ref="A", instant=False, interval=None):
+def loki(expr, legend="", ref="A", instant=False, interval=None, max_lines=None):
     t = {"datasource": LOKI, "refId": ref, "expr": expr, "legendFormat": legend,
          "queryType": "instant" if instant else "range"}
     if interval:
         t["interval"] = interval
+    if max_lines:
+        t["maxLines"] = max_lines   # a log query: only the newest N lines
     return t
 
 
@@ -350,14 +353,18 @@ LINKS = [
      "keepTime": True, "targetBlank": False},
     {"title": "Agent KPIs", "type": "link", "url": "/d/agent-kpis", "icon": "dashboard",
      "keepTime": False, "targetBlank": False, "tooltip": "The playbook's eight agent-scenario KPIs (§T.144)"},
+    {"title": "Bug Investigation · live", "type": "link", "url": "/d/bug-investigation-live", "icon": "dashboard",
+     "keepTime": False, "targetBlank": False,
+     "tooltip": "A Taskboard bug report or alert, step by step, as the platform handles it (§T.149)"},
 ]
 
 
-def dashboard(uid, title, description, layout, templating=None, time_from="now-24h", timezone="browser"):
+def dashboard(uid, title, description, layout, templating=None, time_from="now-24h", timezone="browser",
+              refresh="1m"):
     templating = [PROM_VARIABLE] + (templating or [])
     return {"uid": uid, "title": title, "description": description, "tags": ["agents"],
             "timezone": timezone, "schemaVersion": 39, "version": 1, "editable": True, "graphTooltip": 1,
-            "refresh": "1m", "time": {"from": time_from, "to": "now"}, "links": LINKS,
+            "refresh": refresh, "time": {"from": time_from, "to": "now"}, "links": LINKS,
             "panels": layout.panels, "templating": {"list": templating}, "annotations": {"list": []}}
 
 
@@ -1303,9 +1310,245 @@ def kpis():
                      b, time_from="now-7d")
 
 
+# --- Bug Investigation · live (§T.149) ----------------------------------------------------------
+# One Taskboard bug report (or a Taskboard 5xx alert) as the platform handles it, for a live demo:
+# the trigger's own JSON step lines (scripts/bug_investigator_trigger.py, §T.146-§T.148), the
+# collector's per-agent counters for the model and tool calls, the MCP adapters' access lines and
+# the agents' traces. Every lane lights only from that data; nothing is inferred.
+
+BIT = '{namespace="kagent", app="bug-investigator-trigger"}'   # the trigger's JSON lines, one per step
+BIT_STEPS = BIT + ' != `"event": "idle"`'                       # every step but "nothing to do"
+
+
+def bit_event(name):
+    """The trigger's lines for one step; the substring check runs before any JSON parsing."""
+    return BIT + ' |= `"event": "' + name + '"`'
+
+
+# The agent's tools (base-apps/kagent/agent-templates/bug-investigator.yaml), by the server they run on.
+GITHUB_READS = "get_file_contents|search_code|list_commits|get_commit|list_pull_requests|pull_request_read"
+TELEMETRY_TOOLS = "query_loki_logs|query_loki_stats|query_prometheus|list_loki_label_names|list_loki_label_values"
+TB_5XX = 'taskboard_http_requests_total{namespace="taskboard", status=~"5.."}'   # the trigger's ALERT_EXPR counter
+TB_MCP_CALLS = ('{namespace="kagent", container="mcp-server", pod=~"(taskboard-telemetry|implementer)-mcp-.*"} '
+                '|= "mcp.method.name=tools/call"')
+NO_INVESTIGATION = "No investigation in this time range: label a Taskboard issue bug"
+
+# The step names the trigger logs, as a viewer reads them, and their colour on the Step now tile.
+STEP_NAMES = [("alert_issue_filed", "Alert filed an issue", "orange"), ("investigating", "Picked the issue", "blue"),
+              ("gathered", "Facts gathered", "blue"), ("recalled", "Memory recalled", "blue"),
+              ("answered", "Agent answered", "blue"), ("posted", "Comment posted", "green"),
+              ("fix_handoff", "Fix PR handed off", "green"), ("remembered", "Outcome remembered", "green"),
+              ("investigation_failed", "Failed: nothing posted", "red")]
+VERDICT_NAMES = [("likely_cause", "Likely cause", "green"), ("not_a_bug", "Not a bug", "blue"),
+                 ("needs_info", "Needs info", "orange"), ("unclear", "Unclear", "orange")]
+
+# One readable line per trigger step (Loki line_format over the step's JSON fields).
+STEP_LINE = (
+    '| line_format `{{ if eq .event "alert_issue_filed" }}ALERT   {{ .route }} answered 5xx ({{ .count }} in 10 min): filed #{{ .issue }}'
+    '{{ else if eq .event "investigating" }}PICKED  #{{ .issue }} "{{ .title }}"{{ if eq .alert "true" }} (filed by the alert){{ end }}'
+    '{{ else if eq .event "gathered" }}FACTS   {{ .prs }} merged PRs, {{ .deploys }} deploys ({{ .seconds }} s)'
+    '{{ else if eq .event "recalled" }}MEMORY  {{ .count }} of {{ .remembered }} remembered outcomes match'
+    '{{ else if eq .event "answered" }}AGENT   {{ .verdict }} after {{ .tool_calls }} tool calls ({{ .seconds }} s)'
+    '{{ else if eq .event "posted" }}POSTED  {{ .verdict }}: {{ .verified }} of {{ .total }} evidence links verified'
+    '{{ else if eq .event "fix_handoff" }}FIX     {{ if .pr_url }}PR #{{ .pr_number }} opened by kagent/implementer'
+    '{{ else if .existing_pr_url }}PR #{{ .existing_pr_number }} already open: no duplicate{{ else }}{{ .outcome }}{{ end }}'
+    '{{ else if eq .event "remembered" }}MEMORY  {{ if eq .ok "true" }}outcome saved ({{ .entries }} kept){{ else }}not saved: {{ .reason }}{{ .error }}{{ end }}'
+    '{{ else if eq .event "investigation_failed" }}FAILED  at {{ .stage }}: {{ .error }}'
+    '{{ else }}{{ .event }}{{ end }}` ')
+
+
+def _text_mappings(pairs):
+    return [{"type": "value", "options": {k: {"text": label, "color": color, "index": i}
+                                          for i, (k, label, color) in enumerate(pairs)}}]
+
+
+def textstat(title, target, desc, *, mappings=None, no_value="—"):
+    """One line of text: the newest line of a log query (maxLines 1; its line_format is the value),
+    shown by a stat over the string field Line."""
+    defaults = {"noValue": no_value, "color": {"mode": "thresholds"}, "thresholds": _thr([("text", None)]),
+                "mappings": mappings or []}
+    return {"type": "stat", "title": title, "description": desc, "datasource": target["datasource"],
+            "targets": [target], "fieldConfig": {"defaults": defaults, "overrides": []},
+            "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "/^Line$/", "values": False},
+                        "textMode": "value", "colorMode": "value" if mappings else "none", "graphMode": "none",
+                        "justifyMode": "center", "orientation": "vertical", "wideLayout": True}}
+
+
+def timeline(title, targets, desc, *, colors=None, interval="30s"):
+    """One lane per target, in target order: coloured for each step in which its stage happened (a
+    count above zero), empty otherwise. colors: refId -> colour (default blue)."""
+    defaults = {"color": {"mode": "thresholds"}, "thresholds": _thr([("transparent", None), ("blue", 0.001)]),
+                "mappings": [{"type": "value", "options": {"0": {"text": "-", "color": "transparent", "index": 0}}}],
+                "custom": {"fillOpacity": 90, "lineWidth": 0, "spanNulls": False, "insertNulls": False}}
+    # After the join every lane is a field of one frame, so colours follow the lane's name.
+    names = {t["refId"]: t["legendFormat"] for t in targets}
+    overrides = [{"matcher": {"id": "byName", "options": names[ref]},
+                  "properties": [{"id": "thresholds", "value": _thr([("transparent", None), (color, 0.001)])}]}
+                 for ref, color in sorted((colors or {}).items())]
+    # Grafana returns a mixed panel's frames grouped by datasource, not in target order: join them on
+    # time (outer, so a lane with no point is empty there) and order the lanes by the targets.
+    order = [t["legendFormat"] for t in targets]
+    transformations = [{"id": "joinByField", "options": {"byField": "Time", "mode": "outer"}},
+                       {"id": "organize", "options": {"indexByName": {"Time": 0, **{n: i + 1 for i, n in enumerate(order)}},
+                                                      "excludeByName": {}, "renameByName": {}}}]
+    return {"type": "state-timeline", "title": title, "description": desc, "datasource": _ds(targets),
+            "targets": targets, "interval": interval, "transformations": transformations,
+            "fieldConfig": {"defaults": defaults, "overrides": overrides},
+            "options": {"mergeValues": False, "showValue": "never", "alignValue": "center", "rowHeight": 0.85,
+                        "legend": {"showLegend": False}, "tooltip": {"mode": "single", "sort": "none"}}}
+
+
+def _latest(stream, field, *, window="$__range"):
+    """The newest value of a numeric field across the trigger's lines (by (app) merges its streams)."""
+    return (f'last_over_time({stream} | json {field} | __error__="" | {field}!="" '
+            f"| unwrap {field} [{window}]) by (app)")
+
+
+def bug_investigation_live():
+    b = Layout()
+    b.line(3, [(24, text("", (
+        "**A Taskboard bug report, from issue to verified comment and fix pull request, as the platform "
+        "runs it.** Read the journey top to bottom, left to right: the alert signal; the trigger (a "
+        "CronJob, plain code, no model) picking the issue and gathering facts; its memory of verified "
+        "outcomes; the read-only agent's model calls and tool calls (GitHub reads, Loki and Prometheus "
+        "queries held to namespace `taskboard`); the script that verifies every evidence link before "
+        "anything is posted; the fix pull request from `kagent/implementer`; the outcome remembered for "
+        "the next report. Refreshes every 10 s.")))])
+
+    b.row("Now: the latest investigation in the time range")
+    recalled = ('| json count, remembered, first="issues[0]", second="issues[1]" '
+                '| line_format `{{ if eq .count "0" }}no match ({{ .remembered }} kept){{ else }}#{{ .first }}'
+                '{{ if .second }}, #{{ .second }}{{ end }} ({{ .remembered }} kept){{ end }}`')
+    fix = ('| json | line_format `{{ if .pr_url }}#{{ .pr_number }} opened{{ else if .existing_pr_url }}'
+           '#{{ .existing_pr_number }} (existing){{ else }}{{ regexReplaceAll ".*/pull/" .outcome "#" }}{{ end }}`')
+    b.line(4, [
+        (2, stat("Issue", [loki(_latest(BIT_STEPS, "issue"), instant=True)],
+                 "The Taskboard issue of the trigger's latest step (its JSON lines in Loki).",
+                 units={"A": "prefix:#"}, decimals=0, no_value="-")),
+        (4, textstat("Step now", loki(BIT_STEPS + " | json event | line_format `{{ .event }}`", max_lines=1),
+                     "The trigger's latest step: picked, facts gathered, memory recalled, agent answered, "
+                     "comment posted, fix PR handed off, outcome remembered (or failed).",
+                     mappings=_text_mappings(STEP_NAMES))),
+        (3, textstat("Verdict", loki(bit_event("posted") + " | json verdict | line_format `{{ .verdict }}`",
+                                     max_lines=1),
+                     "The verdict of the latest comment, after verify: a claim it could not re-check is "
+                     "dropped, and a cause left without verified evidence becomes `unclear`.",
+                     mappings=_text_mappings(VERDICT_NAMES))),
+        (3, textstat("Evidence verified", loki(bit_event("posted") + " | json verified, total "
+                                               "| line_format `{{ .verified }} of {{ .total }}`", max_lines=1),
+                     "Evidence links the script re-checked (commits, PRs, file lines and quotes, doc quotes, "
+                     "every Loki/Prometheus query re-run) out of those the agent cited.")),
+        (4, textstat("Memory recalled", loki(bit_event("recalled") + " " + recalled, max_lines=1),
+                     "Verified outcomes of earlier investigations the trigger matched to this report and "
+                     "added to the facts (§T.148): leads for the agent, never evidence.")),
+        (3, textstat("Fix PR", loki(bit_event("fix_handoff") + " " + fix, max_lines=1),
+                     "The pull request kagent/implementer opened for the latest verified cause, or the open "
+                     "one it found instead of opening a duplicate. A person merges.")),
+        (2, stat("Agent time", [loki(_latest(bit_event("answered"), "seconds"), instant=True)],
+                 "How long the agent took on the latest report, from the A2A request to its answer.",
+                 units={"A": "suffix: s"}, decimals=0, no_value="-")),
+        (3, stat("Tool calls", [loki(_latest(bit_event("answered"), "tool_calls"), instant=True)],
+                 "Tool calls the agent made for the latest report: GitHub reads and Loki/Prometheus "
+                 "queries; read-only, with no credential in its sandbox.", decimals=0, no_value="-")),
+    ])
+
+    b.row("The journey: each lane lights up in the 30 s its stage happens")
+
+    def agent_calls(metric, agent, tools=None):
+        sel = f'service_name="{agent}"' + (f', gen_ai_tool_name=~"{tools}"' if tools else "")
+        return window_total(f"{metric}{{{sel}}}", "", "$__interval", forward=True)
+
+    # `or vector(0)`: an explicit 0 in every step without the stage. After the join a lane with no
+    # point at a step is null there, and a state timeline carries the last state across nulls.
+    def steps(name):
+        return f"sum(count_over_time({bit_event(name)} [$__interval])) or vector(0)"
+
+    lanes = [
+        prom(f"sum(rate({TB_5XX}[$__rate_interval])) * 60", "Alert signal: Taskboard 5xx", ref="A"),
+        loki(steps("alert_issue_filed"), "Alert check files an issue", ref="B"),
+        loki(steps("investigating"), "Trigger picks the issue", ref="C"),
+        loki(steps("gathered"), "Gather facts: PRs, deploys, docs", ref="D"),
+        loki(steps("recalled"), "Recall verified outcomes", ref="E"),
+        prom(agent_calls("agent_model_calls_total", "bug-investigator"), "Agent: model calls", ref="F"),
+        prom(agent_calls("agent_tool_calls_total", "bug-investigator", GITHUB_READS), "Agent: GitHub reads", ref="G"),
+        prom(agent_calls("agent_tool_calls_total", "bug-investigator", TELEMETRY_TOOLS),
+             "Agent: Loki + Prometheus (taskboard only)", ref="H"),
+        loki(f'sum(count_over_time({TB_MCP_CALLS} |= "Unknown tool" [$__interval])) or vector(0)',
+             "Refused tool call", ref="I"),
+        loki(steps("posted"), "Verify every link, post the comment", ref="J"),
+        prom(agent_calls("agent_tool_calls_total", "implementer"), "Fix PR: kagent/implementer", ref="K"),
+        loki(steps("remembered"), "Remember the verified outcome", ref="L"),
+        loki(steps("investigation_failed"), "Failed: nothing posted", ref="M"),
+    ]
+    b.line(15, [(24, timeline("Journey", lanes, (
+        "One lane per stage, top to bottom in the order a report travels; a lane is coloured in each 30 s "
+        "its stage happened. Trigger stages: its JSON step lines (Loki). Agent and implementer calls: the "
+        "collector's per-agent counters (agent_model_calls_total, agent_tool_calls_total). Alert signal: "
+        "Taskboard's 5xx counter, the trigger's alert expression. Refused tool call: an MCP adapter's "
+        "`Unknown tool` (a tool off its allowlist); a Loki/Prometheus query outside namespace taskboard "
+        "comes back to the agent as a tool error instead (`ok: false` in the trigger's AGENT line). The "
+        "agent lanes also show the eval gate's test sessions, and the implementer lane its work for other "
+        "callers, such as resource alerts."),
+        colors={"A": "orange", "B": "orange", "I": "red", "J": "green", "K": "green", "L": "green", "M": "red"}))])
+
+    b.row("Behind the scenes, line by line")
+    b.line(11, [
+        (12, logs("What the trigger did", loki(BIT_STEPS + ' | json | __error__="" ' + STEP_LINE + MASK_EMAILS),
+                  "The trigger's step lines, newest first, one readable line each. Expand a line for every "
+                  "field, including the agent's tool trail on the AGENT line.", no_value=NO_INVESTIGATION)),
+        (12, logs("Tool calls through the MCP adapters", loki(
+            TB_MCP_CALLS + " | logfmt | line_format `{{ .mcp_target }}  {{ .gen_ai_tool_name }}  "
+            "HTTP {{ .http_status }}  {{ .duration }}`"),
+            "Every tools/call through the two servers these agents use: implementer-mcp (GitHub: the "
+            "agent's reads, the implementer's branch and PR) and taskboard-telemetry-mcp (Loki and "
+            "Prometheus, held to namespace taskboard). Arguments and results are never shown.",
+            no_value="No tool calls in this time range")),
+    ])
+
+    b.row("Agent sessions: open one for every model and tool call")
+    b.line(8, [(24, table("Turns of bug-investigator and implementer",
+                          [tsearch('{resource.service.name=~"bug-investigator|implementer" && name=~"invoke_agent .*"}',
+                                   limit=20, spss=5, table_type="spans")],
+                          "One row per agent turn in the time range (Tempo), newest first, including the eval "
+                          "gate's test turns. Click its trace id for the sandbox, each model call through the "
+                          "gateway and each tool call, in order."))])
+
+    b.row("Signal, spend and score")
+    eval_score = ('last_over_time({namespace="kagent", container="eval-gate"} | json | __error__="" '
+                  '| event="eval-gate" | agent="bug-investigator" | pass_rate!="" | unwrap pass_rate [30d]) by (agent)')
+    b.line(7, [
+        (12, ts("Taskboard 5xx per minute, by route",
+                [prom(f"sum by (route) (rate({TB_5XX}[$__rate_interval])) * 60", "{{route}}")],
+                "Taskboard's own server errors (taskboard_http_requests_total): the signal the trigger's "
+                "alert check and the Grafana rule \"Taskboard server errors\" watch.", no_value="0")),
+        (4, stat("Agent spend", [prom(window_total('agent_cost_estimate_usd_total{service_name="bug-investigator"}',
+                                                   "", "$__range") + " or vector(0)", instant=True)],
+                 "Estimated model cost of the bug-investigator's calls in the time range (list prices, the "
+                 "collector's estimate). Its daily budget at the model gateway is $8.",
+                 units={"A": "currencyUSD"}, decimals=2)),
+        (4, stat("Agent tokens", [
+            prom(window_total('agent_tokens_input_total{service_name="bug-investigator"}', "", "$__range")
+                 + " or vector(0)", instant=True, ref="A"),
+            prom(window_total('agent_tokens_cache_read_total{service_name="bug-investigator"}', "", "$__range")
+                 + " or vector(0)", instant=True, ref="B")],
+            "Input tokens of its model calls in the time range, and how many came from the prompt cache.",
+            names={"A": "input", "B": "from cache"})),
+        (4, stat("Eval gate score", [loki(eval_score, instant=True)],
+                 "The eval gate's latest score for bug-investigator: its corpus (smoke test, bug 2, bug 3) "
+                 "and the shared adversarial cases, scored on every change to the agent.",
+                 units={"A": "percentunit"}, decimals=0, steps=[("orange", None), ("green", 0.8)], no_value="-")),
+    ])
+    return dashboard("bug-investigation-live", "Bug Investigation · live",
+                     "A Taskboard bug report (or a Taskboard 5xx alert), step by step, as the platform handles "
+                     "it: trigger, memory, the read-only agent's model and tool calls, verify, the comment, the "
+                     "implementer's fix PR. For a live demo: 30 minutes, refreshing every 10 s.",
+                     b, time_from="now-30m", refresh="10s")
+
+
 BUILDERS = {"agent-platform": landing, "agent-quality": quality, "agent-tokens": tokens,
             "agent-traffic": traffic, "agent-sandboxes": sandboxes, "agent-alerts": alerts,
-            "mcp-tool-calls": mcp, "model-gateway": model_gateway, "agent-kpis": kpis}
+            "mcp-tool-calls": mcp, "model-gateway": model_gateway, "agent-kpis": kpis,
+            "bug-investigation-live": bug_investigation_live}
 
 
 def build_all():
