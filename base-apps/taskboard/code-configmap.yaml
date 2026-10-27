@@ -3,7 +3,7 @@
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-taskboard-configmap.py
-# Source:     arigsela/taskboard@efb9ef3936a609bd6e4ed623e3fd69459b90b0ee
+# Source:     arigsela/taskboard@eb97a0bd6f49ebe233ed5694b82e49d6564454ae
 #             (taskboard/* and traffic/simulate.py)
 # Regenerate: ./scripts/gen-taskboard-configmap.py --source <taskboard checkout> --commit <sha>
 # tests/taskboard/ fails if this file and deployment.yaml's checksum/code or source-commit disagree.
@@ -18,7 +18,7 @@ metadata:
   labels:
     app: taskboard
   annotations:
-    taskboard.arigsela.com/source-commit: efb9ef3936a609bd6e4ed623e3fd69459b90b0ee
+    taskboard.arigsela.com/source-commit: eb97a0bd6f49ebe233ed5694b82e49d6564454ae
     taskboard.arigsela.com/source-repo: arigsela/taskboard
 data:
   app.js: |
@@ -610,6 +610,7 @@ data:
             return json_response(200, {"user": user.name, "role": user.role, "users": users, "features": features})
 
         def _list_tasks(self, req, user):
+            permissions.require(user, "read")
             status = req.param("status")
             if status is not None and status not in tasks.STATUSES:
                 raise HttpError(400, "bad_request", detail=f"status must be one of {', '.join(tasks.STATUSES)}")
@@ -632,13 +633,14 @@ data:
 
         def _get_task(self, req, user, id):
             req.task_id = int(id)
+            permissions.require(user, "read")
             with self.connection() as conn:
                 task = self._load(conn, req.task_id)
                 task["events"] = tasks.events_for(conn, req.task_id)
             return json_response(200, task)
 
         def _create_task(self, req, user):
-            permissions.check_create(user)
+            permissions.require(user, "create")
             data = req.json()
             _reject_unknown(data, ("project", "title", "assignee", "due_date"))
             title = _text(data, "title", required=True)
@@ -676,14 +678,14 @@ data:
             with self.connection() as conn, db.transaction(conn):
                 task = self._load(conn, req.task_id)
                 if "status" in changes:
-                    permissions.check_change_status(user, task)
+                    permissions.require(user, "change_status", task)
                     in_progress = tasks.count_in_progress(conn, task["assignee"])
                     if not workflow.check_transition(user, task, changes["status"], in_progress, self.config.wip_limit):
                         del changes["status"]  # already there
                 if "assignee" in changes:
-                    permissions.check_reassign(user)
+                    permissions.require(user, "reassign", task)
                 if "title" in changes or "due_date" in changes:
-                    permissions.check_edit(user, task)
+                    permissions.require(user, "edit", task)
                 updated =tasks.update_task(conn, task, changes, actor=user.name) if changes else task
             if updated["status"] != task["status"]:
                 self.status_changes_total.inc(task["status"], updated["status"])
@@ -704,7 +706,7 @@ data:
 
         def _delete_task(self, req, user, id):
             req.task_id = int(id)
-            permissions.check_delete(user)
+            permissions.require(user, "delete")
             with self.connection() as conn, db.transaction(conn):
                 self._load(conn, req.task_id)
                 tasks.delete_task(conn, req.task_id)
@@ -1250,8 +1252,10 @@ data:
   permissions.py: |
     """Who may do what. Rule IDs (P1, P2, ...) refer to docs/permissions.md.
 
-    Identity is the X-User request header (no login; see the docs). Each check
-    raises Forbidden with the rule that denied the action.
+    Identity is the X-User request header (no login; see the docs). Every check
+    goes through can(user, action, task): POLICY says, for each action, which rule
+    applies and who besides admins may do it. require() raises Forbidden naming
+    that rule.
     """
 
     from dataclasses import dataclass
@@ -1287,40 +1291,38 @@ data:
         return User(name, users[name])
 
 
-    def check_create(user):
-        """P3: editors and admins create tasks."""
-        if user.role not in EDITOR_ROLES:
-            raise Forbidden("P3", "create")
+    def _owns(user, task):
+        """The task is the user's own."""
+        return task["created_by"] == user.name
 
 
-    def check_change_status(user, task):
-        """P4: the task's assignee or an admin changes its status."""
-        if user.is_admin:
-            return
-        if user.is_editor and task["assignee"] == user.name:
-            return
-        raise Forbidden("P4", "change_status")
+    def _works_on(user, task):
+        """The user created the task or is assigned to it."""
+        return _owns(user, task) or task["assignee"] == user.name
 
 
-    def check_reassign(user):
-        """P5: only an admin changes a task's assignee."""
-        if not user.is_admin:
-            raise Forbidden("P5", "reassign")
+    # action -> (rule, who may do it besides admins). Admins may do everything.
+    POLICY = {
+        "read": ("P1", lambda user, task: True),
+        "create": ("P3", lambda user, task: user.is_editor),
+        "change_status": ("P4", lambda user, task: user.is_editor and _owns(user, task)),
+        "reassign": ("P5", lambda user, task: False),
+        "edit": ("P6", lambda user, task: user.is_editor and _works_on(user, task)),
+        "reopen": ("S4", lambda user, task: False),
+        "delete": ("P7", lambda user, task: False),
+    }
 
 
-    def check_edit(user, task):
-        """P6: the creator, the assignee or an admin edits the title and due date."""
-        if user.is_admin:
-            return
-        if user.is_editor and user.name in (task["created_by"], task["assignee"]):
-            return
-        raise Forbidden("P6", "edit")
+    def can(user, action, task=None):
+        """True if user may do action (on task, for the actions about one task)."""
+        _, allowed = POLICY[action]
+        return user.is_admin or allowed(user, task)
 
 
-    def check_delete(user):
-        """P7: only an admin deletes a task."""
-        if not user.is_admin:
-            raise Forbidden("P7", "delete")
+    def require(user, action, task=None):
+        """Raise Forbidden, naming the rule, unless user may do action."""
+        if not can(user, action, task):
+            raise Forbidden(POLICY[action][0], action)
   seed.py: |
     """Demo data (C6): about 25 tasks across two projects, timed relative to startup.
 
@@ -1985,7 +1987,7 @@ data:
     moves exist and when a move conflicts with the state of the board.
     """
 
-    from permissions import Forbidden
+    import permissions
 
     # (from, to) -> the rule that allows the move
     TRANSITIONS = {
@@ -2014,8 +2016,8 @@ data:
         rule = TRANSITIONS.get((from_status, to_status))
         if rule is None:
             raise Conflict("S5", f"a task cannot move from {from_status} to {to_status}")
-        if rule == "S4" and not user.is_admin:
-            raise Forbidden("S4", "reopen")
+        if rule == "S4":
+            permissions.require(user, "reopen", task)
         if to_status == "in_progress" and assignee_in_progress >= wip_limit:
             raise Conflict("S6", f"{task['assignee']} already has {assignee_in_progress} tasks in progress (limit {wip_limit})")
         return rule
