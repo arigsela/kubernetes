@@ -67,7 +67,7 @@ spec:
             # Each model-gateway group's daily budget (scripts/gen-model-budgets.py, from
             # base-apps/model-gateway/budgets.yaml): the Model API box shows spend against it.
             - name: MODEL_BUDGETS
-              value: '{"hk": 6.0, "build": 10.0, "implementer": 4.0, "restarter": 4.0, "docs-checker": 2.5, "k8s-reader": 0.5, "skill-suggester": 0.5, "dcc": 0.5, "ui-default": 0.5}'
+              value: '{"hk": 6.0, "build": 10.0, "implementer": 4.0, "restarter": 4.0, "docs-checker": 2.5, "bug-investigator": 8.0, "k8s-reader": 0.5, "skill-suggester": 0.5, "dcc": 0.5, "ui-default": 0.5}'
             # On its own (§T.140): the demo workload the Start button fills. Its AuthorizationPolicy
             # admits only this app's principal (base-apps/alert-demo/authorization-policy.yaml).
             - name: ALERT_DEMO_URL

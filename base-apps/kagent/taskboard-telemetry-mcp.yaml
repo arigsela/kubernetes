@@ -1,0 +1,217 @@
+# The bug investigator's telemetry tool server: Taskboard's logs (Loki) and metrics (Prometheus),
+# and nothing else. Same pod shape as implementer-mcp.yaml (agentgateway serves a stdio MCP server
+# as Streamable HTTP on :3000), but the stdio child is the bug investigator's own
+# `bug_investigator/mcp_server.py`, standard library only, from the generated ConfigMap
+# bug-investigator-core (scripts/gen-bug-investigator-core.py; source arigsela/claude-agents
+# bug-investigator/).
+#
+# Why a server of its own instead of mcp-grafana: Grafana OSS has no per-datasource permissions,
+# so a Grafana Viewer token reads every namespace, and mcp-grafana's --loki-enforced-matchers flag
+# scopes Loki only, never Prometheus. The GitHub Action closed that gap with a PreToolUse hook;
+# kagent has no hook. So the scope check lives in the server: every call runs the Action's own
+# `scope.check_tool_call` (namespace="taskboard" in every Loki stream selector; namespace="taskboard"
+# or a taskboard_* metric in every PromQL selector; anything it cannot parse is refused), and
+# telemetry.py re-checks the query before any HTTP request. The server queries Loki and Prometheus
+# in `logging` directly, so there is no Grafana token anywhere: this pod holds no credential at all
+# (no envFrom, no Secret). The tools keep mcp-grafana 2.1.1's names and argument names, which the
+# capability taxonomy already classifies `read`.
+#
+# Three layers decide which tools exist, all exactly the five the bug-investigator AgentTemplate
+# binds: the server's own list, the adapter's mcpAuthorization below, and the template's binding.
+# tests/agent-identity/test_mcp_server_manifests.py keeps the adapter list equal to the binding.
+#
+# agentgateway reads local.yaml once at start: checksum/config is the sha256 of the local.yaml text
+# (CI checks it), checksum/core the generator's checksum of the core ConfigMap (CI checks it in
+# tests/taskboard/test_bug_investigator_core.py), so a config or code change in git rolls the pod.
+# Recompute checksum/config: python3 -m pytest tests/agent-identity/test_mcp_server_manifests.py -q -k checksum
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: taskboard-telemetry-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: taskboard-telemetry-mcp
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskboard-telemetry-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: taskboard-telemetry-mcp
+data:
+  local.yaml: |
+    binds:
+      - port: 3000
+        listeners:
+          - name: default
+            protocol: HTTP
+            routes:
+              - name: mcp
+                matches:
+                  - path:
+                      pathPrefix: /sse
+                  - path:
+                      pathPrefix: /mcp
+                # Exactly the tools the AgentTemplates bind from this server (§T.134,
+                # tests/agent-identity): tools/list shows only these, and any other call is
+                # refused as "Unknown tool" before it reaches the server.
+                policies:
+                  mcpAuthorization:
+                    rules:
+                      - allow: >-
+                          mcp.tool.name in ["list_loki_label_names", "list_loki_label_values",
+                          "query_loki_logs", "query_loki_stats", "query_prometheus"]
+                backends:
+                  - weight: 100
+                    mcp:
+                      targets:
+                        - name: taskboard-telemetry-mcp
+                          stdio:
+                            # -I: no PYTHONPATH, no user site, no script dir on sys.path; the
+                            # server puts /core/src on sys.path itself.
+                            cmd: python3
+                            args:
+                              - -I
+                              - /core/src/bug_investigator/mcp_server.py
+    config: {}
+    # Spans to the cluster collector, as service taskboard-telemetry-mcp (a CEL string). Sample
+    # everything here; the collector's tail sampling cuts the volume (beacon §V.43).
+    # frontendPolicies, not config.tracing: 1.6 logs that one as deprecated. /metrics stays on :15020.
+    frontendPolicies:
+      tracing:
+        host: otel-collector.tracing.svc.cluster.local:4317
+        protocol: grpc
+        randomSampling: "true"
+        resources:
+          service.name: '"taskboard-telemetry-mcp"'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskboard-telemetry-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: taskboard-telemetry-mcp
+spec:
+  # The instance+name pair the other three tool servers select on (tests/agent-identity).
+  selector:
+    app.kubernetes.io/instance: taskboard-telemetry-mcp
+    app.kubernetes.io/name: taskboard-telemetry-mcp
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+      # As the other tool servers: the waypoint serves MCP Services under this value.
+      appProtocol: kgateway.dev/mcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskboard-telemetry-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: taskboard-telemetry-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: taskboard-telemetry-mcp
+      app.kubernetes.io/name: taskboard-telemetry-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: kagent
+        app.kubernetes.io/instance: taskboard-telemetry-mcp
+        app.kubernetes.io/name: taskboard-telemetry-mcp
+      annotations:
+        # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
+        checksum/config: "55f6123311618caf2463304df1d53c36a450e94f8acb7b7299223cbee947937a"
+        # Written by scripts/gen-bug-investigator-core.py; CI checks it.
+        checksum/core: "211d497757c0b86a46c79ac5e0b2b95ac4a28286cb573fb95915fc5d8f682ef9"
+        # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
+        # containerPort would make the kubernetes-pods job scrape the pod twice.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15020"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: taskboard-telemetry-mcp
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      initContainers:
+        - name: copy-binary
+          # The adapter image built here (images/agentgateway/, §T.133). Same tag and digest in
+          # every tool server (tests/agent-identity).
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d
+          args: ["--copy-self", "/adapterbin/agentgateway"]
+          volumeMounts:
+            - name: binary
+              mountPath: /adapterbin
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+      containers:
+        - name: mcp-server
+          # The python:3.12-slim digest every stdlib-from-a-ConfigMap workload here pins.
+          image: python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
+          command: ["/adapterbin/agentgateway"]
+          args: ["-f", "/config/local.yaml"]
+          ports:
+            - name: http
+              containerPort: 3000
+          # The stdio child inherits these. No credential: Loki and Prometheus in `logging` take
+          # unauthenticated in-cluster queries, which is exactly why the server scopes them.
+          env:
+            - name: LOKI_URL
+              value: http://loki.logging.svc.cluster.local:3100
+            - name: PROMETHEUS_URL
+              value: http://prometheus.logging.svc.cluster.local:9090
+            - name: NAMESPACE
+              value: taskboard
+            # The mount contract (gen-bug-investigator-core.py). Ignored under python -I; kept so
+            # a debugging `python3 -c 'import bug_investigator'` in the pod works.
+            - name: PYTHONPATH
+              value: /core/src
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: binary
+              mountPath: /adapterbin
+            # The package only: this server reads neither prompt.md nor the findings schema.
+            - name: core
+              mountPath: /core/src/bug_investigator
+              readOnly: true
+          # agentgateway plus one Python process with a few threads. First size, 2026-10-27;
+          # resize from the "Container near memory limit" alert if it fires.
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: taskboard-telemetry-mcp
+        - name: binary
+          emptyDir: {}
+        - name: core
+          configMap:
+            name: bug-investigator-core

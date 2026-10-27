@@ -128,6 +128,25 @@ spec:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
+  name: model-gateway-key-bug-investigator
+  namespace: kagent
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault-model-gateway-keys
+    kind: SecretStore
+  target:
+    name: model-gateway-key-bug-investigator
+    creationPolicy: Owner
+  data:
+    - secretKey: ANTHROPIC_API_KEY
+      remoteRef:
+        key: model-gateway-keys
+        property: bug-investigator
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
   name: model-gateway-key-k8s-reader
   namespace: kagent
 spec:

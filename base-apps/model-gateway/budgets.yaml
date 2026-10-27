@@ -57,6 +57,16 @@ groups:
     models: [claude-sonnet-5-5, claude-haiku-5-5]
     daily_usd: 2.50
     gateway: true
+  # Taskboard's bug investigator (read class; the trigger posts, the agent never writes). Sized
+  # 2026-10-27 from the GitHub Action's rehearsals ($0.09-0.14 per investigation with Claude Code;
+  # the kagent runtime reads files over the GitHub API, so assume about $0.30) plus eval-gate runs:
+  # 3 own questions with facts (about $0.30 each) + about 30 shared = about $2 a run. $8 covers a
+  # demo day of ~15 investigations and two eval runs.
+  bug-investigator:
+    agents: [bug-investigator]
+    models: [claude-sonnet-5-5]
+    daily_usd: 8.00
+    gateway: true
   # The first group on the gateway (rollout step 4): cheapest, read-only.
   k8s-reader:
     agents: [k8s-reader]
