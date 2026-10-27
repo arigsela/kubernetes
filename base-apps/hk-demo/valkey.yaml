@@ -32,6 +32,8 @@ metadata:
     app.kubernetes.io/name: valkey
     app.kubernetes.io/part-of: hk-demo
 spec:
+  # One: a cache only. A restart empties it and the app's saver refills it within minutes;
+  # while it is down every pick is built from Loki and Tempo (docs.md, "Saved runs").
   replicas: 1
   strategy:
     type: Recreate   # a cache with no disk: nothing to hand over between pods
@@ -97,7 +99,7 @@ spec:
               containerPort: 6379
           resources:
             requests:
-              cpu: 10m
+              cpu: 25m   # measured 2026-10-27: a steady 15-16m (3-day max 16m)
               memory: 16Mi
             limits:
               cpu: 200m
