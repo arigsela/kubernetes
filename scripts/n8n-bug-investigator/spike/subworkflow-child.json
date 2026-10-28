@@ -1,0 +1,52 @@
+{
+  "id": "spike-child",
+  "name": "spike: child",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "nodes": [
+    {
+      "id": "8b3c4d5e-0000-4000-8000-000000000001",
+      "name": "Called by the picker",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "8b3c4d5e-0000-4000-8000-000000000002",
+      "name": "Echo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().map(i => ({json: {got: i.json, childEnvSeen: $env.SPIKE_TOKEN === 'spike-secret'}}));\n"
+      }
+    }
+  ],
+  "connections": {
+    "Called by the picker": {
+      "main": [
+        [
+          {
+            "node": "Echo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
