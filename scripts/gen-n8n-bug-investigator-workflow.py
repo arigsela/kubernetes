@@ -38,9 +38,9 @@ import yaml
 
 WORKFLOW_ID = "bug-investigator-n8n-poc"
 RUN_WORKFLOW_ID = "bug-investigator-n8n-poc-run"
-ACTIVE = False                 # the kill switch: publish both workflows (Task 11 turns it on)
-NOT_BEFORE = None              # ISO time; issues created earlier are never picked; required with ACTIVE
-ANTHROPIC_CREDENTIAL = {"id": "REPLACE_WITH_CREDENTIAL_ID", "name": "Anthropic — bug investigator POC"}
+ACTIVE = True                  # the kill switch: publish both workflows (on since the activation PR, 2026-10-28)
+NOT_BEFORE = "2026-10-28T17:21:00Z"  # issues created earlier are never picked (#30, #37); required with ACTIVE
+ANTHROPIC_CREDENTIAL = {"id": "GZNrd4FlwwbyDA44", "name": "Anthropic — bug investigator POC"}  # created in the n8n UI
 CONFIGMAP_BUDGET = 196_608     # bytes; client-side apply copies the object into a 256 KiB annotation
 MODEL = "claude-sonnet-5-5"
 MAX_TOKENS = 16000
