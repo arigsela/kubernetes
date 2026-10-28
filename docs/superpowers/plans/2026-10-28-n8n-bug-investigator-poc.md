@@ -143,7 +143,7 @@ Monday/Datadog variant (a later step: swap the ticket and telemetry adapters).
 
 - Branch `feat/n8n-bug-investigator-poc` from `origin/main`, in a worktree: the main checkout sits on a merged branch with untracked files.
 - Never push to `main`, merge, `kubectl apply/edit/patch`, or write Vault. Ari creates the PATs and the Anthropic key, runs `scripts/provision-n8n-bug-investigator-vault.sh`, and creates the n8n credential (Task 11).
-- n8n image: `n8nio/n8n:2.42.3@sha256:240eaa2a3d491adac5817aa4c3f1c521bb18ec79f6e448517158d5220ee0f37b`.
+- n8n image: `n8nio/n8n:2.45.5@sha256:9f6d0a5987ab5a297c4b0b38fbf1a22285dd1364551478e93f03d506908fa74c` since §T.151 (PR #1005); Task 1 ran on 2.42.3. The init script is #1005's unpublish → import → publish loop; the POC's block follows it.
 - Model `claude-sonnet-5-5`, max tokens `16000`, AI Agent `maxIterations` `40`. Child `executionTimeout` `900`, parent `960`. Schedule every `2` minutes.
 - Repo `arigsela/taskboard`; deploy repo `arigsela/kubernetes`, path `base-apps/taskboard`; namespace `taskboard`.
 - GitHub tools, exactly: `get_file_contents`, `search_code`, `list_commits`, `get_commit`, `list_pull_requests`, `pull_request_read`.
