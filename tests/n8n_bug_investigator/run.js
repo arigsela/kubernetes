@@ -48,6 +48,15 @@ const ADAPTERS = {
   n8n: {
     httpVia: (m, helpers, req) => m.httpFromHelpers(helpers)(req),
   },
+  gather: {
+    // gatherVia(fakeHttp, cfg, issue, nowIso, {deadlineMs, clockMs}): a fixed clock when clockMs is given.
+    gatherVia: (m, http, cfg, issue, now, opts) => {
+      const o = opts || {};
+      const clock = o.clockMs == null ? () => 0 : () => o.clockMs;
+      const deadlineMs = o.deadlineMs == null ? Infinity : o.deadlineMs;
+      return m.gatherFacts(github().makeGitHub(http, 'test-token'), cfg, issue, now, { clock, deadlineMs });
+    },
+  },
   pick: {
     pickVia: (m, http, repo, now, notBefore) =>
       m.pickIssue(github().makeGitHub(http, 'test-token'), repo, now, { notBefore }),
@@ -71,6 +80,12 @@ function fakeHttp(spec) {
     const lower = Object.fromEntries(Object.entries(headers || {}).map(([k, v]) => [k.toLowerCase(), v]));
     calls.push({ method, url, headers: lower, body: body === undefined ? null : body });
     if (spec.throws && spec.throws[key]) throw new Error(spec.throws[key]);
+    // GraphQL: the first `graphql` entry whose `match` text is in the query answers.
+    if (method === 'POST' && url.endsWith('/graphql') && spec.graphql) {
+      const hit = spec.graphql.find((g) => body && String(body.query).includes(g.match));
+      if (!hit) throw new Error(`fakeHttp: no graphql route for ${String(body && body.query).slice(0, 80)}`);
+      return { status: hit.status === undefined ? 200 : hit.status, headers: {}, body: hit.body };
+    }
     const route = (spec.routes || {})[key];
     if (route === undefined) throw new Error(`fakeHttp: no route for ${key}`);
     const replies = Array.isArray(route) ? route : [route];
