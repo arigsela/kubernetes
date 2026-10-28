@@ -11,7 +11,8 @@
 'use strict';
 const path = require('path');
 
-const LIB = path.resolve(__dirname, '../../scripts/n8n-bug-investigator/lib');
+// N8N_BI_LIB points at another copy of lib/ (test_package.py: the handover zip's engine/lib).
+const LIB = process.env.N8N_BI_LIB || path.resolve(__dirname, '../../scripts/n8n-bug-investigator/lib');
 
 const ADAPTERS = {
   util: {

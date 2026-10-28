@@ -18,10 +18,10 @@
 // Settings beyond the repos (cfg, from CONFIG): labels (lib/settings.js: the bug label for past
 // bugs, the skip label, the own labels to drop), docsDir, and two switches for other setups:
 // deployRepo null leaves out the deploy timeline and deploy docs; telemetryUrl null leaves out
-// the telemetry pointers, and telemetryNotes (markdown lines) replace them.
+// the telemetry pointers (lib/settings.js), and telemetryNotes (markdown lines) replace them.
 'use strict';
 const { parseTime, iso, short, clip, fence, strip, HOUR_MS } = require('./util');
-const { labelsOf } = require('./settings');
+const { labelsOf, telemetryPointers, DROPPED_LABELS: DROPPED } = require('./settings');
 
 const PY_WS = '\\t\\n\\x0b\\x0c\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
 const SYNC_DELAY_MS = 2 * 60 * 1000;
@@ -30,10 +30,8 @@ const SOURCE_COMMIT_RE = /source-commit["']?\s*:\s*["']?([0-9a-f]{7,40})/;
 const RULE_RE = new RegExp(
   `^[${PY_WS}]*(?:[-*+][${PY_WS}]+|#{1,6}[${PY_WS}]+|\\|[${PY_WS}]*)?(?:\\*\\*|\`)?([A-Z]{1,2}\\p{Nd}{1,3})(?:\\*\\*|\`)?(?=[${PY_WS}:.)|—-])`, 'u');
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.venv', '__pycache__']);
-const DROPPED_LABELS = new Set(['investigated', 'investigation-failed', 'fix-proposed']);
+const DROPPED_LABELS = new Set(DROPPED);
 const OWN_COMMENT = '<!-- bug-investigator';
-const LOKI_UID = 'loki';
-const PROM_UID = 'PBFA97CFB590B2093';
 
 const MESSAGE_HEAD = 'Investigate bug report #{issue} in {repo}. Follow your method. Answer with only the findings JSON\n'
   + '(findings.schema.json), nothing before or after it.\n\n'
@@ -309,28 +307,6 @@ async function docsIndex(gh, roots) {
     }
   }
   return out;
-}
-
-function telemetryPointers(namespace, datasources = {}) {
-  const ds = { loki: LOKI_UID, prometheus: PROM_UID, ...(datasources || {}) };
-  return {
-    loki: {
-      datasourceUid: ds.loki, selector: `{namespace="${namespace}"}`,
-      app_label_values: [namespace, `${namespace}-traffic`],
-      json_fields: ['time', 'level', 'msg', 'request_id', 'user', 'role', 'method', 'route', 'status',
-        'duration_ms', 'task_id', 'error', 'stack', 'rule'],
-      domain_events: ['status_changed', 'permission_denied', 'conflict', 'archive_run',
-        'migration_applied', 'config_loaded', 'seeded', 'sim_action'],
-    },
-    prometheus: {
-      datasourceUid: ds.prometheus,
-      metrics: [`${namespace}_http_requests_total{method,route,status}`, `${namespace}_http_request_duration_seconds`,
-        `${namespace}_tasks{status}`, `${namespace}_tasks_archived_total`,
-        `${namespace}_permission_denied_total{rule}`, `${namespace}_archive_runs_total`,
-        `${namespace}_build_info{commit}`],
-      note: `other metrics need namespace="${namespace}"`,
-    },
-  };
 }
 
 async function gatherFacts(ghIn, cfg, issueNumber, nowIn, { clock = () => Date.now(), deadlineMs = Infinity } = {}) {

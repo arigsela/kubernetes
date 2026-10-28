@@ -1,0 +1,25 @@
+# The read-only GitHub MCP server the agent reads code through.
+#
+#     docker compose up -d
+#
+# GitHub's own server (github/github-mcp-server) in HTTP mode, on port 8082, path /mcp.
+# - --read-only drops every tool that writes, even if it is listed in --tools.
+# - --tools offers only the six tools the agent's prompt uses.
+# - It holds no token: each request brings its own (n8n sends the "Bearer Auth" credential of
+#   the MCP Client Tool node), so give that credential a token that can only read your repo.
+#
+# n8n must be able to reach it: n8n installed directly on the same machine uses
+# http://localhost:8082/mcp; n8n running in Docker should get this service in its own compose
+# project and use http://github-mcp:8082/mcp. n8n Cloud needs a public HTTPS address
+# in front of it (a reverse proxy or tunnel). Anyone who can reach it and has a GitHub token can
+# use it, so keep it off the open internet unless you put it behind HTTPS and an allow-list.
+services:
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server:v1.14.0@sha256:7aaeeec9ae4fe9a736d100c1ff0798f3c219b5009e05f5d3945fcacb13cc196b
+    command:
+      - http
+      - --read-only
+      - --tools=get_file_contents,search_code,list_commits,get_commit,list_pull_requests,pull_request_read
+    ports:
+      - "127.0.0.1:8082:8082"
+    restart: unless-stopped

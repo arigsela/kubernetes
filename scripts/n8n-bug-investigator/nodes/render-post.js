@@ -1,5 +1,5 @@
 // Render and post (child workflow): the comment (lib/render.js), flagged when the agent's tool
-// calls named a kagent fix branch, posted or edited as the POC's own comment. Spent on failure.
+// calls named a watched branch (CONFIG.watchBranches), posted or edited as its own comment. Spent on failure.
 const { httpFromHelpers } = __require('./n8n');
 const { makeGitHub } = __require('./github');
 const { renderComment, trailFromSteps, sawKagentWork, postComment } = __require('./render');

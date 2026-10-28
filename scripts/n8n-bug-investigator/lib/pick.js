@@ -114,7 +114,7 @@ async function pickIssue(gh, repo, nowIn, { notBefore, labels: labelsIn, trusted
   const now = toDate(nowIn);
   const nb = notBefore ? toDate(notBefore) : null;
   if (!now) throw new Error('pickIssue needs now');
-  if (!nb) throw new Error('pickIssue needs notBefore: issues opened before the POC was switched on are never picked');
+  if (!nb) throw new Error('pickIssue needs notBefore: issues opened before the investigator was switched on are never picked');
 
   const issues = (await gh.getAll(`/repos/${repo}/issues`, { labels: L.bug, state: 'open', sort: 'created', direction: 'asc' }))
     .filter((i) => !i.pull_request);

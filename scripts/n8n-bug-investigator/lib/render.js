@@ -4,26 +4,25 @@
 // tool calls, the contamination flag and the post. tests/n8n_bug_investigator/test_render.py
 // checks the body equals the core's render of the same verified findings after the relabel.
 // The relabel (marker mode, title, footer lead), the tool names the trail strips n8n's prefix from
-// and the branch pattern the contamination flag watches are settings; the constants below are
-// this homelab's values and the defaults.
+// and the branch pattern the contamination flag watches are settings (CONFIG); the defaults are
+// lib/settings.js's.
 'use strict';
 const { strip, parseTime, clip, scrubText, splitLines } = require('./util');
+const settings = require('./settings');
 
 const ZWSP = String.fromCharCode(0x200b);
 const MARKER = (mode) => `<!-- bug-investigator mode=${mode} -->`;
-const N8N_MODE = 'n8nagent';
+const N8N_MODE = settings.COMMENT.mode;
 const HEADERS = { full: '🔎 Bug investigation — full', n8n: '🔎 n8n-style baseline (ticket + code only)' };
-const N8N_HEADER = '🔎 Bug investigation — n8n AI Agent (POC)';
-const FOOTER_LEAD = 'n8n/bug-investigator-poc';
+const N8N_HEADER = settings.COMMENT.header;
+const FOOTER_LEAD = settings.COMMENT.footer;
 const VERDICTS = { likely_cause: 'Likely cause found', not_a_bug: 'Not a bug: works as documented',
   needs_info: 'Needs more information', unclear: 'Unclear' };
 const STATUS = { supported: '✅ supported', ruled_out: '❌ ruled out', untested: '❔ untested' };
 const KIND_LABEL = { logql: 'Loki', promql: 'Prometheus' };
 const MAX_LEN = 60000;
 const MAX_TRAIL = 40;
-const TOOLS = ['get_file_contents', 'search_code', 'list_commits', 'get_commit', 'list_pull_requests', 'pull_request_read',
-  'query_loki_logs', 'query_loki_stats', 'list_loki_label_names', 'list_loki_label_values', 'query_prometheus'];
-const KAGENT_BRANCH_RE = /agent\/taskboard-issue-(\d+)/g;
+const TOOLS = settings.TOOLS;
 const CODE_SPAN = /(`+)(.+?)\1/gs;
 
 const truthy = (x) => !!x && !(Array.isArray(x) && !x.length) && !(typeof x === 'object' && !Array.isArray(x) && !Object.keys(x).length);
@@ -244,7 +243,7 @@ function renderComment(verified, { model = '', stats = {}, trail = null, contami
   const c = { mode: N8N_MODE, header: N8N_HEADER, footer: FOOTER_LEAD, ...(comment || {}) };
   const f = isObj(verified) ? verified : {};
   const flag = contaminated && contaminated.length
-    ? [`⚠️ While it ran, this agent read kagent's fix pull request branch(es) ${contaminated.join(', ')}; compare with care.`, '']
+    ? [settings.FLAG.replace('{branches}', contaminated.join(', ')), '']
     : [];
   return renderCore(f, 'full', model, stats, '', trail, flag)
     .replace(MARKER('full'), MARKER(c.mode))
@@ -329,10 +328,10 @@ function trailFromSteps(steps, tools = TOOLS) {
   };
 }
 
-// Every branch matching `pattern` (by default kagent's fix branches, agent/taskboard-issue-<N>)
-// the agent's tool calls or results named, by the number the pattern captures. A null pattern
-// watches nothing.
-function sawKagentWork(steps, pattern = KAGENT_BRANCH_RE.source) {
+// Every branch matching `pattern` (by default settings.WATCH_BRANCHES, here kagent's fix branches
+// agent/taskboard-issue-<N>) the agent's tool calls or results named, by the number the pattern
+// captures. A null pattern watches nothing.
+function sawKagentWork(steps, pattern = settings.WATCH_BRANCHES) {
   if (!pattern) return [];
   const re = new RegExp(pattern, 'g');
   const seen = new Map();

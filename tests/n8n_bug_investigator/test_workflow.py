@@ -156,8 +156,8 @@ def test_each_node_bundles_only_what_it_requires():
     want = {
         "Pick issue": {"util", "github", "n8n", "pick", "settings"},
         "Gather facts": {"util", "github", "n8n", "gather", "settings"},
-        "Verify": {"util", "github", "n8n", "mcp", "verify"},
-        "Render and post": {"util", "github", "n8n", "render"},
+        "Verify": {"util", "github", "n8n", "mcp", "verify", "settings"},
+        "Render and post": {"util", "github", "n8n", "render", "settings"},
         "Agent failed": {"util"},
         "Finish": {"util", "github", "n8n", "pick", "finish", "settings"},
     }

@@ -1,4 +1,4 @@
-// Finish (child workflow): the final labels (lib/finish.js, the POC's own only) and the 👀 claim
+// Finish (child workflow): the final labels (lib/finish.js, the investigator's own only) and the 👀 claim
 // released. A label call that fails leaves the lock; the next pick releases it after 20 minutes.
 const { httpFromHelpers } = __require('./n8n');
 const { makeGitHub } = __require('./github');

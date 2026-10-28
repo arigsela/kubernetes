@@ -1,0 +1,72 @@
+# Bug investigator for n8n: your settings.
+#
+# Copy this file to config.toml, change the values marked CHANGE, then run
+#     python3 build.py config.toml
+# build.py writes two workflow files into out/. README.md says how to import them.
+
+[app]
+name = "Shop"                              # CHANGE: what the agent investigates (used in its prompt)
+prompt_file = "prompt.md"                  # the agent's instructions; build.py fills in the {{...}} parts
+
+[github]
+repo = "your-org/your-app"                 # CHANGE: issues, code, pull requests and docs come from here
+docs_dir = "docs"                          # folder of markdown docs that say how the app should behave
+token_name = "BUG_INVESTIGATOR_GH_TOKEN"   # the n8n Variable (or environment variable) holding the GitHub token
+trusted_bots = []                          # bots whose bug label counts, e.g. ["my-triage-app[bot]"]
+not_before = "2026-11-01T00:00:00Z"        # CHANGE: issues opened before this are never picked
+
+[labels]
+bug = "bug"                                # asks for an investigation (a writer or trusted bot must add it)
+lock = "ai-investigating"                  # on the issue while an investigation runs
+done = "ai-investigated"                   # the comment was posted
+failed = "ai-investigation-failed"         # it failed after the model was asked (no automatic retry)
+skip = "no-ai"                             # never investigated
+
+[comment]
+mode = "n8n-ai"                            # hidden marker; a re-run edits the comment that carries it
+header = "🔎 Bug investigation — AI agent"
+footer = "n8n/bug-investigator"
+
+[schedule]
+every_minutes = 5                          # how often the picker looks for a new bug issue
+
+[model]
+name = "claude-sonnet-5-5"
+max_tokens = 16000
+max_iterations = 40                        # tool calls per investigation, at most
+prompt_caching = "5m"                      # "disabled", "5m" or "1h"
+credential_id = ""                         # your Anthropic credential's id in n8n; blank: choose it after import
+credential_name = "Anthropic"
+
+[workflows]
+parent_id = "bug-investigator"
+child_id = "bug-investigator-run"
+parent_name = "Bug investigator: pick"
+child_name = "Bug investigator: investigate"
+
+# One [[mcp]] block per MCP server the agent may use; n8n names each tool "<node>_<tool>".
+# The first is the read-only GitHub MCP server from docker-compose.yml. It takes the GitHub
+# token from each request, so give the node a "Bearer Auth" credential with a read-only token.
+[[mcp]]
+node = "github"
+url = "http://localhost:8082/mcp"          # CHANGE: where n8n reaches it (README.md, step 2)
+tools = ["get_file_contents", "search_code", "list_commits", "get_commit", "list_pull_requests", "pull_request_read"]
+auth = "bearerAuth"                        # none | bearerAuth | headerAuth | multipleHeadersAuth
+credential_id = ""                         # blank: choose the credential after import
+credential_name = "GitHub read-only"
+
+[telemetry]
+# Off by default. Built in: Loki and Prometheus through a Grafana MCP server (also add that
+# server as an [[mcp]] block so the agent can query it). For Datadog, see ADAPTERS.md.
+url = ""                                   # the MCP server the checker re-runs the agent's queries through
+grafana_url = ""                           # for the Explore links in the comment
+loki_uid = ""
+prometheus_uid = ""
+namespace = ""                             # optional: every query must name this namespace
+notes = []                                 # lines the agent reads under "Telemetry pointers"
+
+[deploy]
+# Off by default: a GitOps repository whose <path>/code-configmap.yaml history records which
+# app commit went live when (each version of that file has a `source-commit: <sha>` line).
+repo = ""
+path = ""

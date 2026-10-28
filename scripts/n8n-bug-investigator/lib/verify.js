@@ -11,10 +11,12 @@
 //   cannot be counted and is dropped (the core counts every frame).
 // makeVerifyCtx's options are settings (from CONFIG): telemetryUrl (null: no telemetry server, so
 // every query is dropped as failed), grafanaUrl and datasources {loki, prometheus} for the
-// queries and their Explore links. A cfg without deployRepo checks the app repo only.
+// queries and their Explore links; the defaults are lib/settings.js's. A cfg without deployRepo
+// checks the app repo only.
 'use strict';
 const { strip, parseTime, iso, window, scrub, splitLines, HOUR_MS } = require('./util');
 const { openSession, countResults } = require('./mcp');
+const settings = require('./settings');
 
 const PY_WS = '\\t\\n\\x0b\\x0c\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
 const SHA_RE = /^[0-9a-fA-F]{7,40}$/;
@@ -24,11 +26,9 @@ const WS_SPLIT = new RegExp(`[${PY_WS}]+`);
 const MERGED_RE = /(?<![\p{L}\p{N}_])merged(?![\p{L}\p{N}_])/iu;
 const NOT_MERGED_RE = /(?<![\p{L}\p{N}_])not merged(?![\p{L}\p{N}_])/iu;
 const PAD_MS = 2 * HOUR_MS;
-const TELEMETRY_URL = 'http://taskboard-telemetry-mcp.kagent.svc.cluster.local:3000/mcp';
-const LOKI_UID = 'loki';
-const PROM_UID = 'PBFA97CFB590B2093';
+const TELEMETRY_URL = settings.TELEMETRY_URL;
 const dsFor = (d) => {
-  const uids = { loki: LOKI_UID, prometheus: PROM_UID, ...(d || {}) };
+  const uids = { ...settings.DATASOURCES, ...(d || {}) };
   return { logql: { uid: uids.loki, type: 'loki' }, promql: { uid: uids.prometheus, type: 'prometheus' } };
 };
 const NO_TELEMETRY = 'no telemetry server is configured';
@@ -449,7 +449,7 @@ function inCone(path, deployPath) {
 }
 
 function makeVerifyCtx(gh, http, cfg, facts, nowIn, secrets = [],
-  { clock = () => Date.now(), deadlineMs = Infinity, telemetryUrl = TELEMETRY_URL, grafanaUrl = 'https://grafana.arigsela.com',
+  { clock = () => Date.now(), deadlineMs = Infinity, telemetryUrl = TELEMETRY_URL, grafanaUrl = settings.GRAFANA_URL,
     datasources = {} } = {}) {
   const ds = dsFor(datasources);
   const guard = () => {
