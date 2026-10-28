@@ -245,6 +245,25 @@ jobs:
       - name: Run wan-ip-monitor tests
         run: python -m pytest tests/wan_ip/ -q
 
+  # n8n bug-investigator POC (§T.152): the JavaScript port runs under node and is checked
+  # against the Python core it mirrors. The suite fails without node; never skips.
+  n8n-bug-investigator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - name: Install deps
+        run: pip install pytest==8.3.3 pyyaml==6.0.2
+      - name: Run n8n bug-investigator tests
+        run: python -m pytest tests/n8n_bug_investigator/ -q
+
   istio-logging-validate:
     runs-on: ubuntu-latest
     steps:
