@@ -303,6 +303,12 @@ def n8n_session(tmp_path_factory, core):
     for k, v in data.items():
         (d / k).write_text(v)
     (d / "probe.json").write_text(json.dumps(probe))
+    pick_node = {**nodes(workflows()[0])["Pick issue"], "position": [200, 0]}
+    pickprobe = {"id": "pickprobe", "name": "pickprobe", "active": False, "settings": {"executionOrder": "v1"},
+                 "nodes": [{"id": str(uuid.uuid4()), "name": "Start", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1,
+                            "position": [0, 0], "parameters": {}}, pick_node],
+                 "connections": {"Start": {"main": [[{"node": "Pick issue", "type": "main", "index": 0}]]}}}
+    (d / "pickprobe.json").write_text(json.dumps(pickprobe))
     # The image runs as `node`; docker cp keeps modes, and pytest's temp dirs are 0700.
     d.chmod(0o755)
     for f in d.iterdir():
@@ -312,6 +318,7 @@ def n8n_session(tmp_path_factory, core):
         f"n8n import:workflow --input=/w/bug-investigator-run.json",
         f"n8n import:workflow --input=/w/bug-investigator.json",
         "n8n import:workflow --input=/w/probe.json",
+        "n8n import:workflow --input=/w/pickprobe.json",
         f"n8n publish:workflow --id={CHILD}",
         f"n8n export:workflow --id={CHILD} --output=/tmp/child.json",
         f"n8n export:workflow --id={PARENT} --output=/tmp/parent.json",
@@ -321,6 +328,9 @@ def n8n_session(tmp_path_factory, core):
         "n8n start >/tmp/server.log 2>&1 &",
         "i=0; until wget -q -O- http://127.0.0.1:5678/healthz/readiness >/dev/null 2>&1 || [ $i -ge 90 ]; do sleep 2; i=$((i+1)); done",
         "echo '==RUN=='", "N8N_RUNNERS_BROKER_PORT=5681 n8n execute --id=probe --rawOutput || true",
+        # The parent's own Pick issue code with no token, behind a manual trigger (the CLI cannot
+        # start a schedule-only workflow): it must idle (a successful run, not saved), not fail.
+        "echo '==PICK=='", "N8N_RUNNERS_BROKER_PORT=5681 n8n execute --id=pickprobe --rawOutput || true",
         "echo '==CHILD=='", "cat /tmp/child.json", "echo", "echo '==PARENT=='", "cat /tmp/parent.json", "echo", "echo '==END=='",
     ])
     name = f"n8n-poc-test-{uuid.uuid4().hex[:8]}"
@@ -342,9 +352,13 @@ def n8n_session(tmp_path_factory, core):
         i = min(x for x in (text.find("["), text.find("{")) if x >= 0)
         return json.JSONDecoder().raw_decode(text[i:])[0]
 
-    run_text = section("==RUN==", "==CHILD==")
+    run_text = section("==RUN==", "==PICK==")
     run = json.JSONDecoder().raw_decode(run_text[run_text.index("{\n"):])[0]
-    return {"run": run, "child": first_json(section("==CHILD==", "==PARENT==")), "parent": first_json(section("==PARENT==", "==END==")),
+    pick_text = section("==PICK==", "==CHILD==")
+    # A failed CLI execution may print only an error, no JSON.
+    pick = (json.JSONDecoder().raw_decode(pick_text[pick_text.index("{\n"):])[0] if "{\n" in pick_text
+            else {"status": "no JSON", "data": {"resultData": {"error": pick_text[-1500:], "runData": {}}}})
+    return {"run": run, "pick": pick, "child": first_json(section("==CHILD==", "==PARENT==")), "parent": first_json(section("==PARENT==", "==END==")),
             "facts": facts, "steps": steps}
 
 
@@ -400,3 +414,11 @@ def test_child_takes_its_failure_path_to_finish(n8n_session):
     errors = [rd.get("error")] + [r.get("error") for runs in rd["runData"].values() for r in runs if r.get("error")]
     assert child_out and child_out[0]["outcome"] == "released", json.dumps([e for e in errors if e], default=str)[:3000]
     assert "BUG_INVESTIGATOR_GH_TOKEN" in json.dumps(child_out[0])
+
+
+def test_pick_without_a_token_is_idle_not_an_error(n8n_session):
+    # A token problem recurs every 2 minutes; as an error each run would be saved (720 a day).
+    pick = n8n_session["pick"]
+    rd = pick["data"]["resultData"]
+    assert pick["status"] == "success" and not rd.get("error"), json.dumps(rd.get("error"), default=str)[:1500]
+    assert _node_items(pick, "Pick issue") == [] and "Pick issue" in rd["runData"]
