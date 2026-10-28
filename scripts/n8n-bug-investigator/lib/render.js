@@ -4,8 +4,7 @@
 // tool calls, the contamination flag and the post. tests/n8n_bug_investigator/test_render.py
 // checks the body equals the core's render of the same verified findings after the relabel.
 'use strict';
-const { strip, parseTime, clip, scrubText } = require('./util');
-const { splitLines } = require('./verify');
+const { strip, parseTime, clip, scrubText, splitLines } = require('./util');
 
 const ZWSP = String.fromCharCode(0x200b);
 const MARKER = (mode) => `<!-- bug-investigator mode=${mode} -->`;

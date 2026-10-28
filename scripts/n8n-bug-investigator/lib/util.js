@@ -15,6 +15,13 @@ const PY_WS = '\\t\\n\\x0b\\x0c\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\
 const LEADING_WS = new RegExp(`^[${PY_WS}]+`);
 const TRAILING_WS = new RegExp(`[${PY_WS}]+$`);
 
+// Python str.splitlines().
+function splitLines(text) {
+  const parts = String(text).split(/\r\n|[\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]/);
+  if (parts.length && parts[parts.length - 1] === '') parts.pop();
+  return parts;
+}
+
 function strip(s) {
   return String(s).replace(LEADING_WS, '').replace(TRAILING_WS, '');
 }
@@ -147,4 +154,4 @@ function scrub(obj, extra = []) {
   return obj;
 }
 
-module.exports = { HOUR_MS, strip, rstrip, parseTime, iso, short, clip, fence, window, scrubText, scrub };
+module.exports = { HOUR_MS, strip, rstrip, splitLines, parseTime, iso, short, clip, fence, window, scrubText, scrub };

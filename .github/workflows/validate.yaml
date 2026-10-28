@@ -261,6 +261,8 @@ jobs:
           node-version: 22
       - name: Install deps
         run: pip install pytest==8.3.3 pyyaml==6.0.2
+      - name: Generated n8n workflows are current
+        run: python scripts/gen-n8n-bug-investigator-workflow.py --repo-root . --check
       - name: Run n8n bug-investigator tests
         run: python -m pytest tests/n8n_bug_investigator/ -q
 
