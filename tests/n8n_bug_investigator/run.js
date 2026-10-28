@@ -20,10 +20,75 @@ const ADAPTERS = {
     windowIso: (m, start, end, fallback, now) =>
       m.window(m.parseTime(start), m.parseTime(end), m.parseTime(fallback), m.parseTime(now)).map(m.iso),
   },
+  github: {
+    // ghCall(fakeHttp, token, method, ...args): makeGitHub(http, token)[method](...args), plus the request count.
+    ghCall: async (m, http, token, method, ...args) => {
+      const gh = m.makeGitHub(http, token);
+      const value = await gh[method](...args);
+      return { value, requests: gh.requests };
+    },
+    ghLoginTwice: async (m, http, token) => {
+      const gh = m.makeGitHub(http, token);
+      return [await gh.login(), await gh.login()];
+    },
+  },
+  mcp: {
+    // mcpSession(fakeHttp, url, [[name, args], ...]): one session, the calls in order, then close().
+    mcpSession: async (m, http, url, calls) => {
+      const s = await m.openSession(http, url);
+      const out = [];
+      try {
+        for (const [name, args] of calls) out.push(await s.callTool(name, args));
+      } finally {
+        await s.close();
+      }
+      return out;
+    },
+  },
+  n8n: {
+    httpVia: (m, helpers, req) => m.httpFromHelpers(helpers)(req),
+  },
 };
 
-// Fakes are added by the tasks that need them (fakeHttp, fakeGitHub, fakeVerifyCtx).
-const FAKES = {};
+// fakeHttp: replays canned replies by "METHOD url" (a list is consumed in order, its last
+// reply repeating); `throws` maps "METHOD url" to a network-error message. Every request is
+// recorded with lower-cased header names. An unknown route throws, so a test cannot pass by
+// accident on a request it did not expect.
+function fakeHttp(spec) {
+  const calls = [];
+  const used = {};
+  const http = async ({ method, url, headers, body }) => {
+    const key = `${method} ${url}`;
+    const lower = Object.fromEntries(Object.entries(headers || {}).map(([k, v]) => [k.toLowerCase(), v]));
+    calls.push({ method, url, headers: lower, body: body === undefined ? null : body });
+    if (spec.throws && spec.throws[key]) throw new Error(spec.throws[key]);
+    const route = (spec.routes || {})[key];
+    if (route === undefined) throw new Error(`fakeHttp: no route for ${key}`);
+    const replies = Array.isArray(route) ? route : [route];
+    const i = Math.min(used[key] || 0, replies.length - 1);
+    used[key] = (used[key] || 0) + 1;
+    const r = replies[i];
+    return { status: r.status === undefined ? 200 : r.status, headers: r.headers || {}, body: r.body === undefined ? null : r.body };
+  };
+  http.calls = calls;
+  return http;
+}
+
+// fakeHelpers: n8n's `this.helpers` with an httpRequest that records its options and returns
+// spec.reply (or throws spec.throws).
+function fakeHelpers(spec) {
+  const calls = [];
+  return {
+    calls,
+    httpRequest: async (opts) => {
+      calls.push(opts);
+      if (spec.throws) throw new Error(spec.throws);
+      return spec.reply;
+    },
+  };
+}
+
+const FAKES = { fakeHttp, fakeHelpers };
 
 function readStdin() {
   return new Promise((resolve, reject) => {
