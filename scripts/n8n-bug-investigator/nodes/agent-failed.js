@@ -4,5 +4,6 @@
 const { scrubText } = __require('./util');
 const g = $('Gather facts').first().json;
 const e = $input.first().json;
-const error = scrubText(String(e.error || 'the AI Agent failed'), [$env.BUG_INVESTIGATOR_GH_TOKEN || '']).slice(0, 500);
+const TOKEN = CONFIG.tokenName || 'BUG_INVESTIGATOR_GH_TOKEN';
+const error = scrubText(String(e.error || 'the AI Agent failed'), [__secret(TOKEN)]).slice(0, 500);
 return [{ json: { issue: g.issue, failed: true, failure: { stage: 'ask', spent: true, error } } }];

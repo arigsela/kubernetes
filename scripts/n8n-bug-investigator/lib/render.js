@@ -3,6 +3,9 @@
 // POC (marker mode=n8nagent, its own title and footer lead), plus the trail of the AI Agent's
 // tool calls, the contamination flag and the post. tests/n8n_bug_investigator/test_render.py
 // checks the body equals the core's render of the same verified findings after the relabel.
+// The relabel (marker mode, title, footer lead), the tool names the trail strips n8n's prefix from
+// and the branch pattern the contamination flag watches are settings; the constants below are
+// this homelab's values and the defaults.
 'use strict';
 const { strip, parseTime, clip, scrubText, splitLines } = require('./util');
 
@@ -237,15 +240,16 @@ function renderCore(f, mode, model = '', stats = {}, runUrl = '', trail = null, 
   return body;
 }
 
-function renderComment(verified, { model = '', stats = {}, trail = null, contaminated = [] } = {}) {
+function renderComment(verified, { model = '', stats = {}, trail = null, contaminated = [], comment = {} } = {}) {
+  const c = { mode: N8N_MODE, header: N8N_HEADER, footer: FOOTER_LEAD, ...(comment || {}) };
   const f = isObj(verified) ? verified : {};
   const flag = contaminated && contaminated.length
     ? [`⚠️ While it ran, this agent read kagent's fix pull request branch(es) ${contaminated.join(', ')}; compare with care.`, '']
     : [];
   return renderCore(f, 'full', model, stats, '', trail, flag)
-    .replace(MARKER('full'), MARKER(N8N_MODE))
-    .replace(`## ${HEADERS.full}`, `## ${N8N_HEADER}`)
-    .replace('<sub>full mode · ', `<sub>${FOOTER_LEAD} · `);
+    .replace(MARKER('full'), MARKER(c.mode))
+    .replace(`## ${HEADERS.full}`, `## ${c.header}`)
+    .replace('<sub>full mode · ', `<sub>${c.footer} · `);
 }
 
 // ------------------------------------------------------------------------------------- trail
@@ -283,9 +287,9 @@ function targetOf(args) {
 }
 
 // n8n prefixes each MCP tool with its node's name (Task 1); the bare name is the AgentTemplate's.
-function bareTool(name) {
+function bareTool(name, tools = TOOLS) {
   const s = String(name || '?');
-  return TOOLS.find((tool) => s === tool || s.endsWith(`_${tool}`)) || s;
+  return (tools || TOOLS).find((tool) => s === tool || s.endsWith(`_${tool}`)) || s;
 }
 
 function textOf(content) {
@@ -307,7 +311,7 @@ function observationText(obs) {
   return obs === null || obs === undefined ? '' : JSON.stringify(obs);
 }
 
-function trailFromSteps(steps) {
+function trailFromSteps(steps, tools = TOOLS) {
   return {
     steps: (steps || []).filter(isObj).map((s, i) => {
       const a = s.action || {};
@@ -317,7 +321,7 @@ function trailFromSteps(steps) {
       return {
         n: i + 1,
         narration: clip(narration, 300),
-        tool: bareTool(a.tool),
+        tool: bareTool(a.tool, tools),
         input: clip(targetOf(input), 120),
         result: clip(observationText(s.observation), 200),
       };
@@ -325,26 +329,30 @@ function trailFromSteps(steps) {
   };
 }
 
-// Every kagent fix branch (agent/taskboard-issue-<N>, any N) the agent's tool calls or results named.
-function sawKagentWork(steps) {
-  const seen = new Set();
+// Every branch matching `pattern` (by default kagent's fix branches, agent/taskboard-issue-<N>)
+// the agent's tool calls or results named, by the number the pattern captures. A null pattern
+// watches nothing.
+function sawKagentWork(steps, pattern = KAGENT_BRANCH_RE.source) {
+  if (!pattern) return [];
+  const re = new RegExp(pattern, 'g');
+  const seen = new Map();
   for (const s of steps || []) {
     if (!isObj(s)) continue;
     const a = s.action || {};
     const texts = [typeof s.observation === 'string' ? s.observation : JSON.stringify(s.observation === undefined ? null : s.observation),
       JSON.stringify(a.toolInput === undefined ? null : a.toolInput)];
-    for (const text of texts) for (const m of String(text).matchAll(KAGENT_BRANCH_RE)) seen.add(Number(m[1]));
+    for (const text of texts) for (const m of String(text).matchAll(re)) seen.set(m[0], Number(m[1]));
   }
-  return [...seen].sort((x, y) => x - y).map((n) => `agent/taskboard-issue-${n}`);
+  return [...seen].sort((x, y) => x[1] - y[1] || (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0)).map(([name]) => name);
 }
 
 // ------------------------------------------------------------------------------------- post
 
 // Edits the POC's own comment (its marker, written by the token's user), else creates one.
-async function postComment(gh, repo, issueNumber, body) {
+async function postComment(gh, repo, issueNumber, body, mode = N8N_MODE) {
   const me = await gh.login();
   const comments = await gh.getAll(`/repos/${repo}/issues/${issueNumber}/comments`);
-  const own = comments.find((c) => String(c.body || '').includes(MARKER(N8N_MODE)) && c.user && c.user.login === me);
+  const own = comments.find((c) => String(c.body || '').includes(MARKER(mode || N8N_MODE)) && c.user && c.user.login === me);
   if (own) {
     await gh.patch(`/repos/${repo}/issues/comments/${own.id}`, { body });
     return 'edited';

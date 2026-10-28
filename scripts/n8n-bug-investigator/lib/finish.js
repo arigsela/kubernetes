@@ -4,10 +4,12 @@
 //   a failure after the agent was asked (spent: the answer, verify, the post, the agent itself)
 //                                  → n8n-investigation-failed, lock removed
 //   a failure before it was asked  → lock removed: the next run retries (pick caps the attempts)
+// `labels` are the configured names (CONFIG.labels); unset ones are lib/settings.js's LABELS.
 'use strict';
-const { LABELS } = require('./pick');
+const { labelsOf } = require('./settings');
 
-function outcome(item) {
+function outcome(item, labels) {
+  const LABELS = labelsOf(labels);
   const failure = item && item.failure;
   const failed = !!(item && (item.failed || failure));
   if (!failed) return { add: [LABELS.done], remove: [LABELS.lock], outcome: 'investigated' };

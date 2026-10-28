@@ -9,6 +9,9 @@
 // - telemetry re-runs through taskboard-telemetry, one MCP session per verify; its scope refusal
 //   is the core's scope check, so "out of scope: …" reads the same. Output the server truncated
 //   cannot be counted and is dropped (the core counts every frame).
+// makeVerifyCtx's options are settings (from CONFIG): telemetryUrl (null: no telemetry server, so
+// every query is dropped as failed), grafanaUrl and datasources {loki, prometheus} for the
+// queries and their Explore links. A cfg without deployRepo checks the app repo only.
 'use strict';
 const { strip, parseTime, iso, window, scrub, splitLines, HOUR_MS } = require('./util');
 const { openSession, countResults } = require('./mcp');
@@ -24,7 +27,11 @@ const PAD_MS = 2 * HOUR_MS;
 const TELEMETRY_URL = 'http://taskboard-telemetry-mcp.kagent.svc.cluster.local:3000/mcp';
 const LOKI_UID = 'loki';
 const PROM_UID = 'PBFA97CFB590B2093';
-const DATASOURCES = { logql: { uid: LOKI_UID, type: 'loki' }, promql: { uid: PROM_UID, type: 'prometheus' } };
+const dsFor = (d) => {
+  const uids = { loki: LOKI_UID, prometheus: PROM_UID, ...(d || {}) };
+  return { logql: { uid: uids.loki, type: 'loki' }, promql: { uid: uids.prometheus, type: 'prometheus' } };
+};
+const NO_TELEMETRY = 'no telemetry server is configured';
 const TRUNCATED = 'the telemetry server truncated the output; could not count it';
 
 class VerifyTimeout extends Error {
@@ -120,8 +127,8 @@ function pyQuote(s) {
 // json.dumps escapes every non-ASCII character.
 const asciiJson = (v) => JSON.stringify(v).replace(/[\u007f-\uffff]/g, (c) => (c === '\u007f' ? c : `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`));
 
-function exploreLink(baseUrl, kind, expr, startMs, endMs) {
-  const ds = DATASOURCES[kind];
+function exploreLink(baseUrl, kind, expr, startMs, endMs, datasources) {
+  const ds = dsFor(datasources)[kind];
   const q = { refId: 'A', datasource: { type: ds.type, uid: ds.uid }, expr };
   if (kind === 'logql') q.queryType = 'range';
   else q.range = true;
@@ -230,7 +237,7 @@ async function checkQuery(ctx, item, findings) {
   const expect = item.expect || 'found';
   if (expect === 'found' && n === 0) return [`query returned nothing in ${iso(start)}..${iso(end)}`, {}];
   if (expect === 'none' && n > 0) return [`query returned ${n} results in ${iso(start)}..${iso(end)}, expected none`, {}];
-  return [null, { count: n, start: iso(start), end: iso(end), link: exploreLink(ctx.grafanaUrl, kind, expr, start.getTime(), end.getTime()) }];
+  return [null, { count: n, start: iso(start), end: iso(end), link: exploreLink(ctx.grafanaUrl, kind, expr, start.getTime(), end.getTime(), ctx.datasources) }];
 }
 
 async function checkItem(ctx, item, findings) {
@@ -442,11 +449,13 @@ function inCone(path, deployPath) {
 }
 
 function makeVerifyCtx(gh, http, cfg, facts, nowIn, secrets = [],
-  { clock = () => Date.now(), deadlineMs = Infinity, telemetryUrl = TELEMETRY_URL, grafanaUrl = 'https://grafana.arigsela.com' } = {}) {
+  { clock = () => Date.now(), deadlineMs = Infinity, telemetryUrl = TELEMETRY_URL, grafanaUrl = 'https://grafana.arigsela.com',
+    datasources = {} } = {}) {
+  const ds = dsFor(datasources);
   const guard = () => {
     if (clock() > deadlineMs) throw new VerifyTimeout();
   };
-  const repos = { app: cfg.repo, deploy: cfg.deployRepo };
+  const repos = { app: cfg.repo, deploy: cfg.deployRepo || null };
   const heads = {};
   if (facts.app_head) heads.app = facts.app_head;
   if (facts.deploy_head) heads.deploy = facts.deploy_head;
@@ -457,9 +466,10 @@ function makeVerifyCtx(gh, http, cfg, facts, nowIn, secrets = [],
     issue: (facts.ticket || {}).number,
     issueCreated: parseTime((facts.ticket || {}).created_at),
     now: nowIn instanceof Date ? nowIn : parseTime(nowIn),
-    repos, heads, secrets, grafanaUrl,
+    repos, heads, secrets, grafanaUrl, datasources,
 
     async commit(key, sha) {
+      if (!repos[key]) return null;
       guard();
       try {
         const c = await gh.get(`/repos/${repos[key]}/commits/${encodeURIComponent(sha)}`);
@@ -511,15 +521,16 @@ function makeVerifyCtx(gh, http, cfg, facts, nowIn, secrets = [],
     },
 
     async query(kind, expr, startIso, endIso) {
+      if (!telemetryUrl) return { error: NO_TELEMETRY };
       guard();
       let name;
       let args;
       if (kind === 'logql') {
         name = 'query_loki_logs';
-        args = { datasourceUid: LOKI_UID, logql: expr, startRfc3339: startIso, endRfc3339: endIso, limit: 100 };
+        args = { datasourceUid: ds.logql.uid, logql: expr, startRfc3339: startIso, endRfc3339: endIso, limit: 100 };
       } else {
         name = 'query_prometheus';
-        args = { datasourceUid: PROM_UID, expr, startTime: startIso, endTime: endIso };
+        args = { datasourceUid: ds.promql.uid, expr, startTime: startIso, endTime: endIso };
       }
       try {
         if (!session) session = await openSession(http, telemetryUrl);

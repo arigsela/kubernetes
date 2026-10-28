@@ -14,8 +14,14 @@
 //   and lines as Python text mode reads them (\r\n and \r become \n).
 // On purpose it drops more than kagent: every `<!-- bug-investigator` comment and kagent's and
 // its own labels (Decision 6). Passing the deadline throws GatherTimeout, a prepare failure.
+//
+// Settings beyond the repos (cfg, from CONFIG): labels (lib/settings.js: the bug label for past
+// bugs, the skip label, the own labels to drop), docsDir, and two switches for other setups:
+// deployRepo null leaves out the deploy timeline and deploy docs; telemetryUrl null leaves out
+// the telemetry pointers, and telemetryNotes (markdown lines) replace them.
 'use strict';
 const { parseTime, iso, short, clip, fence, strip, HOUR_MS } = require('./util');
+const { labelsOf } = require('./settings');
 
 const PY_WS = '\\t\\n\\x0b\\x0c\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
 const SYNC_DELAY_MS = 2 * 60 * 1000;
@@ -23,7 +29,6 @@ const DAY_MS = 24 * HOUR_MS;
 const SOURCE_COMMIT_RE = /source-commit["']?\s*:\s*["']?([0-9a-f]{7,40})/;
 const RULE_RE = new RegExp(
   `^[${PY_WS}]*(?:[-*+][${PY_WS}]+|#{1,6}[${PY_WS}]+|\\|[${PY_WS}]*)?(?:\\*\\*|\`)?([A-Z]{1,2}\\p{Nd}{1,3})(?:\\*\\*|\`)?(?=[${PY_WS}:.)|—-])`, 'u');
-const EXCLUDE_LABEL = 'rehearsal';
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.venv', '__pycache__']);
 const DROPPED_LABELS = new Set(['investigated', 'investigation-failed', 'fix-proposed']);
 const OWN_COMMENT = '<!-- bug-investigator';
@@ -41,8 +46,8 @@ const MERGED_PRS_QUERY = `query($owner: String!, $name: String!) { repository(ow
     reviews(first: 100) { nodes { author { __typename login } state body } }
     comments(first: 100) { nodes { author { __typename login } body } } } } } }`;
 
-const PAST_BUGS_QUERY = `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {
-  issues(states: CLOSED, labels: ["bug"], first: 50, orderBy: {field: CREATED_AT, direction: DESC}) { nodes {
+const PAST_BUGS_QUERY = `query($owner: String!, $name: String!, $labels: [String!]) { repository(owner: $owner, name: $name) {
+  issues(states: CLOSED, labels: $labels, first: 50, orderBy: {field: CREATED_AT, direction: DESC}) { nodes {
     number title body closedAt url labels(first: 100) { nodes { name } }
     closedByPullRequestsReferences(first: 100, includeClosedPrs: true) { nodes { number title url } } } } } }`;
 
@@ -111,7 +116,7 @@ function withDeadline(gh, clock, deadlineMs) {
 
 // ------------------------------------------------------------------------------ sections
 
-async function ticketFacts(gh, repo, n) {
+async function ticketFacts(gh, repo, n, own = []) {
   const t = await gh.get(`/repos/${repo}/issues/${n}`);
   const comments = await gh.getAll(`/repos/${repo}/issues/${n}/comments`);
   return {
@@ -123,7 +128,7 @@ async function ticketFacts(gh, repo, n) {
     state: t.state ? String(t.state).toUpperCase() : null,
     url: t.html_url == null ? null : t.html_url,
     labels: (t.labels || []).map((l) => (typeof l === 'string' ? l : l.name))
-      .filter((l) => !DROPPED_LABELS.has(l) && !String(l).startsWith('n8n-')).sort(),
+      .filter((l) => !DROPPED_LABELS.has(l) && !own.includes(l) && !String(l).startsWith('n8n-')).sort(),
     comments: comments.filter((c) => !String(c.body || '').includes(OWN_COMMENT))
       .map((c) => ({ author: restInner(c.user), created_at: c.created_at == null ? null : c.created_at, body: c.body || '' })),
   };
@@ -203,7 +208,7 @@ async function mergedPrs(gh, cfg, deploys, now) {
   const out = [];
   for (const pr of nodes) {
     const merged = parseTime(pr.mergedAt);
-    if (!merged || merged < since || names(pr.labels).includes(EXCLUDE_LABEL)) continue;
+    if (!merged || merged < since || names(pr.labels).includes(labelsOf(cfg.labels).skip)) continue;
     let inline = [];
     try {
       inline = await gh.getAll(`/repos/${cfg.repo}/pulls/${pr.number}/comments`);
@@ -241,11 +246,12 @@ async function mergedPrs(gh, cfg, deploys, now) {
   return out;
 }
 
-async function pastBugs(gh, repo, current) {
-  const data = await gh.graphql(PAST_BUGS_QUERY, ownerName(repo));
+async function pastBugs(gh, repo, current, labels) {
+  const L = labelsOf(labels);
+  const data = await gh.graphql(PAST_BUGS_QUERY, { ...ownerName(repo), labels: [L.bug] });
   const nodes = (data && data.repository && data.repository.issues && data.repository.issues.nodes) || [];
   return nodes
-    .filter((b) => b.number !== current && !names(b.labels).includes(EXCLUDE_LABEL))
+    .filter((b) => b.number !== current && !names(b.labels).includes(L.skip))
     .map((b) => ({
       number: b.number,
       title: b.title == null ? '' : b.title,
@@ -305,10 +311,11 @@ async function docsIndex(gh, roots) {
   return out;
 }
 
-function telemetryPointers(namespace) {
+function telemetryPointers(namespace, datasources = {}) {
+  const ds = { loki: LOKI_UID, prometheus: PROM_UID, ...(datasources || {}) };
   return {
     loki: {
-      datasourceUid: LOKI_UID, selector: `{namespace="${namespace}"}`,
+      datasourceUid: ds.loki, selector: `{namespace="${namespace}"}`,
       app_label_values: [namespace, `${namespace}-traffic`],
       json_fields: ['time', 'level', 'msg', 'request_id', 'user', 'role', 'method', 'route', 'status',
         'duration_ms', 'task_id', 'error', 'stack', 'rule'],
@@ -316,7 +323,7 @@ function telemetryPointers(namespace) {
         'migration_applied', 'config_loaded', 'seeded', 'sim_action'],
     },
     prometheus: {
-      datasourceUid: PROM_UID,
+      datasourceUid: ds.prometheus,
       metrics: [`${namespace}_http_requests_total{method,route,status}`, `${namespace}_http_request_duration_seconds`,
         `${namespace}_tasks{status}`, `${namespace}_tasks_archived_total`,
         `${namespace}_permission_denied_total{rule}`, `${namespace}_archive_runs_total`,
@@ -329,9 +336,10 @@ function telemetryPointers(namespace) {
 async function gatherFacts(ghIn, cfg, issueNumber, nowIn, { clock = () => Date.now(), deadlineMs = Infinity } = {}) {
   const gh = withDeadline(ghIn, clock, deadlineMs);
   const now = nowIn instanceof Date ? nowIn : parseTime(nowIn);
+  const L = labelsOf(cfg.labels);
   const facts = {
     mode: 'full', generated_at: iso(now), repo: cfg.repo, namespace: cfg.namespace,
-    ticket: await ticketFacts(gh, cfg.repo, issueNumber), problems: [],
+    ticket: await ticketFacts(gh, cfg.repo, issueNumber, [L.lock, L.done, L.failed]), problems: [],
   };
   try {
     facts.app_head = (await gh.get(`/repos/${cfg.repo}/commits/main`)).sha;
@@ -339,18 +347,20 @@ async function gatherFacts(ghIn, cfg, issueNumber, nowIn, { clock = () => Date.n
     rethrowTimeout(e);
     facts.problems.push(`app head: ${e.message}`);
   }
-  facts.deploy_repo = cfg.deployRepo;
-  facts.deploy_path = cfg.deployPath;
+  facts.deploy_repo = cfg.deployRepo || null;
+  facts.deploy_path = cfg.deployRepo ? cfg.deployPath : null;
   let deploys = [];
-  try {
-    facts.deploy_head = (await gh.get(`/repos/${cfg.deployRepo}/commits/main`)).sha;
-    deploys = await deployTimeline(gh, cfg);
-  } catch (e) {
-    rethrowTimeout(e);
-    facts.problems.push(`deploy timeline: ${e.message}`);
+  if (cfg.deployRepo) {
+    try {
+      facts.deploy_head = (await gh.get(`/repos/${cfg.deployRepo}/commits/main`)).sha;
+      deploys = await deployTimeline(gh, cfg);
+    } catch (e) {
+      rethrowTimeout(e);
+      facts.problems.push(`deploy timeline: ${e.message}`);
+    }
   }
   facts.deploys = deploys;
-  for (const [key, fn] of [['merged_prs', () => mergedPrs(gh, cfg, deploys, now)], ['past_bugs', () => pastBugs(gh, cfg.repo, issueNumber)]]) {
+  for (const [key, fn] of [['merged_prs', () => mergedPrs(gh, cfg, deploys, now)], ['past_bugs', () => pastBugs(gh, cfg.repo, issueNumber, cfg.labels)]]) {
     try {
       facts[key] = await fn();
     } catch (e) {
@@ -359,8 +369,12 @@ async function gatherFacts(ghIn, cfg, issueNumber, nowIn, { clock = () => Date.n
       facts.problems.push(`${key}: ${e.message}`);
     }
   }
-  facts.docs = await docsIndex(gh, [['app', cfg.repo, facts.app_head, 'docs'], ['deploy', cfg.deployRepo, facts.deploy_head, cfg.deployPath]]);
-  facts.telemetry = telemetryPointers(cfg.namespace);
+  const roots = [['app', cfg.repo, facts.app_head, cfg.docsDir || 'docs']];
+  if (cfg.deployRepo) roots.push(['deploy', cfg.deployRepo, facts.deploy_head, cfg.deployPath]);
+  facts.docs = await docsIndex(gh, roots);
+  if (Array.isArray(cfg.telemetryNotes) && cfg.telemetryNotes.length) facts.telemetry = { notes: cfg.telemetryNotes.map(String) };
+  else if (cfg.telemetryUrl === null) facts.telemetry = {};
+  else facts.telemetry = telemetryPointers(cfg.namespace, cfg.datasources);
   return facts;
 }
 
@@ -389,23 +403,26 @@ function toMarkdown(f) {
     return `${lines.join('\n')}\n`;
   }
 
-  lines.push('', `## Deploy timeline (${f.deploy_repo} \`${f.deploy_path}/code-configmap.yaml\`), newest first`, '');
-  if (f.deploys && f.deploys.length) {
-    lines.push('Live since ≈ merge time of the deploy commit + ~2 min Argo CD sync.', '',
-      '| live since (≈) | app commit deployed | deploy commit | subject |', '|---|---|---|---|');
-    for (const d of f.deploys.slice(0, 20)) {
-      lines.push(`| ${short(d.live_since)} | \`${(d.source_commit || '?').slice(0, 12)}\` | `
-        + `\`${d.deploy_commit.slice(0, 12)}\` | ${clip(d.subject, 80).split('|').join('/')} |`);
+  // No deploy repo configured: no timeline section, and pull requests say nothing about deploys.
+  if (f.deploy_repo) {
+    lines.push('', `## Deploy timeline (${f.deploy_repo} \`${f.deploy_path}/code-configmap.yaml\`), newest first`, '');
+    if (f.deploys && f.deploys.length) {
+      lines.push('Live since ≈ merge time of the deploy commit + ~2 min Argo CD sync.', '',
+        '| live since (≈) | app commit deployed | deploy commit | subject |', '|---|---|---|---|');
+      for (const d of f.deploys.slice(0, 20)) {
+        lines.push(`| ${short(d.live_since)} | \`${(d.source_commit || '?').slice(0, 12)}\` | `
+          + `\`${d.deploy_commit.slice(0, 12)}\` | ${clip(d.subject, 80).split('|').join('/')} |`);
+      }
+    } else {
+      lines.push('No deploys found.');
     }
-  } else {
-    lines.push('No deploys found.');
   }
 
   lines.push('', `## Merged pull requests, last 14 days, newest first (${f.repo})`);
   for (const p of f.merged_prs || []) {
-    const live = p.live_since ? `live since ≈ ${short(p.live_since)}` : 'not found in any deploy';
+    const live = !f.deploy_repo ? '' : p.live_since ? `, live since ≈ ${short(p.live_since)}` : ', not found in any deploy';
     lines.push('', `### PR #${p.number}: ${p.title}`,
-      `By @${p.author}, merged ${short(p.merged_at)}, ${live}. `
+      `By @${p.author}, merged ${short(p.merged_at)}${live}. `
         + `Merge commit \`${(p.merge_commit || '?').slice(0, 12)}\`.`,
       `Files: ${p.files.slice(0, 25).join(', ') || 'none'}`, '', fence(clip(p.body, 1500)));
     const talk = [
@@ -433,7 +450,9 @@ function toMarkdown(f) {
   if (!(f.docs && f.docs.length)) lines.push('No docs found.');
 
   const tm = f.telemetry || {};
-  if (Object.keys(tm).length) {
+  if (Array.isArray(tm.notes)) {
+    lines.push('', '## Telemetry pointers', '', ...tm.notes.map((x) => `- ${x}`));
+  } else if (Object.keys(tm).length) {
     const lo = tm.loki;
     const pr = tm.prometheus;
     lines.push('', '## Telemetry pointers', '',
