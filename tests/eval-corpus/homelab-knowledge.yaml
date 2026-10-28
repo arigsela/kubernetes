@@ -140,3 +140,34 @@ entries:
     reference: "octarine — saved earlier in the same session via save_memory."
     source: "conversation memory (set by the paired save turn: 'My favorite color is octarine')"
     tags: [memory, recall]
+
+  # ------------------------------------------------------------------ tool-use
+  # Pull request activity (§T.150). "Today" has no stable answer, so the first entry scores only
+  # the CALL (no must_include): whatever happened today, the agent must look rather than guess.
+  # Before §T.150 it answered this question with "I have no tool that lists pull requests". The
+  # second is a fixed fact that only pull_request_read returns: GitHub's list endpoint carries
+  # no changed-file count.
+  - id: prs-opened-closed-today
+    question: "Have any PRs been opened or closed on arigsela/kubernetes today? Keep it brief."
+    category: tool-use
+    expect_tools: ["list_pull_requests"]
+    golden:
+      behavior: answer
+    reference: >-
+      The PRs whose created_at, merged_at or closed_at falls on today's date (UTC unless the user
+      names a timezone), each with its number, title and link, or "none today".
+    source: "github.com/arigsela/kubernetes/pulls (live; the entry scores the list_pull_requests call)"
+    tags: [tool-use, pull-requests]
+
+  - id: pr-845-changed-files
+    question: "How many files did PR #845 on arigsela/kubernetes change, and was it merged? One line."
+    category: tool-use
+    expect_tools: ["pull_request_read"]
+    golden:
+      must_include: ["44"]
+      behavior: answer
+    reference: >-
+      44 files; merged on 2026-10-15 ("feat(slack-bridge): talk to any kagent agent from Slack and
+      decide pauses with buttons").
+    source: "github.com/arigsela/kubernetes/pull/845"
+    tags: [tool-use, pull-requests]

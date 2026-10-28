@@ -1,6 +1,12 @@
 # Read the agent-docs from arigsela/kubernetes@main over MCP. Read-only, single-repo (token
 # scope) — see agent-docs-mcp-external-secret.yaml.
 #
+# Pull requests too (§T.150): the `pull_requests` toolset beside `repos`, so homelab-knowledge can
+# answer "which PRs were opened or closed today?" (list_pull_requests) and "what did PR #n change?"
+# (pull_request_read). --read-only drops every PR write tool (create, update, merge, review), so
+# the server still loads only read tools: 16, of which the allowlist below exposes 6. The repo is
+# public, so the existing token reads its PRs; no new scope.
+#
 # A plain Deployment since §T.126. Until then kmcp's MCPServer CR rendered exactly this shape:
 # an init container copies the agentgateway binary into an emptyDir, and the main container
 # runs agentgateway, which starts the stdio server as its child and serves it as Streamable
@@ -56,7 +62,8 @@ data:
                   mcpAuthorization:
                     rules:
                       - allow: >-
-                          mcp.tool.name in ["get_commit", "get_file_contents", "list_commits", "search_code"]
+                          mcp.tool.name in ["get_commit", "get_file_contents", "list_commits", "list_pull_requests",
+                          "pull_request_read", "search_code"]
                 backends:
                   - weight: 100
                     mcp:
@@ -68,7 +75,8 @@ data:
                               - stdio
                               - --read-only
                               - --toolsets
-                              - repos
+                              # pull_requests: list_pull_requests, pull_request_read (§T.150)
+                              - repos,pull_requests
     config: {}
     # Spans to the cluster collector, as service agent-docs-mcp (a CEL string). Sample everything
     # here; the collector's tail sampling cuts the volume (beacon §V.43). frontendPolicies, not
@@ -125,7 +133,7 @@ spec:
         app.kubernetes.io/name: agent-docs-mcp
       annotations:
         # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
-        checksum/config: "b70a90cdfeaa0b7cca44a7b56c0adbf1b01d2f2c9ed7b39eead1563000a33c21"
+        checksum/config: "dfebacf644bf83a33f631c004a95c5673905e57ca31f9e04ab5c5634e16bed0e"
         # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
         # containerPort would make the kubernetes-pods job scrape the pod twice.
         prometheus.io/scrape: "true"
