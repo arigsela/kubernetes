@@ -105,6 +105,9 @@ def test_model_and_limits():
     model = n["Claude Sonnet 5.5"]["parameters"]
     assert model["model"] == {"__rl": True, "mode": "id", "value": "claude-sonnet-5-5"}
     assert model["options"]["maxTokensToSample"] == 16000
+    # One investigation's model calls re-send the system prompt, tools and history seconds apart:
+    # cached for 5 minutes, they bill at the cache-read price (the rehearsal ran uncached).
+    assert model["options"]["promptCaching"] == "5m"
     assert n["Claude Sonnet 5.5"]["credentials"] == {"anthropicApi": {"id": gen().ANTHROPIC_CREDENTIAL["id"], "name": "Anthropic — bug investigator POC"}}
     opts = n["Investigate"]["parameters"]["options"]
     assert opts["maxIterations"] == 40 and opts["returnIntermediateSteps"] is True
@@ -422,3 +425,10 @@ def test_pick_without_a_token_is_idle_not_an_error(n8n_session):
     rd = pick["data"]["resultData"]
     assert pick["status"] == "success" and not rd.get("error"), json.dumps(rd.get("error"), default=str)[:1500]
     assert _node_items(pick, "Pick issue") == [] and "Pick issue" in rd["runData"]
+
+
+def test_progress_deadline_covers_the_init():
+    # The init container makes 3 n8n CLI calls per workflow (~47 s each on these nodes) and the
+    # probes wait 240 s, so a rollout takes ~20 minutes; the default 600 s deadline marks every
+    # one ProgressDeadlineExceeded and Argo shows the app Degraded until the pod is Ready.
+    assert deployment()["spec"]["progressDeadlineSeconds"] >= 1800

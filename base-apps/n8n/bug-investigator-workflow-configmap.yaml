@@ -225,7 +225,8 @@ data:
               "value": "claude-sonnet-5-5"
             },
             "options": {
-              "maxTokensToSample": 16000
+              "maxTokensToSample": 16000,
+              "promptCaching": "5m"
             }
           },
           "credentials": {

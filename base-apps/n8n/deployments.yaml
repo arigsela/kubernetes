@@ -5,6 +5,11 @@ metadata:
   namespace: n8n
 spec:
   replicas: 1
+  # A rollout takes ~20 minutes: the init container makes 3 n8n CLI calls per workflow (~47 s
+  # each on these nodes; 8 workflows since the bug-investigator POC, §T.152), then the probes
+  # wait 240 s. The default 600 s deadline marked every rollout ProgressDeadlineExceeded and Argo
+  # showed n8n Degraded until the new pod was Ready. 30 minutes covers it; a stuck init still fails.
+  progressDeadlineSeconds: 1800
   selector:
     matchLabels:
       app: n8n
@@ -28,7 +33,7 @@ spec:
         # The n8n bug-investigator POC workflows (§T.152): sha256 (first 16 hex) of both keys of
         # bug-investigator-workflow-configmap.yaml in sorted-key order. Generated: run
         # scripts/gen-n8n-bug-investigator-workflow.py --repo-root . --write after any change.
-        checksum/bug-investigator-workflow: "438af402ccfaa672"
+        checksum/bug-investigator-workflow: "327c35a9bb140194"
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application
