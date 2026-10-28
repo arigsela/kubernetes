@@ -57,6 +57,15 @@ const ADAPTERS = {
       return m.gatherFacts(github().makeGitHub(http, 'test-token'), cfg, issue, now, { clock, deadlineMs });
     },
   },
+  verify: {
+    verifyVia: (m, ctx, findings) => m.verify(findings, ctx),
+    // ctxCall(fakeHttp, cfg, facts, nowIso, method, ...args): one call on a real makeVerifyCtx.
+    ctxCall: (m, http, cfg, facts, now, method, ...args) =>
+      m.makeVerifyCtx(github().makeGitHub(http, 'test-token'), http, cfg, facts, now, ['test-token'])[method](...args),
+    // verifyReal(fakeHttp, cfg, facts, nowIso, findings): verify on a real makeVerifyCtx.
+    verifyReal: (m, http, cfg, facts, now, findings) =>
+      m.verify(findings, m.makeVerifyCtx(github().makeGitHub(http, 'test-token'), http, cfg, facts, now, ['test-token'])),
+  },
   pick: {
     pickVia: (m, http, repo, now, notBefore) =>
       m.pickIssue(github().makeGitHub(http, 'test-token'), repo, now, { notBefore }),
@@ -112,7 +121,45 @@ function fakeHelpers(spec) {
   };
 }
 
-const FAKES = { fakeHttp, fakeHelpers };
+// fakeVerifyCtx: the verify ctx contract served from a case (what makeVerifyCtx would answer):
+// commits on main per repo, files per repo, PR and issue states, and telemetry tool replies
+// keyed by expression, mapped with verify.js's own queryResult. Query calls are recorded.
+function fakeVerifyCtx(spec) {
+  const v = require(path.join(LIB, 'verify.js'));
+  const u = require(path.join(LIB, 'util.js'));
+  const calls = [];
+  const find = (key, sha) => {
+    const s = String(sha).toLowerCase();
+    const hits = [...(spec.commits[key] || []), spec.heads[key]].filter((c) => c && c.startsWith(s));
+    return hits.length === 1 ? hits[0] : null;
+  };
+  return {
+    calls,
+    issue: spec.issue,
+    issueCreated: u.parseTime(spec.issueCreated),
+    now: u.parseTime(spec.now),
+    repos: spec.repos,
+    heads: spec.heads,
+    secrets: spec.secrets || [],
+    grafanaUrl: spec.grafanaUrl,
+    commit: async (key, sha) => find(key, sha),
+    fileLines: async (key, p) => {
+      const text = ((spec.files || {})[key] || {})[p];
+      return text === undefined ? null : v.splitLines(text);
+    },
+    prState: async (n) => (spec.prs || {})[String(n)] || null,
+    issueState: async (n) => (spec.issues || {})[String(n)] || null,
+    query: async (kind, expr, start, end) => {
+      calls.push({ kind, expr, start, end });
+      const reply = (spec.queries || {})[expr];
+      if (!reply) throw new Error(`fakeVerifyCtx: no reply for ${expr}`);
+      return v.queryResult(reply);
+    },
+    close: async () => { calls.push({ closed: true }); },
+  };
+}
+
+const FAKES = { fakeHttp, fakeHelpers, fakeVerifyCtx };
 
 function readStdin() {
   return new Promise((resolve, reject) => {
