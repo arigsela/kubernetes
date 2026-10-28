@@ -16,6 +16,10 @@
 # (no envFrom, no Secret). The tools keep mcp-grafana 2.1.1's names and argument names, which the
 # capability taxonomy already classifies `read`.
 #
+# A second caller: the n8n bug-investigator POC (§T.152, base-apps/n8n/docs.md) binds the same
+# five tools from n8n's AI Agent and re-runs the agent's queries from its Verify step, on one
+# MCP session per verify, closed at the end. Same scope check, so the same answers.
+#
 # Three layers decide which tools exist, all exactly the five the bug-investigator AgentTemplate
 # binds: the server's own list, the adapter's mcpAuthorization below, and the template's binding.
 # tests/agent-identity/test_mcp_server_manifests.py keeps the adapter list equal to the binding.

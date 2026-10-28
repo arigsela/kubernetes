@@ -6,7 +6,7 @@ app: n8n
 catalog_entity: n8n
 kind: runbook
 namespace: n8n
-last_reviewed: 2026-09-30
+last_reviewed: 2026-10-28
 status: stable
 tags: [automation, postgresql, webhooks]
 sources:
@@ -15,6 +15,10 @@ sources:
   - base-apps/n8n/httproute.yaml
   - base-apps/n8n/pvc.yaml
   - base-apps/n8n/workflows-configmap.yaml
+  - base-apps/n8n/bug-investigator-workflow-configmap.yaml
+  - base-apps/n8n/bug-investigator-secrets.yaml
+  - base-apps/n8n/github-read-mcp.yaml
+  - base-apps/n8n/github-read-mcp-secrets.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
   - base-apps/istio-waf/wasmplugin.yaml
 ---
@@ -67,6 +71,18 @@ The digest skills (`newsletter-digest-n8n`, and `feed-digest`, which borrows its
 - **Check:** `kubectl -n n8n exec deploy/n8n -- df -h /home/node/.n8n` against the `n8n-pvc` (`pvc.yaml`, `5Gi`, `local-path`). This volume holds n8n's local `.n8n` state directory, not workflow execution history (that's in Postgres per the `EXECUTIONS_DATA_SAVE_*` settings in `deployments.yaml`), but it can still fill from logs/binary temp files.
 - **Fix:** PR a size increase to `spec.resources.requests.storage` in `base-apps/n8n/pvc.yaml` (note: `local-path` PVCs are not trivially resizable in-place — check the storage class's expansion support before relying on a live resize).
 
+### Symptom: a Taskboard issue keeps `n8n-investigating` (the bug-investigator POC)
+The lock of a running investigation. A run takes up to 15 minutes (the child's 900 s timeout). Longer means the run died (a timeout, a pod restart): the next pick, within 2 minutes of the lock turning 20 minutes old, swaps it for `n8n-investigation-failed` and deletes the 👀 claim. Meanwhile the POC investigates nothing else (one at a time). To see what happened, open the child workflow **Bug investigator (n8n POC): investigate** in n8n's Executions list (every run is saved).
+
+### Symptom: a Taskboard issue gets `n8n-investigation-failed`
+The POC asked its agent and could not finish, or the issue was locked 3 times without finishing. The child execution's **Finish** output has `failure.stage`: `ask` (the AI Agent failed: an MCP server down at connect, the model refused, the spend limit), `answer` (the agent's reply was not findings JSON, e.g. "Agent stopped due to max iterations"), `post` (verify, render or the GitHub post failed). Fix the cause, then remove the label to let the POC try again. kagent's labels on the same issue are unaffected.
+
+### Symptom: the bug-investigator POC does nothing although a `bug` issue is open
+In order: the workflows are not published (`ACTIVE = False`, the default); another issue holds a fresh `n8n-investigating` (one at a time); the issue was opened before `NOT_BEFORE`; its `bug` label was added by someone without write access; it has `n8n-investigated`, `n8n-investigation-failed` or `rehearsal`; a 👀 from the POC token's user under 20 minutes old without a lock (a run claimed it and died; it is taken again after 20 minutes). Idle parent runs are not saved, so the Executions list shows nothing while it waits; a failing pick (e.g. `BUG_INVESTIGATOR_GH_TOKEN is not set`) is saved as an error.
+
+### Symptom: `n8n-github-read-mcp` stuck in `CreateContainerConfigError`, or its ExternalSecret `SecretSyncedError`
+The Vault side of the POC is missing: run `scripts/provision-n8n-bug-investigator-vault.sh` (its header says how). Same for `n8n-bug-investigator-gh`; n8n itself still starts (the env var is optional), but every pick then fails.
+
 ## How-to
 ### Deploy / update
 Edit manifests here and PR; Argo CD auto-syncs on merge (`prune: true`, `selfHeal: true`).
@@ -77,6 +93,12 @@ An upgrade changes the tag and digest on **both** images in `deployments.yaml` (
 2. Dump the database first. Migrations are one-way, and the plain `postgresql` instance n8n uses has no scheduled backup: `kubectl -n postgresql exec deploy/postgresql -- sh -c 'pg_dump -U "$POSTGRES_USER" -d n8n -Fc' > n8n-$(date -u +%Y%m%dT%H%M%SZ).dump`, then copy it to `s3://mysql-backups-asela-cluster/pg/` (it holds n8n's encrypted credentials; delete the local copy).
 3. Merge and watch: the new pod sits in `Init` for about 14 minutes (3 CLI calls per workflow, about 47 s each), then 240 s of probe delay. The old pod keeps serving meanwhile, against the migrated database. `kubectl -n n8n logs deploy/n8n -c import-workflows -f` shows the progress; a GET on each `/webhook/<path>` should answer "Did you mean to make a POST request?" afterwards.
 4. To roll back, revert the PR. The old version then runs on a database migrated past it: 2.42.3 on a 2.45.5 schema came up cleanly in a local test, but it was never designed to. If anything misbehaves, restore the dump into `n8n` (`pg_restore --clean`) with n8n scaled to 0.
+
+### Stop or start the bug-investigator POC
+Set `ACTIVE` in `scripts/gen-n8n-bug-investigator-workflow.py` (starting also needs `NOT_BEFORE`, an ISO time; issues opened earlier are never picked, and the generator refuses `ACTIVE` without it), run it with `--repo-root . --write`, and open a PR. On merge the pod rolls and the init container imports both workflows again, publishing them only when active.
+
+### Rotate the bug-investigator POC's GitHub tokens
+Re-run `scripts/provision-n8n-bug-investigator-vault.sh` with the new token in `N8N_BUG_INVESTIGATOR_GH_TOKEN` (PAT A) or `N8N_GITHUB_READ_MCP_TOKEN` (PAT B). ESO refreshes within 1 h, or force it: `kubectl -n n8n annotate externalsecret n8n-bug-investigator-gh force-sync=$(date +%s) --overwrite` (or `n8n-github-read-mcp-token`). Then roll the pod that reads it: n8n for PAT A (`kubectl -n n8n rollout restart deploy/n8n`), `n8n-github-read-mcp` for PAT B.
 
 ### Rotate the Slack bot token or another Vault-backed value
 Update the property under Vault key `n8n` (e.g. `slack-bot-token`); ESO re-syncs `n8n-secrets` within the 1h `refreshInterval`, then restart the pod (`kubectl -n n8n rollout restart deploy/n8n`) since the values are env vars. Never rotate `encryption-key` this way (see above).
