@@ -255,3 +255,13 @@ def test_never_touches_kagent_labels(js):
     for repo in scenarios:
         for verb, n, lab in label_calls(pick(js, repo)["calls"]):
             assert lab not in KAGENT_LABELS, (verb, n, lab)
+
+
+def test_known_persistent_errors_make_pick_idle(js):
+    # A missing, expired or under-scoped token (or a rate limit) recurs on every 2-minute run: the
+    # picker idles on it instead of saving an error execution each time (720 a day).
+    assert "401" in js("pick", "idleReason", {"name": "GitHubError", "status": 401, "message": "Bad credentials"})
+    assert "403" in js("pick", "idleReason", {"name": "GitHubError", "status": 403, "message": "rate limit"})
+    for e in ({"name": "GitHubError", "status": 500, "message": "boom"}, {"name": "GitHubError", "status": 0, "message": "ECONNRESET"},
+              {"name": "Error", "message": "x"}, None):
+        assert js("pick", "idleReason", e) is None, e

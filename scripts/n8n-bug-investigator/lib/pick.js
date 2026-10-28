@@ -97,6 +97,17 @@ async function claim(gh, repo, n, now) {
   return 'held';
 }
 
+// Errors that recur on every run until a person acts: an expired, revoked or under-scoped token,
+// or a rate limit. The picker idles on them instead of failing every 2 minutes, which would save
+// an error execution each time (720 a day) and push every other workflow's history out of n8n's
+// database. Anything else still fails the run.
+function idleReason(e) {
+  if (!e || e.name !== 'GitHubError') return null;
+  if (e.status === 401) return 'GitHub refused the token (HTTP 401: expired or revoked?)';
+  if (e.status === 403) return 'GitHub answered HTTP 403 (the token lacks a permission, or a rate limit)';
+  return null;
+}
+
 const shape = (i) => ({
   number: i.number, title: i.title, body: i.body, created_at: i.created_at, html_url: i.html_url, labels: labelNames(i),
 });
@@ -166,5 +177,5 @@ async function pickIssue(gh, repo, nowIn, { notBefore } = {}) {
 
 module.exports = {
   LABELS, TRUSTED_BOTS, LOCK_STALE_MS, MAX_ATTEMPTS, CLAIM,
-  labelledBy, mayTrigger, lockAddedAt, lockAttempts, releaseClaim, removeLabel, addLabel, pickIssue,
+  labelledBy, mayTrigger, lockAddedAt, lockAttempts, releaseClaim, removeLabel, addLabel, pickIssue, idleReason,
 };
