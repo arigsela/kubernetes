@@ -50,6 +50,18 @@ def core(tmp_path_factory):
     return SimpleNamespace(**mods)
 
 
+@pytest.fixture(scope="session")
+def trigger():
+    """scripts/bug_investigator_trigger.py as a module (MESSAGE, parse_findings), loaded by path."""
+    import importlib.util
+    sys.path.insert(0, str(REPO / "scripts"))
+    spec = importlib.util.spec_from_file_location("bug_investigator_trigger_n8n", REPO / "scripts/bug_investigator_trigger.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 @pytest.fixture
 def frozen_now(core, monkeypatch):
     """A fixed `now`, patched into every core module that reads the clock (they import utc_now by name)."""

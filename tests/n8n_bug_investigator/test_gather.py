@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 import world as W
-from conftest import JsError, REPO as REPO_ROOT
+from conftest import JsError
 
 CFG = {"repo": W.REPO, "deployRepo": W.DEPLOY_REPO, "deployPath": W.DEPLOY_PATH, "namespace": W.NAMESPACE, "days": 14}
 KAGENT_LABELS = {"investigated", "investigation-failed", "fix-proposed"}
@@ -110,14 +110,7 @@ def test_to_markdown_matches_core(core, js, frozen_now, tmp_path, make):
     assert js("gather", "toMarkdown", facts) == core.gather.to_markdown(facts)
 
 
-def test_build_message_matches_trigger(core, js, frozen_now, tmp_path):
-    from importlib import util as iu
-    import sys
-    sys.path.insert(0, str(REPO_ROOT / "scripts"))
-    spec = iu.spec_from_file_location("bug_investigator_trigger_n8n", REPO_ROOT / "scripts/bug_investigator_trigger.py")
-    trigger = iu.module_from_spec(spec)
-    sys.modules[spec.name] = trigger
-    spec.loader.exec_module(trigger)
+def test_build_message_matches_trigger(core, js, trigger, frozen_now, tmp_path):
     md = core.gather.to_markdown(core_facts(core, W.rich_world(frozen_now), tmp_path))
     assert js("gather", "buildMessage", 41, W.REPO, md) == trigger.MESSAGE.format(issue=41, repo=W.REPO, facts=md)
 
