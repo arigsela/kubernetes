@@ -2649,6 +2649,43 @@ data:
         "memory",
         "recall"
        ]
+      },
+      {
+       "category": "tool-use",
+       "expect_tools": [
+        "list_pull_requests"
+       ],
+       "golden": {
+        "behavior": "answer"
+       },
+       "id": "prs-opened-closed-today",
+       "question": "Have any PRs been opened or closed on arigsela/kubernetes today? Keep it brief.",
+       "reference": "The PRs whose created_at, merged_at or closed_at falls on today's date (UTC unless the user names a timezone), each with its number, title and link, or \"none today\".",
+       "source": "github.com/arigsela/kubernetes/pulls (live; the entry scores the list_pull_requests call)",
+       "tags": [
+        "tool-use",
+        "pull-requests"
+       ]
+      },
+      {
+       "category": "tool-use",
+       "expect_tools": [
+        "pull_request_read"
+       ],
+       "golden": {
+        "behavior": "answer",
+        "must_include": [
+         "44"
+        ]
+       },
+       "id": "pr-845-changed-files",
+       "question": "How many files did PR #845 on arigsela/kubernetes change, and was it merged? One line.",
+       "reference": "44 files; merged on 2026-10-15 (\"feat(slack-bridge): talk to any kagent agent from Slack and decide pauses with buttons\").",
+       "source": "github.com/arigsela/kubernetes/pull/845",
+       "tags": [
+        "tool-use",
+        "pull-requests"
+       ]
       }
      ],
      "version": 1

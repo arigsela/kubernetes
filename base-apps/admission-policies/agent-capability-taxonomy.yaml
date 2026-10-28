@@ -211,7 +211,7 @@ data:
   # if it is read-only ON THE SERVER SIDE, proved per server in tests/agent-capability
   # (test_real_read_only_servers_are_read_only_on_the_server_side). Changing such a server's
   # url, or the Deployment behind it, is a security change.
-  #   agent-docs  github-mcp-server --read-only --toolsets repos (agent-docs-mcp.yaml)
+  #   agent-docs  github-mcp-server --read-only --toolsets repos,pull_requests (agent-docs-mcp.yaml)
   # Never kagent-tool-server (write tools, no auth) or kagent-api (invoke_session).
   read-only-servers: |
     [

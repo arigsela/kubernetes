@@ -39,7 +39,10 @@ metadata:
     # agent-capability-delegation; there are none here now.
     capability.homelab/class: read
 spec:
-  description: Answers questions about the homelab GitOps repo, base-apps deployments, ownership and dependencies, and live cluster state, which it reads itself with read-only Kubernetes tools
+  description: >-
+    Answers questions about the homelab GitOps repo, its pull requests, base-apps deployments,
+    ownership and dependencies, and live cluster state, which it reads itself with read-only
+    Kubernetes tools
   # Sonnet: it walks index.md -> base-apps/index.md -> app docs and then reads live state, so
   # it needs the context headroom and reliable multi-step tool calling.
   modelConfig:
@@ -102,6 +105,27 @@ spec:
       cluster shows Y), call it out explicitly as a drift finding — this is
       valuable signal, since the docs are meant to track reality.
 
+    ## Pull requests
+    For PR activity on arigsela/kubernetes ("which PRs were opened or closed
+    today?", "is PR #n merged?", "what did PR #n change?"), use the same GitHub
+    MCP, always with owner=`arigsela` and repo=`kubernetes`:
+    - `list_pull_requests` with state=`all`, sort=`updated`, direction=`desc`,
+      perPage=`50`. A PR opened, merged or closed in a window was also updated
+      in it, so those come first. It was opened in the window if its
+      `created_at` falls in it, merged if its `merged_at` does, and closed
+      without merging if its `closed_at` does and `merged_at` is empty. If the
+      last PR on the page was still updated inside the window, fetch the next
+      page.
+    - `pull_request_read` for one PR: method=`get` (state, merged, author,
+      dates, number of changed files), `get_files` or `get_diff` (what it
+      changed), `get_check_runs` (CI).
+    - Timestamps are UTC. Unless the user names a timezone, "today" is the
+      current UTC date; say which day boundary you used.
+    - arigsela/taskboard is private and out of reach of these tools; say so
+      rather than guess.
+    List only PRs you saw in the tool output, with their number, title and
+    link.
+
     ## Response format
 
     1. Brief answer first (1-3 sentences).
@@ -155,6 +179,9 @@ spec:
         tools:
           - get_file_contents
           - search_code
+          # PR activity (§T.150); both classified `read`, so this agent stays class read.
+          - list_pull_requests
+          - pull_request_read
     # Web search for what neither the repo nor the cluster can answer (upstream docs, release
     # notes, CVEs). Untrusted text; this agent is read-only, so a crafted page can at most
     # mislead an answer, never act. Not bound to the operator agents (brave-search-mcp-remote.yaml).

@@ -587,9 +587,11 @@ def test_real_harnesses_share_one_pinned_runtime_image():
 # proof per listed server; a server listed without one fails here.
 def _agent_docs_is_read_only_server_side():
     """RemoteMCPServer agent-docs -> Service agent-docs-mcp -> agentgateway running
-    github-mcp-server with --read-only and only the repos toolset. The RemoteMCPServer is
-    resolved the way the validator resolves it (vac.collect, namespace kagent), and must be
-    defined exactly once."""
+    github-mcp-server with --read-only and only the repos and pull_requests toolsets
+    (pull_requests since §T.150; under --read-only it loads only list_pull_requests,
+    pull_request_read and search_pull_requests). The toolset list is pinned exactly: a new
+    toolset is a reviewed change here. The RemoteMCPServer is resolved the way the validator
+    resolves it (vac.collect, namespace kagent), and must be defined exactly once."""
     kd = REPO / "base-apps" / "kagent"
     found = [d for _, d in vac.collect(REPO)[0].get("RemoteMCPServer", [])
              if vac._key(d) == (vac.BYO_NAMESPACE, "agent-docs")]
@@ -604,7 +606,7 @@ def _agent_docs_is_read_only_server_side():
     assert len(targets) == 1, targets
     args = targets[0]["stdio"]["args"]
     assert "--read-only" in args, args
-    assert args[args.index("--toolsets") + 1] == "repos", args
+    assert args[args.index("--toolsets") + 1] == "repos,pull_requests", args
 
 
 READ_ONLY_PROOFS = {"agent-docs": _agent_docs_is_read_only_server_side}
