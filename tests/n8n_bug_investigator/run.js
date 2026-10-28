@@ -48,7 +48,16 @@ const ADAPTERS = {
   n8n: {
     httpVia: (m, helpers, req) => m.httpFromHelpers(helpers)(req),
   },
+  pick: {
+    pickVia: (m, http, repo, now, notBefore) =>
+      m.pickIssue(github().makeGitHub(http, 'test-token'), repo, now, { notBefore }),
+    releaseClaimVia: (m, http, repo, n) => m.releaseClaim(github().makeGitHub(http, 'test-token'), repo, n),
+  },
 };
+
+function github() {
+  return require(path.join(LIB, 'github.js'));
+}
 
 // fakeHttp: replays canned replies by "METHOD url" (a list is consumed in order, its last
 // reply repeating); `throws` maps "METHOD url" to a network-error message. Every request is
