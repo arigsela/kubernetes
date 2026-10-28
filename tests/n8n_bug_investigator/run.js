@@ -66,6 +66,9 @@ const ADAPTERS = {
     verifyReal: (m, http, cfg, facts, now, findings) =>
       m.verify(findings, m.makeVerifyCtx(github().makeGitHub(http, 'test-token'), http, cfg, facts, now, ['test-token'])),
   },
+  render: {
+    postVia: (m, http, repo, n, body) => m.postComment(github().makeGitHub(http, 'test-token'), repo, n, body),
+  },
   pick: {
     pickVia: (m, http, repo, now, notBefore) =>
       m.pickIssue(github().makeGitHub(http, 'test-token'), repo, now, { notBefore }),
