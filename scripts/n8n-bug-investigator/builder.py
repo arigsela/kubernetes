@@ -30,6 +30,11 @@ TYPE_VERSIONS = {
     "@n8n/n8n-nodes-langchain.mcpClientTool": 1.4,
 }
 
+# The MCP Client Tool's authentication options and the n8n credential type each one uses
+# (n8n 2.45.5, McpClientTool.node.js).
+MCP_AUTH = {"none": None, "bearerAuth": "httpBearerAuth", "headerAuth": "httpHeaderAuth",
+            "multipleHeadersAuth": "httpMultipleHeadersAuth"}
+
 # __require resolves the bundled modules; __secret reads a token from an n8n Variable ($vars,
 # n8n Cloud and licensed self-hosted) or, failing that, the environment ($env, self-hosted with
 # N8N_BLOCK_ENV_ACCESS_IN_NODE=false). An unreadable source counts as unset.
@@ -96,6 +101,23 @@ def _node(wf_id: str, name: str, type_: str, pos, params: dict, **extra) -> dict
     return n
 
 
+def _credentials(kind: str, cred: dict | None) -> dict:
+    """A node's `credentials` entry; none without an id (pick the credential in n8n after import)."""
+    if not cred or not cred.get("id"):
+        return {}
+    return {"credentials": {kind: {"id": cred["id"], "name": cred.get("name") or cred["id"]}}}
+
+
+def _mcp_params(t: dict) -> tuple[dict, dict]:
+    auth = t.get("auth") or "none"
+    if auth not in MCP_AUTH:
+        raise ValueError(f"MCP server {t['node']}: auth must be one of {sorted(MCP_AUTH)}, not {auth!r}")
+    params = {"endpointUrl": t["url"], "serverTransport": "httpStreamable", "authentication": auth}
+    params.update({"include": "selected", "includeTools": list(t["tools"])} if t.get("tools") else {"include": "all"})
+    params["options"] = {}
+    return params, (_credentials(MCP_AUTH[auth], t.get("credential")) if MCP_AUTH[auth] else {})
+
+
 def _main(*targets):
     return {"main": [[{"node": t, "type": "main", "index": 0}] if t else [] for t in targets]}
 
@@ -105,7 +127,9 @@ def build_workflows(s: dict, lib_dir: Path, nodes_dir: Path) -> dict[str, dict]:
 
     ids {parent, child}, names {parent, child}, everyMinutes, timeouts {parent, child},
     model {name, nodeName, maxTokens, maxIterations, promptCaching, credential {id, name}},
-    systemPrompt, mcp [{node, url, tools}], config (the Code nodes' CONFIG), banner.
+    systemPrompt, mcp [{node, url, tools, auth, credential}], config (the Code nodes' CONFIG), banner.
+    A credential is {id, name}; without an id the node has none and is set in n8n after import.
+    An MCP server without tools offers the agent all of its tools.
     Returns {"bug-investigator.json": parent, "bug-investigator-run.json": child}.
     """
     pid, cid = s["ids"]["parent"], s["ids"]["child"]
@@ -139,10 +163,10 @@ def build_workflows(s: dict, lib_dir: Path, nodes_dir: Path) -> dict[str, dict]:
         "conditions": [{"id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"{cid}/Gathered?/0")), "leftValue": "={{ $json.failed }}",
                         "rightValue": "", "operator": {"type": "boolean", "operation": "false", "singleValue": True}}],
         "combinator": "and"}, "options": {}}
-    mcp = [_node(cid, t["node"], "@n8n/n8n-nodes-langchain.mcpClientTool", (560 + 140 * i, 220),
-                 {"endpointUrl": t["url"], "serverTransport": "httpStreamable", "authentication": "none",
-                  "include": "selected", "includeTools": list(t["tools"]), "options": {}})
-           for i, t in enumerate(s["mcp"])]
+    mcp = []
+    for i, t in enumerate(s["mcp"]):
+        params, creds = _mcp_params(t)
+        mcp.append(_node(cid, t["node"], "@n8n/n8n-nodes-langchain.mcpClientTool", (560 + 140 * i, 220), params, **creds))
     options = {"maxTokensToSample": m["maxTokens"]}
     if m.get("promptCaching") and m["promptCaching"] != "disabled":
         options["promptCaching"] = m["promptCaching"]
@@ -160,7 +184,7 @@ def build_workflows(s: dict, lib_dir: Path, nodes_dir: Path) -> dict[str, dict]:
                   onError="continueErrorOutput"),
             _node(cid, m["nodeName"], "@n8n/n8n-nodes-langchain.lmChatAnthropic", (560, 220),
                   {"model": {"__rl": True, "mode": "id", "value": m["name"]}, "options": options},
-                  credentials={"anthropicApi": dict(m["credential"])}),
+                  **_credentials("anthropicApi", m.get("credential"))),
             *mcp,
             code(cid, "Verify", "verify.js", (900, -100)),
             code(cid, "Render and post", "render-post.js", (1120, -100)),
