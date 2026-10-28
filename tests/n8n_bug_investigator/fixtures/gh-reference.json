@@ -1,0 +1,286 @@
+{
+ "_source": "Recorded 2026-10-28 from arigsela/taskboard with read-only gh: `gh pr list --state merged --limit 50 --json number,author` and the GraphQL pullRequests(states: MERGED, first: 50, orderBy: {field: CREATED_AT, direction: DESC}) query gather.js sends (number and author only).",
+ "gh_pr_list": [
+  {
+   "number": 36,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 28,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 27,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 25,
+   "author": {
+    "login": "app/github-actions"
+   }
+  },
+  {
+   "number": 23,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 22,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 21,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 19,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 18,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 17,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 15,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 13,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 12,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 10,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 8,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 6,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 5,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 4,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 3,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 2,
+   "author": {
+    "login": "arigsela"
+   }
+  },
+  {
+   "number": 1,
+   "author": {
+    "login": "arigsela"
+   }
+  }
+ ],
+ "graphql_merged_prs": {
+  "repository": {
+   "pullRequests": {
+    "nodes": [
+     {
+      "number": 36,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 28,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 27,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 25,
+      "author": {
+       "__typename": "Bot",
+       "login": "github-actions"
+      }
+     },
+     {
+      "number": 23,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 22,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 21,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 19,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 18,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 17,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 15,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 13,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 12,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 10,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 8,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 6,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 5,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 4,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 3,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 2,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     },
+     {
+      "number": 1,
+      "author": {
+       "__typename": "User",
+       "login": "arigsela"
+      }
+     }
+    ]
+   }
+  }
+ }
+}
