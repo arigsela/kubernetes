@@ -28,6 +28,9 @@ auto:                                   # merged by .github/workflows/promote.ya
     - base-apps/dex
     - base-apps/cluster-rbac
     - base-apps/dispatcher
+    # n8n's init container drives the n8n CLI on every start and its migrations are one-way:
+    # a bump needs the script rehearsed on the new version and a DB dump first (§T.151).
+    - base-apps/n8n
   max_changed_files: 2
   merge_method: rebase                  # the only method the main ruleset allows
 owner:                                  # everything else; the triage label says how closely to read

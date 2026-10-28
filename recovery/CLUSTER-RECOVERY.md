@@ -17,8 +17,8 @@ AWS KMS key that seals Vault. `SPEC.md` holds the invariants those scripts enfor
 | Every Kubernetes API object, including every `Secret` | k3s SQLite datastore in `/var/lib/rancher/k3s/server/` on `k3s-control-01`. There's no etcd: the server runs without `--cluster-init` | `scripts/k3s-backup.sh`, by hand | only if you copy it off |
 | Vault: every secret, policy and auth method | `file` storage at `/vault/data`, 1Gi local-path volume on `k3s-worker-01` (`vault-0` is pinned there by `nodeSelector`) | `scripts/vault-backup.sh`, by hand | only if you copy it off (ciphertext) |
 | The key Vault's storage is encrypted with | AWS KMS `alias/vault-auto-unseal`, us-east-2 (`terraform/roots/asela-cluster/vault-kms.tf`) | `prevent_destroy`, 30-day deletion window | lives in AWS |
-| CNPG `postgresql-cluster`: `donetick`, plus `n8n` and the orphaned `chores_tracker` | 2 instances, one per worker, 20Gi local-path each | barman: daily base backup at 02:00 UTC plus WAL archiving to `s3://mysql-backups-asela-cluster/postgresql/`, 30d retention. `scripts/pg-backup.sh` by hand | yes (S3) |
-| Plain `postgresql` Deployment (pgvector): root DB, `kagent_v1` (kagent 1.0: sessions, memory, the audit source), `substrate` (Agent Substrate), the read-only `kagent` 0.10 archive, Backstage, and n8n per its docs (n8n's DB host comes from Vault, so git can't confirm which instance it uses) | `postgresql-pvc`, 10Gi local-path | **nothing** scheduled; one-off dumps from 2026-10-11 (Gaps, item 2) | only those dumps |
+| CNPG `postgresql-cluster`: `donetick`, plus an `n8n` database the running n8n does not use (it is on the plain instance below) and the orphaned `chores_tracker` | 2 instances, one per worker, 20Gi local-path each | barman: daily base backup at 02:00 UTC plus WAL archiving to `s3://mysql-backups-asela-cluster/postgresql/`, 30d retention. `scripts/pg-backup.sh` by hand | yes (S3) |
+| Plain `postgresql` Deployment (pgvector): root DB, `kagent_v1` (kagent 1.0: sessions, memory, the audit source), `substrate` (Agent Substrate), the read-only `kagent` 0.10 archive, Backstage, and n8n (database `n8n`; its DB host comes from Vault, confirmed 2026-10-28 from the n8n pod's open connection to Service `postgresql`) | `postgresql-pvc`, 10Gi local-path | **nothing** scheduled; one-off dumps from 2026-10-11 (Gaps, item 2) | only those dumps |
 | Agent Substrate session snapshots (suspended kagent conversations) | bundled rustfs, bucket `ate-snapshots`, PVC `rustfs-data` (`ate-system`), 1Gi local-path on worker-02 | **nothing**, by design: sessions are disposable, long-term memory is in `kagent_v1` | no |
 | Substrate CA pools and JWT pool | Vault `k8s-secrets/substrate-cas`, synced by ESO into `ate-system` and `podcertificate-controller-system` | the Vault backup | as Vault |
 | Other local-path volumes (table below) | the node that first mounted each one | **nothing** | no |
@@ -63,7 +63,7 @@ kubectl get pv -o custom-columns='NS:.spec.claimRef.namespace,PVC:.spec.claimRef
 2. **The plain `postgresql` Deployment has no scheduled backup.** That covers the root DB,
    `kagent_v1` (kagent 1.0's sessions and long-term memory, and the source for the agent
    audit), `substrate` (Substrate's actor records), the read-only `kagent` 0.10 archive,
-   Backstage, and n8n if its docs are right. `pg-backup.sh` only targets the CNPG cluster: its
+   Backstage, and n8n (confirmed 2026-10-28). `pg-backup.sh` only targets the CNPG cluster: its
    default exec looks up the CNPG primary by label. Pointing it here with `--exec-cmd` is
    untested, and it dumps as role `postgres`, which this instance may not have. The only copies
    are one-off dumps under `s3://mysql-backups-asela-cluster/pg/`: the whole instance before the

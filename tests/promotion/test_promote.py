@@ -21,7 +21,8 @@ def test_repo_policy_loads_and_denies_the_dangerous_prefixes():
     assert policy["version"] == 1
     assert policy["auto"]["authors"] == ["arigsela-renovate[bot]"]
     assert policy["auto"]["require_labels"] == ["review:skip"]
-    for must in ("terraform/", ".github/", "appsets/", "base-apps/vault", "base-apps/kagent", "base-apps/admission-policies"):
+    for must in ("terraform/", ".github/", "appsets/", "base-apps/vault", "base-apps/kagent", "base-apps/admission-policies",
+                 "base-apps/n8n"):
         assert must in policy["auto"]["deny_prefixes"], must
     assert policy["auto"]["merge_method"] == "rebase"
     assert policy["auto"]["max_changed_files"] <= 4
