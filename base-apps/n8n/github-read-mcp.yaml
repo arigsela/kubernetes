@@ -1,0 +1,206 @@
+# base-apps/n8n/github-read-mcp.yaml
+# A read-only GitHub MCP server for the n8n bug-investigator POC (§T.152, plan
+# docs/superpowers/plans/2026-10-28-n8n-bug-investigator-poc.md). n8n's AI Agent binds the same
+# six GitHub tools as kagent/bug-investigator: get_file_contents, search_code, list_commits,
+# get_commit, list_pull_requests, pull_request_read.
+#
+# Why its own server (Decision 2): kagent's `implementer` server also allows create_branch,
+# create_or_update_file, push_files and create_pull_request to any caller that reaches it (its
+# mcpAuthorization has no caller check), so pointing n8n at it would hand n8n write tools. This
+# one is read-only three times over: github-mcp-server runs with --read-only and only the six
+# --tools, agentgateway's mcpAuthorization allows only those six (tools/list shows nothing
+# else; any other call is refused as "Unknown tool"), and its token (PAT B,
+# github-read-mcp-secrets.yaml) has read permissions only, on arigsela/taskboard.
+#
+# The Service has no auth: the NetworkPolicy below is what limits callers, to the n8n pod
+# (port 3000) and Prometheus in `logging` (agentgateway's /metrics on 15020). Namespace n8n is
+# not in the mesh, so the policy applies as written.
+#
+# The shape is base-apps/kagent/agent-docs-mcp.yaml's (same agentgateway and github-mcp-server
+# images; tests/n8n_bug_investigator/test_github_read_mcp.py keeps them equal): an init
+# container copies the agentgateway binary into an emptyDir, and the main container runs
+# agentgateway, which starts the stdio server as its child and serves it as Streamable HTTP on
+# :3000 (/mcp). agentgateway reads local.yaml once at start, so the pod template carries
+# checksum/config = sha256 of the local.yaml text; the test fails when it is stale and prints
+# the new value. The stdio child inherits the container environment, which is how the token
+# (envFrom the ExternalSecret's Secret) reaches it without appearing in this file.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: n8n-github-read-mcp
+  namespace: n8n
+  labels:
+    app.kubernetes.io/part-of: n8n
+    app.kubernetes.io/name: n8n-github-read-mcp
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: n8n-github-read-mcp
+  namespace: n8n
+  labels:
+    app.kubernetes.io/part-of: n8n
+    app.kubernetes.io/name: n8n-github-read-mcp
+data:
+  local.yaml: |
+    binds:
+      - port: 3000
+        listeners:
+          - name: default
+            protocol: HTTP
+            routes:
+              - name: mcp
+                matches:
+                  - path:
+                      pathPrefix: /mcp
+                # Exactly the GitHub tools bug-investigator's AgentTemplate binds (§T.152).
+                policies:
+                  mcpAuthorization:
+                    rules:
+                      - allow: >-
+                          mcp.tool.name in ["get_file_contents", "search_code", "list_commits", "get_commit", "list_pull_requests", "pull_request_read"]
+                backends:
+                  - weight: 100
+                    mcp:
+                      targets:
+                        - name: n8n-github-read-mcp
+                          stdio:
+                            cmd: ./github-mcp-server
+                            args:
+                              - stdio
+                              - --read-only
+                              - --tools
+                              - get_file_contents,search_code,list_commits,get_commit,list_pull_requests,pull_request_read
+    config: {}
+    # Spans to the cluster collector, as service n8n-github-read-mcp (a CEL string), as the
+    # kagent servers do. /metrics stays on the default :15020.
+    frontendPolicies:
+      tracing:
+        host: otel-collector.tracing.svc.cluster.local:4317
+        protocol: grpc
+        randomSampling: "true"
+        resources:
+          service.name: '"n8n-github-read-mcp"'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: n8n-github-read-mcp
+  namespace: n8n
+  labels:
+    app.kubernetes.io/part-of: n8n
+    app.kubernetes.io/name: n8n-github-read-mcp
+spec:
+  selector:
+    app.kubernetes.io/name: n8n-github-read-mcp
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n8n-github-read-mcp
+  namespace: n8n
+  labels:
+    app.kubernetes.io/part-of: n8n
+    app.kubernetes.io/name: n8n-github-read-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: n8n-github-read-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: n8n
+        app.kubernetes.io/name: n8n-github-read-mcp
+      annotations:
+        # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
+        checksum/config: "a0a2d84443de6059cd8d6eef88f3e83fb6aed684744b2bb8df6ce4f67aec78a5"
+        # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
+        # containerPort would make the kubernetes-pods job scrape the pod twice.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15020"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: n8n-github-read-mcp
+      automountServiceAccountToken: false
+      # Where n8n runs (application nodes), so the two share a node class.
+      nodeSelector:
+        node.kubernetes.io/workload: application
+      initContainers:
+        - name: copy-binary
+          # The agentgateway image the kagent MCP servers use (images/agentgateway/, §T.133).
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d
+          args: ["--copy-self", "/adapterbin/agentgateway"]
+          volumeMounts:
+            - name: binary
+              mountPath: /adapterbin
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+      containers:
+        - name: mcp-server
+          image: ghcr.io/github/github-mcp-server:v1.14.0@sha256:7aaeeec9ae4fe9a736d100c1ff0798f3c219b5009e05f5d3945fcacb13cc196b
+          command: ["/adapterbin/agentgateway"]
+          args: ["-f", "/config/local.yaml"]
+          ports:
+            - name: http
+              containerPort: 3000
+          # Injects GITHUB_PERSONAL_ACCESS_TOKEN (PAT B, github-read-mcp-secrets.yaml).
+          envFrom:
+            - secretRef:
+                name: n8n-github-read-mcp-token
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: binary
+              mountPath: /adapterbin
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: n8n-github-read-mcp
+        - name: binary
+          emptyDir: {}
+---
+# Who may call it: the n8n pod on 3000, Prometheus on 15020. Nothing else (the Service has no auth).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: n8n-github-read-mcp
+  namespace: n8n
+  labels:
+    app.kubernetes.io/part-of: n8n
+    app.kubernetes.io/name: n8n-github-read-mcp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: n8n-github-read-mcp
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: n8n
+      ports:
+        - port: 3000
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: logging
+      ports:
+        - port: 15020
+          protocol: TCP
