@@ -18,7 +18,7 @@ Each run logs the class that admitted the PR as `rule`, or the reasons each clas
   promotes);
 - at most 2 changed files, none under a deny prefix (Terraform, `.github/`, appsets, Ansible,
   node-config, Vault, PostgreSQL, kagent, Substrate, admission policies, Istio, Dex,
-  cluster-rbac, the dispatcher, Crossplane packages, `renovate.json5`). Renovate's
+  cluster-rbac, the dispatcher, n8n (§T.151), Crossplane packages, `renovate.json5`). Renovate's
   `renovate/stability-days` is a commit status, not a check, and must be `success`.
 
 ### `docs-only` (policy section `auto_docs`, added 2026-10-13)

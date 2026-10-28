@@ -41,24 +41,41 @@ spec:
       # webhook registered. (This replaced a per-sync PreSync Job that re-ran on
       # unrelated app syncs and left the webhook active-in-DB but unregistered
       # whenever the pod didn't happen to restart — a real 404 we hit in prod.)
+      #
+      # Per workflow: unpublish, import, publish (§T.151). Importing over an ACTIVE workflow
+      # makes the CLI deactivate it through a permission check as the owner, and that check
+      # fails ("You do not have permission to deactivate this workflow", exit 1) on a database
+      # whose n8n server has never started: a fresh install whose init is retried, e.g. after a
+      # node drain, would never come up. Unpublishing first means the import never deactivates
+      # anything. Tested locally on 2.45.5 and Postgres 16.4: the old import +
+      # `update:workflow --active=true` pair fails that case and this loop passes; on this
+      # instance's real state both pass. `update:workflow` is also deprecated in 2.45.
+      # `unpublish || echo` allows the first import, when the workflow is not in the database
+      # yet (exit 1, "not found"); any other problem surfaces at the import that follows
+      # (set -e). publish without --versionId publishes the version just imported. Each CLI
+      # call boots n8n (~47 s on these nodes), so 6 workflows x 3 calls keep a new pod in
+      # Init for ~14 min (~9 min with the old pair); the old pod serves until it is Ready.
+      # A new workflow: add `<ConfigMap key without .json>:<workflow id>` to the list and
+      # recompute checksum/workflows above.
       - name: import-workflows
-        image: n8nio/n8n:2.42.3@sha256:240eaa2a3d491adac5817aa4c3f1c521bb18ec79f6e448517158d5220ee0f37b
+        image: n8nio/n8n:2.45.5@sha256:9f6d0a5987ab5a297c4b0b38fbf1a22285dd1364551478e93f03d506908fa74c
         command: ["/bin/sh", "-c"]
         args:
         - |
           set -e
-          n8n import:workflow --input=/workflows/grafana-alerts.json
-          n8n update:workflow --id=grafana-alerts-slack --active=true
-          n8n import:workflow --input=/workflows/wan-ip-rotated.json
-          n8n update:workflow --id=wan-ip-rotated --active=true
-          n8n import:workflow --input=/workflows/image-scan-report.json
-          n8n update:workflow --id=image-scan-report --active=true
-          n8n import:workflow --input=/workflows/interview-janitor.json
-          n8n update:workflow --id=interview-janitor --active=true
-          n8n import:workflow --input=/workflows/newsletter-digest-send.json
-          n8n update:workflow --id=qX9W779auOovEQe9 --active=true
-          n8n import:workflow --input=/workflows/agent-findings.json
-          n8n update:workflow --id=agent-findings --active=true
+          for wf in \
+            grafana-alerts:grafana-alerts-slack \
+            wan-ip-rotated:wan-ip-rotated \
+            image-scan-report:image-scan-report \
+            interview-janitor:interview-janitor \
+            newsletter-digest-send:qX9W779auOovEQe9 \
+            agent-findings:agent-findings; do
+            file=${wf%%:*}
+            id=${wf#*:}
+            n8n unpublish:workflow --id="$id" || echo "$id: not in the database yet (first import)"
+            n8n import:workflow --input="/workflows/$file.json"
+            n8n publish:workflow --id="$id"
+          done
         env:
         - name: DB_TYPE
           value: "postgresdb"
@@ -108,7 +125,13 @@ spec:
             cpu: "500m"
       containers:
       - name: n8n
-        image: n8nio/n8n:2.42.3@sha256:240eaa2a3d491adac5817aa4c3f1c521bb18ec79f6e448517158d5220ee0f37b
+        # 2.45.5 (2026-10-28): the first 2.x release that fixes GHSA-gx3v-3x3v-f8r5 (expression
+        # isolation) and GHSA-f2cw-9483-7vcp (GraphicsMagick). Same tag as the init container,
+        # which runs the database migrations first. Migrations are one-way, so dump the database
+        # before an upgrade (runbook, "Upgrade n8n"). Never bump n8n without running the init
+        # script on the new version: it drives the n8n CLI, which changes between minor versions
+        # (promotion denies base-apps/n8n for that reason).
+        image: n8nio/n8n:2.45.5@sha256:9f6d0a5987ab5a297c4b0b38fbf1a22285dd1364551478e93f03d506908fa74c
         env:
         # Database Configuration
         - name: DB_TYPE
