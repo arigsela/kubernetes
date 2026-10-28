@@ -44,6 +44,7 @@ ANTHROPIC_CREDENTIAL = {"id": "GZNrd4FlwwbyDA44", "name": "Anthropic — bug inv
 CONFIGMAP_BUDGET = 196_608     # bytes; client-side apply copies the object into a 256 KiB annotation
 MODEL = "claude-sonnet-5-5"
 MAX_TOKENS = 16000
+PROMPT_CACHING = "5m"        # one run's calls re-send prompt, tools and history seconds apart (Anthropic prompt caching)
 MAX_ITERATIONS = 40
 CHILD_TIMEOUT = 900
 PARENT_TIMEOUT = 960
@@ -222,7 +223,7 @@ def child_workflow(repo: Path, config: dict) -> dict:
                    "options": {"systemMessage": prompt, "maxIterations": MAX_ITERATIONS, "returnIntermediateSteps": True}},
                   onError="continueErrorOutput"),
             _node(w, "Claude Sonnet 5.5", "@n8n/n8n-nodes-langchain.lmChatAnthropic", (560, 220),
-                  {"model": {"__rl": True, "mode": "id", "value": MODEL}, "options": {"maxTokensToSample": MAX_TOKENS}},
+                  {"model": {"__rl": True, "mode": "id", "value": MODEL}, "options": {"maxTokensToSample": MAX_TOKENS, "promptCaching": PROMPT_CACHING}},
                   credentials={"anthropicApi": dict(ANTHROPIC_CREDENTIAL)}),
             *mcp,
             _code(repo, w, "Verify", "verify.js", (900, -100), config),
