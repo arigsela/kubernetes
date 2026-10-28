@@ -10,7 +10,7 @@
 //   is the core's scope check, so "out of scope: …" reads the same. Output the server truncated
 //   cannot be counted and is dropped (the core counts every frame).
 'use strict';
-const { strip, parseTime, iso, window, scrub, HOUR_MS } = require('./util');
+const { strip, parseTime, iso, window, scrub, splitLines, HOUR_MS } = require('./util');
 const { openSession, countResults } = require('./mcp');
 
 const PY_WS = '\\t\\n\\x0b\\x0c\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000';
@@ -42,13 +42,6 @@ function pyRepr(v) {
   if (typeof v !== 'string') return String(v);
   if (v.includes("'") && !v.includes('"')) return `"${v}"`;
   return `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
-}
-
-// Python str.splitlines().
-function splitLines(text) {
-  const parts = String(text).split(/\r\n|[\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]/);
-  if (parts.length && parts[parts.length - 1] === '') parts.pop();
-  return parts;
 }
 
 const norm = (s) => String(s || '').replace(/[`*]/g, '').split(WS_SPLIT).filter(Boolean).join(' ');

@@ -453,5 +453,5 @@ function buildMessage(issue, repo, factsMd) {
 
 module.exports = {
   GatherTimeout, SOURCE_COMMIT_RE, RULE_RE, MERGED_PRS_QUERY, PAST_BUGS_QUERY,
-  ruleId, telemetryPointers, prRowsFromGraphql, gatherFacts, toMarkdown, buildMessage,
+  ruleId, telemetryPointers, prRowsFromGraphql, gatherFacts, toMarkdown, buildMessage, b64decode,
 };

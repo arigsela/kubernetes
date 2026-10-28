@@ -62,6 +62,7 @@ generator. CI runs each with `--check` and fails on drift.
 | `scripts/gen-docs-checker-trigger-configmap.py --repo-root .` | `base-apps/kagent/docs-checker-trigger-code-configmap.yaml` (+ the CronJob's `checksum/code`) | `scripts/docs_checker_trigger.py`, `kagent_a2a.py` |
 | `scripts/gen-bug-investigator-trigger-configmap.py --repo-root .` | `base-apps/kagent/bug-investigator-trigger-code-configmap.yaml` (+ the CronJob's `checksum/code`) | `scripts/bug_investigator_trigger.py`, `kagent_a2a.py` |
 | `scripts/gen-bug-investigator-core.py --source <claude-agents checkout> --commit <sha>` | `base-apps/kagent/bug-investigator-core-configmap.yaml` (+ `checksum/core` on the telemetry tool server) | an `arigsela/claude-agents` commit, `bug-investigator/` (CI checks only that the committed files agree; `tests/taskboard/`) |
+| `scripts/gen-n8n-bug-investigator-workflow.py --repo-root . --write` | `base-apps/n8n/bug-investigator-workflow-configmap.yaml` (+ `deployments.yaml`'s `checksum/bug-investigator-workflow` and its `# BEGIN/END bug-investigator POC` init block) | `scripts/n8n-bug-investigator/` (lib, nodes), `base-apps/kagent/agent-templates/bug-investigator.yaml` (prompt, tools) |
 
 The `okf-autosync` workflow pushes a bot commit to any PR touching `base-apps/**`
 if `base-apps/index.md` or `scripts/agent-docs-scope.txt` is out of date. Pull
