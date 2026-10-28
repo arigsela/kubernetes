@@ -6,12 +6,14 @@ const { renderComment, trailFromSteps, sawKagentWork, postComment } = __require(
 const { scrubText } = __require('./util');
 const v = $input.first().json;
 if (v.failed) return [{ json: v }];
-const token = $env.BUG_INVESTIGATOR_GH_TOKEN || '';
+const TOKEN = CONFIG.tokenName || 'BUG_INVESTIGATOR_GH_TOKEN';
+const token = __secret(TOKEN);
 const steps = $('Investigate').first().json.intermediateSteps || [];
-const contaminated = sawKagentWork(steps);
+const contaminated = sawKagentWork(steps, CONFIG.watchBranches);
+const comment = CONFIG.comment || {};
 try {
-  const body = renderComment(v.verified, { model: CONFIG.model, stats: v.stats, trail: trailFromSteps(steps), contaminated });
-  const posted = await postComment(makeGitHub(httpFromHelpers(this.helpers), token), CONFIG.repo, v.issue.number, body);
+  const body = renderComment(v.verified, { model: CONFIG.model, stats: v.stats, trail: trailFromSteps(steps, CONFIG.tools), contaminated, comment });
+  const posted = await postComment(makeGitHub(httpFromHelpers(this.helpers), token), CONFIG.repo, v.issue.number, body, comment.mode);
   const ver = v.verified.verification || {};
   return [{ json: { issue: v.issue, failed: false, posted, verdict: v.verified.verdict, verified_n: ver.verified, total: ver.total, contaminated } }];
 } catch (e) {

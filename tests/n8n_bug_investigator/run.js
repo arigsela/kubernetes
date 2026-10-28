@@ -65,13 +65,17 @@ const ADAPTERS = {
     // verifyReal(fakeHttp, cfg, facts, nowIso, findings): verify on a real makeVerifyCtx.
     verifyReal: (m, http, cfg, facts, now, findings) =>
       m.verify(findings, m.makeVerifyCtx(github().makeGitHub(http, 'test-token'), http, cfg, facts, now, ['test-token'])),
+    // verifyRealWith(fakeHttp, cfg, facts, nowIso, opts, findings): verifyReal with makeVerifyCtx options.
+    verifyRealWith: (m, http, cfg, facts, now, opts, findings) =>
+      m.verify(findings, m.makeVerifyCtx(github().makeGitHub(http, 'test-token'), http, cfg, facts, now, ['test-token'], opts)),
   },
   render: {
-    postVia: (m, http, repo, n, body) => m.postComment(github().makeGitHub(http, 'test-token'), repo, n, body),
+    postVia: (m, http, repo, n, body, mode) => m.postComment(github().makeGitHub(http, 'test-token'), repo, n, body, mode),
   },
   pick: {
-    pickVia: (m, http, repo, now, notBefore) =>
-      m.pickIssue(github().makeGitHub(http, 'test-token'), repo, now, { notBefore }),
+    // pickVia(fakeHttp, repo, nowIso, notBefore, extra): extra holds the other pickIssue options.
+    pickVia: (m, http, repo, now, notBefore, extra) =>
+      m.pickIssue(github().makeGitHub(http, 'test-token'), repo, now, { notBefore, ...(extra || {}) }),
     releaseClaimVia: (m, http, repo, n) => m.releaseClaim(github().makeGitHub(http, 'test-token'), repo, n),
   },
 };

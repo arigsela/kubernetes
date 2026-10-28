@@ -6,7 +6,8 @@ const { parseFindings, verify, makeVerifyCtx } = __require('./verify');
 const { scrubText } = __require('./util');
 const g = $('Gather facts').first().json;
 const answer = $input.first().json;
-const token = $env.BUG_INVESTIGATOR_GH_TOKEN || '';
+const TOKEN = CONFIG.tokenName || 'BUG_INVESTIGATOR_GH_TOKEN';
+const token = __secret(TOKEN);
 const fail = (stage, e) => [{ json: { issue: g.issue, failed: true,
   failure: { stage, spent: true, error: scrubText(String((e && e.message) || e), [token]) } } }];
 let findings;
@@ -18,7 +19,8 @@ try {
 try {
   const http = httpFromHelpers(this.helpers);
   const ctx = makeVerifyCtx(makeGitHub(http, token), http, CONFIG, g.facts, new Date(), [token],
-    { deadlineMs: Date.now() + CONFIG.deadlineMs, telemetryUrl: CONFIG.telemetryUrl, grafanaUrl: CONFIG.grafanaUrl });
+    { deadlineMs: Date.now() + CONFIG.deadlineMs, telemetryUrl: CONFIG.telemetryUrl, grafanaUrl: CONFIG.grafanaUrl,
+      datasources: CONFIG.datasources });
   const verified = await verify(findings, ctx);
   const stats = { turns: (answer.intermediateSteps || []).length, duration_ms: Date.now() - Date.parse(g.askedAt) };
   return [{ json: { issue: g.issue, failed: false, verified, stats } }];

@@ -6,13 +6,14 @@ const { addLabel, removeLabel, releaseClaim } = __require('./pick');
 const { outcome } = __require('./finish');
 const { scrubText } = __require('./util');
 const item = $input.first().json;
-const o = outcome(item);
+const o = outcome(item, CONFIG.labels);
 const n = item.issue && item.issue.number;
-const token = $env.BUG_INVESTIGATOR_GH_TOKEN || '';
+const TOKEN = CONFIG.tokenName || 'BUG_INVESTIGATOR_GH_TOKEN';
+const token = __secret(TOKEN);
 const result = { issue: n || null, outcome: o.outcome, verdict: item.verdict || null, verified_n: item.verified_n ?? null,
   total: item.total ?? null, contaminated: item.contaminated || [], failure: item.failure || null };
 try {
-  if (!token) throw new Error('BUG_INVESTIGATOR_GH_TOKEN is not set');
+  if (!token) throw new Error(`${TOKEN} is not set`);
   if (!n) throw new Error('no issue to label');
   const gh = makeGitHub(httpFromHelpers(this.helpers), token);
   for (const label of o.remove) await removeLabel(gh, CONFIG.repo, n, label);

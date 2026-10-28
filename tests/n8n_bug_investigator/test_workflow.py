@@ -154,12 +154,12 @@ def test_every_code_node_parses(tmp_path):
 
 def test_each_node_bundles_only_what_it_requires():
     want = {
-        "Pick issue": {"util", "github", "n8n", "pick"},
-        "Gather facts": {"util", "github", "n8n", "gather"},
+        "Pick issue": {"util", "github", "n8n", "pick", "settings"},
+        "Gather facts": {"util", "github", "n8n", "gather", "settings"},
         "Verify": {"util", "github", "n8n", "mcp", "verify"},
         "Render and post": {"util", "github", "n8n", "render"},
         "Agent failed": {"util"},
-        "Finish": {"util", "github", "n8n", "pick", "finish"},
+        "Finish": {"util", "github", "n8n", "pick", "finish", "settings"},
     }
     got = {n["name"]: set(re.findall(r"^  '\./([a-z0-9]+)': function \(module, exports, require\)", n["parameters"]["jsCode"], re.M))
            for n in code_nodes()}
@@ -190,7 +190,11 @@ def test_code_reads_the_gathered_item_and_the_token():
         assert "$('Gather facts').first().json" in n[name], name
     assert "$('Investigate').first().json" in n["Render and post"]
     for name in ("Pick issue", "Gather facts", "Verify", "Render and post", "Finish"):
-        assert "$env.BUG_INVESTIGATOR_GH_TOKEN" in n[name] and "httpFromHelpers(this.helpers)" in n[name], name
+        assert "httpFromHelpers(this.helpers)" in n[name], name
+    for name, code in n.items():
+        # The token: the n8n Variable, else the environment variable (BUG_INVESTIGATOR_GH_TOKEN here).
+        assert "const TOKEN = CONFIG.tokenName || 'BUG_INVESTIGATOR_GH_TOKEN';" in code and "__secret(TOKEN)" in code, name
+        assert "$vars[name]" in code and "$env[name]" in code and "$env." not in code, name
 
 
 def test_active_requires_not_before():
@@ -290,6 +294,7 @@ def n8n_session(tmp_path_factory, core):
         f"const facts = {json.dumps(facts)};\nconst steps = {json.dumps(steps)};\n"
         "return [{ json: { issue: { number: 41 }, md: gth.toMarkdown(facts), dec: gth.b64decode('aGVsbG8g8J+YgA=='), lines: u.splitLines('a\\r\\nb\\u2028c'),\n"
         "  rule: gth.ruleId('- **P4** x\\n'), trail: r.trailFromSteps(steps),\n"
+        "  secret: __secret('N8N_PROBE_SECRET'), unset: __secret('N8N_PROBE_UNSET'),\n"
         "  globals: { Buffer: typeof Buffer, atob: typeof atob, TextDecoder: typeof TextDecoder, URL: typeof URL } } }];\n"), None)
     probe = {"id": "probe", "name": "probe", "active": False, "settings": {"executionOrder": "v1"},
              "nodes": [{"id": str(uuid.uuid4()), "name": "Start", "type": "n8n-nodes-base.manualTrigger", "typeVersion": 1, "position": [0, 0], "parameters": {}},
@@ -338,7 +343,8 @@ def n8n_session(tmp_path_factory, core):
     ])
     name = f"n8n-poc-test-{uuid.uuid4().hex[:8]}"
     # N8N_BLOCK_ENV_ACCESS_IN_NODE=false as the Deployment sets it: the Code nodes read $env.
-    subprocess.run(["docker", "create", "--name", name, "-e", "N8N_BLOCK_ENV_ACCESS_IN_NODE=false", "--entrypoint", "/bin/sh",
+    subprocess.run(["docker", "create", "--name", name, "-e", "N8N_BLOCK_ENV_ACCESS_IN_NODE=false", "-e", "N8N_PROBE_SECRET=s3cret",
+                    "--entrypoint", "/bin/sh",
                     deployed_image(), "-c", script], check=True, capture_output=True)
     try:
         subprocess.run(["docker", "cp", str(d), f"{name}:/w"], check=True, capture_output=True)
@@ -406,6 +412,8 @@ def test_bundles_run_in_n8ns_sandbox(core, js, n8n_session):
     assert probe["md"] == core.gather.to_markdown(n8n_session["facts"])
     assert probe["dec"] == "hello 😀" and probe["lines"] == ["a", "b", "c"] and probe["rule"] == "P4"
     assert probe["trail"] == js("render", "trailFromSteps", n8n_session["steps"])
+    # __secret: no n8n Variable here (unlicensed), so the environment variable; unset is "".
+    assert probe["secret"] == "s3cret" and probe["unset"] == ""
 
 
 def test_child_takes_its_failure_path_to_finish(n8n_session):

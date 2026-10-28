@@ -13,18 +13,14 @@
 // 201 proceeds. A lock (or a lone claim) older than LOCK_STALE_MS was left by a run that died;
 // a stale lock is released as n8n-investigation-failed. An issue locked MAX_ATTEMPTS times
 // without finishing is failed rather than retried forever.
+//
+// The label names and the trusted bots are settings (pickIssue's labels and trustedBots, from
+// CONFIG); lib/settings.js holds this homelab's values, the defaults.
 'use strict';
 const { parseTime } = require('./util');
 const { GitHubError } = require('./github');
+const { LABELS, TRUSTED_BOTS, labelsOf } = require('./settings');
 
-const LABELS = {
-  bug: 'bug',
-  lock: 'n8n-investigating',
-  done: 'n8n-investigated',
-  failed: 'n8n-investigation-failed',
-  rehearsal: 'rehearsal',
-};
-const TRUSTED_BOTS = ['arigsela-implementer[bot]'];
 const WRITE_ROLES = ['admin', 'maintain', 'write'];
 const LOCK_STALE_MS = 1_200_000;
 const MAX_ATTEMPTS = 3;
@@ -34,34 +30,35 @@ const toDate = (x) => (x instanceof Date ? x : parseTime(x));
 const labelNames = (issue) => ((issue && issue.labels) || []).map((l) => (typeof l === 'string' ? l : l && l.name));
 
 // Who added the `bug` label (the latest such event); the author if no event says.
-function labelledBy(events, issue) {
+function labelledBy(events, issue, bug = LABELS.bug) {
   let who = null;
   for (const ev of events || []) {
-    if (ev.event === 'labeled' && ev.label && ev.label.name === LABELS.bug) who = (ev.actor && ev.actor.login) || who;
+    if (ev.event === 'labeled' && ev.label && ev.label.name === bug) who = (ev.actor && ev.actor.login) || who;
   }
   return who || (issue && issue.user && issue.user.login) || null;
 }
 
-function mayTrigger(permission, login) {
+function mayTrigger(permission, login, trustedBots = TRUSTED_BOTS) {
   if (!login) return false;
-  if (TRUSTED_BOTS.includes(login)) return true;
+  if (trustedBots.includes(login)) return true;
   if (!permission) return false;
   return WRITE_ROLES.includes(permission.role_name) || ['admin', 'write'].includes(permission.permission);
 }
 
-const lockEvents = (events) => (events || []).filter((ev) => ev.event === 'labeled' && ev.label && ev.label.name === LABELS.lock);
+const lockEvents = (events, lock = LABELS.lock) =>
+  (events || []).filter((ev) => ev.event === 'labeled' && ev.label && ev.label.name === lock);
 
 // When the lock was last added (the latest event: a retry adds it again).
-function lockAddedAt(events) {
+function lockAddedAt(events, lock = LABELS.lock) {
   let at = null;
-  for (const ev of lockEvents(events)) {
+  for (const ev of lockEvents(events, lock)) {
     const t = parseTime(ev.created_at);
     if (t && (!at || t > at)) at = t;
   }
   return at;
 }
 
-const lockAttempts = (events) => lockEvents(events).length;
+const lockAttempts = (events, lock = LABELS.lock) => lockEvents(events, lock).length;
 
 async function addLabel(gh, repo, n, label) {
   await gh.post(`/repos/${repo}/issues/${n}/labels`, { labels: [label] });
@@ -112,13 +109,14 @@ const shape = (i) => ({
   number: i.number, title: i.title, body: i.body, created_at: i.created_at, html_url: i.html_url, labels: labelNames(i),
 });
 
-async function pickIssue(gh, repo, nowIn, { notBefore } = {}) {
+async function pickIssue(gh, repo, nowIn, { notBefore, labels: labelsIn, trustedBots = TRUSTED_BOTS } = {}) {
+  const L = labelsOf(labelsIn);
   const now = toDate(nowIn);
   const nb = notBefore ? toDate(notBefore) : null;
   if (!now) throw new Error('pickIssue needs now');
   if (!nb) throw new Error('pickIssue needs notBefore: issues opened before the POC was switched on are never picked');
 
-  const issues = (await gh.getAll(`/repos/${repo}/issues`, { labels: LABELS.bug, state: 'open', sort: 'created', direction: 'asc' }))
+  const issues = (await gh.getAll(`/repos/${repo}/issues`, { labels: L.bug, state: 'open', sort: 'created', direction: 'asc' }))
     .filter((i) => !i.pull_request);
   const cache = new Map();
   const events = async (n) => {
@@ -132,14 +130,14 @@ async function pickIssue(gh, repo, nowIn, { notBefore } = {}) {
   // 1. Locks: release the stale ones; any fresh one means an investigation is running.
   let busy = null;
   for (const issue of issues) {
-    if (!labelNames(issue).includes(LABELS.lock)) continue;
-    const at = lockAddedAt(await events(issue.number));
+    if (!labelNames(issue).includes(L.lock)) continue;
+    const at = lockAddedAt(await events(issue.number), L.lock);
     if (at && now - at < LOCK_STALE_MS) {
       busy = busy || issue.number;
       continue;
     }
-    await removeLabel(gh, repo, issue.number, LABELS.lock);
-    await addLabel(gh, repo, issue.number, LABELS.failed);
+    await removeLabel(gh, repo, issue.number, L.lock);
+    await addLabel(gh, repo, issue.number, L.failed);
     await releaseClaim(gh, repo, issue.number);
     released.push(issue.number);
   }
@@ -149,27 +147,27 @@ async function pickIssue(gh, repo, nowIn, { notBefore } = {}) {
   for (const issue of issues) {
     const n = issue.number;
     const labels = labelNames(issue);
-    if (released.includes(n) || [LABELS.done, LABELS.failed, LABELS.rehearsal, LABELS.lock].some((l) => labels.includes(l))) continue;
+    if (released.includes(n) || [L.done, L.failed, L.skip, L.lock].some((l) => labels.includes(l))) continue;
     const created = parseTime(issue.created_at);
     if (!created || created < nb) continue;
     const evs = await events(n);
-    const login = labelledBy(evs, issue);
+    const login = labelledBy(evs, issue, L.bug);
     let permission = null;
-    if (login && !TRUSTED_BOTS.includes(login)) {
+    if (login && !trustedBots.includes(login)) {
       try {
         permission = await gh.get(`/repos/${repo}/collaborators/${encodeURIComponent(login)}/permission`);
       } catch (e) {
         permission = null;
       }
     }
-    if (!mayTrigger(permission, login)) continue;
-    if (lockAttempts(evs) >= MAX_ATTEMPTS) {
-      await addLabel(gh, repo, n, LABELS.failed);
+    if (!mayTrigger(permission, login, trustedBots)) continue;
+    if (lockAttempts(evs, L.lock) >= MAX_ATTEMPTS) {
+      await addLabel(gh, repo, n, L.failed);
       exhausted.push(n);
       continue;
     }
     if ((await claim(gh, repo, n, now)) === 'held') return out(null, null, `claimed elsewhere #${n}`);
-    await addLabel(gh, repo, n, LABELS.lock);
+    await addLabel(gh, repo, n, L.lock);
     return out(shape(issue), login, null);
   }
   return out(null, null, 'no eligible issue');
@@ -177,5 +175,5 @@ async function pickIssue(gh, repo, nowIn, { notBefore } = {}) {
 
 module.exports = {
   LABELS, TRUSTED_BOTS, LOCK_STALE_MS, MAX_ATTEMPTS, CLAIM,
-  labelledBy, mayTrigger, lockAddedAt, lockAttempts, releaseClaim, removeLabel, addLabel, pickIssue, idleReason,
+  labelsOf, labelledBy, mayTrigger, lockAddedAt, lockAttempts, releaseClaim, removeLabel, addLabel, pickIssue, idleReason,
 };
