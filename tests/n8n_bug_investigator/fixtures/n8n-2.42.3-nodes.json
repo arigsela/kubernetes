@@ -1,0 +1,887 @@
+{
+  "n8n-nodes-base.scheduleTrigger": {
+    "typeVersion": 1.4,
+    "parameters": {
+      "rule": {
+        "type": "fixedCollection",
+        "default": {
+          "interval": [
+            {
+              "field": "days"
+            }
+          ]
+        },
+        "options": [
+          "interval"
+        ],
+        "multipleValues": true
+      }
+    }
+  },
+  "n8n-nodes-base.code": {
+    "typeVersion": 2,
+    "parameters": {
+      "mode": {
+        "type": "options",
+        "default": "runOnceForAllItems",
+        "options": [
+          "runOnceForAllItems",
+          "runOnceForEachItem"
+        ]
+      },
+      "language": {
+        "type": "options",
+        "default": "javaScript",
+        "show": {
+          "@version": [
+            2
+          ]
+        },
+        "options": [
+          "javaScript",
+          "pythonNative"
+        ]
+      },
+      "language#1": {
+        "type": "hidden",
+        "default": "javaScript",
+        "show": {
+          "@version": [
+            1
+          ]
+        }
+      },
+      "jsCode": {
+        "type": "string",
+        "show": {
+          "@version": [
+            1
+          ],
+          "mode": [
+            "runOnceForAllItems"
+          ]
+        }
+      },
+      "jsCode#1": {
+        "type": "string",
+        "show": {
+          "@version": [
+            1
+          ],
+          "mode": [
+            "runOnceForEachItem"
+          ]
+        }
+      },
+      "jsCode#2": {
+        "type": "string",
+        "show": {
+          "@version": [
+            2
+          ],
+          "language": [
+            "javaScript"
+          ],
+          "mode": [
+            "runOnceForAllItems"
+          ]
+        }
+      },
+      "jsCode#3": {
+        "type": "string",
+        "show": {
+          "@version": [
+            2
+          ],
+          "language": [
+            "javaScript"
+          ],
+          "mode": [
+            "runOnceForEachItem"
+          ]
+        }
+      }
+    }
+  },
+  "n8n-nodes-base.if": {
+    "typeVersion": 2.3,
+    "parameters": {
+      "conditions": {
+        "type": "filter",
+        "default": {}
+      },
+      "looseTypeValidation": {
+        "type": "boolean",
+        "default": false,
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 2.1
+              }
+            }
+          ]
+        }
+      },
+      "options": {
+        "type": "collection",
+        "default": {},
+        "options": [
+          "ignoreCase",
+          "looseTypeValidation"
+        ],
+        "fields": {
+          "ignoreCase": {
+            "type": "boolean",
+            "default": true
+          },
+          "looseTypeValidation": {
+            "type": "boolean",
+            "default": true,
+            "show": {
+              "@version": [
+                {
+                  "_cnd": {
+                    "lt": 2.1
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "n8n-nodes-base.executeWorkflow": {
+    "typeVersion": 1.4,
+    "parameters": {
+      "source": {
+        "type": "options",
+        "default": "database",
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "lte": 1.1
+              }
+            }
+          ]
+        },
+        "options": [
+          "database",
+          "localFile",
+          "parameter",
+          "url"
+        ]
+      },
+      "source#1": {
+        "type": "options",
+        "default": "database",
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 1.2
+              }
+            }
+          ]
+        },
+        "options": [
+          "database",
+          "parameter"
+        ]
+      },
+      "workflowId": {
+        "type": "string",
+        "show": {
+          "source": [
+            "database"
+          ],
+          "@version": [
+            1
+          ]
+        }
+      },
+      "workflowId#1": {
+        "type": "workflowSelector",
+        "show": {
+          "source": [
+            "database"
+          ],
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 1.1
+              }
+            }
+          ]
+        }
+      },
+      "workflowInputs": {
+        "type": "resourceMapper",
+        "default": {
+          "mappingMode": "defineBelow",
+          "value": null
+        },
+        "show": {
+          "source": [
+            "database"
+          ],
+          "@version": [
+            {
+              "_cnd": {
+                "between": {
+                  "from": 1.2,
+                  "to": 1.3
+                }
+              }
+            }
+          ]
+        }
+      },
+      "workflowInputs#1": {
+        "type": "resourceMapper",
+        "default": {
+          "mappingMode": "defineBelow",
+          "value": null
+        },
+        "show": {
+          "source": [
+            "database"
+          ],
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 1.4
+              }
+            }
+          ]
+        }
+      },
+      "mode": {
+        "type": "options",
+        "default": "once",
+        "options": [
+          "once",
+          "each"
+        ]
+      },
+      "options": {
+        "type": "collection",
+        "default": {},
+        "options": [
+          "waitForSubWorkflow"
+        ],
+        "fields": {
+          "waitForSubWorkflow": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    }
+  },
+  "n8n-nodes-base.executeWorkflowTrigger": {
+    "typeVersion": 1.2,
+    "parameters": {
+      "inputSource": {
+        "type": "options",
+        "default": "workflowInputs",
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 1.1
+              }
+            }
+          ]
+        },
+        "options": [
+          "workflowInputs",
+          "jsonExample",
+          "passthrough"
+        ]
+      },
+      "jsonExample": {
+        "type": "json",
+        "default": "{\n  \"aField\": \"a string\",\n  \"aNumber\": 123,\n  \"thisFieldAcceptsAnyType\": null,\n  \"anArray\": []\n}",
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 1.1
+              }
+            }
+          ],
+          "inputSource": [
+            "jsonExample"
+          ]
+        }
+      },
+      "workflowInputs": {
+        "type": "fixedCollection",
+        "default": {},
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 1.1
+              }
+            }
+          ],
+          "inputSource": [
+            "workflowInputs"
+          ]
+        },
+        "options": [
+          "values"
+        ],
+        "multipleValues": true
+      }
+    }
+  },
+  "@n8n/n8n-nodes-langchain.agent": {
+    "typeVersion": 3.1,
+    "parameters": {
+      "promptType": {
+        "type": "options",
+        "default": "auto",
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "lt": 3.1
+              }
+            }
+          ]
+        },
+        "options": [
+          "auto",
+          "guardrails",
+          "define"
+        ]
+      },
+      "promptType#1": {
+        "type": "options",
+        "default": "auto",
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 3.1
+              }
+            }
+          ]
+        },
+        "options": [
+          "auto",
+          "define"
+        ]
+      },
+      "text": {
+        "type": "string",
+        "default": "={{ $json.guardrailsInput }}",
+        "show": {
+          "promptType": [
+            "guardrails"
+          ]
+        }
+      },
+      "text#1": {
+        "type": "string",
+        "default": "={{ $json.chatInput }}",
+        "show": {
+          "promptType": [
+            "auto"
+          ]
+        }
+      },
+      "text#2": {
+        "type": "string",
+        "show": {
+          "promptType": [
+            "define"
+          ]
+        }
+      },
+      "hasOutputParser": {
+        "type": "boolean",
+        "default": false
+      },
+      "needsFallback": {
+        "type": "boolean",
+        "default": false
+      },
+      "options": {
+        "type": "collection",
+        "default": {},
+        "options": [
+          "systemMessage",
+          "maxIterations",
+          "returnIntermediateSteps",
+          "passthroughBinaryImages",
+          "passthroughBinaryPdfs",
+          "tracingMetadata",
+          "autoSaveHighlightedData",
+          "enableStreaming",
+          "batching",
+          "maxTokensFromMemory",
+          "forceToolCallOnFirstIteration"
+        ],
+        "fields": {
+          "systemMessage": {
+            "type": "string",
+            "default": "You are a helpful assistant"
+          },
+          "maxIterations": {
+            "type": "number",
+            "default": 10
+          },
+          "returnIntermediateSteps": {
+            "type": "boolean",
+            "default": false
+          },
+          "passthroughBinaryImages": {
+            "type": "boolean",
+            "default": true
+          },
+          "passthroughBinaryPdfs": {
+            "type": "boolean",
+            "default": false
+          },
+          "tracingMetadata": {
+            "type": "fixedCollection",
+            "default": {},
+            "options": [
+              "values"
+            ],
+            "multipleValues": true
+          },
+          "autoSaveHighlightedData": {
+            "type": "boolean",
+            "default": true
+          },
+          "enableStreaming": {
+            "type": "boolean",
+            "default": true
+          },
+          "batching": {
+            "type": "collection",
+            "default": {},
+            "options": [
+              "batchSize",
+              "delayBetweenBatches"
+            ],
+            "fields": {
+              "batchSize": {
+                "type": "number",
+                "default": 1
+              },
+              "delayBetweenBatches": {
+                "type": "number",
+                "default": 0
+              }
+            }
+          },
+          "maxTokensFromMemory": {
+            "type": "hidden",
+            "default": 0
+          },
+          "forceToolCallOnFirstIteration": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    }
+  },
+  "@n8n/n8n-nodes-langchain.lmChatAnthropic": {
+    "typeVersion": 1.6,
+    "parameters": {
+      "model": {
+        "type": "options",
+        "default": "claude-2",
+        "show": {
+          "@version": [
+            1
+          ]
+        },
+        "options": [
+          "claude-3-5-sonnet-20241022",
+          "claude-3-opus-20240229",
+          "claude-3-5-sonnet-20240620",
+          "claude-3-sonnet-20240229",
+          "claude-3-5-haiku-20241022",
+          "claude-3-haiku-20240307",
+          "claude-2",
+          "claude-2.1",
+          "claude-instant-1.2",
+          "claude-instant-1"
+        ]
+      },
+      "model#1": {
+        "type": "options",
+        "default": "claude-3-sonnet-20240229",
+        "show": {
+          "@version": [
+            1.1
+          ]
+        },
+        "options": [
+          "claude-3-5-sonnet-20241022",
+          "claude-3-opus-20240229",
+          "claude-3-5-sonnet-20240620",
+          "claude-3-sonnet-20240229",
+          "claude-3-5-haiku-20241022",
+          "claude-3-haiku-20240307",
+          "claude-2",
+          "claude-2.1",
+          "claude-instant-1.2",
+          "claude-instant-1"
+        ]
+      },
+      "model#2": {
+        "type": "options",
+        "default": "claude-3-5-sonnet-20240620",
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "lte": 1.2
+              }
+            }
+          ]
+        },
+        "options": [
+          "claude-3-5-sonnet-20241022",
+          "claude-3-opus-20240229",
+          "claude-3-5-sonnet-20240620",
+          "claude-3-sonnet-20240229",
+          "claude-3-5-haiku-20241022",
+          "claude-3-haiku-20240307"
+        ]
+      },
+      "model#3": {
+        "type": "resourceLocator",
+        "default": {
+          "mode": "list",
+          "value": "claude-sonnet-4-5-20250929",
+          "cachedResultName": "Claude Sonnet 4.5"
+        },
+        "show": {
+          "@version": [
+            1.3
+          ]
+        },
+        "modes": [
+          "list",
+          "id"
+        ]
+      },
+      "model#4": {
+        "type": "resourceLocator",
+        "default": {
+          "mode": "list",
+          "value": "claude-sonnet-4-6",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "show": {
+          "@version": [
+            1.4
+          ]
+        },
+        "modes": [
+          "list",
+          "id"
+        ]
+      },
+      "model#5": {
+        "type": "resourceLocator",
+        "default": {
+          "mode": "list",
+          "value": "claude-sonnet-4-6",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "show": {
+          "@version": [
+            1.5
+          ]
+        },
+        "modes": [
+          "list",
+          "id"
+        ]
+      },
+      "model#6": {
+        "type": "resourceLocator",
+        "default": {
+          "mode": "list",
+          "value": "claude-sonnet-5",
+          "cachedResultName": "Claude Sonnet 5"
+        },
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 1.6
+              }
+            }
+          ]
+        },
+        "modes": [
+          "list",
+          "id"
+        ]
+      },
+      "options": {
+        "type": "collection",
+        "default": {},
+        "options": [
+          "maxTokensToSample",
+          "temperature",
+          "topK",
+          "topP",
+          "thinking",
+          "thinkingBudget",
+          "thinkingMode",
+          "effort",
+          "effort",
+          "thinkingBudget",
+          "streaming",
+          "promptCaching"
+        ],
+        "fields": {
+          "maxTokensToSample": {
+            "type": "number",
+            "default": 4096
+          },
+          "temperature": {
+            "type": "number",
+            "default": 0.7
+          },
+          "topK": {
+            "type": "number",
+            "default": -1
+          },
+          "topP": {
+            "type": "number",
+            "default": 1
+          },
+          "thinking": {
+            "type": "boolean",
+            "default": false,
+            "show": {
+              "@version": [
+                {
+                  "_cnd": {
+                    "lte": 1.4
+                  }
+                }
+              ]
+            }
+          },
+          "thinkingBudget": {
+            "type": "number",
+            "default": 1024,
+            "show": {
+              "@version": [
+                {
+                  "_cnd": {
+                    "gte": 1.5
+                  }
+                }
+              ],
+              "thinkingMode": [
+                "manual"
+              ]
+            }
+          },
+          "thinkingMode": {
+            "type": "options",
+            "default": "disabled",
+            "show": {
+              "@version": [
+                {
+                  "_cnd": {
+                    "gte": 1.5
+                  }
+                }
+              ]
+            },
+            "options": [
+              "disabled",
+              "adaptive",
+              "manual"
+            ]
+          },
+          "effort": {
+            "type": "options",
+            "default": "medium",
+            "show": {
+              "@version": [
+                {
+                  "_cnd": {
+                    "gte": 1.5
+                  }
+                }
+              ],
+              "thinkingMode": [
+                "adaptive"
+              ],
+              "/model.value": [
+                {
+                  "_cnd": {
+                    "regex": "^(?!.*opus).*"
+                  }
+                }
+              ]
+            },
+            "options": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "streaming": {
+            "type": "boolean",
+            "default": false
+          },
+          "promptCaching": {
+            "type": "options",
+            "default": "disabled",
+            "options": [
+              "disabled",
+              "5m",
+              "1h"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "@n8n/n8n-nodes-langchain.mcpClientTool": {
+    "typeVersion": 1.4,
+    "parameters": {
+      "endpointUrl": {
+        "type": "string",
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 1.1
+              }
+            }
+          ]
+        }
+      },
+      "serverTransport": {
+        "type": "options",
+        "default": "sse",
+        "show": {
+          "@version": [
+            1.1
+          ]
+        },
+        "options": [
+          "httpStreamable",
+          "sse"
+        ]
+      },
+      "serverTransport#1": {
+        "type": "options",
+        "default": "httpStreamable",
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 1.2
+              }
+            }
+          ]
+        },
+        "options": [
+          "httpStreamable",
+          "sse"
+        ]
+      },
+      "authentication": {
+        "type": "options",
+        "default": "none",
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "lt": 1.2
+              }
+            }
+          ]
+        },
+        "options": [
+          "bearerAuth",
+          "headerAuth",
+          "none"
+        ]
+      },
+      "authentication#1": {
+        "type": "options",
+        "default": "none",
+        "show": {
+          "@version": [
+            {
+              "_cnd": {
+                "gte": 1.2
+              }
+            }
+          ]
+        },
+        "options": [
+          "bearerAuth",
+          "headerAuth",
+          "mcpOAuth2Api",
+          "multipleHeadersAuth",
+          "none"
+        ]
+      },
+      "include": {
+        "type": "options",
+        "default": "all",
+        "options": [
+          "all",
+          "selected",
+          "except"
+        ]
+      },
+      "includeTools": {
+        "type": "multiOptions",
+        "default": [],
+        "show": {
+          "include": [
+            "selected"
+          ]
+        }
+      },
+      "excludeTools": {
+        "type": "multiOptions",
+        "default": [],
+        "show": {
+          "include": [
+            "except"
+          ]
+        }
+      },
+      "options": {
+        "type": "collection",
+        "default": {},
+        "options": [
+          "timeout"
+        ],
+        "fields": {
+          "timeout": {
+            "type": "number",
+            "default": 60000
+          }
+        }
+      }
+    }
+  }
+}

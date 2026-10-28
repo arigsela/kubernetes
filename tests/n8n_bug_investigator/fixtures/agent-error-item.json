@@ -1,0 +1,31 @@
+{
+  "_source": "Task 1 spike: the AI Agent's error output (onError: continueErrorOutput) and the failing sub-node's error, 2026-10-28.",
+  "mcpServerUnreachable": {
+    "errorOutputItem": {
+      "issue": {
+        "number": 41
+      },
+      "message": "Call query_prometheus exactly once with datasourceUid PBFA97CFB590B2093, queryType instant and expr sum(up{namespace=\"taskboard\"}). Then answer with the single word done.",
+      "error": "Error in sub-node Taskboard telemetry"
+    },
+    "subNodeError": {
+      "name": "NodeOperationError",
+      "message": "Could not connect to your MCP server",
+      "description": "fetch failed"
+    }
+  },
+  "unknownModel": {
+    "errorOutputItem": {
+      "issue": {
+        "number": 41
+      },
+      "message": "Call query_prometheus exactly once with datasourceUid PBFA97CFB590B2093, queryType instant and expr sum(up{namespace=\"taskboard\"}). Then answer with the single word done.",
+      "error": "The resource you are requesting could not be found"
+    },
+    "subNodeError": {
+      "name": "NodeApiError",
+      "message": "The resource you are requesting could not be found",
+      "description": "model: claude-does-not-exist"
+    }
+  }
+}

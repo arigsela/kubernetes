@@ -1,0 +1,67 @@
+{
+  "id": "spike",
+  "name": "spike: Code-node HTTP and MCP",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "id": "6f1c1d2e-0000-4000-8000-000000000001",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "6f1c1d2e-0000-4000-8000-000000000002",
+      "name": "HTTP probe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const h = this.helpers;\nasync function probe(url, timeout) {\n  const t0 = Date.now();\n  try {\n    const r = await h.httpRequest({method: 'GET', url, returnFullResponse: true, ignoreHttpStatusErrors: true, json: true, timeout});\n    return {url, ok: true, status: r.statusCode, responseKeys: Object.keys(r), headerKeys: Object.keys(r.headers || {}).slice(0, 6), bodyType: typeof r.body, ms: Date.now() - t0};\n  } catch (e) {\n    return {url, ok: false, error: String(e.message).slice(0, 200), code: e.code || (e.cause && e.cause.code) || null, ms: Date.now() - t0};\n  }\n}\nconst out = [];\nout.push(await probe('https://api.github.com/zen', 20000));\nout.push(await probe('https://api.github.com/repos/arigsela/does-not-exist', 20000));\nout.push(await probe('http://10.255.255.1', 2000));\nreturn out.map(o => ({json: {...o, envSeen: $env.SPIKE_TOKEN === 'spike-secret'}}));\n"
+      }
+    },
+    {
+      "id": "6f1c1d2e-0000-4000-8000-000000000003",
+      "name": "MCP probe",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// MCP over Streamable HTTP from a Code node: initialize, initialized, tools/list,\n// two tools/call on one session, then DELETE. Records the session header and reply format.\nconst h = this.helpers;\nconst url = 'http://host.docker.internal:3000/mcp';\nasync function send(method, body, sid) {\n  const headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream'};\n  if (sid) headers['mcp-session-id'] = sid;\n  const r = await h.httpRequest({method, url, headers, body: body ? JSON.stringify(body) : undefined,\n    returnFullResponse: true, ignoreHttpStatusErrors: true, json: false, timeout: 20000});\n  const hdrs = r.headers || {};\n  const ct = String(hdrs['content-type'] || '');\n  const text = r.body == null ? '' : (typeof r.body === 'string' ? r.body : JSON.stringify(r.body));\n  let msg = null;\n  if (ct.includes('text/event-stream')) {\n    for (const l of text.split('\\n')) {\n      if (!l.startsWith('data:')) continue;\n      try { const m = JSON.parse(l.slice(5).trim()); if (body && m.id === body.id) msg = m; } catch (e) {}\n    }\n  } else if (text) { try { msg = JSON.parse(text); } catch (e) {} }\n  return {status: r.statusCode, contentType: ct, headers: hdrs, msg, head: text.slice(0, 200)};\n}\nconst steps = {};\nconst init = await send('POST', {jsonrpc: '2.0', id: 1, method: 'initialize',\n  params: {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 'n8n-spike', version: '0'}}});\nconst sidHeader = Object.keys(init.headers).find(k => k.toLowerCase() === 'mcp-session-id') || null;\nconst sid = sidHeader ? init.headers[sidHeader] : null;\nsteps.initialize = {status: init.status, contentType: init.contentType, sessionHeader: sidHeader, sessionIdLength: sid ? String(sid).length : 0,\n  protocolVersion: init.msg && init.msg.result && init.msg.result.protocolVersion, serverInfo: init.msg && init.msg.result && init.msg.result.serverInfo};\nconst note = await send('POST', {jsonrpc: '2.0', method: 'notifications/initialized'}, sid);\nsteps.initialized = {status: note.status, contentType: note.contentType};\nconst list = await send('POST', {jsonrpc: '2.0', id: 2, method: 'tools/list', params: {}}, sid);\nsteps.toolsList = {status: list.status, contentType: list.contentType,\n  tools: ((list.msg && list.msg.result && list.msg.result.tools) || []).map(t => t.name)};\nconst c1 = await send('POST', {jsonrpc: '2.0', id: 3, method: 'tools/call', params: {name: 'list_loki_label_names', arguments: {datasourceUid: 'loki'}}}, sid);\nsteps.call1 = {status: c1.status, contentType: c1.contentType, isError: !!(c1.msg && c1.msg.result && c1.msg.result.isError),\n  rpcError: c1.msg && c1.msg.error ? c1.msg.error.message : null,\n  text: c1.msg && c1.msg.result && c1.msg.result.content ? String(c1.msg.result.content.map(x => x.text).join('')).slice(0, 200) : c1.head};\nconst c2 = await send('POST', {jsonrpc: '2.0', id: 4, method: 'tools/call', params: {name: 'query_prometheus',\n  arguments: {datasourceUid: 'PBFA97CFB590B2093', expr: 'sum(up{namespace=\"taskboard\"})', queryType: 'instant'}}}, sid);\nsteps.call2 = {status: c2.status, contentType: c2.contentType, isError: !!(c2.msg && c2.msg.result && c2.msg.result.isError),\n  rpcError: c2.msg && c2.msg.error ? c2.msg.error.message : null,\n  text: c2.msg && c2.msg.result && c2.msg.result.content ? String(c2.msg.result.content.map(x => x.text).join('')).slice(0, 200) : c2.head};\nconst del = await send('DELETE', null, sid);\nsteps.delete = {status: del.status, head: del.head};\nconst after = await send('POST', {jsonrpc: '2.0', id: 5, method: 'tools/list', params: {}}, sid);\nsteps.afterDelete = {status: after.status, head: after.head};\nreturn [{json: steps}];\n"
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "HTTP probe",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "MCP probe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

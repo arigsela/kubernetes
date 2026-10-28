@@ -1,0 +1,193 @@
+{
+  "id": "agent-ok",
+  "name": "spike: AI Agent shapes",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "id": "7a2b3c4d-0000-4000-8000-000000000001",
+      "name": "Start",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "7a2b3c4d-0000-4000-8000-000000000002",
+      "name": "Make item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// The item the agent works on: a stand-in for Gather's {issue, message}.\nreturn [{json: {issue: {number: 41}, message: 'Call query_prometheus exactly once with datasourceUid PBFA97CFB590B2093, queryType instant and expr sum(up{namespace=\"taskboard\"}). Then answer with the single word done.'}}];\n"
+      }
+    },
+    {
+      "id": "7a2b3c4d-0000-4000-8000-000000000003",
+      "name": "Investigate",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        420,
+        0
+      ],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "options": {
+          "systemMessage": "You are a test harness. Follow the user's instruction exactly.",
+          "maxIterations": 3,
+          "returnIntermediateSteps": true
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "7a2b3c4d-0000-4000-8000-000000000004",
+      "name": "Claude Sonnet 5.5",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.6,
+      "position": [
+        380,
+        220
+      ],
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "claude-sonnet-5-5"
+        },
+        "options": {
+          "maxTokensToSample": 1024
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "anthropicspike01",
+          "name": "Anthropic spike"
+        }
+      }
+    },
+    {
+      "id": "7a2b3c4d-0000-4000-8000-000000000005",
+      "name": "Taskboard telemetry",
+      "type": "@n8n/n8n-nodes-langchain.mcpClientTool",
+      "typeVersion": 1.4,
+      "position": [
+        520,
+        220
+      ],
+      "parameters": {
+        "endpointUrl": "http://host.docker.internal:3000/mcp",
+        "serverTransport": "httpStreamable",
+        "authentication": "none",
+        "include": "selected",
+        "includeTools": [
+          "query_prometheus"
+        ],
+        "options": {}
+      }
+    },
+    {
+      "id": "7a2b3c4d-0000-4000-8000-000000000006",
+      "name": "Agent ok",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        -100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all();\n"
+      }
+    },
+    {
+      "id": "7a2b3c4d-0000-4000-8000-000000000007",
+      "name": "Agent failed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all();\n"
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Make item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Make item": {
+      "main": [
+        [
+          {
+            "node": "Investigate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Sonnet 5.5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Investigate",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Taskboard telemetry": {
+      "ai_tool": [
+        [
+          {
+            "node": "Investigate",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Investigate": {
+      "main": [
+        [
+          {
+            "node": "Agent ok",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agent failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
