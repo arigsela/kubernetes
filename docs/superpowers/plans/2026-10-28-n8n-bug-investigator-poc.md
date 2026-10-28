@@ -117,7 +117,8 @@ cause to `kagent/implementer` for a fix PR. Failure after the agent was asked â†
    reaction too.
 9. **Two workflows; idle runs not saved.** n8n saves the whole workflow with each execution
    (`EXECUTIONS_DATA_SAVE_ON_SUCCESS=all` here) and prunes at 10,000 executions across all workflows by default. 720
-   idle runs a day of the full workflow would fill the shared CNPG and push every other workflow's history out. The
+   idle runs a day of the full workflow would fill n8n's database (on the plain `postgresql` Deployment, which has
+   no scheduled backup) and push every other workflow's history out. The
    parent (Schedule, Pick, Execute Workflow; a few KB) sets `saveDataSuccessExecution: "none"` and still saves errors.
    The child holds the investigation and saves every run. The parent waits for the child. The n8n Argo app keeps
    client-side apply; the 192 KiB budget leaves room under the 256 KiB annotation limit, so no `ServerSideApply`
