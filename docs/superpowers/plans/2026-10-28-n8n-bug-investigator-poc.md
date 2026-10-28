@@ -250,7 +250,7 @@ Monday/Datadog variant (a later step: swap the ticket and telemetry adapters).
 - Produces (`util.js`): `parseTime(s) → Date|null`, `iso(d) → string|null` (`%Y-%m-%dT%H:%M:%SZ`), `short(s) → string` (`%Y-%m-%d %H:%M UTC` or `?`), `clip(s, n) → string`, `fence(text) → string`, `window(start, end, fallback, now, padMs = 7_200_000, capMs = 86_400_000) → [Date, Date]`, `scrubText(s, extra = []) → string`, `scrub(obj, extra = []) → obj`. Ports of `util.parse_time`, `util.iso`, `gather._short`, `gather._clip`, `gather._fence`, `util.window`, `util.scrub_text`, `util.scrub`.
   `clip` counts Unicode code points (`Array.from`), as Python `len` and slicing do, and strips Python `str.strip()`'s whitespace set. Every replacement in `scrubText` is global.
 
-- [ ] **Step 1: Write the failing parity tests** in `test_util.py`, each running both sides on one case list:
+- [x] **Step 1: Write the failing parity tests** in `test_util.py`, each running both sides on one case list:
 
 ```python
 def test_parse_time_matches_core(core, js):
@@ -276,11 +276,11 @@ def test_scrub_matches_core(core, js):
         assert secret not in out
 ```
 
-- [ ] **Step 2: Run them to see them fail.** `python -m pytest tests/n8n_bug_investigator/test_util.py -q` → FAIL (`util.js` missing).
-- [ ] **Step 3: Write `conftest.py` and `run.js`**, then implement `util.js` with the signatures above.
-- [ ] **Step 4: Run them to see them pass.** Same command → PASS.
-- [ ] **Step 5: CI job.** Add job `n8n-bug-investigator` to `validate.yaml`, modelled on the single-suite `tests/wan_ip/` job (same pinned `setup-python`), plus `actions/setup-node` pinned by full commit SHA (look up the current v4 release's SHA), `node-version: 22`, `pip install pyyaml==6.0.2 pytest==8.3.3`, `python -m pytest tests/n8n_bug_investigator/ -q`. The runner's Docker is used from Task 9 on.
-- [ ] **Step 6: Commit.** `feat(n8n): bug-investigator JS util with parity tests against the core (§T.152)`
+- [x] **Step 2: Run them to see them fail.** `python -m pytest tests/n8n_bug_investigator/test_util.py -q` → FAIL (`util.js` missing).
+- [x] **Step 3: Write `conftest.py` and `run.js`**, then implement `util.js` with the signatures above.
+- [x] **Step 4: Run them to see them pass.** Same command → PASS.
+- [x] **Step 5: CI job.** Add job `n8n-bug-investigator` to `validate.yaml`, modelled on the single-suite `tests/wan_ip/` job (same pinned `setup-python`), plus `actions/setup-node` pinned by full commit SHA (look up the current v4 release's SHA), `node-version: 22`, `pip install pyyaml==6.0.2 pytest==8.3.3`, `python -m pytest tests/n8n_bug_investigator/ -q`. The runner's Docker is used from Task 9 on.
+- [x] **Step 6: Commit.** `feat(n8n): bug-investigator JS util with parity tests against the core (§T.152)`
 
 ### Task 3: GitHub and MCP clients
 
@@ -302,7 +302,7 @@ def test_scrub_matches_core(core, js):
     - The `{truncated: true, total, items}` wrapper: log entries → `total`; series → the count over `items` when it is above 0, else `null`.
     - Text ending in ` ...[truncated]`, or anything unparseable → `null` ("could not count").
 
-- [ ] **Step 1: Write the failing tests** (fake `http` replays canned `{status, headers, body}` by `METHOD url`):
+- [x] **Step 1: Write the failing tests** (fake `http` replays canned `{status, headers, body}` by `METHOD url`):
   - `test_get_all_follows_link_next` (3 pages → 3 requests, concatenated items);
   - `test_errors_never_carry_the_token`: a 401 whose body echoes the token, and a network error whose message echoes it → both thrown messages contain `[redacted]` and not the token;
   - `test_graphql_returns_data_and_raises_on_errors`;
@@ -311,10 +311,10 @@ def test_scrub_matches_core(core, js):
   - `test_call_tool_error_is_not_thrown` (`isError: true`);
   - `test_count_results`: 3 log entries → 3; series with `"0"`, `"NaN"`, `"1.5"`, `"+Inf"` → 2; a truncated wrapper of 5 log entries with 2 kept → 5; a truncated series wrapper with 0 kept → `null`; a `{resultType, series}` text cut with ` ...[truncated]` → `null`; `"oops"` → `null`;
   - `test_http_from_helpers_maps_full_response` (fake `helpers.httpRequest` returning `{statusCode, headers, body}`; `timeout` passed through).
-- [ ] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_clients.py -q` → FAIL.
-- [ ] **Step 3: Implement** `github.js`, `mcp.js`, `n8n.js` with the signatures above.
-- [ ] **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit.** `feat(n8n): GitHub and MCP clients for the bug-investigator workflow (§T.152)`
+- [x] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_clients.py -q` → FAIL.
+- [x] **Step 3: Implement** `github.js`, `mcp.js`, `n8n.js` with the signatures above.
+- [x] **Step 4: Run** → PASS.
+- [x] **Step 5: Commit.** `feat(n8n): GitHub and MCP clients for the bug-investigator workflow (§T.152)`
 
 ### Task 4: Pick the issue
 
@@ -334,7 +334,7 @@ def test_scrub_matches_core(core, js):
   3. Walks the rest oldest first. It skips issues with `done`, `failed` or `rehearsal`, and issues created before `notBefore`. It runs the trust check (`getAll …/issues/{n}/events`, `GET /repos/{repo}/collaborators/{login}/permission`). An issue with `lockAttempts >= MAX_ATTEMPTS` gets `failed`, is added to `exhausted`, and the walk goes on.
   4. The first eligible issue is claimed with `gh.request("POST", …/issues/{n}/reactions, {content: "eyes"})`. `201` → add the lock (`POST …/issues/{n}/labels`) and return the issue. `200` → another execution holds it: return `issue: null, idle: "claimed elsewhere #<n>"`. Anything else throws.
 
-- [ ] **Step 1: Write the failing tests** with a fake GitHub (canned issues, paginated events, permissions, reactions; records label and reaction calls):
+- [x] **Step 1: Write the failing tests** with a fake GitHub (canned issues, paginated events, permissions, reactions; records label and reaction calls):
   - `test_picks_oldest_trusted_bug`;
   - `test_skips_own_done_failed_rehearsal_and_fresh_lock`;
   - `test_ignores_kagents_labels`: an issue with `investigated` and `fix-proposed` is picked;
@@ -349,10 +349,10 @@ def test_scrub_matches_core(core, js):
   - `test_release_claim_deletes_only_ours` (another user's 👀 is kept);
   - `test_lock_is_added_to_the_picked_issue`, `test_no_issue_returns_null`;
   - `test_never_touches_kagent_labels`: across all cases, no recorded call names `investigated`, `investigation-failed`, `fix-proposed`, `from-alert` or `bug`.
-- [ ] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_pick.py -q` → FAIL.
-- [ ] **Step 3: Implement** `pick.js`.
-- [ ] **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit.** `feat(n8n): pick Taskboard bug issues one at a time on the POC's own labels (§T.152)`
+- [x] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_pick.py -q` → FAIL.
+- [x] **Step 3: Implement** `pick.js`.
+- [x] **Step 4: Run** → PASS.
+- [x] **Step 5: Commit.** `feat(n8n): pick Taskboard bug issues one at a time on the POC's own labels (§T.152)`
 
 ### Task 5: Gather facts
 
@@ -376,8 +376,8 @@ def test_scrub_matches_core(core, js):
   - `toMarkdown(facts) → string`: byte-identical to `gather.to_markdown(facts)`.
   - `buildMessage(issueNumber, repo, factsMd) → string`: byte-identical to the trigger's `MESSAGE.format(issue=…, repo=…, facts=…)`.
 
-- [ ] **Step 1: Record the reference.** Once, with read-only `gh`, save `gh pr list --repo arigsela/taskboard --state merged --limit 50 --json number,author` into `fixtures/gh-pr-list.json`, and the matching GraphQL and REST answers into `fixtures/github-api/` (no tokens; the repo is the owner's).
-- [ ] **Step 2: Write the failing tests:**
+- [x] **Step 1: Record the reference.** Once, with read-only `gh`, save `gh pr list --repo arigsela/taskboard --state merged --limit 50 --json number,author` into `fixtures/gh-pr-list.json`, and the matching GraphQL and REST answers into `fixtures/github-api/` (no tokens; the repo is the owner's).
+- [x] **Step 2: Write the failing tests:**
   - `test_to_markdown_matches_core` for both fixtures: `js("gather", "toMarkdown", facts) == core.gather.to_markdown(facts)`;
   - `test_build_message_matches_trigger`: load `scripts/bug_investigator_trigger.py` as a module (the way `tests/bug_investigator_trigger/conftest.py` loads it) and compare with `MESSAGE.format`;
   - `test_rule_re_matches_core` on 12 doc lines (`- **P4** …`, `| C3 |`, `### S1: …`, `` `P10` ``, `P4x` (no match), `— dash` cases);
@@ -388,10 +388,10 @@ def test_scrub_matches_core(core, js):
   - `test_gather_facts_from_api`: a fake GitHub from `fixtures/github-api/` → `facts` deep-equals the expected JSON. Covers a dropped kagent comment and a dropped `<!-- bug-investigator fix -->` comment, a rehearsal PR, a PR older than 14 days, `live_since` from the second-oldest deploy, a past bug with its closing PR, a docs file with three rules, and a failing past-bugs call (`past_bugs == []` plus one `problems` entry);
   - `test_gather_request_budget`: 21 merged PRs and 6 deploys (today's volume) → at most 60 requests;
   - `test_gather_deadline_is_a_prepare_failure`: a fake clock past the deadline → `GatherTimeout`, no further requests.
-- [ ] **Step 3: Run** `python -m pytest tests/n8n_bug_investigator/test_gather.py -q` → FAIL.
-- [ ] **Step 4: Implement** `gather.js`.
-- [ ] **Step 5: Run** → PASS.
-- [ ] **Step 6: Commit.** `feat(n8n): gather bug-investigator facts over the GitHub API, markdown identical to the core (§T.152)`
+- [x] **Step 3: Run** `python -m pytest tests/n8n_bug_investigator/test_gather.py -q` → FAIL.
+- [x] **Step 4: Implement** `gather.js`.
+- [x] **Step 5: Run** → PASS.
+- [x] **Step 6: Commit.** `feat(n8n): gather bug-investigator facts over the GitHub API, markdown identical to the core (§T.152)`
 
 ### Task 6: Parse and verify findings
 
@@ -412,7 +412,7 @@ def test_scrub_matches_core(core, js):
     - `issueState` → `GET issues/{n}`;
     - `query` → one MCP session on `TELEMETRY_URL`, opened on the first query and closed by `ctx.close()` (which `verify` calls in `finally`): `("query_loki_logs", {datasourceUid: "loki", logql, startRfc3339, endRfc3339, limit: 100})` or `("query_prometheus", {datasourceUid: "PBFA97CFB590B2093", expr, startTime, endTime})`. `isError` → `{error: text}`. `countResults` → `null` → `{error: "the telemetry server truncated the output; could not count it"}` (stricter than Python, which counts every frame). Else `{count}`. Links: Grafana Explore, a port of `grafana.explore_link`.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `test_parse_findings_matches_trigger`: 6 accepted texts (bare object, ```json fence, a leading sentence, trailing text, nested braces in strings, unicode) equal the trigger's `parse_findings`;
   - `test_parse_findings_rejects`: `""`, `"Agent stopped due to max iterations."`, a JSON array, an object without `verdict`, JSON cut off mid-string. Each throws, and the message starts with the same fixed text as Python's message for that input.
   - `test_verify_matches_core`: for each case in `verify-cases.json`, build a temp app and deploy git repo with the case's files, commits and side branches. The Python side gets them the way the trigger clones them (`clone` from `scripts/bug_investigator_trigger.py` against `file://` URLs: single-branch app clone, blobless cone-mode sparse deploy clone). It runs `verify.verify` with `Ctx(mode="full", telemetry_mode="direct", …)`, `utc_now` frozen by `frozen_now`. Its runner serves `git` for real and `gh` from the case, and its `gquery` returns frames with the case's counts. `telemetry_mode="direct"` matters: the default `grafana` mode with no token skips every query. Run JS `verify` with `fakeVerifyCtx` built from the same case and the same `now`.
@@ -432,10 +432,10 @@ def test_scrub_matches_core(core, js):
   - `test_unreachable_commit_is_dropped`: compare answers `diverged` → `commit` is `null`;
   - `test_truncated_telemetry_is_not_counted`: an `expect: none` item whose server output ends in ` ...[truncated]` is dropped with the "could not count" reason;
   - `test_one_mcp_session_per_verify`: 4 telemetry items → one `initialize`, four `tools/call`, one `DELETE`, also when the third call throws.
-- [ ] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_verify.py -q` → FAIL.
-- [ ] **Step 3: Implement** `verify.js`.
-- [ ] **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit.** `feat(n8n): verify bug-investigator findings link by link, as the core does (§T.152)`
+- [x] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_verify.py -q` → FAIL.
+- [x] **Step 3: Implement** `verify.js`.
+- [x] **Step 4: Run** → PASS.
+- [x] **Step 5: Commit.** `feat(n8n): verify bug-investigator findings link by link, as the core does (§T.152)`
 
 ### Task 7: Render, flag and post
 
@@ -451,16 +451,16 @@ def test_scrub_matches_core(core, js):
   - `sawKagentWork(steps) → string[]`: every `agent/taskboard-issue-<N>` branch, for any `N`, found in any `observation` or `toolInput` (as text), sorted and unique.
   - `async postComment(gh, repo, issueNumber, body) → "created"|"edited"`: our comment is the one carrying the `n8nagent` marker whose `user.login === await gh.login()`. PATCH it if found, else POST.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `test_render_matches_core_relabelled` for three verified fixtures (likely cause with telemetry, not a bug with a docs rule, unclear with drops and `could_not_check`), with and without a trail;
   - `test_contamination_line_sits_above_the_footer`;
   - `test_trail_from_intermediate_steps` on Task 1's recorded fixture;
   - `test_flags_any_kagent_fix_branch`: `agent/taskboard-issue-37` in an observation while investigating #41 → `["agent/taskboard-issue-37"]`; the same inside a content-part array and inside a `toolInput` → found; `agent/taskboard-issue-` with no number → not;
   - `test_post_edits_only_our_own_comment`: a kagent comment, an Action `mode=n8n` comment, and an `n8nagent` comment by another login are never edited.
-- [ ] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_render.py -q` → FAIL.
-- [ ] **Step 3: Implement** `render.js`.
-- [ ] **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit.** `feat(n8n): render and post the n8n investigation comment, flagging kagent fix PRs seen (§T.152)`
+- [x] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_render.py -q` → FAIL.
+- [x] **Step 3: Implement** `render.js`.
+- [x] **Step 4: Run** → PASS.
+- [x] **Step 5: Commit.** `feat(n8n): render and post the n8n investigation comment, flagging kagent fix PRs seen (§T.152)`
 
 ### Task 8: Read-only GitHub MCP server and the Vault identities
 
@@ -472,7 +472,7 @@ def test_scrub_matches_core(core, js):
 - Produces: Service `n8n-github-read-mcp` (port 3000, `/mcp`), consumed by Task 9's MCP Client Tool.
 - Produces: both credential files and the provisioning script (Decision 4). `bug-investigator-secrets.yaml`: SA `eso-n8n-bug-investigator`, SecretStore `vault-n8n-bug-investigator` (role `n8n-bug-investigator`), ExternalSecret `n8n-bug-investigator-gh` (key `n8n-bug-investigator`, property `gh-token` → secret key `token`). Task 9's env var reads that Secret.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `test_tools_are_exactly_the_bug_investigator_github_reads`: `mcpAuthorization` allow list = `--tools` list = the six names = the `implementer` tools bound in `base-apps/kagent/agent-templates/bug-investigator.yaml`;
   - `test_server_runs_read_only` (`--read-only` in args);
   - `test_images_match_agent_docs_mcp` (agentgateway and github-mcp-server digests equal `base-apps/kagent/agent-docs-mcp.yaml`'s);
@@ -483,10 +483,10 @@ def test_scrub_matches_core(core, js):
   - `test_no_poc_credential_uses_the_shared_store` (in `test_credentials.py`): no ExternalSecret this plan adds uses `vault-backend` or Vault key `n8n`;
   - `test_pat_a_comes_from_its_own_store` (in `test_credentials.py`): ExternalSecret `n8n-bug-investigator-gh` → SecretStore `vault-n8n-bug-investigator` (role `n8n-bug-investigator`, SA `eso-n8n-bug-investigator`), key `n8n-bug-investigator`, property `gh-token`, secret key `token`;
   - `test_provision_script_matches_manifests` (in `test_credentials.py`): the script's paths, properties, policies, roles, SAs and namespace equal both credential files', and it reads the tokens only from `N8N_BUG_INVESTIGATOR_GH_TOKEN` and `N8N_GITHUB_READ_MCP_TOKEN`.
-- [ ] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_github_read_mcp.py tests/n8n_bug_investigator/test_credentials.py -q` → FAIL.
-- [ ] **Step 3: Write the manifests and the script.** Copy `base-apps/kagent/agent-docs-mcp.yaml`'s shape with the names `n8n-github-read-mcp`, namespace `n8n`, `nodeSelector: node.kubernetes.io/workload: application` (as n8n, no toleration), `envFrom` the new Secret, and a NetworkPolicy. Header comment: why it exists (Decision 2), and that the Service has no auth and the NetworkPolicy is what limits callers. `github-read-mcp-secrets.yaml` and `bug-investigator-secrets.yaml` each copy `agent-docs-mcp-secret-store.yaml`, `eso-agent-docs-mcp-serviceaccount.yaml` and `agent-docs-mcp-external-secret.yaml`. The script copies `provision-brave-search-vault.sh` (`--dry-run`, policy and role per path, tokens only from env, "NOT SET" guidance).
-- [ ] **Step 4: Run** → PASS; `yamllint -c .yamllint.yaml base-apps/n8n/github-read-mcp*.yaml`; kubeconform per `AGENTS.md`; `bash -n` and `shellcheck` on the script.
-- [ ] **Step 5: Commit.** `feat(n8n): a read-only GitHub MCP server and per-consumer Vault identities for the bug-investigator POC (§T.152)`
+- [x] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_github_read_mcp.py tests/n8n_bug_investigator/test_credentials.py -q` → FAIL.
+- [x] **Step 3: Write the manifests and the script.** Copy `base-apps/kagent/agent-docs-mcp.yaml`'s shape with the names `n8n-github-read-mcp`, namespace `n8n`, `nodeSelector: node.kubernetes.io/workload: application` (as n8n, no toleration), `envFrom` the new Secret, and a NetworkPolicy. Header comment: why it exists (Decision 2), and that the Service has no auth and the NetworkPolicy is what limits callers. `github-read-mcp-secrets.yaml` and `bug-investigator-secrets.yaml` each copy `agent-docs-mcp-secret-store.yaml`, `eso-agent-docs-mcp-serviceaccount.yaml` and `agent-docs-mcp-external-secret.yaml`. The script copies `provision-brave-search-vault.sh` (`--dry-run`, policy and role per path, tokens only from env, "NOT SET" guidance).
+- [x] **Step 4: Run** → PASS; `yamllint -c .yamllint.yaml base-apps/n8n/github-read-mcp*.yaml`; kubeconform per `AGENTS.md`; `bash -n` and `shellcheck` on the script.
+- [x] **Step 5: Commit.** `feat(n8n): a read-only GitHub MCP server and per-consumer Vault identities for the bug-investigator POC (§T.152)`
 
 ### Task 9: Workflow generator and n8n wiring
 
@@ -532,7 +532,7 @@ def test_scrub_matches_core(core, js):
     - Env `BUG_INVESTIGATOR_GH_TOKEN` from Secret `n8n-bug-investigator-gh` key `token`, `optional: true`.
     - A comment on each.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `test_finish.py`: `test_finish_success`, `test_finish_answer_failure_is_spent`, `test_finish_prepare_failure_releases_lock`, `test_finish_never_touches_kagent_labels`.
   - `test_workflow.py`:
     - `test_generated_files_are_current` (`--check` exits 0);
@@ -554,10 +554,10 @@ def test_scrub_matches_core(core, js):
     - `test_gh_token_env_is_optional` (`BUG_INVESTIGATOR_GH_TOKEN` from Secret `n8n-bug-investigator-gh` key `token`, `optional: true`; its ExternalSecret uses `vault-n8n-bug-investigator`, key `n8n-bug-investigator`, property `gh-token`);
     - `test_n8n_secrets_is_untouched` (`base-apps/n8n/external-secrets.yaml` names no `bug-investigator` or `github-read` property);
     - `test_no_secret_in_generated_json` (no `ghp_`, `github_pat_`, `sk-ant-`).
-- [ ] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_finish.py tests/n8n_bug_investigator/test_workflow.py -q` → FAIL.
-- [ ] **Step 3: Implement** `finish.js`, the node snippets and the generator. Then edit `deployments.yaml` as listed. Run `scripts/gen-n8n-bug-investigator-workflow.py --repo-root . --write`.
-- [ ] **Step 4: Run** → PASS, the Docker import test included; yamllint and kubeconform on the changed manifests.
-- [ ] **Step 5: Commit.** `feat(n8n): the bug-investigator POC workflows, generated and imported inactive (§T.152)`
+- [x] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_finish.py tests/n8n_bug_investigator/test_workflow.py -q` → FAIL.
+- [x] **Step 3: Implement** `finish.js`, the node snippets and the generator. Then edit `deployments.yaml` as listed. Run `scripts/gen-n8n-bug-investigator-workflow.py --repo-root . --write`.
+- [x] **Step 4: Run** → PASS, the Docker import test included; yamllint and kubeconform on the changed manifests.
+- [x] **Step 5: Commit.** `feat(n8n): the bug-investigator POC workflows, generated and imported inactive (§T.152)`
 
 ### Task 10: Comparison script, docs, ledger
 
@@ -568,9 +568,9 @@ def test_scrub_matches_core(core, js):
 **Interfaces:**
 - Produces: `parse_comment(body) → {mode, verdict, confidence, verified, total, change, code, turns, duration_s, contaminated} | None`; CLI `compare-bug-investigations.py --repo arigsela/taskboard --issues N [N …] [--json out.json]`. The token comes from `GH_TOKEN` or `gh auth token`. The script prints one markdown row per issue and system: issue, system (`kagent` | `n8nagent`), verdict, confidence, verified/total, change, code line, turns, duration, contaminated (the branches, or none).
 
-- [ ] **Step 1: Write the failing tests:** `test_parses_kagent_and_n8n_comments` (bodies produced in-test by the core's render + the trigger's relabel, and by `renderComment`); `test_ignores_other_comments` (Action `mode=full`/`mode=n8n`, fix comments); `test_table_has_a_row_per_system`.
-- [ ] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_compare.py -q` → FAIL.
-- [ ] **Step 3: Implement the script.** Docs:
+- [x] **Step 1: Write the failing tests:** `test_parses_kagent_and_n8n_comments` (bodies produced in-test by the core's render + the trigger's relabel, and by `renderComment`); `test_ignores_other_comments` (Action `mode=full`/`mode=n8n`, fix comments); `test_table_has_a_row_per_system`.
+- [x] **Step 2: Run** `python -m pytest tests/n8n_bug_investigator/test_compare.py -q` → FAIL.
+- [x] **Step 3: Implement the script.** Docs:
   - `docs.md`: a "Bug investigator (POC)" section with the Design table (short), the two workflows, the new server, the env var and its Vault identity, the labels and the 👀 claim, one-at-a-time and `NOT_BEFORE`, what n8n does not get, and the kill switch; add the new files to `sources`.
   - `runbook.md`, four symptoms:
     - an issue stuck with `n8n-investigating` (released with its 👀 after 20 min; check the child execution);
@@ -580,27 +580,27 @@ def test_scrub_matches_core(core, js):
   - `runbook.md`, one how-to: rotate PAT A or PAT B (re-run `scripts/provision-n8n-bug-investigator-vault.sh` with the new token in env; ESO refreshes within 1 h or force-sync the ExternalSecret; roll the n8n pod for PAT A).
   - SPEC: row `T152|~|**n8n bug investigator POC (owner 2026-10-28: run an n8n AI Agent version in parallel with kagent/bug-investigator to compare behavior).** …|V112`.
   - SPEC invariant `V112:` the POC never adds or removes kagent's labels, posts only `mode=n8nagent` comments, opens no PRs or issues, runs at most one investigation at a time (fresh lock ⇒ idle; claim = PAT A's 👀, only a `201` proceeds), never picks an issue created before `NOT_BEFORE`, binds exactly the AgentTemplate's 11 tool names through server-side read-only GitHub and the scoped telemetry server, sends the AgentTemplate's systemPrompt verbatim, and reads each PAT through its own Vault path, policy, role, ESO ServiceAccount and SecretStore (never the `n8n` key or `vault-backend`); CI: `tests/n8n_bug_investigator/`.
-- [ ] **Step 4: Run** the suite, `python3 scripts/validate-agent-docs.py --repo-root .`, `scripts/gen-techdocs.py --repo-root . --check`, `scripts/gen-okf.py --repo-root . --check` → all pass.
-- [ ] **Step 5: Commit, then open the PR.** `docs(n8n): bug-investigator POC docs, comparison script and SPEC §T.152/§V.112`. The PR body lists the validation run, says the workflows ship **inactive**, and lists Ari's prerequisites from Task 11 (the provisioning script before merge).
+- [x] **Step 4: Run** the suite, `python3 scripts/validate-agent-docs.py --repo-root .`, `scripts/gen-techdocs.py --repo-root . --check`, `scripts/gen-okf.py --repo-root . --check` → all pass.
+- [x] **Step 5: Commit, then open the PR.** `docs(n8n): bug-investigator POC docs, comparison script and SPEC §T.152/§V.112`. The PR body lists the validation run, says the workflows ship **inactive**, and lists Ari's prerequisites from Task 11 (the provisioning script before merge).
 
 ### Task 11: Prerequisites (Ari), activation, rehearsal (Layer 2)
 
 **Files:**
 - Modify: `scripts/gen-n8n-bug-investigator-workflow.py` (`ANTHROPIC_CREDENTIAL["id"]`, `ACTIVE = True`, `NOT_BEFORE`), regenerated files; `base-apps/kagent/bug-investigator-trigger.yaml` (rehearsal only); this plan ("Layer 2 results")
 
-- [ ] **Step 0 (Ari, before Task 1):** Create an Anthropic key for the POC with a workspace spend limit. Put it in `~/.config/n8n-bug-investigator-spike.env` (`ANTHROPIC_API_KEY=…`, mode 600) for the spike.
-- [ ] **Step 1 (Ari, before the Task 10 PR merges):**
+- [x] **Step 0 (Ari, before Task 1):** Create an Anthropic key for the POC with a workspace spend limit. Put it in `~/.config/n8n-bug-investigator-spike.env` (`ANTHROPIC_API_KEY=…`, mode 600) for the spike.
+- [x] **Step 1 (Ari, before the Task 10 PR merges):**
   - Create PAT A and PAT B (Decision 4; 90-day expiry).
   - Port-forward Vault and log in (the script's header says how), then `N8N_BUG_INVESTIGATOR_GH_TOKEN=<A> N8N_GITHUB_READ_MCP_TOKEN=<B> scripts/provision-n8n-bug-investigator-vault.sh` (`--dry-run` first). Without it, only the two new ExternalSecrets fail; `n8n-secrets` is untouched, n8n still starts (the env var is optional), and the MCP server waits for its Secret.
   - Create the labels `n8n-investigating`, `n8n-investigated`, `n8n-investigation-failed` on `arigsela/taskboard`.
-- [ ] **Step 2 (Ari, after it syncs):**
+- [x] **Step 2 (Ari, after it syncs):**
   - Confirm `n8n-github-read-mcp` is Running, both ExternalSecrets are `SecretSynced`, and both workflows are imported inactive.
   - In the n8n UI, create the credential **Anthropic — bug investigator POC** with the Step 0 key and copy its id from the URL.
-- [ ] **Step 3 (agent): activation PR.**
+- [x] **Step 3 (agent): activation PR.**
   - Set the credential id, `ACTIVE = True` and `NOT_BEFORE` = the time the PR is opened (UTC), regenerate, run the suite.
   - PR `feat(n8n): activate the bug-investigator POC workflow (§T.152)`; Ari merges.
   - Check, 10 minutes after the pod rolls: the parent shows active in the UI; no child execution ran; #30 and #37 got no `n8n-*` label and no 👀.
-- [ ] **Step 4 (Ari + agent): rehearsal.**
+- [x] **Step 4 (Ari + agent): rehearsal.**
   - Agent: PR `chore(bug-investigator): kagent memory off for the n8n POC rehearsal (§T.152)` adding `MEMORY_ENABLED: "0"` to the trigger CronJob's env; Ari merges. Confirm the next trigger run logs no `recalled` event.
   - Ari confirms which cases in `tests/eval-corpus/bug-investigator.yaml` are still live, opens one issue per case with its text, and labels `bug`. n8n takes them one at a time, so allow about 15 minutes per issue.
   - Open the first child execution and confirm both MCP Client Tools listed their tools and answered. A connection error to `taskboard-telemetry-mcp.kagent` means the n8n → kagent path is blocked (Task 1 tested it through a port-forward only): stop and report.
@@ -609,7 +609,7 @@ def test_scrub_matches_core(core, js):
   - Add each run's model cost: n8n from Anthropic usage for the POC key; kagent from Grafana **Model Gateway & Budgets**, group `bug-investigator`.
   - Save the comments, then delete the rehearsal issues (handover §1, "Rehearsal issues leak answers").
   - Agent: PR removing `MEMORY_ENABLED` from the trigger; Ari merges.
-- [ ] **Step 5: Record** the table, cost, failures and any contamination flags under "Layer 2 results" below. Commit `docs(n8n): bug-investigator POC rehearsal results (§T.152)`.
+- [x] **Step 5: Record** the table, cost, failures and any contamination flags under "Layer 2 results" below. Commit `docs(n8n): bug-investigator POC rehearsal results (§T.152)`.
 
 ---
 
@@ -657,7 +657,43 @@ Also noted:
 
 ## Layer 2 results
 
-_(appended by Task 11)_
+Rehearsal 2026-10-28, after #1005 (n8n 2.45.5), #1006 (the POC), #1007 (activation, `NOT_BEFORE`
+2026-10-28T17:21:00Z) and #1008 (kagent memory off; restored by #1009). The three cases of
+`tests/eval-corpus/bug-investigator.yaml`, re-filed as arigsela/taskboard #39-#41 at 17:56Z with the
+`bug` label only, "today" replaced by the date (the bugs date from 2026-10-27). Both systems took
+each issue on their own (kagent's trigger every 2 minutes; n8n one at a time, claimed with 👀 within
+25 s of the label) and finished all three by 18:07Z. `scripts/compare-bug-investigations.py`:
+
+| issue | case (expected) | kagent | n8n |
+|---|---|---|---|
+| #39 | viewer can't create (not_a_bug, P3) | not_a_bug · high · 3/3 verified · 4 calls · 48 s | not_a_bug · high · 6/6 · 7 calls · 1m 12s |
+| #40 | archive window (PR #18, `config.py`, C3) | likely_cause · high · 4/7 · PR #18, `taskboard/config.py#L75` · 9 calls · 1m 26s | likely_cause · high · 6/6 · PR #18, `taskboard/config.py#L75` · 12 calls · 1m 12s |
+| #41 | overdue column (PR #21, `tasks.py`) | likely_cause · high · 9/9 · PR #21, `taskboard/tasks.py#L58` · 10 calls · 1m 26s | likely_cause · high · 8/8 · PR #21, `taskboard/tasks.py#L58` · 7 calls · 48 s |
+
+- **Same answers.** Both systems reached the expected verdict, change and faulty line on all three;
+  n8n's verify kept 20 of 20 evidence links, kagent's 16 of 19 (three dropped on #40).
+- **Failures:** none. No `n8n-investigation-failed`, no stale lock, no failed post. The n8n →
+  `taskboard-telemetry-mcp.kagent` path, untested before (Task 1 used a port-forward), worked from
+  namespace `n8n`: the agent's Loki queries and verify's re-runs both answered.
+- **Contamination flags:** none on the n8n side (its agent never named an `agent/taskboard-issue-*`
+  branch). kagent's fix hand-off stayed on (open question 2): its implementer opened no new PR on
+  #40/#41 and pointed to the existing #29 and #38 instead.
+- **Cost:** kagent ≈ $0.43 for the three (model-gateway estimate, `group="bug-investigator"`,
+  17:56-18:12Z). n8n has no gateway; one recorded call of the #40 run was 30,367 tokens, which puts
+  the three runs at roughly 300-400k tokens, ≈ $0.7-0.9 at the collector's Sonnet 5.5 prices
+  ($2/M input, $10/M output). Not yet confirmed from the Anthropic console (its usage lagged). The gap
+  is mostly prompt caching: kagent's calls are cached at the gateway; n8n's Anthropic node runs with
+  `promptCaching` off.
+- **Caveat: the answers were in the facts.** Closed copies of these reports from earlier rehearsals
+  (#26, #32, #33, #34, #35) are still on the repo, so both systems saw them under "Past bugs" and
+  cited them. The comparison stays fair (same input) but easier than a fresh bug. Before the next
+  comparison: delete those copies (keep #26, which open PR #29 says it fixes), or plant a new bug.
+- **Kept:** the six comments, the issues and the comparison JSON, outside git (Taskboard is private).
+
+Follow-ups: decide after about two weeks of live issues whether the POC stays (open question 3);
+consider `promptCaching` on the Anthropic node; delete the rehearsal and leaked issues;
+`progressDeadlineSeconds` on the n8n Deployment (every n8n roll now outlasts the default 600 s, so
+Argo shows Degraded until the pod is Ready).
 
 ## Open questions for Ari
 
