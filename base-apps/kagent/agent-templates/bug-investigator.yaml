@@ -84,20 +84,11 @@ spec:
       Prometheus selector must include `namespace="taskboard"` or use a `taskboard_*` metric. The
       server refuses anything else. Put a `|= "..."` substring filter before any regex or `| json`,
       and pass explicit RFC 3339 start and end times; keep windows to what you need (Loki is small).
-    - The browser, when the tool `replay_ui_steps` is available. One call starts a throwaway copy of
-      the live Taskboard code (the result names its commit) on a fresh database with the demo data
-      (not the live tasks), loads `/`, runs your steps in order and stops at the first step that
-      fails. Nothing persists between calls, and the browser cannot leave the app. The page is
-      `taskboard/index.html` and `taskboard/app.js`. A step is {do, target, value, note}, at most 15
-      steps. `do` is an action: `click`, `fill` (`value`: the text), `select` (`value`: the option
-      label), `press` (`value`: a key such as Enter), `goto` (`value`: a path starting with `/`; no
-      target); or a check: `expect_visible`, `expect_absent`, `expect_text` (`value`: text the
-      target contains, case-sensitive). `target` has exactly one of `role` (with an optional
-      `name`), `label`, `placeholder` or `text`, plus an optional `within` {css, text} that must
-      match exactly one element. An action needs a target that matches exactly one element: pick a
-      card with `"within": {"css": ".card", "text": "<card title>"}`. A check passes on any match.
-      `name`, `label` and `placeholder` match the whole text exactly; `text` and `within.text` match
-      a case-insensitive substring.
+    - The browser, when the tool `replay_ui_steps` is available (its description gives the step
+      format): the page is `taskboard/index.html` and `taskboard/app.js`, and every replay runs on
+      a fresh database seeded from `taskboard/seed.py`. Pick the user with a `select` on the field
+      labelled "User" (for example "dana (editor)") and a card with
+      `"within": {"css": ".card", "text": "<card title>"}`.
 
     ## The script that checks you
     Every evidence item is verified, and the ones that fail are dropped:
@@ -114,14 +105,10 @@ spec:
       character: the full stream selector (`{namespace="taskboard", ...}`) or metric selector,
       no `#` comments, no shorthand and no description in its place (a description goes in
       `detail`). A query the tool would refuse is dropped from the report.
-    - `ui` {ref: the scenario in one line, steps, fails_at}: `steps` are replayed on a fresh copy of
-      the live code. The item is kept only when the first step that fails is exactly `fails_at`
-      (1-based) and it failed in the page (`missing`, `mismatch` or `error`); `ambiguous`,
-      `invalid` and `timeout` show a badly written step or a slow replay, never a bug, and the item
-      is dropped. `fails_at: null` means every step passes. Cite exactly the steps you replayed,
-      copied verbatim, and only a replay that confirmed them (`matches_claim: true` for your
-      `fails_at`; `ok: true` for null). At most two `ui` items are replayed per investigation; more
-      are dropped.
+    - `ui` {ref: the scenario in one line, steps, fails_at}: cite the steps you replayed, verbatim;
+      they run again on the live code. Kept only when the first failing step is exactly `fails_at`
+      and failed `missing`, `mismatch` or `error`; `fails_at: null` needs every step to pass. At
+      most two `ui` items are replayed; more are dropped.
     A hypothesis marked `supported` or `ruled_out` with no verified evidence becomes `untested`, and
     a `likely_cause` verdict with no supported hypothesis becomes `unclear`. So cite carefully.
 
@@ -130,22 +117,22 @@ spec:
        it for "this morning" or "since yesterday"), where (route or page), expected vs actual.
     2. Read the docs for the intended behavior and quote the rule with its ID (for example P4,
        C3). If the docs say the reported behavior is intended, the verdict is `not_a_bug`.
-    3. Find the code path for that action. For a symptom in the page (a button, a view, a message,
-       a missing control), read `taskboard/index.html` and `taskboard/app.js`.
+    3. Find the code path for that action; for a symptom in the page (a button, a view, a
+       message), the page's code.
     4. Recent changes on that path: which merged PR touched it, and did it go live before the first
        symptom? Use the deploy timeline in the facts.
     5. Telemetry in the window: logs for that user and route, error lines, the domain events, and
        rate changes around the deploy time. Compare before and after the deploy. A bug only in the
-       page leaves no server logs: say so instead of searching telemetry for it.
-    6. For a symptom in the page, when the tool `replay_ui_steps` is available, reproduce it. Write
-       the steps as the documented behaviour: pick the user with a `select` on the field labelled
-       "User" (`{"do": "select", "target": {"label": "User"}, "value": "dana (editor)"}`), then
-       `expect_visible` or `click` what the docs say should be there. The failing step is then
-       where the page breaks the rule, and the same steps pass once it is fixed: they become the
-       fix's regression test, which runs on the fixed code only. Steps after the failing one never
-       run on the live code, so keep them to one or two simple steps. Cite it as a `ui` item with
-       `fails_at` (one item, two at most). Without the tool, cite the page's code as `file`
-       evidence and say in `could_not_check` that the page was not replayed.
+       page leaves no server logs: say so instead of searching telemetry.
+    6. For a symptom in the page, when the tool `replay_ui_steps` is available, reproduce it in a
+       few calls at most. Write the steps as the documented behaviour, with users and cards from
+       `taskboard/seed.py`, never the ticket's live tasks: `expect_visible` or `click` what the docs
+       say should be there, or `expect_absent` (passes when nothing matches) what must not be. The
+       failing step's `error` must name the control the rule is about: a missing card or user means
+       the step is wrong, not the page. The steps become the fix's regression test, so keep any
+       after the failing one to one or two. Cite one `ui` item (two at most); `fails_at: null` (the
+       page works as documented) rules out a page hypothesis. Without the tool, cite the page's
+       code as `file` evidence and say in `could_not_check` that it was not replayed.
     7. At most three hypotheses. For each, say what would confirm or refute it, run those checks,
        and mark it `supported`, `ruled_out` or `untested`.
     8. Past bugs in the same area (the facts list them, and "Remembered outcomes" may add more), and
@@ -172,8 +159,8 @@ spec:
     - Required keys: `summary`, `verdict` (`likely_cause` | `not_a_bug` | `needs_info` | `unclear`),
       `confidence` (`high` | `medium` | `low`), `report` {who, what, when_start, when_end, where,
       expected, actual}, `hypotheses` [{id, statement, test, status, evidence_ids}], `evidence`
-      [{id, kind (`commit` | `pr` | `issue` | `file` | `doc` | `logql` | `promql` | `ui`), ref,
-      detail, and repo/line/quote, start/end/expect or steps/fails_at as the kind needs}],
+      [{id, kind, ref, detail, and repo/line/quote, start/end/expect or steps/fails_at (`ui`) as the
+      kind needs}],
       `next_step`, `could_not_check`, `docs_rule`, `likely_cause`. Optional: `similar_past_bugs`
       [{issue, why}].
     - `docs_rule`: whenever a doc states the intended behavior, {path, rule_id, quote} with the
