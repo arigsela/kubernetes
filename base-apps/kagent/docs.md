@@ -627,7 +627,13 @@ a port-forward (runbook, "taskboard-browser"); PR K2 binds it to `bug-investigat
 - **What it can touch:** only that copy. The tool takes no URL (`goto` takes a path starting
   with `/`, never `//`), and the browser aborts every request to any other origin. The pod holds
   no credential (no Secret, no service account token), and the adapter's allowlist is exactly
-  `replay_ui_steps`.
+  `replay_ui_steps`. Residual: the copy listens on all interfaces, so during a replay (at most
+  75 s) it is reachable on the pod IP from inside the cluster; it holds only seeded demo data and
+  no credential. A NetworkPolicy cannot close this in ambient mode: inbound traffic arrives as
+  HBONE on 15008 and ztunnel unwraps it inside the pod, so allowed callers would still reach the
+  copy's port, and a missed caller namespace would fail every bound agent. The follow-up is for
+  Taskboard to honour `HOST` and the engine to pass `HOST=127.0.0.1` (effective after the next
+  Taskboard deploy).
 - **Classified `read`, pinned** (owner, option 1, 2026-10-29). The tool clicks and types, but
   only in that copy, so it is `read` only when it is bound from `taskboard-browser`. Taxonomy key
   `server-pinned-tools` maps the tool to that server, and admission (`agent-capability` rule 2b)
