@@ -10255,7 +10255,7 @@ data:
         {
           "type": "stat",
           "title": "Step now",
-          "description": "The trigger's latest step: picked, facts gathered, memory recalled, agent answered, comment posted, fix PR handed off, outcome remembered (or failed).",
+          "description": "The trigger's latest step: picked, facts gathered, memory recalled, agent answered, browser screenshots uploaded, comment posted, fix PR handed off, outcome remembered (or failed).",
           "datasource": {
             "type": "loki",
             "uid": "loki"
@@ -10317,25 +10317,35 @@ data:
                       "color": "blue",
                       "index": 4
                     },
+                    "screenshots_posted": {
+                      "text": "Screenshots uploaded",
+                      "color": "blue",
+                      "index": 5
+                    },
+                    "screenshots_failed": {
+                      "text": "Screenshots not uploaded",
+                      "color": "orange",
+                      "index": 6
+                    },
                     "posted": {
                       "text": "Comment posted",
                       "color": "green",
-                      "index": 5
+                      "index": 7
                     },
                     "fix_handoff": {
                       "text": "Fix PR handed off",
                       "color": "green",
-                      "index": 6
+                      "index": 8
                     },
                     "remembered": {
                       "text": "Outcome remembered",
                       "color": "green",
-                      "index": 7
+                      "index": 9
                     },
                     "investigation_failed": {
                       "text": "Failed: nothing posted",
                       "color": "red",
-                      "index": 8
+                      "index": 10
                     }
                   }
                 }
@@ -11231,7 +11241,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "{namespace=\"kagent\", app=\"bug-investigator-trigger\"} != `\"event\": \"idle\"` | json | __error__=\"\" | line_format `{{ if eq .event \"alert_issue_filed\" }}ALERT   {{ .route }} answered 5xx ({{ .count }} in 10 min): filed #{{ .issue }}{{ else if eq .event \"investigating\" }}PICKED  #{{ .issue }} \"{{ .title }}\"{{ if eq .alert \"true\" }} (filed by the alert){{ end }}{{ else if eq .event \"gathered\" }}FACTS   {{ .prs }} merged PRs, {{ .deploys }} deploys ({{ .seconds }} s){{ else if eq .event \"recalled\" }}MEMORY  {{ .count }} of {{ .remembered }} remembered outcomes match{{ else if eq .event \"answered\" }}AGENT   {{ .verdict }} after {{ .tool_calls }} tool calls ({{ .seconds }} s){{ else if eq .event \"posted\" }}POSTED  {{ .verdict }}: {{ .verified }} of {{ .total }} evidence links verified{{ else if eq .event \"fix_handoff\" }}FIX     {{ if .pr_url }}PR #{{ .pr_number }} opened by kagent/implementer{{ else if .existing_pr_url }}PR #{{ .existing_pr_number }} already open: no duplicate{{ else }}{{ .outcome }}{{ end }}{{ else if eq .event \"remembered\" }}MEMORY  {{ if eq .ok \"true\" }}outcome saved ({{ .entries }} kept){{ else }}not saved: {{ .reason }}{{ .error }}{{ end }}{{ else if eq .event \"investigation_failed\" }}FAILED  at {{ .stage }}: {{ .error }}{{ else }}{{ .event }}{{ end }}` | line_format `{{ regexReplaceAll \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}\" __line__ \"<email>\" }}`",
+              "expr": "{namespace=\"kagent\", app=\"bug-investigator-trigger\"} != `\"event\": \"idle\"` | json | __error__=\"\" | line_format `{{ if eq .event \"alert_issue_filed\" }}ALERT   {{ .route }} answered 5xx ({{ .count }} in 10 min): filed #{{ .issue }}{{ else if eq .event \"investigating\" }}PICKED  #{{ .issue }} \"{{ .title }}\"{{ if eq .alert \"true\" }} (filed by the alert){{ end }}{{ else if eq .event \"gathered\" }}FACTS   {{ .prs }} merged PRs, {{ .deploys }} deploys ({{ .seconds }} s){{ else if eq .event \"recalled\" }}MEMORY  {{ .count }} of {{ .remembered }} remembered outcomes match{{ else if eq .event \"answered\" }}AGENT   {{ .verdict }} after {{ .tool_calls }} tool calls ({{ .seconds }} s){{ else if eq .event \"screenshots_posted\" }}SHOTS   {{ .count }} browser replay screenshots uploaded for the comment{{ else if eq .event \"screenshots_failed\" }}SHOTS   not uploaded (the comment goes out without them): {{ .error }}{{ else if eq .event \"posted\" }}POSTED  {{ .verdict }}: {{ .verified }} of {{ .total }} evidence links verified{{ else if eq .event \"fix_handoff\" }}FIX     {{ if .pr_url }}PR #{{ .pr_number }} opened by kagent/implementer{{ else if .existing_pr_url }}PR #{{ .existing_pr_number }} already open: no duplicate{{ else }}{{ .outcome }}{{ end }}{{ else if eq .event \"remembered\" }}MEMORY  {{ if eq .ok \"true\" }}outcome saved ({{ .entries }} kept){{ else }}not saved: {{ .reason }}{{ .error }}{{ end }}{{ else if eq .event \"investigation_failed\" }}FAILED  at {{ .stage }}: {{ .error }}{{ else }}{{ .event }}{{ end }}` | line_format `{{ regexReplaceAll \"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}\" __line__ \"<email>\" }}`",
               "legendFormat": "",
               "queryType": "range"
             }

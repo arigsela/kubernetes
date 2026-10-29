@@ -30,11 +30,15 @@ data:
          the GitHub Action runs), in full mode.
       e. Ask kagent/bug-investigator over A2A as service account kagent/bug-investigator-trigger
          (projected token, audience kagent). Its answer is the findings JSON only.
-      f. Verify every evidence item (telemetry re-run directly against Loki/Prometheus), render one
-         comment and post it (edited in place on a re-run; adds `investigated`).
+      f. Verify every evidence item (telemetry re-run directly against Loki/Prometheus; `ui` steps
+         replayed through the taskboard-browser tool server, §T.153), commit the replays' screenshots
+         to Taskboard's `bug-investigator-evidence` branch (one commit; a failed upload logs
+         `screenshots_failed` and the comment goes out without images), render one comment and post
+         it (edited in place on a re-run; adds `investigated`).
       g. Fix handoff: a verified likely cause (change and code line both verified) goes to
-         kagent/implementer for one fix pull request on arigsela/taskboard. A follow-up comment
-         links the PR (or says why there is none) and adds `fix-proposed`. A person merges.
+         kagent/implementer for one fix pull request on arigsela/taskboard, with the first verified
+         UI reproduction as ui-tests/repros/issue-<N>.json for Taskboard's ui-check. A follow-up
+         comment links the PR (or says why there is none) and adds `fix-proposed`. A person merges.
 
     A failed investigation posts no comment: it logs why and labels the issue
     `investigation-failed`, so the next run does not spend the budget on it again. Remove the label
@@ -143,6 +147,16 @@ data:
     KUBE_CA = "/var/run/kube/ca.crt"
     CLONE_TIMEOUT = 300
 
+    # The browser (§T.153): taskboard-browser-mcp's replay_ui_steps, called during verify for `ui` evidence.
+    BROWSER_URL = "http://taskboard-browser-mcp.kagent.svc.cluster.local:3000/mcp"
+    BROWSER_SCREENSHOTS = ("all", "failure")   # every step's screenshot, or the failing (else last) step's
+    # The core's evidence.Uploader refuses a whole commit for one file over these limits, so the trigger
+    # leaves such a file out instead: PNGs only, 2 MiB each, 30 per commit.
+    SHOT_MAX_FILES = 30
+    SHOT_MAX_BYTES = 2 * 1024 * 1024
+    PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+    SEGMENT_MAX = 60                           # characters of one evidence id or run id in a path
+
     MESSAGE = """\
     Investigate bug report #{issue} in {repo}. Follow your method. Answer with only the findings JSON
     (findings.schema.json), nothing before or after it.
@@ -171,6 +185,19 @@ data:
 
     Verified evidence:
     {evidence}
+    """
+
+    # Appended to FIX_REQUEST for the first verified `ui` item that reproduces the bug (fails_at set).
+    UI_REPRO = """
+    UI reproduction: add the file ui-tests/repros/issue-{issue}.json with exactly this content, verbatim:
+    the steps the script replayed on a copy of the live code, where step {fails_at} fails today. Do not
+    change the steps; `ui-tests/` is not among the folders the rules above keep you out of.
+
+    ```json
+    {doc}
+    ```
+
+    ui-check replays it on your branch; every step must pass with your fix.
     """
 
 
@@ -425,7 +452,22 @@ data:
             summary=str(verified.get("summary") or "")[:600],
             change_ref=lc.get("change_ref"), live_since=lc.get("live_since") or "?",
             code_ref=lc.get("code_ref"), explanation=str(lc.get("explanation") or "")[:400],
-            docs_rule=rule, evidence="\n".join(ev[:15]) or "- none")
+            docs_rule=rule, evidence="\n".join(ev[:15]) or "- none") + ui_repro(issue, verified)
+
+
+    def ui_repro(issue: dict, verified: dict) -> str:
+        """The UI_REPRO block for the first verified `ui` item with a `fails_at`, else "". The file is
+        Taskboard's repro format ({"title", "issue", "steps"}, the core's steps.load_repro): the agent's
+        steps as verify replayed them. Backticks are JSON-escaped so no value can close the fence."""
+        item = next((e for e in verified.get("evidence") or [] if isinstance(e, dict) and e.get("kind") == "ui"
+                     and isinstance(e.get("verified"), dict) and e.get("fails_at") is not None
+                     and isinstance(e.get("steps"), list)), None)
+        if item is None:
+            return ""
+        n = issue["number"]
+        doc = {"title": str(issue.get("title") or "").strip() or f"Issue #{n}", "issue": n, "steps": item["steps"]}
+        text = json.dumps(doc, indent=2, ensure_ascii=False).replace("`", "\\u0060")
+        return UI_REPRO.format(issue=n, fails_at=item["fails_at"], doc=text)
 
 
     # ---------------------------------------------------------------- GitHub (REST, stdlib)
@@ -528,6 +570,9 @@ data:
         trusted_bots: tuple = TRUSTED_BOTS
         skip_labels: frozenset = frozenset({DONE_LABEL, REHEARSAL_LABEL, FAILED_LABEL})
         run_id: str = ""
+        browser_url: str = BROWSER_URL
+        browser_enabled: bool = True           # False: `ui` evidence is dropped ("the browser is not available")
+        browser_screenshots: str = "all"       # all | failure (agentgateway may refuse a multi-MB result)
 
         @classmethod
         def from_env(cls, env) -> "Config":
@@ -541,7 +586,8 @@ data:
                                ("prometheus_url", "PROMETHEUS_URL"), ("work_dir", "WORK_DIR"),
                                ("core_dir", "CORE_DIR"), ("run_id", "RUN_ID"),
                                ("memory_namespace", "MEMORY_NAMESPACE"), ("memory_configmap", "MEMORY_CONFIGMAP"),
-                               ("kube_token_file", "KUBE_TOKEN_FILE"), ("kube_ca_file", "KUBE_CA_FILE")):
+                               ("kube_token_file", "KUBE_TOKEN_FILE"), ("kube_ca_file", "KUBE_CA_FILE"),
+                               ("browser_url", "BROWSER_URL")):
                 if env.get(name):
                     setattr(c, attr, env[name])
             c.kagent_base = env.get("KAGENT_URL") or env.get("KAGENT_A2A_BASE") or c.kagent_base
@@ -551,6 +597,13 @@ data:
             c.alert_enabled = flag("ALERT_ENABLED", True)
             c.fix_enabled = flag("FIX_ENABLED", True)
             c.memory_enabled = flag("MEMORY_ENABLED", True)
+            c.browser_enabled = flag("BROWSER_ENABLED", True)
+            if env.get("BROWSER_SCREENSHOTS"):
+                shots = env["BROWSER_SCREENSHOTS"].strip().lower()
+                if shots not in BROWSER_SCREENSHOTS:
+                    raise ValueError(f"BROWSER_SCREENSHOTS must be one of {', '.join(BROWSER_SCREENSHOTS)}, "
+                                     f"got {env['BROWSER_SCREENSHOTS'][:40]!r}")
+                c.browser_screenshots = shots
             if env.get("TRUSTED_BOTS"):
                 c.trusted_bots = tuple(x.strip() for x in env["TRUSTED_BOTS"].split(",") if x.strip())
             return c
@@ -714,6 +767,14 @@ data:
                 raise Failure(f"the package has no telemetry module (direct Loki/Prometheus): {e}") from None
             self.cfg, self.g, self.v, self.r, self.t, self.tk, self.u = (
                 cfg, gather, verify, render, telemetry, tickets, util)
+            self.mcp = self.ev = None
+            if cfg.browser_enabled:
+                try:
+                    from bug_investigator import evidence, mcp_client
+                except ImportError as e:
+                    raise Failure(f"the package has no browser client (mcp_client, evidence): {e}") from None
+                self.mcp, self.ev = mcp_client, evidence
+            self.last_shots: dict = {}           # the last verify's ctx.ui_shots: {evidence id: [(step, PNG)]}
 
         def gather(self, issue: int, app_dir: str, deploy_dir: str) -> tuple[dict, str]:
             c = self.cfg
@@ -724,11 +785,26 @@ data:
             c = self.cfg
             # telemetry_mode direct: queries re-run against Loki/Prometheus (LOKI_URL, PROMETHEUS_URL),
             # scope-checked, no Grafana token; the comment's links still open Grafana Explore.
+            # ui_replay: `ui` steps replayed by taskboard-browser-mcp. An McpError (HTTP, network) is raised
+            # into the core's check_ui, which drops that item with the reason; None drops every `ui` item.
+            ui_replay = None
+            if c.browser_enabled:
+                url, shots, mcp = c.browser_url, c.browser_screenshots, self.mcp
+                ui_replay = lambda steps, fails_at: mcp.replay_via_mcp(url, steps, fails_at, screenshots=shots)  # noqa: E731
             ctx = self.v.Ctx(mode="full", repo=c.repo, app_dir=app_dir, deploy_dir=deploy_dir,
                              deploy_repo=c.deploy_repo, issue=issue,
                              issue_created=(facts.get("ticket") or {}).get("created_at"), namespace=c.namespace,
-                             telemetry_mode="direct")
-            return self.v.verify(findings, ctx)
+                             telemetry_mode="direct", ui_replay=ui_replay)
+            self.last_shots = {}
+            out = self.v.verify(findings, ctx)
+            self.last_shots = ctx.ui_shots
+            return out
+
+        def uploader(self, token: str):
+            """The core's evidence.Uploader on Taskboard: it writes branch bug-investigator-evidence only."""
+            if self.ev is None:
+                raise Failure("the browser is disabled: no evidence uploader")
+            return self.ev.Uploader(self.cfg.repo, token)
 
         def render(self, verified: dict, stats: dict) -> str:
             r = self.r
@@ -831,6 +907,9 @@ data:
 
         try:
             verified = core.verify(findings, facts, n, app_dir, deploy_dir)
+            # Never raises: a failed upload is logged and the comment goes out without images.
+            publish_screenshots(core, token, n, verified, getattr(core, "last_shots", None) or {}, cfg.run_id,
+                                d.log, now=d.now)
             body = d.scrub(core.render(verified, {"turns": len(reply.tool_calls or []) or None,
                                                   "duration_ms": elapsed_ms}))
             done = core.post(n, body, work / "comment")
@@ -843,6 +922,78 @@ data:
                "verified": v.get("verified"), "total": v.get("total"), "session": reply.context_id,
                **posted_fields(issue, verified, d.scrub), "comment_url": comment_url(cfg, d.github, n)})
         return verified, reply.context_id
+
+
+    def path_segment(text, fallback: str) -> str:
+        """`text` as one path segment the core's Uploader accepts: [A-Za-z0-9._-] only, no `..`, no
+        leading or trailing dot or dash, at most SEGMENT_MAX characters; `fallback` when nothing is left."""
+        s = re.sub(r"[^A-Za-z0-9._-]+", "-", str(text or ""))
+        s = re.sub(r"\.{2,}", ".", s).strip(".-")[:SEGMENT_MAX].strip(".-")
+        return s or fallback
+
+
+    def _shot_ok(n, data) -> bool:
+        return (isinstance(n, int) and not isinstance(n, bool) and n >= 1 and isinstance(data, (bytes, bytearray))
+                and bytes(data[:8]) == PNG_SIGNATURE and len(data) <= SHOT_MAX_BYTES)
+
+
+    def publish_screenshots(core, token: str, issue: int, verified: dict, shots: dict, run_id: str, log,
+                            *, now=utc_now) -> None:
+        """Commit the verified `ui` items' screenshots (`shots`: the core's ctx.ui_shots) to Taskboard's
+        bug-investigator-evidence branch in one commit, as issue-<N>/<run>/<id>-step-<n>.png, and set
+        `verified.screenshots = [{n, url}]` on each item, which render shows. <run> is the Job name, else
+        a UTC stamp; <id> the evidence id reduced to [A-Za-z0-9._-] (empty: `ui`), suffixed when two ids
+        reduce to the same. At most SHOT_MAX_FILES go up, each item's failing (else last) step first; a
+        file that is not a PNG or is over 2 MiB is left out. Never raises: any failure is logged as
+        `screenshots_failed` and the items keep no screenshots, so the comment goes out without images."""
+        scrub = Scrubber([token])
+        try:
+            items = [e for e in (verified.get("evidence") or []) if isinstance(e, dict) and e.get("kind") == "ui"
+                     and isinstance(e.get("verified"), dict)]
+            offered = {str(e.get("id")): shots.get(str(e.get("id"))) for e in items} if isinstance(shots, dict) else {}
+            offered = {k: v for k, v in offered.items() if isinstance(v, list) and v}
+            if not offered:
+                return
+            run = path_segment(run_id, "") or now().astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            used, first, rest, total = set(), [], [], 0
+            for e in items:
+                pngs = offered.get(str(e.get("id")))
+                if not pngs:
+                    continue
+                name = base = path_segment(e.get("id"), "ui")
+                k = 1
+                while name in used:
+                    k += 1
+                    name = f"{base}-{k}"
+                used.add(name)
+                total += len(pngs)
+                good = {}
+                for shot in pngs:
+                    if isinstance(shot, (list, tuple)) and len(shot) == 2 and _shot_ok(*shot) and shot[0] not in good:
+                        good[shot[0]] = bytes(shot[1])
+                v = e["verified"]
+                steps = [s for s in v.get("steps") or [] if isinstance(s, dict)]
+                focus = v.get("failed_at") or (steps[-1].get("n") if steps else None)
+                for n in sorted(good):
+                    (first if n == focus else rest).append((e, n, f"issue-{issue}/{run}/{name}-step-{n}.png", good[n]))
+            chosen = (first + rest)[:SHOT_MAX_FILES]
+            if not chosen:
+                raise ValueError(f"no usable screenshot among {total} (PNG only, at most {SHOT_MAX_BYTES} bytes)")
+            up = core.uploader(token)
+            sha = up.upload({path: data for _, _, path, data in chosen},
+                            f"bug-investigator: screenshots for issue #{issue}, run {run}")
+            linked: dict[int, list] = {}
+            for e, n, path, _ in chosen:
+                linked.setdefault(id(e), []).append({"n": n, "url": up.link(sha, path)})
+            for e in items:                                  # only once every link is in hand
+                if id(e) in linked:
+                    e["verified"]["screenshots"] = sorted(linked[id(e)], key=lambda x: x["n"])
+            line = {"event": "screenshots_posted", "issue": issue, "count": len(chosen)}
+            if total > len(chosen):
+                line["left_out"] = total - len(chosen)
+            log(line)
+        except Exception as e:  # noqa: BLE001 - screenshots never cost the comment
+            log({"event": "screenshots_failed", "issue": issue, "error": clip(f"{type(e).__name__}: {e}", 300, scrub)})
 
 
     def comment_url(cfg: Config, gh: GitHub, n: int) -> str | None:
@@ -1165,7 +1316,11 @@ data:
 
     def main(env=None) -> int:
         env = os.environ if env is None else env
-        cfg = Config.from_env(env)
+        try:
+            cfg = Config.from_env(env)
+        except ValueError as e:     # a bad setting (BROWSER_SCREENSHOTS, a timeout): one line, not a traceback
+            log_line({"event": "crashed", "run": env.get("RUN_ID") or None, "error": f"bad configuration: {e}"[:600]})
+            return 1
         scrub = Scrubber()
 
         def log(obj):

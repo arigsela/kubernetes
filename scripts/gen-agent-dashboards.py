@@ -1336,7 +1336,8 @@ NO_INVESTIGATION = "No investigation in this time range: label a Taskboard issue
 # The step names the trigger logs, as a viewer reads them, and their colour on the Step now tile.
 STEP_NAMES = [("alert_issue_filed", "Alert filed an issue", "orange"), ("investigating", "Picked the issue", "blue"),
               ("gathered", "Facts gathered", "blue"), ("recalled", "Memory recalled", "blue"),
-              ("answered", "Agent answered", "blue"), ("posted", "Comment posted", "green"),
+              ("answered", "Agent answered", "blue"), ("screenshots_posted", "Screenshots uploaded", "blue"),
+              ("screenshots_failed", "Screenshots not uploaded", "orange"), ("posted", "Comment posted", "green"),
               ("fix_handoff", "Fix PR handed off", "green"), ("remembered", "Outcome remembered", "green"),
               ("investigation_failed", "Failed: nothing posted", "red")]
 VERDICT_NAMES = [("likely_cause", "Likely cause", "green"), ("not_a_bug", "Not a bug", "blue"),
@@ -1349,6 +1350,8 @@ STEP_LINE = (
     '{{ else if eq .event "gathered" }}FACTS   {{ .prs }} merged PRs, {{ .deploys }} deploys ({{ .seconds }} s)'
     '{{ else if eq .event "recalled" }}MEMORY  {{ .count }} of {{ .remembered }} remembered outcomes match'
     '{{ else if eq .event "answered" }}AGENT   {{ .verdict }} after {{ .tool_calls }} tool calls ({{ .seconds }} s)'
+    '{{ else if eq .event "screenshots_posted" }}SHOTS   {{ .count }} browser replay screenshots uploaded for the comment'
+    '{{ else if eq .event "screenshots_failed" }}SHOTS   not uploaded (the comment goes out without them): {{ .error }}'
     '{{ else if eq .event "posted" }}POSTED  {{ .verdict }}: {{ .verified }} of {{ .total }} evidence links verified'
     '{{ else if eq .event "fix_handoff" }}FIX     {{ if .pr_url }}PR #{{ .pr_number }} opened by kagent/implementer'
     '{{ else if .existing_pr_url }}PR #{{ .existing_pr_number }} already open: no duplicate{{ else }}{{ .outcome }}{{ end }}'
@@ -1427,7 +1430,8 @@ def bug_investigation_live():
                  units={"A": "prefix:#"}, decimals=0, no_value="-")),
         (4, textstat("Step now", loki(BIT_STEPS + " | json event | line_format `{{ .event }}`", max_lines=1),
                      "The trigger's latest step: picked, facts gathered, memory recalled, agent answered, "
-                     "comment posted, fix PR handed off, outcome remembered (or failed).",
+                     "browser screenshots uploaded, comment posted, fix PR handed off, outcome remembered "
+                     "(or failed).",
                      mappings=_text_mappings(STEP_NAMES))),
         (3, textstat("Verdict", loki(bit_event("posted") + " | json verdict | line_format `{{ .verdict }}`",
                                      max_lines=1),
