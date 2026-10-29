@@ -21,7 +21,9 @@
 #   read         observes state; cannot change anything. Tools that RENDER a
 #                manifest but do not apply it (k8s_generate_resource,
 #                istio_generate_manifest, istio_generate_waypoint) are `read` —
-#                they return YAML to the caller.
+#                they return YAML to the caller. replay_ui_steps clicks and types,
+#                but only in a throwaway copy its server starts per call, so it is
+#                `read` only when bound from that server (server-pinned-tools, below).
 #   propose      changes a PROPOSAL surface only: a branch or a pull request on
 #                arigsela/kubernetes or arigsela/taskboard, never a cluster, an account or a merge. May be
 #                bound without requireApproval; the merge is the human gate (§V.94).
@@ -38,12 +40,14 @@
 # classified here first. If a sync fails with "tool not in taxonomy", that is
 # the control working, not a bug.
 #
-# Three more lists are not tool classes: runtime-images, byo-images and read-only-servers
+# Four more keys are not tool classes: runtime-images, byo-images and read-only-servers
 # (at the bottom) decide which runtimes run at all, and the one exception for a `byo`
-# runtime (SPEC §V.101).
+# runtime (SPEC §V.101); server-pinned-tools names the one server a pinned tool may be
+# bound from (SPEC §V.113).
 #
-# The lists are JSON arrays (a Kyverno parse_json() legacy); the generator, the CI
-# validator and the agent-audit scripts all json.loads() them.
+# The lists are JSON arrays (a Kyverno parse_json() legacy), server-pinned-tools a JSON
+# object to match; the generator, the CI validator and the agent-audit scripts all
+# json.loads() them.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -52,7 +56,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: agent-guardrails
 data:
-  # ---------------------------------------------------------------- read (60)
+  # ---------------------------------------------------------------- read (61)
   read: |
     [
       "k8s_get_resources",
@@ -118,7 +122,9 @@ data:
       "get-catalog-entity",
 
       "brave_web_search",
-      "brave_news_search"
+      "brave_news_search",
+
+      "replay_ui_steps"
     ]
 
   # ------------------------------------------------------------- propose (4)
@@ -217,3 +223,17 @@ data:
     [
       "agent-docs"
     ]
+
+  # ------------------------------------------------- server-pinned tools (1)
+  # Not a tool class: {tool: RemoteMCPServer name}, a classified tool whose class holds only
+  # when it is bound from that one server. A binding of the tool from any other server is
+  # denied at admission (agent-capability, rule 2b) and in CI (validate-agent-capability.py,
+  # invariant 8): SPEC §V.113, owner option 1, 2026-10-29. Every key must be classified above.
+  #   replay_ui_steps  clicks and types, yet is `read`: taskboard-browser bounds what it can
+  #                    touch, a throwaway copy of Taskboard (its own app process and database)
+  #                    that it starts per call. A same-named tool on another server could
+  #                    touch anything.
+  server-pinned-tools: |
+    {
+      "replay_ui_steps": "taskboard-browser"
+    }

@@ -296,6 +296,18 @@ def test_status_writes_are_not_restricted(cluster, live):
     assert verdict == "allow", out
 
 
+def test_pinned_tool_denial_names_the_tool_and_its_server(cluster):
+    """agent-capability rule 2b (§V.113): the bad fixture is denied by the pin, not by an
+    earlier rule of the same policy (the fixture-dir check sees only the policy name), and the
+    message, computed per tool in CEL, names the tool and the one server it may come from."""
+    path = FIXTURES / "agent-capability/bad/agent-capability/bad-pinned-tool-from-another-server.yaml"
+    verdict, fired, out = cluster.verdict(path.read_text())
+    assert verdict == "deny" and "agent-capability" in fired, out
+    assert ("AgentTemplate 'bad-pinned-tool-from-another-server' binds replay_ui_steps from a "
+            "server other than taskboard-browser: a pinned tool is read only because that one "
+            "server bounds what it can touch.") in out, out
+
+
 def test_no_type_checking_warnings(cluster):
     """VAPs only: on 1.36 a MutatingAdmissionPolicy gets no status at all (no typeChecking),
     so a MAP is checked only by its mutate fixtures and test_api_server_did_not_panic."""

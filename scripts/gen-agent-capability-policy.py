@@ -57,7 +57,10 @@ NATIVE_HEADER = """\
 #   agent-capability             1. an AgentTemplate with no capability.homelab/class in
 #                                   {read, propose, write, admin}
 #                                2. an AgentTemplate binding a tool not in the taxonomy
-#                                   (FAIL-CLOSED)
+#                                   (FAIL-CLOSED); 2b. binding a server-pinned tool from any
+#                                   RemoteMCPServer other than the one the taxonomy's
+#                                   server-pinned-tools names: its class holds only because
+#                                   that server bounds what it can touch (SPEC §V.113)
 #                                3. a `read` template binding any propose/write/destructive
 #                                   tool; 3b. a `propose` template binding any
 #                                   write/destructive tool (propose = branches and pull
@@ -130,6 +133,11 @@ def _cel_list(items: list[str]) -> str:
     return json.dumps(items)
 
 
+def _cel_map(pairs: dict[str, str]) -> str:
+    """A JSON object of strings is also a CEL map literal: {"tool": "server"}."""
+    return json.dumps(pairs)
+
+
 def _deny(expression: str, message: str) -> dict:
     return {"expression": expression, "messageExpression": message, "reason": "Forbidden"}
 
@@ -163,7 +171,8 @@ def _policy(name: str, resource: str, variables: list[dict], validations: list[d
 
 
 def build_native(read: list[str], propose: list[str], write: list[str], destructive: list[str],
-                 runtime_images: list[str], byo_images: list[str]) -> list[dict]:
+                 runtime_images: list[str], byo_images: list[str],
+                 pinned: dict[str, str]) -> list[dict]:
     classified = read + propose + write + destructive
     mutating = write + destructive
     tpl = "\"AgentTemplate '\" + object.metadata.name + \"' "
@@ -183,6 +192,9 @@ def build_native(read: list[str], propose: list[str], write: list[str], destruct
             {"name": "propose", "expression": _cel_list(propose)},
             {"name": "mutating", "expression": _cel_list(mutating)},
             {"name": "destructive", "expression": _cel_list(destructive)},
+            # {tool: the one RemoteMCPServer it may be bound from}. The CRD already requires a
+            # binding's server to be a same-namespace RemoteMCPServer, so the name is the pin.
+            {"name": "pinned", "expression": _cel_map(pinned)},
         ],
         validations=[
             _deny("variables.cls in ['read', 'propose', 'write', 'admin']",
@@ -192,6 +204,15 @@ def build_native(read: list[str], propose: list[str], write: list[str], destruct
                   tpl + "binds tools that are not in the capability taxonomy. Classify them in "
                   "base-apps/admission-policies/agent-capability-taxonomy.yaml first: "
                   "unclassified tools are denied by design (fail-closed).\""),
+            # 2b. The message names each offending tool and its server (one validation for
+            # every pin): it runs only on a denial, when at least one is offending.
+            _deny(names.format(cond="!(n in variables.pinned) || "
+                               "b.?server.?name.orValue('') == variables.pinned[n]"),
+                  tpl + "binds \" + variables.pinned.filter(n, variables.mcp.exists(b, "
+                  "n in b.?tools.orValue([]) && b.?server.?name.orValue('') != variables.pinned[n]))"
+                  ".map(n, n + \" from a server other than \" + variables.pinned[n]).join(\", \") + "
+                  "\": a pinned tool is read only because that one server bounds what it can "
+                  "touch.\""),
             _deny("variables.cls != 'read' || "
                   + names.format(cond="!(n in variables.mutating) && !(n in variables.propose)"),
                   tpl + "is class read but binds propose or mutating tools. A read agent may bind "
@@ -309,14 +330,16 @@ def render_native(repo: Path) -> str:
     )
 
 
-def load_taxonomy(repo: Path) -> tuple[list[str], ...]:
-    """(read, propose, write, destructive, runtime-images, byo-images). A missing key fails
-    (KeyError): the CI validator names it. Entry shapes are the validator's job too."""
+def load_taxonomy(repo: Path) -> tuple:
+    """(read, propose, write, destructive, runtime-images, byo-images: lists;
+    server-pinned-tools: a {tool: server} dict). A missing key fails (KeyError): the CI
+    validator names it. Entry shapes are the validator's job too."""
     cm = next(
         d for d in yaml.safe_load_all((repo / TAXONOMY).read_text())
         if d and d.get("kind") == "ConfigMap"
     )
-    keys = ("read", "propose", "write", "destructive", "runtime-images", "byo-images")
+    keys = ("read", "propose", "write", "destructive", "runtime-images", "byo-images",
+            "server-pinned-tools")
     return tuple(json.loads(cm["data"][key]) for key in keys)
 
 
