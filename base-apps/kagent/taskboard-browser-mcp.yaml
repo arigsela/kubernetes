@@ -42,7 +42,7 @@
 # agentgateway reads local.yaml once at start: checksum/config is the sha256 of the local.yaml text
 # (CI checks it); checksum/code and taskboard.arigsela.com/source-commit are written by
 # scripts/gen-taskboard-configmap.py (tests/taskboard/ checks them); checksum/core is the core
-# ConfigMap's checksum (see the TODO beside it). So a config change, a Taskboard deploy or a core
+# ConfigMap's checksum (scripts/gen-bug-investigator-core.py writes it). So a config change, a Taskboard deploy or a core
 # change in git rolls the pod.
 # Recompute checksum/config: python3 -m pytest tests/agent-identity/test_mcp_server_manifests.py -q -k checksum
 apiVersion: v1
@@ -157,10 +157,8 @@ spec:
         # The checksum covers .source-commit, so a deploy that changes only the commit rolls this pod.
         checksum/code: "1bf544044ea802b2ca479decf5d14fbe639ecdd8b0c442f473d4491368cd3c60"
         taskboard.arigsela.com/source-commit: "d7b37f21c045fc252f4033ef10501cbd582141f8"
-        # TODO(B2b): scripts/gen-bug-investigator-core.py does not write this one yet (this
-        # Deployment is not in its CONSUMERS, and the core has no browser-requirements.txt yet).
-        # Set by hand to the telemetry server's value (same ConfigMap); B2b makes the generator own it.
-        checksum/core: "0eceff5a0f552051a2983f13dbfd47e998d422d9e199b2795328e7586745234e"
+        # Written by scripts/gen-bug-investigator-core.py; CI checks it.
+        checksum/core: "4743d884853d6ca88f6b6a88bb793fa935f77c8bf1d4eb624026540c40759b26"
         # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
         # containerPort would make the kubernetes-pods job scrape the pod twice.
         prometheus.io/scrape: "true"

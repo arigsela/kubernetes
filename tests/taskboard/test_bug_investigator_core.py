@@ -76,7 +76,7 @@ def test_committed_configmap_regenerates_from_its_own_data(tmp_path):
     pkg = tmp_path / "bug-investigator" / "src" / "bug_investigator"
     pkg.mkdir(parents=True)
     for key, value in cm["data"].items():
-        dest = tmp_path / "bug-investigator" / key if key in ("prompt.md", "findings.schema.json") else pkg / key
+        dest = tmp_path / "bug-investigator" / key if key in ("prompt.md", "findings.schema.json", "browser-requirements.txt") else pkg / key
         dest.write_text(value)
     assert gen.render(gen.collect(tmp_path), cm["metadata"]["annotations"][gen.COMMIT_ANNOTATION]) == text
 
@@ -93,6 +93,25 @@ def test_the_telemetry_server_mounts_the_package_where_it_imports_from():
     assert stdio["args"][-1] == "/core/src/bug_investigator/mcp_server.py"
 
 
+def test_core_checksum_on_both_servers():
+    """The telemetry and the browser server both mount the core, so both roll with it."""
+    assert "base-apps/kagent/taskboard-telemetry-mcp.yaml" in gen.CONSUMERS
+    assert "base-apps/kagent/taskboard-browser-mcp.yaml" in gen.CONSUMERS
+    _, cm = _committed()
+    want = _checksum(cm["data"])
+    for rel in ("base-apps/kagent/taskboard-telemetry-mcp.yaml", "base-apps/kagent/taskboard-browser-mcp.yaml"):
+        text = (REPO / rel).read_text()
+        assert "TODO(B2b)" not in text
+        anns = [a for a in _pod_annotations(rel) if "checksum/core" in a]
+        assert anns and all(a["checksum/core"] == want for a in anns), rel
+
+
+def test_core_has_browser_requirements():
+    _, cm = _committed()
+    reqs = cm["data"]["browser-requirements.txt"]
+    assert "playwright==1.64.0" in reqs and "--hash=sha256:" in reqs
+
+
 # --- the generator on a fake source -------------------------------------------------------------
 
 def _fake(tmp_path, extra=None):
@@ -103,6 +122,7 @@ def _fake(tmp_path, extra=None):
     (pkg / "scope.py").write_text("NAMESPACE = 'taskboard'\n")
     (root / "bug-investigator" / "prompt.md").write_text("You are investigating.\n")
     (root / "bug-investigator" / "findings.schema.json").write_text('{"type": "object"}\n')
+    (root / "bug-investigator" / "browser-requirements.txt").write_text("playwright==1.64.0 --hash=sha256:00\n")
     for name, body in (extra or {}).items():
         (pkg / name).write_text(body)
     return root
@@ -125,7 +145,7 @@ def test_generator_writes_the_configmap_and_the_consumer_checksums(tmp_path):
     r = _run("--source", str(src), "--commit", SHA, "--repo-root", str(repo))
     assert r.returncode == 0, r.stderr
     cm = yaml.safe_load((repo / gen.OUT).read_text())
-    assert set(cm["data"]) == {"__init__.py", "scope.py", "prompt.md", "findings.schema.json"}
+    assert set(cm["data"]) == {"__init__.py", "scope.py", "prompt.md", "findings.schema.json", "browser-requirements.txt"}
     assert cm["metadata"]["annotations"][gen.COMMIT_ANNOTATION] == SHA
     for rel in gen.CONSUMERS:
         assert f'checksum/core: "{_checksum(cm["data"])}"' in (repo / rel).read_text()

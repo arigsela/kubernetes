@@ -8,8 +8,8 @@ The bug investigator's shared core (the scope check, gather, verify, render, the
 and the stdio MCP server) lives in arigsela/claude-agents `bug-investigator/`, where the GitHub
 Action uses it too. Here it runs like alert-demo: python:3.12-slim, standard library only, no image
 build, the files from one ConfigMap. This script copies every
-`bug-investigator/src/bug_investigator/*.py` plus `bug-investigator/prompt.md` and
-`bug-investigator/findings.schema.json` into ConfigMap `bug-investigator-core` (keys are the
+`bug-investigator/src/bug_investigator/*.py` plus `bug-investigator/prompt.md`,
+`bug-investigator/findings.schema.json` and `bug-investigator/browser-requirements.txt` into ConfigMap `bug-investigator-core` (keys are the
 basenames), and writes the ConfigMap's checksum into every consumer listed in CONSUMERS (pod
 template annotation `checksum/core`), so a core change rolls those pods.
 
@@ -41,10 +41,11 @@ OUT = "base-apps/kagent/bug-investigator-core-configmap.yaml"
 # Every manifest whose pod template mounts the core and must roll when it changes. Each needs at
 # least one `checksum/core: "<hex>"` annotation. A CronJob's pods start fresh every run, so a
 # CronJob may stay out of this list.
-CONSUMERS = ["base-apps/kagent/taskboard-telemetry-mcp.yaml"]
+CONSUMERS = ["base-apps/kagent/taskboard-telemetry-mcp.yaml", "base-apps/kagent/taskboard-browser-mcp.yaml"]
 SUBDIR = "bug-investigator"
 PACKAGE = "bug-investigator/src/bug_investigator"
-DATA_FILES = ["bug-investigator/prompt.md", "bug-investigator/findings.schema.json"]
+DATA_FILES = ["bug-investigator/prompt.md", "bug-investigator/findings.schema.json",
+              "bug-investigator/browser-requirements.txt"]
 SOURCE_REPO = "arigsela/claude-agents"
 COMMIT_ANNOTATION = "bug-investigator.arigsela.com/source-commit"
 REPO_ANNOTATION = "bug-investigator.arigsela.com/source-repo"
@@ -70,7 +71,7 @@ HEADER = """\
 #
 # Mount contract: the package at /core/src/bug_investigator/, prompt.md and findings.schema.json at
 # /core/, PYTHONPATH=/core/src. Standard library only, on python:3.12-slim. Consumers: the
-# taskboard-telemetry MCP server (taskboard-telemetry-mcp.yaml) and the bug-investigator trigger.
+# taskboard-telemetry and taskboard-browser MCP servers and the bug-investigator trigger.
 """
 
 

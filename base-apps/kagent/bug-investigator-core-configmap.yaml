@@ -3,14 +3,14 @@
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-bug-investigator-core.py
-# Source:     arigsela/claude-agents@bf05291f5dd88871156ecf0687917965333fee26
-#             (bug-investigator/src/bug_investigator/*.py, bug-investigator/prompt.md, bug-investigator/findings.schema.json)
+# Source:     arigsela/claude-agents@023a685ca173ec6ac4ece37b5a1814db877177c7
+#             (bug-investigator/src/bug_investigator/*.py, bug-investigator/prompt.md, bug-investigator/findings.schema.json, bug-investigator/browser-requirements.txt)
 # Regenerate: ./scripts/gen-bug-investigator-core.py --source <claude-agents checkout> --commit <sha>
 # tests/taskboard/test_bug_investigator_core.py fails if this file and the consumers' checksum/core disagree.
 #
 # Mount contract: the package at /core/src/bug_investigator/, prompt.md and findings.schema.json at
 # /core/, PYTHONPATH=/core/src. Standard library only, on python:3.12-slim. Consumers: the
-# taskboard-telemetry MCP server (taskboard-telemetry-mcp.yaml) and the bug-investigator trigger.
+# taskboard-telemetry and taskboard-browser MCP servers and the bug-investigator trigger.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -20,11 +20,1409 @@ metadata:
     app.kubernetes.io/part-of: kagent
     app.kubernetes.io/name: bug-investigator-core
   annotations:
-    bug-investigator.arigsela.com/source-commit: bf05291f5dd88871156ecf0687917965333fee26
+    bug-investigator.arigsela.com/source-commit: 023a685ca173ec6ac4ece37b5a1814db877177c7
     bug-investigator.arigsela.com/source-repo: arigsela/claude-agents
 data:
   __init__.py: |
     """Bug investigator: a composite GitHub Action that investigates a bug issue with Claude."""
+  browser-requirements.txt: |
+    # Playwright for the UI replay engine (browser.py), installed with
+    #   pip install --require-hashes --no-deps --only-binary=:all: --target /deps -r browser-requirements.txt
+    # by the taskboard-browser-mcp init container (kagent) and the ui-check workflow (arigsela/taskboard).
+    # The hashes are the x86_64 manylinux wheels (playwright, greenlet) and the pure-Python wheels (pyee,
+    # typing-extensions): other platforms do not install from this file.
+    playwright==1.64.0 --hash=sha256:5a59af1b230b234008524a5d42b613b233d4256f73bc1dd25bf3f11db0c81b75
+    greenlet==3.5.6 --hash=sha256:975736b002ed080d124cf81a79cb7e05cb26d6b3f5c7a7b651c0fcce70353aa1
+    pyee==14.0.0 --hash=sha256:3ac2d3229a9677f7de2c33d7f52fe25b638a46b19c413fea2edc8c6d0a644e4d
+    typing-extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+  browser.py: |
+    """Replay UI steps in headless Chromium against a throwaway copy of the app.
+
+    Every replay starts the app (`python3 server.py` in its directory) on a free port, with a fresh
+    database and HOME in a temporary directory and a fixed environment, loads `/`, runs the steps
+    (steps.py's format) and tears everything down. The browser may talk only to that app: a request,
+    navigation or WebSocket to any other origin is aborted and noted in `console`. One replay runs at a
+    time on a machine (a lock in $TMPDIR). Only this module imports Playwright, lazily, from $DEPS_DIR
+    (default /deps). A replay has REPLAY_S (75 s) from Chromium's launch, app start and load included:
+    when it runs out, the current step fails (`timeout`, "the replay took longer than 75 s") and no
+    later step runs, so a call answers within agentgateway's 90 s.
+
+        python3 -I browser.py replay --app-dir D --steps F [--commit SHA] --out DIR
+        python3 -I browser.py check --app-dir D --repros DIR --out DIR [--changed a.json,b.json]
+
+    `replay` (F = a list of steps or a repro file) writes DIR/result.json and DIR/step-<n>.png. Exit 0
+    when every step passed, 1 when one failed, 2 for bad arguments, invalid steps or a replay that could
+    not be set up. `check` replays every DIR/*.json repro (each must pass) into DIR/<stem>/result.json
+    and DIR/<stem>/step-<n>.png and writes DIR/summary.json. Exit 0 when every repro passed, 1 when any
+    failed or could not be replayed (an invalid file, the app or Chromium not starting), 2 only for bad
+    arguments: a usage error or a --repros directory that cannot be listed.
+
+    Actions (click, fill, select, press) and `within` need exactly one match; checks pass on any match
+    (expect_visible: one is visible; expect_text: one contains the value; expect_absent: none). A failed
+    step says why in `failure`: ambiguous (an action target or `within` matched more than one element),
+    missing (nothing matched), mismatch (expect_text found no match with the value; expect_absent found
+    some), invalid (the step cannot run on any page: `within.css` is not a CSS selector, read as
+    `css=<css>` so another selector engine does not parse either, or `press` names a key Playwright does
+    not know; the key is checked before the target is looked for), timeout (the replay's REPLAY_S ran
+    out during or before the step), error (anything else, such as a disabled button).
+    """
+
+    from __future__ import annotations
+
+    import argparse
+    import base64
+    import collections
+    import contextlib
+    import fcntl
+    import http.client
+    import json
+    import os
+    import signal
+    import socket
+    import subprocess
+    import sys
+    import tempfile
+    import threading
+    import time
+    import urllib.request
+    from dataclasses import dataclass
+    from urllib.parse import urlsplit
+
+    if __package__ in (None, ""):  # run as a script (python3 -I .../browser.py): -I drops PYTHONPATH
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    from bug_investigator import steps as stepfmt  # noqa: E402
+
+    APP_START_S = 15  # the app must answer GET /healthz within this
+    LOCK_WAIT_S = 120
+    STEP_S = 3  # actions, expect_visible and expect_text wait this long for their target
+    IDLE_S = 5  # after load and after every action: wait (at most this) for the network to go idle
+    # The whole replay, from Chromium's launch through app start, load and every step (ruling R14): under the
+    # 90 s timeout of the server's RemoteMCPServer and mcp_client's 120 s. Real replays take 10-20 s.
+    REPLAY_S = 75
+    QUIET_S = 0.5  # idle = no request in flight for this long
+    VIEWPORT = {"width": 1100, "height": 760}
+    SNAPSHOT_CHARS = 6000
+    APP_LOG_LINES = 50
+    CONSOLE_LINES = 50
+    SHOTS = ("all", "failure", "none")
+    FAILURES = ("ambiguous", "missing", "mismatch", "invalid", "timeout", "error")  # a failed StepResult's `failure`
+    # Playwright's words when the step itself is malformed, whatever the page: a selector that does not parse
+    # (its own CSS parser, an engine after >>, a pseudo-class's arguments, the browser's querySelectorAll) or a
+    # key its keyboard does not know.
+    MALFORMED = ("while parsing css selector", "while parsing selector", "is not a valid selector", '" engine expects ',
+                 "Unknown key: ")
+    # Defence in depth behind the request fence: the browser resolves no host name at all.
+    RESOLVER_RULES = "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
+    # The texts expect_text reads: a field's value, a select's chosen label, otherwise the rendered text.
+    # evaluate_all never waits for an element, so the step's own deadline bounds it.
+    TEXTS_JS = """els => els.map(e => String((e.matches('input, textarea') ? e.value
+      : e.matches('select') ? Array.from(e.selectedOptions, o => o.label).join(', ') : e.innerText) ?? ''))"""
+    # Call-log lines that only narrate; the last other one is why an action timed out.
+    ROUTINE = ("waiting", "retrying", "attempting", "locator resolved", "scrolling", "done", "performing",
+               "element is visible")
+
+
+    class BrowserError(RuntimeError):
+        """The replay could not be set up: the app did not start, Chromium did not launch, the lock was busy."""
+
+
+    class _StepFailed(Exception):
+        """A step did not pass; the message is its error, `failure` its kind."""
+
+        def __init__(self, error: str, failure: str):
+            super().__init__(error)
+            self.failure = failure
+
+
+    @dataclass
+    class StepResult:
+        n: int
+        text: str
+        ok: bool
+        error: str | None = None
+        screenshot: bytes | None = None
+        failure: str | None = None  # one of FAILURES; None when the step passed
+
+
+    @dataclass
+    class Replay:
+        ok: bool
+        failed_at: int | None
+        steps: list[StepResult]
+        snapshot: str
+        app_log: list[str]
+        console: list[str]
+        commit: str | None
+        seconds: float
+
+        def to_json(self, include_png: bool = False) -> dict:
+            def step(s: StepResult) -> dict:
+                d = {"n": s.n, "text": s.text, "ok": s.ok, "error": s.error, "failure": s.failure}
+                if include_png:
+                    d["png"] = base64.b64encode(s.screenshot).decode() if s.screenshot else None
+                return d
+
+            return {"ok": self.ok, "failed_at": self.failed_at, "commit": self.commit, "seconds": self.seconds,
+                    "steps": [step(s) for s in self.steps], "snapshot": self.snapshot,
+                    "app_log": list(self.app_log), "console": list(self.console)}
+
+
+    def _first_line(e: BaseException) -> str:
+        lines = str(e).strip().splitlines()
+        return (lines[0] if lines else type(e).__name__)[:300]
+
+
+    def _step_error(e: BaseException, step: dict) -> str:
+        """A sentence from Playwright's error and its call log's reason, Playwright's words in parentheses."""
+        head = _first_line(e).rstrip(".")
+        lines = [line.strip() for line in str(e).splitlines()[1:]]
+        reasons = [line[2:][:150] for line in lines if line.startswith("- ") and not line[2:].startswith(ROUTINE)]
+        reason = reasons[-1] if reasons else None
+        what = stepfmt.phrase(step["target"]) if "target" in step else None
+        if what and reason and reason.startswith("element is not "):  # enabled, visible, editable, stable
+            return f"{what} is not {reason.removeprefix('element is not ')} ({head})"
+        if what and reason == "did not find some options":
+            return f'{what} has no option "{step["value"]}" ({head})'
+        if what and reason and reason.endswith(" intercepts pointer events"):
+            return f"{what} is covered by {reason.removesuffix(' intercepts pointer events')} ({head})"
+        because = f": {reason}" if reason else ""
+        return f"could not {stepfmt.describe(step)}{because} ({head})"
+
+
+    def _overtime() -> str:
+        return f"the replay took longer than {REPLAY_S} s"
+
+
+    def _malformed(e: BaseException) -> bool:
+        """Did Playwright refuse the step itself (MALFORMED), rather than fail on the page?"""
+        head = _first_line(e)
+        return any(m in head for m in MALFORMED)
+
+
+    def _invalid_error(e: BaseException, step: dict) -> str:
+        head = _first_line(e)
+        w = (step.get("target") or {}).get("within")
+        if w and "Unknown key" not in head:  # the one selector built from the step's own text, unescaped
+            return f'within css "{w["css"]}" is not a valid selector ({head})'
+        return f"the step cannot run on any page ({head})"
+
+
+    def _lock_path() -> str:
+        return os.path.join(tempfile.gettempdir(), "bug-investigator-browser.lock")
+
+
+    @contextlib.contextmanager
+    def _lock():
+        """One replay at a time on this machine: Chromium and the app are heavy."""
+        try:
+            fd = os.open(_lock_path(), os.O_RDWR | os.O_CREAT, 0o600)
+        except OSError as e:
+            raise BrowserError(f"cannot open the replay lock: {e}") from e
+        try:
+            deadline = time.monotonic() + LOCK_WAIT_S
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= deadline:
+                        raise BrowserError(f"another replay held the lock for {LOCK_WAIT_S} s") from None
+                    time.sleep(0.2)
+            yield
+        finally:
+            os.close(fd)
+
+
+    def _free_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            return s.getsockname()[1]
+
+
+    class _App:
+        """The app under test: `python3 server.py` in its directory, with its own port, database and HOME."""
+
+        def __init__(self, app_dir: str, tmp: str, commit: str | None):
+            self.dir = os.path.abspath(app_dir)
+            self.port = _free_port()
+            self.origin = f"http://127.0.0.1:{self.port}"
+            self.log: collections.deque[str] = collections.deque(maxlen=APP_LOG_LINES)
+            self.env = {"PATH": os.environ.get("PATH", os.defpath), "HOME": tmp, "PORT": str(self.port),
+                        "DB_PATH": os.path.join(tmp, "app.db"), "PYTHONDONTWRITEBYTECODE": "1"}
+            if commit:
+                self.env["TASKBOARD_COMMIT"] = commit
+            self.proc: subprocess.Popen | None = None
+            self.reader: threading.Thread | None = None
+
+        def start(self) -> None:
+            if not os.path.isfile(os.path.join(self.dir, "server.py")):
+                raise BrowserError(f"no server.py in {self.dir}")
+            # Not -I: Taskboard's server.py imports its sibling modules. Its own process group, so stop()
+            # also ends anything it started.
+            self.proc = subprocess.Popen([sys.executable, "server.py"], cwd=self.dir, env=self.env,
+                                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                         text=True, encoding="utf-8", errors="replace", start_new_session=True)
+            self.reader = threading.Thread(target=self._read, daemon=True)
+            self.reader.start()
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never via a proxy
+            deadline = time.monotonic() + APP_START_S
+            while True:
+                code = self.proc.poll()
+                if code is not None:
+                    self.reader.join(2)
+                    raise BrowserError(f"the app exited with code {code} before answering /healthz{self._tail()}")
+                try:
+                    with opener.open(self.origin + "/healthz", timeout=1) as resp:
+                        if resp.status == 200:
+                            return
+                except (OSError, http.client.HTTPException):
+                    pass
+                if time.monotonic() >= deadline:
+                    raise BrowserError(f"the app did not answer /healthz within {APP_START_S} s{self._tail()}")
+                time.sleep(0.1)
+
+        def _read(self) -> None:
+            with contextlib.suppress(OSError, ValueError):
+                for line in self.proc.stdout:
+                    self.log.append(line.rstrip("\n")[:2000])
+
+        def _tail(self, n: int = 5) -> str:
+            lines = list(self.log)[-n:]
+            return ": " + " | ".join(lines) if lines else ""
+
+        def _signal_group(self, sig: int) -> None:
+            # ProcessLookupError: the whole group is gone already. PermissionError: macOS's answer for a group
+            # whose last members are zombies.
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(self.proc.pid, sig)
+
+        def stop(self) -> None:
+            if self.proc is None:
+                return
+            self._signal_group(signal.SIGTERM)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                self.proc.wait(5)
+            # Always, not only when the app outlived SIGTERM: a grandchild that ignores it must not outlive the replay.
+            self._signal_group(signal.SIGKILL)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                self.proc.wait(5)
+            self.reader.join(2)
+            if not self.reader.is_alive():  # a grandchild may still hold the pipe; never block on it
+                self.proc.stdout.close()
+
+
+    def _playwright():
+        deps = os.environ.get("DEPS_DIR", "/deps")
+        if deps and os.path.isdir(deps) and deps not in sys.path:
+            sys.path.append(deps)  # appended: the pinned wheels never shadow the standard library
+        try:
+            import playwright.sync_api as api
+        except ImportError as e:
+            raise BrowserError(f"Playwright is not installed (DEPS_DIR={deps}): {e}") from e
+        return api
+
+
+    def _locator(scope, t: dict):
+        if "role" in t:
+            return scope.get_by_role(t["role"], name=t["name"], exact=True) if t.get("name") else scope.get_by_role(t["role"])
+        if "label" in t:
+            # An exact get_by_label compares the label's whole text, which for <label>User <select>…</select>
+            # </label> includes every option; a select's accessible name is just "User".
+            loc = scope.get_by_label(t["label"], exact=True)
+            for role in ("combobox", "listbox"):
+                loc = loc.or_(scope.get_by_role(role, name=t["label"], exact=True))
+            return loc
+        if "placeholder" in t:
+            return scope.get_by_placeholder(t["placeholder"], exact=True)
+        return scope.get_by_text(t["text"])
+
+
+    def _no(what: str) -> str:
+        return "no " + what.removeprefix("the ")  # 'no field labelled "User"', 'no button "Done"'
+
+
+    def _count_error(what: str, n: int) -> str:
+        return f"{_no(what)} (0 matches)" if n == 0 else f"{what} matched {n} elements"
+
+
+    def _mismatch(what: str, value: str, texts: list[str]) -> str:
+        first = texts[0].strip()[:120] if texts else ""
+        if len(texts) == 1:
+            return f'{what} does not contain "{value}" (it reads "{first}")'
+        return f'no match for {what} contains "{value}" ({len(texts)} matches; the first reads "{first}")'
+
+
+    class _Session:
+        """One page on the app: the origin fence, the console, the requests in flight, the steps."""
+
+        def __init__(self, api, browser, origin: str, deadline: float):
+            self.api = api
+            self.browser = browser
+            self.deadline = deadline  # time.monotonic() when the replay's REPLAY_S runs out
+            self.crashed = False
+            self.origin = origin
+            self.netloc = urlsplit(origin).netloc
+            self.console: list[str] = []
+            self.blank = None  # a page of its own on about:blank, where press steps' keys are tried
+            self.pending: set = set()
+            self.last = time.monotonic()
+            self.context = browser.new_context(viewport=VIEWPORT, service_workers="block")
+            self.context.route("**/*", self._route)
+            self.context.route_web_socket(lambda url: urlsplit(url).netloc != self.netloc, self._block_ws)
+            self.page = self.context.new_page()
+            self.page.set_default_timeout(STEP_S * 1000)
+            self.page.on("request", self._started)
+            self.page.on("requestfinished", self._ended)
+            self.page.on("requestfailed", self._ended)
+            self.page.on("console", lambda m: self._note(f"{m.type}: {m.text}"))
+            self.page.on("pageerror", lambda e: self._note(f"pageerror: {e}"))
+            self.page.on("crash", lambda _: setattr(self, "crashed", True))
+
+        # -- the fence, the console, network idle
+
+        def _note(self, line: str) -> None:
+            if len(self.console) < CONSOLE_LINES:
+                self.console.append(line[:500])
+
+        def _route(self, route) -> None:
+            url = route.request.url
+            u = urlsplit(url)
+            with contextlib.suppress(self.api.Error):  # the page may be closing
+                if u.scheme == "http" and u.netloc == self.netloc:
+                    route.continue_()
+                else:
+                    self._note(f"replay: blocked a request to another origin: {url[:200]}")
+                    route.abort("aborted")  # "aborted": a blocked navigation leaves the page where it was
+
+        def _block_ws(self, ws) -> None:
+            # Not connecting it is the block: the page talks to a mock that never reaches the network.
+            self._note(f"replay: blocked a WebSocket to another origin: {ws.url[:200]}")
+
+        def _started(self, request) -> None:
+            self.pending.add(request)
+            self.last = time.monotonic()
+
+        def _ended(self, request) -> None:
+            self.pending.discard(request)
+            self.last = time.monotonic()
+
+        def _settle(self, after: str) -> None:
+            """Wait until no request has been in flight for QUIET_S, at most IDLE_S, and never past the deadline."""
+            start = time.monotonic()
+            self.last = max(self.last, start)  # a click's fetch may start a moment after the click
+            while self.pending or time.monotonic() - self.last < QUIET_S:
+                if time.monotonic() >= self.deadline:
+                    self._note(f"replay: time ran out while the network was still busy after {after}")
+                    return
+                if time.monotonic() - start >= IDLE_S:
+                    self._note(f"replay: the network was still busy {IDLE_S} s after {after}")
+                    return
+                self.page.wait_for_timeout(50)
+
+        # -- finding targets
+
+        def _look(self, t: dict):
+            """(visible matches, count, failure, error); failure is set when `within` is not exactly one element."""
+            scope = self.page
+            w = t.get("within")
+            if w:
+                # css=: an engine prefix in the step (xpath=, text=) is then a parse error, `invalid`.
+                scope = self.page.locator("css=" + w["css"]).filter(has_text=w["text"])
+                n = scope.count()
+                if n != 1:
+                    return None, 0, "ambiguous" if n else "missing", _count_error(f'{w["css"]} "{w["text"]}"', n)
+            loc = _locator(scope, t).filter(visible=True)
+            return loc, loc.count(), None, None
+
+        def _one(self, t: dict, deadline: float):
+            """An action's target: wait (until deadline) for exactly one element; two or more fail at once."""
+            while True:
+                loc, n, failure, error = self._look(t)
+                if failure is None and n == 1:
+                    return loc
+                if failure is None:
+                    failure = "ambiguous" if n else "missing"
+                    error = _count_error(stepfmt.phrase(t), n)
+                if failure == "ambiguous" or time.monotonic() >= deadline:
+                    raise _StepFailed(error, failure)
+                self.page.wait_for_timeout(100)
+
+        def _check(self, do: str, t: dict, v: str | None, deadline: float) -> None:
+            """Checks pass on any match; expect_absent looks once (the page has settled)."""
+            what = stepfmt.phrase(t)
+            while True:
+                loc, n, failure, error = self._look(t)
+                if failure is None and do == "expect_absent":
+                    if n:
+                        raise _StepFailed(f"expected {_no(what)}, found {n}", "mismatch")
+                    return
+                if failure is None and n == 0:
+                    failure, error = "missing", _count_error(what, 0)
+                elif failure is None and do == "expect_visible":
+                    return
+                elif failure is None:
+                    texts = loc.evaluate_all(TEXTS_JS)
+                    if any(v in text for text in texts):
+                        return
+                    failure, error = "mismatch", _mismatch(what, v, texts)
+                if failure == "ambiguous" or do == "expect_absent" or time.monotonic() >= deadline:
+                    raise _StepFailed(error, failure)
+                self.page.wait_for_timeout(100)
+
+        def _check_key(self, key: str) -> None:
+            """`invalid` for a key Playwright cannot press, before the target is looked for: a missing target must
+            not hide a step that could never pass. The key is pressed on a blank page, never the app's."""
+            if self.blank is None:
+                self.blank = self.browser.new_page()  # its own context on about:blank: no app, no network
+            try:
+                self.blank.keyboard.press(key)
+            except self.api.Error as e:
+                if not _malformed(e):
+                    raise
+                raise _StepFailed(f'"{key}" is not a key Playwright can press ({_first_line(e)})', "invalid") from None
+
+        # -- the steps
+
+        def load(self) -> None:
+            try:
+                self.page.goto(self.origin + "/", wait_until="load", timeout=IDLE_S * 1000)
+            except self.api.Error as e:
+                raise BrowserError(f"the app's page / did not load: {_first_line(e)}") from e
+            self._settle("loading /")
+
+        def _do(self, step: dict) -> None:
+            do, t, v = step["do"], step.get("target"), step.get("value")
+            deadline = min(time.monotonic() + STEP_S, self.deadline)
+            if do == "goto":  # whatever the app serves (a 404 page too) is the page the next step sees
+                self.page.goto(self.origin + v, wait_until="load",
+                               timeout=max(100, round((deadline - time.monotonic()) * 1000)))
+                self._settle(f"opening {v}")
+            elif do in stepfmt.CHECKS:
+                self._check(do, t, v, deadline)
+            else:
+                if do == "press":
+                    self._check_key(v)
+                loc = self._one(t, deadline)
+                ms = max(100, round((deadline - time.monotonic()) * 1000))
+                if do == "click":
+                    loc.click(timeout=ms)
+                elif do == "fill":
+                    loc.fill(v, timeout=ms)
+                elif do == "select":
+                    loc.select_option(label=v, timeout=ms)
+                elif do == "press":
+                    loc.press(v, timeout=ms)
+                self._settle(stepfmt.describe(step))
+
+        def run(self, steps: list[dict], shots: str) -> tuple[list[StepResult], int | None]:
+            results: list[StepResult] = []
+            for n, step in enumerate(steps, 1):
+                error = failure = None
+                try:
+                    if time.monotonic() >= self.deadline:
+                        raise _StepFailed(_overtime(), "timeout")
+                    self._do(step)
+                except _StepFailed as e:
+                    error, failure = str(e), e.failure
+                except self.api.Error as e:  # a Playwright timeout or a bad selector, unless the browser went away
+                    if self.crashed or self.page.is_closed() or not self.browser.is_connected():
+                        raise BrowserError(f"the browser went away during step {n}: {_first_line(e)}") from e
+                    if _malformed(e):
+                        error, failure = _invalid_error(e, step), "invalid"
+                    else:
+                        error, failure = _step_error(e, step), "error"
+                if failure in ("missing", "mismatch", "error") and time.monotonic() >= self.deadline:
+                    # Its wait was cut short at the deadline, so its own reason says nothing about the page.
+                    # (ambiguous and invalid are known at once and stand.)
+                    error, failure = _overtime(), "timeout"
+                last = error is not None or n == len(steps)
+                shot = self._screenshot() if shots == "all" or (shots == "failure" and last) else None
+                results.append(StepResult(n, stepfmt.describe(step), error is None, error, shot, failure))
+                if error is not None:
+                    return results, n
+            return results, None
+
+        def _screenshot(self) -> bytes | None:
+            try:
+                return self.page.screenshot(type="png")
+            except self.api.Error as e:
+                self._note(f"replay: no screenshot: {_first_line(e)}")
+                return None
+
+        def snapshot(self) -> str:
+            try:
+                return self.page.locator("body").aria_snapshot()[:SNAPSHOT_CHARS]
+            except self.api.Error as e:
+                self._note(f"replay: no snapshot: {_first_line(e)}")
+                return ""
+
+
+    def replay(app_dir: str, steps: list[dict], *, commit: str | None = None, shots: str = "all") -> Replay:
+        """Start a fresh copy of the app, load /, run the steps; the first failing step ends the run.
+
+        ValueError: invalid steps or shots. BrowserError: the replay could not be set up.
+        `shots`: all (every step), failure (the failing step, or the last one), none.
+        """
+        if shots not in SHOTS:
+            raise ValueError(f"shots must be one of {', '.join(SHOTS)}")
+        problems = stepfmt.validate(steps)
+        if problems:
+            raise ValueError("; ".join(problems))
+        with _lock(), tempfile.TemporaryDirectory(prefix="bug-investigator-replay-") as tmp:
+            started = time.monotonic()
+            deadline = started + REPLAY_S  # Chromium's launch, app start and load count against it
+            api = _playwright()
+            pw = browser = app = None
+            try:
+                try:
+                    pw = api.sync_playwright().start()
+                    browser = pw.chromium.launch(headless=True, args=[RESOLVER_RULES])
+                except Exception as e:  # a missing browser, libraries, CPU features: all one setup failure
+                    detail = " | ".join(line.strip() for line in str(e).splitlines() if line.strip())
+                    raise BrowserError(f"Chromium did not launch: {detail[:1500]}") from e
+                app = _App(app_dir, tmp, commit)
+                app.start()
+                try:
+                    session = _Session(api, browser, app.origin, deadline)
+                    session.load()
+                    results, failed_at = session.run(steps, shots)
+                    snapshot, console = session.snapshot(), session.console
+                except api.Error as e:  # outside a step: the browser itself failed
+                    raise BrowserError(f"the browser failed: {_first_line(e)}") from e
+            finally:
+                for close in (browser and browser.close, pw and pw.stop, app and app.stop):
+                    if close:
+                        with contextlib.suppress(Exception):
+                            close()
+        return Replay(ok=failed_at is None, failed_at=failed_at, steps=results, snapshot=snapshot,
+                      app_log=list(app.log), console=console, commit=commit,
+                      seconds=round(time.monotonic() - started, 2))
+
+
+    # --------------------------------------------------------------------------------------- CLI
+
+
+    def _write(out_dir: str, doc: dict, shots: list[StepResult]) -> None:
+        os.makedirs(out_dir, exist_ok=True)
+        for name in os.listdir(out_dir):  # no stale screenshots from an earlier run
+            if name.startswith("step-") and name.endswith(".png"):
+                os.remove(os.path.join(out_dir, name))
+        with open(os.path.join(out_dir, "result.json"), "w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        for s in shots:
+            if s.screenshot:
+                with open(os.path.join(out_dir, f"step-{s.n}.png"), "wb") as f:
+                    f.write(s.screenshot)
+
+
+    def _report(name: str, r: Replay) -> str:
+        if r.ok:
+            return f"PASS {name} ({len(r.steps)} steps, {r.seconds} s)"
+        bad = r.steps[-1]
+        return f"FAIL {name}: step {bad.n} ({bad.text}): {bad.error}"
+
+
+    def _cmd_replay(args) -> int:
+        with open(args.steps, encoding="utf-8") as f:
+            doc = json.load(f)
+        steps = doc.get("steps") if isinstance(doc, dict) else doc
+        r = replay(args.app_dir, steps, commit=args.commit, shots="all")
+        _write(args.out, r.to_json(), r.steps)
+        print(_report(os.path.basename(args.steps), r))
+        return 0 if r.ok else 1
+
+
+    def _cmd_check(args) -> int:
+        changed = {os.path.basename(p.strip()) for p in (args.changed or "").split(",") if p.strip()}
+        try:
+            files = sorted(n for n in os.listdir(args.repros) if n.endswith(".json"))
+        except OSError as e:
+            print(f"browser.py: cannot list --repros: {e}", file=sys.stderr)
+            return 2
+        entries = []
+        for name in files:
+            entry = {"file": name, "title": None, "issue": None, "ok": False, "failed_at": None, "changed": name in changed}
+            out_dir = os.path.join(args.out, name[: -len(".json")])
+            try:
+                doc = stepfmt.load_repro(os.path.join(args.repros, name))
+                entry.update(title=doc["title"], issue=doc["issue"])
+                r = replay(args.app_dir, doc["steps"], shots="all")
+            except (ValueError, OSError, BrowserError) as e:  # an invalid file, or a replay that could not start
+                entry["error"] = str(e)
+                empty = Replay(ok=False, failed_at=None, steps=[], snapshot="", app_log=[], console=[], commit=None,
+                               seconds=0.0)
+                _write(out_dir, {"title": entry["title"], "issue": entry["issue"], **empty.to_json(), "error": str(e)}, [])
+                print(f"ERROR {name}: {e}")
+            else:
+                entry.update(ok=r.ok, failed_at=r.failed_at)
+                _write(out_dir, {"title": doc["title"], "issue": doc["issue"], **r.to_json()}, r.steps)
+                print(_report(name, r))
+            entries.append(entry)
+        os.makedirs(args.out, exist_ok=True)
+        with open(os.path.join(args.out, "summary.json"), "w", encoding="utf-8") as f:
+            json.dump({"repros": entries}, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        return 0 if all(e["ok"] for e in entries) else 1
+
+
+    def main(argv: list[str] | None = None) -> int:
+        p = argparse.ArgumentParser(prog="browser.py", description="Replay UI steps against a throwaway copy of the app.")
+        sub = p.add_subparsers(dest="cmd", required=True)
+        rp = sub.add_parser("replay", help="replay one list of steps")
+        rp.add_argument("--app-dir", required=True)
+        rp.add_argument("--steps", required=True, help="a JSON list of steps, or a repro file")
+        rp.add_argument("--commit")
+        rp.add_argument("--out", required=True)
+        ck = sub.add_parser("check", help="replay every repro file; each must pass")
+        ck.add_argument("--app-dir", required=True)
+        ck.add_argument("--repros", required=True)
+        ck.add_argument("--out", required=True)
+        ck.add_argument("--changed", help="comma-separated repro paths or file names changed by this PR")
+        args = p.parse_args(argv)
+        if args.cmd == "check":
+            return _cmd_check(args)
+        try:
+            return _cmd_replay(args)
+        except (ValueError, OSError, BrowserError) as e:
+            print(f"browser.py: {e}", file=sys.stderr)
+            return 2
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
+  browser_server.py: |
+    """Taskboard's browser as a stdio MCP server: one tool, replay_ui_steps.
+
+    Each call replays a list of UI steps (steps.py's format) with browser.replay: a fresh copy of the
+    app in APP_DIR (the live code; its commit is APP_DIR/.source-commit) on a fresh database with the
+    demo data, headless Chromium that cannot leave it, and everything torn down afterwards. The result
+    is the replay as JSON (content item 0), then a `step <n>` text item and an image item per screenshot.
+    A step that fails is a normal result (`ok: false`); invalid input and a replay that cannot be set up
+    (`BrowserError`: Chromium does not launch, the app does not start) are results with isError: true.
+
+    The copy runs with a fixed environment, not the live Deployment's (ruling R15): PATH, HOME (a temporary
+    directory), PORT (a free port), DB_PATH (a fresh database), PYTHONDONTWRITEBYTECODE=1 and TASKBOARD_COMMIT
+    (the commit above). PATH and HOME aside, those are the four settings the live Taskboard Deployment
+    (arigsela/kubernetes, base-apps/taskboard/deployment.yaml) gives the app today. A setting only the live
+    Deployment had (a feature flag, say) would not reach the copy, which would then behave differently from
+    live until browser.py's _App mirrors it.
+
+    A tool server that fails at `initialize` fails every agent bound to it, so nothing here imports
+    Playwright or starts Chromium before a tool call: browser.py imports Playwright inside replay(),
+    from DEPS_DIR (default /deps).
+
+    Transport: mcp_server.StdioServer's loop (agentgateway serves it as Streamable HTTP). stdin is read
+    on a background thread and tool calls run on the main thread, one at a time (replays take a
+    machine-wide lock anyway). SIGTERM raises SystemExit there, so a running replay unwinds through its
+    finally blocks, which close Chromium and stop the app's process group, before the process exits.
+
+        python3 -I /core/src/bug_investigator/browser_server.py      # env APP_DIR, DEPS_DIR
+    """
+
+    from __future__ import annotations
+
+    import json
+    import os
+    import queue
+    import signal
+    import sys
+    import threading
+
+    if __package__ in (None, ""):  # run as a script (python3 -I .../browser_server.py): -I drops PYTHONPATH
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    from bug_investigator import browser  # noqa: E402  (stdlib only at import; Playwright inside replay())
+    from bug_investigator import steps as stepfmt  # noqa: E402
+    from bug_investigator.mcp_server import StdioServer, ToolError  # noqa: E402
+
+    SERVER_NAME = "taskboard-browser"
+    SERVER_VERSION = "0.1.0"
+    TOOL_NAME = "replay_ui_steps"
+    DEFAULT_APP_DIR = "/taskboard"
+    SCREENSHOTS = ("none", "failure", "all")
+    DEFAULT_SCREENSHOTS = "failure"
+    APP_LOG_LINES = 20
+    ARGUMENTS = ("steps", "fails_at", "screenshots")
+
+    DESCRIPTION = (
+        "Replay UI steps in headless Chromium on a throwaway copy of Taskboard. Each call starts the code that "
+        "is live (the result reports its commit) on a fresh database with the demo data, loads /, runs the steps "
+        "in order and stops at the first step that fails; nothing persists between calls, and the browser cannot "
+        "leave the app. An action (click, fill, select, press) needs a target that matches exactly one element: "
+        "add `within` to pick one card. A check (expect_visible, expect_absent, expect_text) passes when any match "
+        "satisfies it. A step is {do, target, value, note}: `do` is one of click, fill, select, press, goto, "
+        "expect_visible, expect_absent, expect_text; `target` has exactly one of role (an ARIA role Playwright "
+        "knows, such as button, link, textbox, heading, status; with an optional name), label, placeholder or "
+        "text, plus an optional within {css, text} that must match one element (css is one CSS selector). "
+        "`name`, `label` and `placeholder` match the whole text exactly; `text` and `within.text` match a "
+        "case-insensitive substring. `value` is the text to fill, the option label to select, the key to press "
+        "(a Playwright key name such as Enter, Escape, Control+a), the path to goto (it starts with /; goto has "
+        "no target) or the text expect_text looks for (a case-sensitive substring of the target's text or field "
+        f"value); at most {stepfmt.MAX_STEPS} steps. A failed step says why in `failure`: "
+        "`ambiguous` (an action target or within matched more than one element), `missing` (nothing matched), "
+        "`mismatch` (no match had the text; for expect_absent, something matched), `invalid` (the step cannot run "
+        "on any page: a css that does not parse, a key Playwright does not know), `timeout` (the replay took "
+        f"longer than {browser.REPLAY_S} s and stopped at that step), `error` (anything else, such as a disabled "
+        "button). Set `fails_at` to the step you expect to fail and the result says whether it matches "
+        "(`matches_claim`); an `ambiguous`, `invalid` or `timeout` failure never matches a claim, since it shows a "
+        "badly written step or a slow replay, not a bug; "
+        "omit `fails_at` when you expect every step to pass, and read `ok`. `screenshots`: failure (the default: "
+        "the failing step, or the last one), all, or none. The result holds each step's outcome, the page's "
+        "accessibility snapshot, the app's last log lines and the browser console, then the screenshots."
+    )
+
+    TOOL = {
+        "name": TOOL_NAME,
+        "description": DESCRIPTION,
+        "annotations": {"readOnlyHint": True, "openWorldHint": False},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                # The step grammar is steps.validate's job; the schema only says "a list of objects". One plain
+                # JSON type per property (no type arrays, no anyOf): a schema kagent's Go ADK cannot load fails
+                # the whole agent (ruling R10). So fails_at is an optional integer; null is accepted as absent.
+                "steps": {"type": "array", "items": {"type": "object"}, "minItems": 1, "maxItems": stepfmt.MAX_STEPS,
+                          "description": "The steps, in order: {do, target, value, note} (see the tool description)."},
+                "fails_at": {"type": "integer", "minimum": 1,
+                             "description": "The 1-based step you expect to fail; the result then says whether it "
+                                            "matches. Omit it when you expect every step to pass (read `ok`) or are "
+                                            "only exploring."},
+                "screenshots": {"type": "string", "enum": list(SCREENSHOTS), "default": DEFAULT_SCREENSHOTS,
+                                "description": "Which steps get a screenshot: none, failure (the failing step, or "
+                                               "the last one) or all."},
+            },
+            "required": ["steps"],
+            "additionalProperties": False,
+        },
+    }
+
+    INSTRUCTIONS = (f"One tool, {TOOL_NAME}: it replays UI steps in headless Chromium on a throwaway copy of the live "
+                    "Taskboard (a fresh database with the demo data). Nothing persists between calls.")
+
+    # A badly written step (rulings R8, R13) or a replay that ran out of time (R14b): never a reproduction.
+    NOT_EVIDENCE = ("ambiguous", "invalid", "timeout")
+
+
+    def matches_claim(r: browser.Replay, fails_at: int) -> bool:
+        """Did the replay fail at the step the caller named? An ambiguous, invalid or timed-out step is never
+        evidence."""
+        if r.failed_at != fails_at:
+            return False
+        failed = next((s for s in r.steps if s.n == fails_at), None)
+        return failed is not None and failed.failure not in NOT_EVIDENCE
+
+
+    def content(r: browser.Replay, fails_at: int | None = None) -> list[dict]:
+        """The tool result: the replay as JSON (with matches_claim only for a fails_at), then `step <n>` and the
+        PNG for each screenshot, in step order."""
+        d = r.to_json(include_png=True)
+        pngs = [(s["n"], s.pop("png")) for s in d["steps"]]  # each step entry: {n, text, ok, error, failure}
+        doc = {"ok": d["ok"], "failed_at": d["failed_at"]}
+        if fails_at is not None:
+            doc["matches_claim"] = matches_claim(r, fails_at)
+        doc.update(commit=d["commit"], steps=d["steps"], snapshot=d["snapshot"], app_log=d["app_log"][-APP_LOG_LINES:],
+                   console=d["console"])
+        items = [{"type": "text", "text": json.dumps(doc, ensure_ascii=False)}]
+        for n, png in pngs:
+            if png:
+                items += [{"type": "text", "text": f"step {n}"}, {"type": "image", "data": png, "mimeType": "image/png"}]
+        return items
+
+
+    class BrowserServer(StdioServer):
+        """replay_ui_steps over StdioServer's loop. `replay` is browser.replay (tests pass a fake)."""
+
+        def __init__(self, *, app_dir: str | None = None, replay=None, out=None, pool=None):
+            self.app_dir = app_dir or os.environ.get("APP_DIR") or DEFAULT_APP_DIR
+            self.replay = replay or browser.replay
+            super().__init__(SERVER_NAME, SERVER_VERSION, [TOOL], self._call, instructions=INSTRUCTIONS, out=out,
+                             pool=pool)
+
+        def commit(self) -> str | None:
+            """The live commit: APP_DIR/.source-commit (written by gen-taskboard-configmap.py); None if absent."""
+            try:
+                with open(os.path.join(self.app_dir, ".source-commit"), encoding="utf-8") as f:
+                    return f.read().strip() or None
+            except OSError:
+                return None
+
+        def ready(self) -> str:
+            return (f"ready (app {self.app_dir}, commit {self.commit() or 'unknown'}, "
+                    f"deps {os.environ.get('DEPS_DIR', '/deps')})")
+
+        def _call(self, name, args) -> list[dict]:
+            if name != TOOL_NAME:
+                raise ToolError(f"unknown tool {name!r}; available: {TOOL_NAME}")
+            if args is None:
+                args = {}
+            if not isinstance(args, dict):
+                raise ToolError("arguments must be an object")
+            problems = []
+            unknown = sorted(set(args) - set(ARGUMENTS))
+            if unknown:
+                problems.append(f"unknown arguments: {', '.join(unknown)}")
+            steps, fails_at = args.get("steps"), args.get("fails_at")
+            problems += stepfmt.validate(steps, fails_at)
+            shots = args.get("screenshots")
+            if shots is None:
+                shots = DEFAULT_SCREENSHOTS
+            elif shots not in SCREENSHOTS:
+                problems.append(f"screenshots must be one of {', '.join(SCREENSHOTS)}")
+            if problems:
+                raise ToolError("; ".join(problems))
+            try:
+                r = self.replay(self.app_dir, steps, commit=self.commit(), shots=shots)
+            except browser.BrowserError as e:
+                raise ToolError(f"browser unavailable: {e}") from None
+            return content(r, fails_at)  # null and absent alike: no claim
+
+
+    class MainThreadCalls:
+        """StdioServer's pool, but every call runs on the thread that calls run(): the main thread.
+
+        Python runs signal handlers on the main thread only, so this is what lets SIGTERM's SystemExit
+        unwind a running replay. Calls run one at a time, in order; shutdown() lets the calls already
+        submitted run, then run() returns.
+        """
+
+        def __init__(self):
+            self._calls: queue.SimpleQueue = queue.SimpleQueue()
+
+        def submit(self, fn) -> None:
+            self._calls.put(fn)
+
+        def shutdown(self, wait: bool = True) -> None:
+            self._calls.put(None)
+
+        def run(self, log) -> None:
+            while True:
+                fn = self._calls.get()
+                if fn is None:
+                    return
+                try:
+                    fn()
+                except Exception as e:  # e.g. stdout gone: log it, keep serving (SystemExit passes through)
+                    log(f"a call failed outside the tool: {e!r}")
+
+
+    def _terminate(signum, frame) -> None:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)  # a second SIGTERM must not cut the teardown short
+        raise SystemExit(128 + signum)
+
+
+    def main(argv: list[str] | None = None, *, replay=None) -> int:
+        calls = MainThreadCalls()
+        server = BrowserServer(replay=replay, pool=calls)
+        signal.signal(signal.SIGTERM, _terminate)
+
+        def read() -> None:
+            try:
+                server.serve()  # at EOF it shuts the pool down: run() returns after the calls already read
+            finally:
+                calls.shutdown()  # also when reading fails, so the main thread never waits forever
+
+        threading.Thread(target=read, name="stdin", daemon=True).start()
+        calls.run(server.log)
+        return 0
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
+  evidence.py: |
+    """Screenshots on GitHub: commit PNGs to the evidence branch, and the ui-check PR comment.
+
+    `Uploader` commits files to one branch, `bug-investigator-evidence`, through the Git Data API: it
+    reads the branch head, posts a blob per file, a tree (on the head's tree), a commit and then moves
+    the ref (or creates the branch, as an orphan, when it is missing). One retry follows a 422 on the
+    ref (another writer moved or created it first). It takes no branch argument, so it cannot write
+    anywhere else. It refuses anything but PNGs under a plain relative path, at most 2 MiB each and 30
+    per commit. `link` gives a file's URL at that commit. Errors (`EvidenceError`) never carry the token
+    or a request body.
+
+        python3 -I evidence.py post-pr --repo R --pr N --results DIR [--run-url URL] [--api URL]
+
+    `post-pr` (token from GITHUB_TOKEN) reads browser.py check's DIR/summary.json. For each repro the
+    PR changed, it uploads DIR/<stem>/step-<n>.png as pr-<N>/<run>/<stem>/step-<n>.png (run =
+    GITHUB_RUN_ID, else a UTC stamp), all in one commit. It then edits, or creates, the one PR comment
+    whose first line is MARKER. Everything in DIR came from the PR's code, so the comment shows titles,
+    step texts and errors only inside capped code spans, and never the snapshot, app log or console.
+    Exit 0 when the comment is posted (or no repro changed: then nothing is posted), 1 when the
+    screenshots could not be uploaded (the comment is posted without them) or the comment could not be
+    posted, 2 for bad arguments, a missing token or an unreadable summary.json.
+    """
+
+    from __future__ import annotations
+
+    import argparse
+    import base64
+    import http.client
+    import json
+    import os
+    import re
+    import stat
+    import sys
+    import unicodedata
+    import urllib.error
+    import urllib.request
+    from dataclasses import dataclass
+    from datetime import datetime, timezone
+
+    if __package__ in (None, ""):  # run as a script (python3 -I .../evidence.py): -I drops PYTHONPATH
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    from bug_investigator.util import scrub_text  # noqa: E402
+
+    BRANCH = "bug-investigator-evidence"
+    MARKER = "<!-- bug-investigator ui-check -->"
+    API = "https://api.github.com"
+    WEB = "https://github.com"
+    PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+    MAX_BYTES = 2 * 1024 * 1024  # per file
+    MAX_FILES = 30  # per commit
+    TIMEOUT_S = 30
+    PATH_RE = re.compile(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\.png")
+    REPO_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+    API_RE = re.compile(r"https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?")
+    SHA_RE = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+    # post-pr
+    MAX_REPROS = 10  # shown in one comment
+    BODY_BUDGET = 60000  # characters; GitHub refuses a comment body over 65536
+    MAX_STEPS = 15
+    TITLE_CHARS = 120
+    TEXT_CHARS = 200
+    ERROR_CHARS = 300
+    MAX_JSON_BYTES = 1024 * 1024
+    COMMENT_PAGES = 50
+    STEM_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}")
+    RUN_ID_RE = re.compile(r"[0-9]{1,20}")
+    RUN_URL_RE = re.compile(r"https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/-]*)?")
+
+
+    class EvidenceError(RuntimeError):
+        """A refused upload or a failed GitHub request; `status` is the HTTP status when there was one."""
+
+        def __init__(self, message: str, status: int | None = None):
+            super().__init__(message)
+            self.status = status
+
+
+    class _GitHub:
+        """JSON calls to the GitHub REST API with a bearer token that is never logged or redirected."""
+
+        def __init__(self, token: str, api: str, opener=None):
+            if not isinstance(token, str) or not token.strip():
+                raise EvidenceError("no GitHub token")
+            if not isinstance(api, str) or not API_RE.fullmatch(api.rstrip("/") or "-"):
+                raise EvidenceError("the GitHub API URL must be https://host[/path]")
+            self._token = token
+            self.base = api.rstrip("/")
+            self._open = opener or urllib.request.urlopen
+
+        def _clean(self, message: str) -> str:
+            return scrub_text(message, [self._token])[:500]
+
+        def call(self, method: str, path: str, body: dict | None = None):
+            data = json.dumps(body).encode() if body is not None else None
+            req = urllib.request.Request(self.base + path, data=data, method=method)
+            req.add_header("Accept", "application/vnd.github+json")
+            req.add_header("X-GitHub-Api-Version", "2022-11-28")
+            req.add_header("User-Agent", "bug-investigator")
+            if data is not None:
+                req.add_header("Content-Type", "application/json")
+            req.add_unredirected_header("Authorization", f"Bearer {self._token}")  # a redirect drops it
+            try:
+                with self._open(req, timeout=TIMEOUT_S) as r:
+                    raw = r.read()
+            except urllib.error.HTTPError as e:
+                try:
+                    detail = e.read().decode("utf-8", "replace")
+                except Exception:  # noqa: BLE001 - the status alone will do
+                    detail = ""
+                try:
+                    doc = json.loads(detail)
+                except ValueError:
+                    doc = None
+                if isinstance(doc, dict) and isinstance(doc.get("message"), str):
+                    detail = doc["message"]  # GitHub's reason; the rest of the body is noise
+                detail = " ".join(detail.split())[:200]
+                raise EvidenceError(self._clean(f"GitHub {method} {path}: HTTP {e.code}: {detail}"), e.code) from None
+            except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as e:
+                raise EvidenceError(self._clean(f"GitHub {method} {path}: {type(e).__name__}: {e}")) from None
+            if not raw.strip():
+                return None
+            try:
+                return json.loads(raw)
+            except ValueError:
+                raise EvidenceError(f"GitHub {method} {path}: the response is not JSON") from None
+
+
+    def _check_repo(repo) -> None:
+        if not isinstance(repo, str) or not REPO_RE.fullmatch(repo) or any(p in (".", "..") for p in repo.split("/")):
+            raise EvidenceError(f"not an owner/name repository: {str(repo)[:100]!r}")
+
+
+    def _check_path(path) -> None:
+        if (not isinstance(path, str) or not PATH_RE.fullmatch(path) or ".." in path
+                or any(seg == "." for seg in path.split("/"))):
+            raise EvidenceError(f"refused path {str(path)[:200]!r}: a relative a/b.png path of [A-Za-z0-9._-]")
+
+
+    def _check_files(files) -> None:
+        if not isinstance(files, dict) or not files:
+            raise EvidenceError("nothing to upload")
+        if len(files) > MAX_FILES:
+            raise EvidenceError(f"refused {len(files)} files: at most {MAX_FILES} per commit")
+        for path, data in files.items():
+            _check_path(path)
+            if not isinstance(data, (bytes, bytearray)) or bytes(data[:8]) != PNG_SIGNATURE:
+                raise EvidenceError(f"refused {path}: not a PNG")
+            if len(data) > MAX_BYTES:
+                raise EvidenceError(f"refused {path}: {len(data)} bytes, at most {MAX_BYTES}")
+
+
+    def _sha(doc, what: str) -> str:
+        sha = doc.get("sha") if isinstance(doc, dict) else None
+        if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
+            raise EvidenceError(f"GitHub returned no {what} SHA")
+        return sha
+
+
+    class Uploader:
+        """Commits files to BRANCH, the only ref it reads or writes."""
+
+        def __init__(self, repo: str, token: str, *, api: str = API, opener=None):
+            _check_repo(repo)
+            self.repo = repo
+            self._gh = _GitHub(token, api, opener)
+
+        def _head(self) -> tuple[str | None, str | None]:
+            """(head commit, its tree) of BRANCH; (None, None) when the branch does not exist."""
+            try:
+                ref = self._gh.call("GET", f"/repos/{self.repo}/git/ref/heads/{BRANCH}")
+            except EvidenceError as e:
+                if e.status == 404:
+                    return None, None
+                raise
+            if not isinstance(ref, dict) or ref.get("ref") != f"refs/heads/{BRANCH}":
+                raise EvidenceError(f"GitHub returned another ref than {BRANCH}")
+            head = _sha(ref.get("object"), "head commit")
+            commit = self._gh.call("GET", f"/repos/{self.repo}/git/commits/{head}")
+            return head, _sha(commit.get("tree") if isinstance(commit, dict) else None, "tree")
+
+        def _post(self, kind: str, body: dict) -> str:
+            return _sha(self._gh.call("POST", f"/repos/{self.repo}/git/{kind}", body), kind[:-1])
+
+        def upload(self, files: dict[str, bytes], message: str) -> str:
+            """Commit `files` ({path: PNG bytes}) on BRANCH in one commit; returns the commit SHA."""
+            _check_files(files)
+            if not isinstance(message, str) or not message.strip():
+                raise EvidenceError("a commit message is required")
+            head, base = self._head()
+            blobs = [{"path": p, "mode": "100644", "type": "blob",
+                      "sha": self._post("blobs", {"content": base64.b64encode(bytes(files[p])).decode("ascii"),
+                                                  "encoding": "base64"})}
+                     for p in sorted(files)]
+            for attempt in (1, 2):
+                if attempt == 2:  # another writer moved (or created) the branch: build on its head, once
+                    head, base = self._head()
+                tree = self._post("trees", {"tree": blobs, **({"base_tree": base} if base else {})})
+                commit = self._post("commits", {"message": message, "tree": tree, "parents": [head] if head else []})
+                try:
+                    if head:
+                        self._gh.call("PATCH", f"/repos/{self.repo}/git/refs/heads/{BRANCH}", {"sha": commit, "force": False})
+                    else:
+                        self._gh.call("POST", f"/repos/{self.repo}/git/refs", {"ref": f"refs/heads/{BRANCH}", "sha": commit})
+                except EvidenceError as e:
+                    if e.status != 422:
+                        raise
+                    if attempt == 2:
+                        raise EvidenceError(f"{e} (after one retry)", e.status) from None
+                    continue
+                return commit
+            raise AssertionError("unreachable")
+
+        def link(self, sha: str, path: str) -> str:
+            """The file's URL at that commit (it renders inline in an issue or PR comment)."""
+            _check_path(path)
+            if not isinstance(sha, str) or not SHA_RE.fullmatch(sha):
+                raise EvidenceError(f"not a commit SHA: {str(sha)[:80]!r}")
+            return f"{WEB}/{self.repo}/blob/{sha}/{path}?raw=true"
+
+
+    # --------------------------------------------------------------------------------- post-pr
+
+
+    @dataclass
+    class _Step:
+        n: int
+        text: str
+        ok: bool
+        error: str | None
+
+
+    @dataclass
+    class _Repro:
+        stem: str
+        title: str
+        issue: int | None
+        ok: bool
+        failed_at: int | None
+        error: str | None
+        steps: list[_Step]
+        shots: dict[int, str]  # step number -> local PNG path
+
+        @property
+        def last(self) -> int | None:
+            return self.steps[-1].n if self.steps else None
+
+
+    def _int(v) -> bool:
+        return isinstance(v, int) and not isinstance(v, bool)
+
+
+    def _is_file(path: str) -> bool:
+        """A regular file, not a symlink (the results came from the PR's code)."""
+        try:
+            return stat.S_ISREG(os.lstat(path).st_mode)
+        except OSError:
+            return False
+
+
+    def _read(path: str, limit: int) -> bytes | None:
+        """A regular file's bytes, at most limit + 1 of them; None when it is missing or not a regular file."""
+        if not _is_file(path):
+            return None
+        try:
+            with open(path, "rb") as f:
+                return f.read(limit + 1)
+        except OSError:
+            return None
+
+
+    def _load_json(path: str):
+        raw = _read(path, MAX_JSON_BYTES)
+        if raw is None or len(raw) > MAX_JSON_BYTES:
+            return None
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except ValueError:
+            return None
+
+
+    def _repro(results: str, stem: str, entry: dict) -> _Repro:
+        folder = os.path.join(results, stem)
+        doc = _load_json(os.path.join(folder, "result.json"))
+        doc = doc if isinstance(doc, dict) else {}
+        steps: dict[int, _Step] = {}
+        for s in doc.get("steps") if isinstance(doc.get("steps"), list) else []:
+            if len(steps) >= MAX_STEPS:
+                break
+            if isinstance(s, dict) and _int(s.get("n")) and 1 <= s["n"] <= MAX_STEPS and s["n"] not in steps:
+                err = s.get("error")
+                steps[s["n"]] = _Step(s["n"], str(s.get("text") or ""), s.get("ok") is True,
+                                      str(err) if err not in (None, "") else None)
+        shots = {n: p for n in steps if _is_file(p := os.path.join(folder, f"step-{n}.png"))}
+        title = entry.get("title")
+        error = entry.get("error")
+        if not doc and not error:
+            error = "the replay left no result"
+        return _Repro(stem=stem, title=title if isinstance(title, str) and title.strip() else stem,
+                      issue=entry["issue"] if _int(entry.get("issue")) and entry["issue"] > 0 else None,
+                      ok=entry.get("ok") is True,
+                      failed_at=entry["failed_at"] if _int(entry.get("failed_at")) else None,
+                      error=str(error) if error else None, steps=[steps[n] for n in sorted(steps)], shots=shots)
+
+
+    def changed_repros(results: str) -> list[_Repro] | None:
+        """The repros the PR changed, from DIR/summary.json; None when it cannot be read."""
+        summary = _load_json(os.path.join(results, "summary.json"))
+        if not isinstance(summary, dict) or not isinstance(summary.get("repros"), list):
+            return None
+        out: list[_Repro] = []
+        seen = set()
+        for e in summary["repros"]:
+            if not isinstance(e, dict) or e.get("changed") is not True:
+                continue
+            name = e.get("file")
+            stem = name[: -len(".json")] if isinstance(name, str) and name.endswith(".json") else ""
+            if not STEM_RE.fullmatch(stem) or ".." in stem or stem in seen:
+                print(f"skipped a repro entry with an unusable file name: {str(name)[:80]!r}", file=sys.stderr)
+                continue
+            seen.add(stem)
+            out.append(_repro(results, stem, e))
+        return out
+
+
+    def _code(text, cap: int) -> str:
+        """Untrusted text as one inline code span: one line, no backticks, at most `cap` characters."""
+        s = "".join(" " if unicodedata.category(c) in ("Cc", "Cf", "Zl", "Zp") else c for c in str(text))
+        s = " ".join(s.replace("`", "\u02cb").split())  # U+02CB, not a backtick: one would end the span
+        if len(s) > cap:
+            s = s[: cap - 1] + "…"
+        return f"`{s or '-'}`"
+
+
+    def _section(r: _Repro, links: dict) -> list[str]:
+        if r.ok:
+            verdict = "✅ every step passed"
+        elif r.failed_at is not None:
+            verdict = f"❌ failed at step {r.failed_at}"
+        else:
+            verdict = f"❌ could not be replayed: {_code(r.error or 'no result', ERROR_CHARS)}"
+        issue = f" (#{r.issue})" if r.issue else ""
+        out = [f"#### {_code(r.title, TITLE_CHARS)}{issue}", "", verdict, ""]
+        for s in r.steps:
+            line = f"{s.n}. {'✓' if s.ok else '✗'} {_code(s.text, TEXT_CHARS)}"
+            if not s.ok and s.error:
+                line += f" — {_code(s.error, ERROR_CHARS)}"
+            out.append(line)
+        if r.steps:
+            out.append("")
+        if (r.stem, r.last) in links:
+            out += [f"![step {r.last}]({links[(r.stem, r.last)]})", ""]
+        others = [n for n in sorted(r.shots) if n != r.last and (r.stem, n) in links]
+        if others:
+            out += ["<details><summary>All steps</summary>", ""]
+            for n in others:
+                out += [f"![step {n}]({links[(r.stem, n)]})", ""]
+            out += ["</details>", ""]
+        return out
+
+
+    def render_comment(repros: list[_Repro], links: dict, *, upload_error: str | None = None, left_out: int = 0,
+                       hidden: int = 0, run_url: str | None = None) -> str:
+        """The PR comment: MARKER, then per repro its verdict, steps and screenshots (`links`: (stem, n) -> URL)."""
+        lines = [MARKER, "### UI check on this branch", ""]
+        if upload_error:
+            lines += [f"⚠️ screenshots could not be uploaded: {_code(upload_error, ERROR_CHARS)}", ""]
+        size = sum(len(x) + 1 for x in lines) + len(run_url or "") + 300  # the footer's lines
+        for i, r in enumerate(repros):
+            section = _section(r, links)
+            size += sum(len(x) + 1 for x in section)
+            if size > BODY_BUDGET:  # results can mark every step failed, with long errors
+                hidden += len(repros) - i
+                break
+            lines += section
+        if hidden:
+            lines += [f"{hidden} more changed repros are not shown.", ""]
+        if left_out:
+            lines += [f"{left_out} more screenshots were not uploaded (at most {MAX_FILES} per run).", ""]
+        if run_url:
+            lines += [f"[Workflow run]({run_url})", ""]
+        return "\n".join(lines).rstrip("\n") + "\n"
+
+
+    def _plan(pr: int, run: str, repros: list[_Repro]) -> tuple[list[tuple[_Repro, int, str]], int]:
+        """(repro, step, upload path) for at most MAX_FILES shots, each repro's last step first; and how many are left out."""
+        first = [(r, r.last) for r in repros if r.last in r.shots]
+        rest = [(r, n) for r in repros for n in sorted(r.shots) if n != r.last]
+        chosen = (first + rest)[:MAX_FILES]
+        return [(r, n, f"pr-{pr}/{run}/{r.stem}/step-{n}.png") for r, n in chosen], len(first) + len(rest) - len(chosen)
+
+
+    def _own(c) -> bool:
+        """A comment this workflow posted: a bot's, MARKER on its first line."""
+        if not isinstance(c, dict) or not _int(c.get("id")):
+            return False
+        user = c.get("user") if isinstance(c.get("user"), dict) else {}
+        body = c.get("body") if isinstance(c.get("body"), str) else ""
+        bot = user.get("type") == "Bot" or str(user.get("login", "")).endswith("[bot]")
+        return bot and MARKER in body.split("\n", 1)[0]
+
+
+    def upsert_comment(gh: _GitHub, repo: str, pr: int, body: str) -> str:
+        for page in range(1, COMMENT_PAGES + 1):
+            batch = gh.call("GET", f"/repos/{repo}/issues/{pr}/comments?per_page=100&page={page}")
+            if not isinstance(batch, list):
+                raise EvidenceError("GitHub returned no comment list")
+            for c in batch:
+                if _own(c):
+                    gh.call("PATCH", f"/repos/{repo}/issues/comments/{c['id']}", {"body": body})
+                    return f"edited comment {c['id']}"
+            if len(batch) < 100:
+                break
+        created = gh.call("POST", f"/repos/{repo}/issues/{pr}/comments", {"body": body})
+        return f"created comment {created.get('id') if isinstance(created, dict) else '?'}"
+
+
+    def post_pr(repo: str, pr: int, results: str, *, token: str, run: str, api: str = API, opener=None,
+                run_url: str | None = None) -> int:
+        def fail(message: str, code: int) -> int:
+            print(f"evidence.py: {scrub_text(message, [token])}", file=sys.stderr)
+            return code
+
+        if pr < 1:
+            return fail("--pr must be a positive number", 2)
+        try:
+            uploader = Uploader(repo, token, api=api, opener=opener)
+            gh = _GitHub(token, api, opener)
+        except EvidenceError as e:
+            return fail(str(e), 2)
+        repros = changed_repros(results)
+        if repros is None:
+            return fail(f"cannot read {os.path.join(results, 'summary.json')}", 2)
+        if not repros:
+            print("no changed repro: nothing to post")
+            return 0
+        hidden = max(0, len(repros) - MAX_REPROS)
+        repros = repros[:MAX_REPROS]
+        if run_url and not RUN_URL_RE.fullmatch(run_url):
+            print("evidence.py: --run-url is not a plain https URL; left out", file=sys.stderr)
+            run_url = None
+        plan, left_out = _plan(pr, run, repros)
+        files = {}
+        for r, n, path in plan:
+            data = _read(r.shots[n], MAX_BYTES)
+            if data is not None:
+                files[path] = data
+        links: dict = {}
+        upload_error = None
+        if files:
+            try:
+                sha = uploader.upload(files, f"ui-check screenshots for PR #{pr}, run {run}")
+            except EvidenceError as e:
+                upload_error = scrub_text(str(e), [token])
+                print(f"evidence.py: screenshots could not be uploaded: {upload_error}", file=sys.stderr)
+            else:
+                links = {(r.stem, n): uploader.link(sha, path) for r, n, path in plan if path in files}
+                print(f"uploaded {len(files)} screenshots to {BRANCH} at {sha}")
+        body = render_comment(repros, links, upload_error=upload_error, left_out=left_out, hidden=hidden,
+                              run_url=run_url)
+        try:
+            print(upsert_comment(gh, repo, pr, body))
+        except EvidenceError as e:
+            return fail(f"the comment could not be posted: {e}", 1)
+        return 1 if upload_error else 0
+
+
+    def main(argv: list[str] | None = None, *, opener=None, environ=None, now: datetime | None = None) -> int:
+        env = os.environ if environ is None else environ
+        p = argparse.ArgumentParser(prog="evidence.py",
+                                    description="Screenshots on the evidence branch, and the ui-check PR comment.")
+        sub = p.add_subparsers(dest="cmd", required=True)
+        pp = sub.add_parser("post-pr", help="upload a ui-check run's screenshots and edit or create its PR comment")
+        pp.add_argument("--repo", required=True, help="owner/name")
+        pp.add_argument("--pr", type=int, required=True)
+        pp.add_argument("--results", required=True, help="browser.py check's --out directory")
+        pp.add_argument("--run-url", help="the workflow run, linked in the comment")
+        pp.add_argument("--api", help=f"GitHub API base (default: $GITHUB_API_URL, else {API})")
+        a = p.parse_args(argv)
+        token = env.get("GITHUB_TOKEN", "")
+        if not token.strip():
+            print("evidence.py: GITHUB_TOKEN is not set", file=sys.stderr)
+            return 2
+        run = env.get("GITHUB_RUN_ID", "")
+        if not RUN_ID_RE.fullmatch(run):
+            run = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        return post_pr(a.repo, a.pr, a.results, token=token, run=run, api=a.api or env.get("GITHUB_API_URL") or API,
+                       opener=opener, run_url=a.run_url)
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
   findings.schema.json: |
     {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -229,16 +1627,17 @@ data:
                   "file",
                   "doc",
                   "logql",
-                  "promql"
+                  "promql",
+                  "ui"
                 ]
               },
               "ref": {
                 "type": "string",
-                "description": "commit: SHA. pr or issue: #N. file or doc: path. logql or promql: the exact query."
+                "description": "commit: SHA. pr or issue: #N. file or doc: path. logql or promql: the exact query. ui: one line naming the scenario."
               },
               "detail": {
                 "type": "string",
-                "description": "what this shows, with counts and times"
+                "description": "what this shows, with counts and times. ui: what the replay shows, for example which step fails and how"
               },
               "repo": {
                 "type": "string",
@@ -271,6 +1670,92 @@ data:
                   "none"
                 ],
                 "description": "for queries: found = returned data, none = returned nothing"
+              },
+              "steps": {
+                "type": "array",
+                "description": "for ui: the steps replayed in a browser on a copy of the live app (at most 15), in the replay_ui_steps format",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "do"
+                  ],
+                  "properties": {
+                    "do": {
+                      "type": "string",
+                      "enum": [
+                        "click",
+                        "fill",
+                        "select",
+                        "press",
+                        "goto",
+                        "expect_visible",
+                        "expect_absent",
+                        "expect_text"
+                      ]
+                    },
+                    "target": {
+                      "type": "object",
+                      "description": "exactly one of role, label, placeholder, text; optional within. name, label and placeholder match the whole text exactly; text and within.text match a case-insensitive substring. goto has no target",
+                      "additionalProperties": false,
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "description": "an ARIA role Playwright knows, such as button, link, textbox, heading, status"
+                        },
+                        "name": {
+                          "type": "string",
+                          "description": "with role only: the accessible name, matched exactly"
+                        },
+                        "label": {
+                          "type": "string",
+                          "description": "the field label, matched exactly"
+                        },
+                        "placeholder": {
+                          "type": "string",
+                          "description": "the field placeholder, matched exactly"
+                        },
+                        "text": {
+                          "type": "string",
+                          "description": "text the element contains: a case-insensitive substring"
+                        },
+                        "within": {
+                          "type": "object",
+                          "description": "a CSS selector and a text (a case-insensitive substring) that together match exactly one element",
+                          "additionalProperties": false,
+                          "required": [
+                            "css",
+                            "text"
+                          ],
+                          "properties": {
+                            "css": {
+                              "type": "string",
+                              "description": "one CSS selector (no >>)"
+                            },
+                            "text": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "value": {
+                      "type": "string",
+                      "description": "fill: the text. select: the option label. press: a Playwright key name such as Enter. goto: a path starting with /. expect_text: text the target must contain (case-sensitive)"
+                    },
+                    "note": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "fails_at": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "description": "for ui: the 1-based step that fails on the live code; null when every step passes"
               }
             }
           }
@@ -1859,6 +3344,174 @@ data:
             print(f"Blocked by bug-investigator scope: {reason}", file=sys.stderr)
             return 2
         return 0
+  mcp_client.py: |
+    """A small Streamable HTTP MCP client (standard library only) for the verifier.
+
+    `McpClient` opens one session (initialize, notifications/initialized, then calls, DELETE on close).
+    `replay_via_mcp` calls the `replay_ui_steps` tool of the taskboard-browser server and returns its
+    JSON plus the decoded screenshots. Request bodies are never logged or put in errors.
+    """
+
+    from __future__ import annotations
+
+    import base64
+    import json
+    import urllib.error
+    import urllib.request
+
+    PROTOCOL_VERSION = "2025-06-18"
+
+
+    class McpError(RuntimeError):
+        """A failed MCP request: HTTP, network, protocol or JSON-RPC error."""
+
+
+    def _result(msg: dict, method: str) -> dict:
+        if "error" in msg:
+            err = msg["error"] or {}
+            raise McpError(f"MCP {method}: error {err.get('code')} {err.get('message')}")
+        return msg.get("result") or {}
+
+
+    def _parse_sse(text: str, rid: int | None, method: str) -> dict:
+        """The JSON-RPC message with id `rid` from a text/event-stream body; other events are ignored."""
+        for block in text.replace("\r\n", "\n").split("\n\n"):
+            data = "\n".join(line[5:].lstrip(" ") for line in block.split("\n") if line.startswith("data:"))
+            if not data:
+                continue
+            try:
+                msg = json.loads(data)
+            except ValueError:
+                continue
+            if isinstance(msg, dict) and msg.get("id") == rid and ("result" in msg or "error" in msg):
+                return msg
+        raise McpError(f"MCP {method}: no response event in stream")
+
+
+    class McpClient:
+        def __init__(self, url: str, *, timeout: float = 120.0, opener=None):
+            self.url = url
+            self.timeout = timeout
+            self._open = opener or urllib.request.urlopen
+            self._session: str | None = None
+            self._ready = False
+            self._id = 0
+
+        def __enter__(self) -> "McpClient":
+            return self
+
+        def __exit__(self, *exc) -> None:
+            self.close()
+
+        def _headers(self) -> dict:
+            h = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+            if self._session:
+                h["Mcp-Session-Id"] = self._session
+            return h
+
+        def _post(self, method: str, params: dict | None, notify: bool = False) -> dict | None:
+            msg: dict = {"jsonrpc": "2.0", "method": method}
+            rid = None
+            if not notify:
+                self._id += 1
+                rid = self._id
+                msg["id"] = rid
+            if params is not None:
+                msg["params"] = params
+            req = urllib.request.Request(self.url, data=json.dumps(msg).encode(), headers=self._headers(), method="POST")
+            try:
+                with self._open(req, timeout=self.timeout) as r:
+                    sid = r.headers.get("Mcp-Session-Id")
+                    if sid and not self._session:
+                        self._session = sid
+                    ctype = (r.headers.get("Content-Type") or "").lower()
+                    raw = r.read().decode("utf-8", "replace")
+            except urllib.error.HTTPError as e:
+                try:
+                    body = e.read().decode("utf-8", "replace")
+                except Exception:  # noqa: BLE001
+                    body = ""
+                raise McpError(f"MCP {method}: HTTP {e.code} {body[:300]}") from None
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+                raise McpError(f"MCP {method}: {type(e).__name__} {e}"[:400]) from None
+            if notify:
+                return None
+            if "text/event-stream" in ctype:
+                return _parse_sse(raw, rid, method)
+            try:
+                out = json.loads(raw)
+            except ValueError:
+                raise McpError(f"MCP {method}: response is not JSON") from None
+            if not isinstance(out, dict):
+                raise McpError(f"MCP {method}: unexpected response")
+            return out
+
+        def _ensure(self) -> None:
+            if self._ready:
+                return
+            _result(self._post("initialize", {"protocolVersion": PROTOCOL_VERSION, "capabilities": {},
+                                              "clientInfo": {"name": "bug-investigator", "version": "1"}}) or {},
+                    "initialize")
+            self._post("notifications/initialized", None, notify=True)
+            self._ready = True
+
+        def call(self, name: str, args: dict) -> dict:
+            self._ensure()
+            msg = self._post("tools/call", {"name": name, "arguments": args})
+            return _result(msg or {}, "tools/call")
+
+        def close(self) -> None:
+            if not self._session:
+                return
+            req = urllib.request.Request(self.url, headers={"Mcp-Session-Id": self._session}, method="DELETE")
+            self._session = None
+            self._ready = False
+            try:
+                with self._open(req, timeout=min(self.timeout, 10.0)) as r:
+                    r.read()
+            except Exception:  # noqa: BLE001 - best effort
+                pass
+
+
+    def replay_via_mcp(url: str, steps: list, fails_at: int | None, *, screenshots: str = "all",
+                       timeout: float = 120.0, opener=None) -> dict:
+        args: dict = {"steps": steps, "screenshots": screenshots}
+        if fails_at is not None:
+            args["fails_at"] = fails_at
+        with McpClient(url, timeout=timeout, opener=opener) as c:
+            res = c.call("replay_ui_steps", args)
+        content = res.get("content") or []
+        texts = [i for i in content if isinstance(i, dict) and i.get("type") == "text"]
+        if res.get("isError"):
+            text = texts[0].get("text", "") if texts else "tool error"
+            return {"ok": False, "failed_at": None, "matches_claim": None, "commit": None, "steps": [],
+                    "snapshot": None, "app_log": None, "console": [], "screenshots": [], "error": text}
+        if not content or content[0].get("type") != "text":
+            raise McpError("MCP tools/call: first content item is not text")
+        try:
+            out = json.loads(content[0].get("text", ""))
+        except ValueError:
+            raise McpError("MCP tools/call: result text is not JSON") from None
+        if not isinstance(out, dict):
+            raise McpError("MCP tools/call: result JSON is not an object")
+        shots: list = []
+        pending: int | None = None
+        for item in content[1:]:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text":
+                t = str(item.get("text", "")).strip()
+                pending = int(t[5:]) if t.startswith("step ") and t[5:].isdigit() else None
+            elif item.get("type") == "image" and pending is not None:
+                try:
+                    shots.append((pending, base64.b64decode(item.get("data", ""))))
+                except ValueError:
+                    pass
+                pending = None
+        out.setdefault("matches_claim", None)
+        out["screenshots"] = shots
+        out["error"] = None
+        return out
   mcp_server.py: |
     """Taskboard telemetry as a stdio MCP server: Loki and Prometheus, scoped to one namespace.
 
@@ -1871,7 +3524,7 @@ data:
 
     Transport: newline-delimited JSON-RPC 2.0 on stdin/stdout (agentgateway serves it as Streamable
     HTTP). Only protocol messages go to stdout; logs go to stderr. A refused or failed call is a tool
-    result with isError: true, never a crash.
+    result with isError: true, never a crash. The loop is StdioServer, which browser_server.py shares.
 
         python3 -I /core/src/bug_investigator/mcp_server.py      # env LOKI_URL, PROMETHEUS_URL, NAMESPACE
     """
@@ -1905,10 +3558,6 @@ data:
 
     class ToolError(Exception):
         """Bad input or a refused/failed query: becomes a result with isError: true."""
-
-
-    def _log(msg: str) -> None:
-        print(f"{SERVER_NAME}: {msg}", file=sys.stderr, flush=True)
 
 
     # ---------------------------------------------------------------------------------- tool schemas
@@ -2135,14 +3784,29 @@ data:
     # ---------------------------------------------------------------------------------- JSON-RPC
 
 
-    class Server:
-        def __init__(self, out=None, namespace: str | None = None, opener=None, workers: int = 4):
+    class StdioServer:
+        """An MCP server on stdio: newline-delimited JSON-RPC 2.0 (initialize, ping, tools/list, tools/call).
+
+        `call_tool(name, arguments)` returns the result text, or a list of MCP content items; it raises
+        ToolError for a refused or failed call, which becomes a result with isError: true. tools/call runs
+        on `pool` (default: `workers` threads) so a slow call blocks nothing; everything else is answered
+        at once. browser_server.py reuses this loop with a pool that runs calls on the main thread.
+        """
+
+        def __init__(self, name: str, version: str, tools: list[dict], call_tool, *, instructions: str | None = None,
+                     out=None, workers: int = 4, pool=None):
+            self.name, self.version, self.tools, self.call_tool = name, version, tools, call_tool
+            self.instructions = instructions
             self.out = out or sys.stdout
-            self.namespace = namespace or os.environ.get("NAMESPACE") or scope.NAMESPACE
-            self.opener = opener
             self.lock = threading.Lock()
-            self.pool = ThreadPoolExecutor(max_workers=workers)
-            self.tools = _tools(self.namespace)
+            self.pool = pool or ThreadPoolExecutor(max_workers=workers)
+
+        def log(self, msg: str) -> None:
+            print(f"{self.name}: {msg}", file=sys.stderr, flush=True)
+
+        def ready(self) -> str:
+            """The line logged when serve() starts."""
+            return "ready"
 
         def send(self, msg: dict | list) -> None:
             line = json.dumps(msg, ensure_ascii=True, separators=(",", ":"))
@@ -2161,13 +3825,14 @@ data:
         def tool_result(self, mid, params) -> dict:
             name = params.get("name")
             try:
-                text = call_tool(name, params.get("arguments"), self.namespace, self.opener)
-                return self.result(mid, {"content": [{"type": "text", "text": text}], "isError": False})
+                out = self.call_tool(name, params.get("arguments"))
+                content = [{"type": "text", "text": out}] if isinstance(out, str) else out
+                return self.result(mid, {"content": content, "isError": False})
             except ToolError as e:
-                _log(f"{name}: {e}")
+                self.log(f"{name}: {e}")
                 return self.result(mid, {"content": [{"type": "text", "text": str(e)}], "isError": True})
             except Exception as e:  # never let a bug kill the server
-                _log(f"{name}: internal error: {e!r}")
+                self.log(f"{name}: internal error: {e!r}")
                 return self.result(mid, {"content": [{"type": "text", "text": f"internal error: {type(e).__name__}"}],
                                          "isError": True})
 
@@ -2187,13 +3852,11 @@ data:
             if method == "initialize":
                 asked = params.get("protocolVersion")
                 version = asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
-                return self.result(mid, {
-                    "protocolVersion": version,
-                    "capabilities": {"tools": {"listChanged": False}},
-                    "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-                    "instructions": (f"Loki and Prometheus for namespace {self.namespace!r} only. Loki datasourceUid "
-                                     f"{scope.LOKI_UID!r}, Prometheus datasourceUid {scope.PROM_UID!r}. Every query "
-                                     f"must select namespace=\"{self.namespace}\"; anything else is refused.")})
+                result = {"protocolVersion": version, "capabilities": {"tools": {"listChanged": False}},
+                          "serverInfo": {"name": self.name, "version": self.version}}
+                if self.instructions:
+                    result["instructions"] = self.instructions
+                return self.result(mid, result)
             if method == "ping":
                 return self.result(mid, {})
             if method == "tools/list":
@@ -2204,17 +3867,26 @@ data:
                 return self.tool_result(mid, params)
             return self.error(mid, -32601, f"method not found: {method}")
 
+        @staticmethod
+        def _is_call(msg) -> bool:
+            return isinstance(msg, dict) and msg.get("method") == "tools/call" and "id" in msg
+
+        def _batch(self, msgs: list) -> None:
+            replies = [r for r in (self.handle(m) for m in msgs) if r is not None]
+            if replies:
+                self.send(replies)
+
         def dispatch(self, msg) -> None:
-            """Answer one parsed message; a tools/call runs on the pool so a slow query blocks nothing."""
+            """Answer one parsed message; a tools/call runs on the pool so a slow call blocks nothing."""
             if isinstance(msg, list):  # a JSON-RPC batch (2025-03-26): answer it as one array
                 if not msg:
                     self.send(self.error(None, -32600, "empty batch"))
-                    return
-                replies = [r for r in (self.handle(m) for m in msg) if r is not None]
-                if replies:
-                    self.send(replies)
+                elif any(self._is_call(m) for m in msg):
+                    self.pool.submit(lambda: self._batch(msg))
+                else:
+                    self._batch(msg)
                 return
-            if isinstance(msg, dict) and msg.get("method") == "tools/call" and "id" in msg:
+            if self._is_call(msg):
                 self.pool.submit(lambda: self.send(self.handle(msg)))
                 return
             reply = self.handle(msg)
@@ -2222,8 +3894,9 @@ data:
                 self.send(reply)
 
         def serve(self, inp=None) -> None:
+            """Read messages until EOF, then let the pool finish the calls already submitted."""
             inp = inp or sys.stdin
-            _log(f"ready (namespace {self.namespace}, loki {telemetry.loki_url()}, prometheus {telemetry.prometheus_url()})")
+            self.log(self.ready())
             while True:
                 line = inp.readline()
                 if not line:
@@ -2238,6 +3911,25 @@ data:
                     continue
                 self.dispatch(msg)
             self.pool.shutdown(wait=True)
+
+
+    class Server(StdioServer):
+        """The telemetry server: the tools above, scoped to one namespace."""
+
+        def __init__(self, out=None, namespace: str | None = None, opener=None, workers: int = 4):
+            self.namespace = namespace or os.environ.get("NAMESPACE") or scope.NAMESPACE
+            self.opener = opener
+            super().__init__(
+                SERVER_NAME, SERVER_VERSION, _tools(self.namespace), self._call, out=out, workers=workers,
+                instructions=(f"Loki and Prometheus for namespace {self.namespace!r} only. Loki datasourceUid "
+                              f"{scope.LOKI_UID!r}, Prometheus datasourceUid {scope.PROM_UID!r}. Every query "
+                              f"must select namespace=\"{self.namespace}\"; anything else is refused."))
+
+        def _call(self, name, args) -> str:
+            return call_tool(name, args, self.namespace, self.opener)
+
+        def ready(self) -> str:
+            return f"ready (namespace {self.namespace}, loki {telemetry.loki_url()}, prometheus {telemetry.prometheus_url()})"
 
 
     def main(argv: list[str] | None = None) -> int:
@@ -2270,6 +3962,7 @@ data:
       - `logql` / `promql`: the exact query is re-run over [`start`, `end`] (at most 24 h). `expect:
         "found"` needs at least one log line or one non-zero sample; `expect: "none"` needs none.
         Use the same query you ran, and a window that covers what you saw.
+      - `ui`: There is no browser in this run: never cite `ui` evidence.
       A hypothesis marked `supported` or `ruled_out` with no verified evidence becomes `untested`, and a
       `likely_cause` verdict with no supported hypothesis becomes `unclear`. So cite carefully.
     - Keep it to what matters: about 4 to 12 evidence items, at most 3 hypotheses.
@@ -2327,6 +4020,7 @@ data:
 
 
     CODE_SPAN = re.compile(r"(`+)(.+?)\1", re.S)
+    HEX_RE = re.compile(r"[0-9a-fA-F]{7,64}")
 
 
     def t(s) -> str:
@@ -2381,6 +4075,11 @@ data:
         return f"`{s}`"
 
 
+    def plain_https(link) -> bool:
+        """A URL safe to put in a markdown link or image: https, nothing that could end the link early."""
+        return isinstance(link, str) and link.startswith("https://") and not any(c in link for c in " ()<>\n\r\t")
+
+
     def trail_lines(trail, cap: int = MAX_TRAIL) -> list[str]:
         """The collapsed step list; anything that is not {"steps": [{...}, ...]} renders nothing."""
         steps = trail.get("steps") if isinstance(trail, dict) else None
@@ -2395,7 +4094,7 @@ data:
             if s.get("tool"):
                 target = code(s.get("input"))
                 link = s.get("link")
-                if isinstance(link, str) and link.startswith("https://") and not any(c in link for c in " ()<>\n"):
+                if plain_https(link):
                     target = f"[{target}]({link})"
                 if s.get("window"):
                     target += f" {inline(s['window'])}"
@@ -2421,6 +4120,42 @@ data:
         return [f"No fix proposed: {inline(fix.get('reason') or fix['status'])}", ""]
 
 
+    def ui_lines(evidence) -> list[str]:
+        """The browser section: per verified ui item its steps as replayed and, once the trigger has uploaded
+        them (verified.screenshots = [{n, url}]), the failing (else the last) step's screenshot, the rest folded."""
+        items = [e for e in evidence if e.get("kind") == "ui" and isinstance(e.get("verified"), dict)]
+        if not items:
+            return []
+        reproduced = any(e.get("fails_at") is not None for e in items)
+        out = [f"### {'Reproduced' if reproduced else 'Checked'} in the browser", ""]
+        for e in items:
+            v = e["verified"]
+            commit = v.get("commit")
+            live = f" (commit `{commit[:7]}`)" if isinstance(commit, str) and HEX_RE.fullmatch(commit) else ""
+            out += [f"**{inline(e.get('id'))}** {inline(e.get('detail'))} — on a copy of what's live{live}", ""]
+            steps = [s for s in v.get("steps") or [] if isinstance(s, dict)]
+            for s in steps:
+                n = s.get("n") if isinstance(s.get("n"), int) else "?"
+                line = f"{n}. {'✓' if s.get('ok') else '✗'} {inline(s.get('text'))}"
+                if not s.get("ok") and s.get("error"):
+                    line += f" — {inline(s['error'])}"
+                out.append(line)
+            if steps:
+                out.append("")
+            shots = {x["n"]: x["url"] for x in v.get("screenshots") or []
+                     if isinstance(x, dict) and isinstance(x.get("n"), int) and plain_https(x.get("url"))}
+            focus = v.get("failed_at") or (steps[-1].get("n") if steps else None)
+            if focus in shots:
+                out += [f"![step {focus}]({shots[focus]})", ""]
+            others = [n for n in sorted(shots) if n != focus]
+            if others:
+                out += ["<details><summary>All steps</summary>", ""]
+                for n in others:
+                    out += [f"![step {n}]({shots[n]})", ""]
+                out += ["</details>", ""]
+        return out
+
+
     def evidence_link(e: dict) -> str:
         v = e.get("verified") or {}
         kind, ref, link = e.get("kind"), str(e.get("ref") or ""), v.get("link")
@@ -2434,6 +4169,8 @@ data:
             label = f"`{v.get('path')}" + (f"#L{v['line']}" if v.get("line") else "") + "`"
         elif kind in ("logql", "promql"):
             label = f"{KIND_LABEL[kind]} query"
+        elif kind == "ui":
+            label = f"browser replay: {cell(ref)}"  # the steps and screenshots are in their own section
         else:
             label = cell(ref)
         return f"[{label}]({link})" if link else label
@@ -2466,6 +4203,8 @@ data:
             if kv:
                 out.append(f"- **Code:** [`{kv['path']}" + (f"#L{kv['line']}" if kv.get("line") else "") + f"`]({kv['link']})")
             out += [f"- {t(lc.get('explanation'))}", ""]
+
+        out += ui_lines(f.get("evidence") or [])
 
         dr = f.get("docs_rule")
         if not dr:
@@ -3401,6 +5140,185 @@ data:
             return 1
         print("selftest: hook blocks out-of-scope calls; token not in the environment")
         return 0
+  steps.py: |
+    """The UI step format: validate a list of steps, describe one, load a repro file.
+
+    Standard library only; the replay engine (browser.py) is the one place that
+    drives a browser.
+    """
+
+    from __future__ import annotations
+
+    import json
+
+    ACTIONS = ("click", "fill", "select", "press", "goto")
+    CHECKS = ("expect_visible", "expect_absent", "expect_text")
+    MAX_STEPS = 15
+    MAX_TEXT = 200
+
+    # The roles Playwright's get_by_role accepts: the `role` Literal of Page.get_by_role in Playwright 1.64.0
+    # (playwright/sync_api/_generated.py). Any other role matches nothing on any page (ruling R13).
+    ARIA_ROLES = frozenset({
+        "alert", "alertdialog", "application", "article", "banner", "blockquote", "button", "caption", "cell",
+        "checkbox", "code", "columnheader", "combobox", "complementary", "contentinfo", "definition", "deletion",
+        "dialog", "directory", "document", "emphasis", "feed", "figure", "form", "generic", "grid", "gridcell",
+        "group", "heading", "img", "insertion", "link", "list", "listbox", "listitem", "log", "main", "marquee",
+        "math", "menu", "menubar", "menuitem", "menuitemcheckbox", "menuitemradio", "meter", "navigation", "none",
+        "note", "option", "paragraph", "presentation", "progressbar", "radio", "radiogroup", "region", "row",
+        "rowgroup", "rowheader", "scrollbar", "search", "searchbox", "separator", "slider", "spinbutton", "status",
+        "strong", "subscript", "superscript", "switch", "tab", "table", "tablist", "tabpanel", "term", "textbox",
+        "time", "timer", "toolbar", "tooltip", "tree", "treegrid", "treeitem",
+    })
+
+    NEEDS_VALUE = ("fill", "select", "press", "goto", "expect_text")
+    LOCATORS = ("role", "label", "placeholder", "text")
+    STEP_KEYS = {"do", "target", "value", "note"}
+    TARGET_KEYS = set(LOCATORS) | {"name", "within"}
+    WITHIN_KEYS = {"css", "text"}
+
+
+    def _nonempty(v) -> bool:
+        return isinstance(v, str) and bool(v.strip())
+
+
+    def _check_target(t) -> list[str]:
+        if not isinstance(t, dict):
+            return ["target must be an object"]
+        probs = []
+        unknown = sorted(set(t) - TARGET_KEYS)
+        if unknown:
+            probs.append(f"target has unknown keys: {', '.join(unknown)}")
+        if sum(1 for k in LOCATORS if k in t) != 1:
+            probs.append("target needs exactly one of role, label, placeholder, text")
+        for k in LOCATORS + ("name",):
+            if k in t and not _nonempty(t[k]):
+                probs.append(f"target {k} must be a non-empty string")
+            elif k in t and len(t[k]) > MAX_TEXT:
+                probs.append(f"target {k} is longer than {MAX_TEXT} characters")
+            elif k == "role" and k in t and t[k] not in ARIA_ROLES:
+                probs.append("target role must be an ARIA role Playwright knows (such as button, link, textbox, "
+                             f'heading), not "{t[k]}"')
+        if "name" in t and "role" not in t:
+            probs.append("target name is allowed only with role")
+        if "within" in t:
+            w = t["within"]
+            if not isinstance(w, dict):
+                probs.append("target within must be an object")
+            else:
+                if set(w) != WITHIN_KEYS or not all(_nonempty(w.get(k)) for k in WITHIN_KEYS):
+                    probs.append("target within needs non-empty css and text, and nothing else")
+                elif any(len(w[k]) > MAX_TEXT for k in WITHIN_KEYS):
+                    probs.append(f"target within is longer than {MAX_TEXT} characters")
+                elif ">>" in w["css"]:  # the engine reads css=<css>; >> would chain another engine in after it
+                    probs.append("target within css must be one CSS selector (no >>)")
+        return probs
+
+
+    def _check_step(s) -> list[str]:
+        if not isinstance(s, dict):
+            return ["a step must be an object"]
+        do = s.get("do")
+        if do not in ACTIONS + CHECKS:
+            return [f"do must be one of {', '.join(ACTIONS + CHECKS)}"]
+        probs = []
+        unknown = sorted(set(s) - STEP_KEYS)
+        if unknown:
+            probs.append(f"unknown keys: {', '.join(unknown)}")
+        if do == "goto":
+            if "target" in s:
+                probs.append("goto takes no target")
+        elif "target" not in s:
+            probs.append(f"{do} needs a target")
+        else:
+            probs += _check_target(s["target"])
+        v = s.get("value")
+        if do in NEEDS_VALUE:
+            if not isinstance(v, str) or v == "":
+                probs.append(f"{do} needs a value")
+            elif len(v) > MAX_TEXT:
+                probs.append(f"value is longer than {MAX_TEXT} characters")
+            elif do == "goto" and not (v.startswith("/") and not v.startswith("//")):
+                probs.append("goto value must be a path starting with / (not //)")
+            elif do == "goto" and any(c == "\\" or ord(c) < 0x20 or ord(c) == 0x7F for c in v):
+                # A browser normalises "/\evil" and "/<tab>/evil" to //evil, another origin.
+                probs.append("goto value must not contain a backslash or control characters")
+        elif "value" in s:
+            probs.append(f"{do} takes no value")
+        if "note" in s and not (isinstance(s["note"], str) and len(s["note"]) <= MAX_TEXT):
+            probs.append(f"note must be a string of at most {MAX_TEXT} characters")
+        return probs
+
+
+    def validate(steps, fails_at=None) -> list[str]:
+        """Problems with a list of steps (and the claimed failing step); [] when valid."""
+        if not isinstance(steps, list) or not steps:
+            return ["steps must be a non-empty list"]
+        probs = []
+        if len(steps) > MAX_STEPS:
+            probs.append(f"at most {MAX_STEPS} steps are allowed, got {len(steps)}")
+        for i, s in enumerate(steps, 1):
+            probs += [f"step {i}: {p}" for p in _check_step(s)]
+        if fails_at is not None and (
+            isinstance(fails_at, bool) or not isinstance(fails_at, int) or not 1 <= fails_at <= len(steps)
+        ):
+            probs.append(f"fails_at must be null or a step number from 1 to {len(steps)}")
+        return probs
+
+
+    def phrase(t: dict) -> str:
+        """A (valid) target in words: 'button "Done" in .card "Update the cookie banner copy"'."""
+        if "role" in t:
+            p = f'{t["role"]} "{t["name"]}"' if t.get("name") else t["role"]
+        elif "label" in t:
+            p = f'the field labelled "{t["label"]}"'
+        elif "placeholder" in t:
+            p = f'the field with placeholder "{t["placeholder"]}"'
+        else:
+            p = f'the text "{t["text"]}"'
+        w = t.get("within")
+        return f'{p} in {w["css"]} "{w["text"]}"' if w else p
+
+
+    def describe(step: dict) -> str:
+        """One plain sentence for a (valid) step."""
+        do, v = step["do"], step.get("value")
+        if do == "goto":
+            return f"open {v}"
+        t = phrase(step["target"])
+        return {
+            "click": f"click {t}",
+            "fill": f'fill {t} with "{v}"',
+            "select": f'select "{v}" in {t}',
+            "press": f"press {v} in {t}",
+            "expect_visible": f"expect {t} to be visible",
+            "expect_absent": f"expect no {t}",
+            "expect_text": f'expect {t} to contain "{v}"',
+        }[do]
+
+
+    def load_repro(path) -> dict:
+        """Read and validate a repro file; ValueError listing every problem."""
+        with open(path, encoding="utf-8") as f:
+            try:
+                doc = json.load(f)
+            except ValueError as e:
+                raise ValueError(f"{path}: not valid JSON: {e}") from e
+        if not isinstance(doc, dict):
+            raise ValueError(f"{path}: a repro must be a JSON object")
+        probs = []
+        if not _nonempty(doc.get("title")):
+            probs.append("title must be a non-empty string")
+        issue = doc.get("issue")
+        if issue is not None and (isinstance(issue, bool) or not isinstance(issue, int)):
+            probs.append("issue must be an integer or null")
+        unknown = sorted(set(doc) - {"title", "issue", "steps"})
+        if unknown:
+            probs.append(f"unknown keys: {', '.join(unknown)}")
+        probs += validate(doc.get("steps"), fails_at=None)
+        if probs:
+            raise ValueError(f"{path}: " + "; ".join(probs))
+        doc.setdefault("issue", None)
+        return doc
   telemetry.py: |
     """Telemetry adapter that talks to Loki and Prometheus directly, with no Grafana and no token.
 
@@ -4271,6 +6189,13 @@ data:
     logql/promql: the shared scope check, then a re-run in [start, end] (default: report window ±2 h,
     at most 24 h) through Grafana (`--telemetry grafana`, the Action) or straight against Loki and
     Prometheus (`--telemetry direct`, the in-cluster trigger: no token); "found" needs data, "none" none.
+    ui: valid steps (steps.py), then a replay through `Ctx.ui_replay` (the in-cluster trigger only; the
+    Action and n8n mode have no browser): `fails_at` k needs step k to be the first failure, and not
+    because its target matched more than one element (`ambiguous`), because the step cannot run on any
+    page (`invalid`) or because the replay ran out of time (`timeout`); null needs every step to pass.
+    The result must show exactly steps 1..k (null: all of them), in order, every one before the claimed
+    step passing. The verified item keeps the commit and per-step outcomes; the screenshots go to
+    `ctx.ui_shots[id]`, never the JSON.
     Then: hypotheses without verified evidence become untested; likely_cause without a supported
     hypothesis becomes unclear; secrets are scrubbed from every string.
     """
@@ -4287,6 +6212,7 @@ data:
     from typing import Callable
 
     from bug_investigator import grafana, scope, telemetry
+    from bug_investigator import steps as stepfmt
     from bug_investigator.tickets import Gh, label_names
     from bug_investigator.util import (CommandError, Runner, iso, ms, parse_time, read_json, read_secret, run, scrub,
                                        utc_now, window, write_json)
@@ -4302,7 +6228,8 @@ data:
         def __init__(self, *, mode: str, repo: str, app_dir: str, deploy_dir: str | None = None,
                      deploy_repo: str = "arigsela/kubernetes", issue: int = 0, issue_created: str | None = None,
                      grafana_url: str = "", token: str = "", namespace: str = scope.NAMESPACE,
-                     runner: Runner = run, gquery: Callable | None = None, telemetry_mode: str = "grafana"):
+                     runner: Runner = run, gquery: Callable | None = None, telemetry_mode: str = "grafana",
+                     ui_replay: Callable[[list, int | None], dict] | None = None):
             self.mode, self.repo, self.app_dir, self.deploy_dir = mode, repo, app_dir, deploy_dir
             self.deploy_repo, self.issue, self.namespace = deploy_repo, issue, namespace
             self.issue_created = parse_time(issue_created)
@@ -4320,6 +6247,9 @@ data:
             self.heads = {k: self._head(d) for k, d in (("app", app_dir), ("deploy", deploy_dir)) if d}
             self.repos = {"app": repo, "deploy": deploy_repo}
             self._cache: dict = {}
+            # ui evidence: replay(steps, fails_at) -> mcp_client.replay_via_mcp's dict; None = no browser in this run.
+            self.ui_replay = ui_replay
+            self.ui_shots: dict[str, list[tuple[int, bytes]]] = {}  # verified ui item id -> [(step, PNG)]
 
         def _head(self, d: str) -> str | None:
             try:
@@ -4519,6 +6449,78 @@ data:
                       "link": grafana.explore_link(ctx.grafana_url, kind, expr, ms(start), ms(end))}
 
 
+    def _ui_step(s: dict) -> dict:
+        """One replayed step as JSON-safe fields only (the replay result may carry more)."""
+        n, err, failure = s.get("n"), s.get("error"), s.get("failure")
+        return {"n": n if isinstance(n, int) and not isinstance(n, bool) else None, "text": str(s.get("text") or ""),
+                "ok": s.get("ok") is True, "error": None if err in (None, "") else str(err),
+                "failure": failure if isinstance(failure, str) else None}
+
+
+    def _ui_shape(ran: list[dict], want: int, fails_at: int | None) -> str | None:
+        """Why the replayed steps are not exactly what the verdict rests on, or None. They must be steps 1..want in
+        order (want: every step for a null claim, k for a claim of step k), each passing but the claimed one, which
+        failed: an empty, partial or reordered result proves nothing."""
+        ns = [s["n"] for s in ran]
+        if ns != list(range(1, want + 1)):
+            return f"replay failed: the result shows steps {', '.join(map(str, ns)) or 'none'}, not 1 to {want}"
+        bad = next((s["n"] for s in ran if not s["ok"] and s["n"] != fails_at), None)
+        if bad is not None and fails_at is None:
+            return f"replay failed: the result says every step passed, but step {bad} did not"
+        if bad is not None:
+            return f"replay failed: step {bad} did not pass, yet the result names step {fails_at} as the first failure"
+        if fails_at is not None and ran[-1]["ok"]:
+            return f"replay failed: the result names step {fails_at} as the first failure, yet it passed"
+        return None
+
+
+    def check_ui(ctx: Ctx, item: dict) -> tuple[str | None, dict]:
+        """Replay the item's steps; verified when the replay fails exactly where `fails_at` says (null: nowhere)."""
+        steps, fails_at = item.get("steps"), item.get("fails_at")
+        problems = stepfmt.validate(steps, fails_at)
+        if problems:
+            return "; ".join(problems), {}
+        if ctx.ui_replay is None:
+            return "the browser is not available in this run", {}
+        try:
+            r = ctx.ui_replay(copy.deepcopy(steps), fails_at)
+        except Exception as e:  # noqa: BLE001 - an unreachable server or a protocol error fails this item only
+            return f"replay failed: {e}", {}
+        if not isinstance(r, dict):
+            return "replay failed: the browser returned no result", {}
+        if r.get("error"):
+            return f"replay failed: {r['error']}", {}
+        ran = [_ui_step(s) for s in r.get("steps") if isinstance(s, dict)] if isinstance(r.get("steps"), list) else []
+        ok, failed_at = r.get("ok") is True, r.get("failed_at")
+        failed = next((s for s in ran if s["n"] == failed_at), None) if failed_at is not None else None
+        error = (failed or {}).get("error") or "no error reported"
+        what = f"step {failed_at} failed: {error}" if failed_at is not None else "the replay failed without naming a step"
+        if fails_at is None:
+            if not ok or failed_at is not None:
+                return what, {}
+        elif ok:
+            return f"expected step {fails_at} to fail; every step passed", {}
+        elif failed_at != fails_at:
+            return f"expected step {fails_at} to fail; {what}", {}
+        elif failed is None:
+            return f"replay failed: the result does not show step {fails_at}", {}
+        shape = _ui_shape(ran, len(steps) if fails_at is None else fails_at, fails_at)
+        if shape:
+            return shape, {}
+        if failed and failed["failure"] == "ambiguous":  # ruling R8: a step that matched two elements proves nothing
+            return f"step {fails_at} failed only because its target matched more than one element: {error}", {}
+        if failed and failed["failure"] == "invalid":  # ruling R13: nor does one that can never pass on any code
+            return f"step {fails_at} failed only because the step itself is invalid: {error}", {}
+        if failed and failed["failure"] == "timeout":  # ruling R14b: nor a replay that ran out of time there
+            return f"step {fails_at} failed only because the replay ran out of time: {error}", {}
+        shots = r.get("screenshots") if isinstance(r.get("screenshots"), list) else []
+        ctx.ui_shots[str(item.get("id"))] = [(x[0], bytes(x[1])) for x in shots if isinstance(x, (list, tuple))
+                                             and len(x) == 2 and isinstance(x[0], int)
+                                             and isinstance(x[1], (bytes, bytearray))]
+        commit = r.get("commit")
+        return None, {"commit": commit if isinstance(commit, str) else None, "failed_at": failed_at, "steps": ran}
+
+
     def check_item(ctx: Ctx, item: dict, findings: dict) -> tuple[str | None, dict]:
         kind, ref = item.get("kind"), str(item.get("ref") or "")
         prefer = item.get("repo")
@@ -4534,6 +6536,8 @@ data:
             return check_doc(ctx, ref, item.get("quote"), prefer)
         if kind in ("logql", "promql"):
             return check_query(ctx, item, findings)
+        if kind == "ui":
+            return check_ui(ctx, item)
         return f"unknown evidence kind {kind!r}", {}
 
 
@@ -4568,7 +6572,8 @@ data:
                 continue
             seen.add(iid)
             try:
-                reason, extra = check_item(ctx, item, out)
+                # With the id it will be kept under, so ctx.ui_shots pairs with the kept item.
+                reason, extra = check_item(ctx, {**item, "id": iid}, out)
             except Exception as e:  # a check that crashes fails the item, not the run
                 reason, extra = f"check failed: {e}", {}
             if reason:
