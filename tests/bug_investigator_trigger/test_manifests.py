@@ -110,7 +110,7 @@ def test_the_github_token_is_taskboard_only_and_narrow():
     # arigsela-implementer (docs/platform/implementer.md): IDs are not secrets.
     assert spec["appID"] == "5316560" and spec["installID"] == "171383761"
     assert spec["repositories"] == ["taskboard"]
-    assert spec["permissions"] == {"issues": "write", "contents": "read", "pull_requests": "read", "metadata": "read"}
+    assert spec["permissions"] == {"issues": "write", "contents": "write", "pull_requests": "read", "metadata": "read"}
     ref = spec["auth"]["privateKey"]["secretRef"]
     assert ref == {"name": "implementer-github-app", "key": "GITHUB_APP_PRIVATE_KEY"}
     es = _one("ExternalSecret", "bug-investigator-trigger-github")
@@ -119,6 +119,25 @@ def test_the_github_token_is_taskboard_only_and_narrow():
     # Installation tokens live an hour: re-minted well inside that.
     assert es["spec"]["refreshInterval"] in ("30m", "20m", "15m")
     assert es["spec"]["target"]["name"] == "bug-investigator-trigger-github"
+
+
+def test_token_has_contents_write():
+    """§T.153: contents write, for the screenshots on the bug-investigator-evidence branch only (the
+    core's Uploader takes no branch argument); the comment beside it names that and the residual."""
+    assert _one("GithubAccessToken", "bug-investigator-trigger")["spec"]["permissions"]["contents"] == "write"
+    text = (REPO / TRIGGER).read_text()
+    block = text.split("kind: GithubAccessToken", 1)[1].split("auth:", 1)[0]
+    for want in ("bug-investigator-evidence", "Uploader", "no branch argument", "branch protection", "§V.113"):
+        assert want in block, want
+
+
+def test_the_browser_url_is_the_tool_servers_service():
+    env = _env()
+    assert env["BROWSER_URL"]["value"] == t.Config().browser_url
+    svc = _one("Service", "taskboard-browser-mcp", rel="base-apps/kagent/taskboard-browser-mcp.yaml")
+    port = svc["spec"]["ports"][0]["port"]
+    assert t.Config().browser_url == (f"http://{svc['metadata']['name']}.{svc['metadata']['namespace']}"
+                                      f".svc.cluster.local:{port}/mcp")
 
 
 def test_the_private_key_secret_is_the_implementers():

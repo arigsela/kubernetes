@@ -153,3 +153,37 @@ def test_a_line_stays_under_16_kb_and_is_never_split():
     out = json.loads(lines[0])
     assert out["event"] == "posted" and out["evidence_truncated"] is True and out["evidence"]
     assert out["hypotheses"] and out["likely_cause"] and out["verdict"] == "likely_cause"
+
+
+# ---------------------------------------------------------------- §T.153: the replay's screenshots
+
+def _ui_run(uploader=None):
+    import test_ui_repro as tu
+    core = tu.UiCore(None, uploader=uploader)
+    _, logs, _, _ = tu.run_ui(core)
+    return {x["event"]: x for x in logs}, logs
+
+
+def test_screenshots_posted_names_the_run_issue_and_count():
+    ev, _ = _ui_run()
+    assert ev["screenshots_posted"] == {"run": RUN, "event": "screenshots_posted", "issue": 24, "count": 2}
+
+
+def test_screenshots_failed_is_scrubbed_masked_and_the_comment_still_posted():
+    import test_ui_repro as tu
+    up = tu.FakeUploader(fail=RuntimeError(f"HTTP 403 for bob@corp.example with {TOKEN} " + "x" * 900))
+    ev, logs = _ui_run(up)
+    f = ev["screenshots_failed"]
+    assert set(f) == {"run", "event", "issue", "error"} and f["run"] == RUN and f["issue"] == 24
+    assert TOKEN not in json.dumps(logs) and "<redacted>" in f["error"] and len(f["error"]) <= 300
+    assert "b•••@corp.example" in f["error"]
+    assert "posted" in ev and "investigation_failed" not in ev
+
+
+def test_the_contract_lists_the_screenshot_events():
+    from conftest import REPO
+    text = (REPO / "docs/superpowers/specs/2026-10-27-hk-demo-bug-investigator-tab-design.md").read_text()
+    rows = {line.split("|")[1].strip().strip("`"): line for line in text.splitlines()
+            if line.startswith("| `")}
+    assert "count" in rows["screenshots_posted"] and "issue" in rows["screenshots_posted"]
+    assert "error" in rows["screenshots_failed"]

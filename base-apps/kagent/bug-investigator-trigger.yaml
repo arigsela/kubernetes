@@ -13,13 +13,18 @@
 #      kagent/bug-investigator-trigger (projected token, audience kagent; the waypoint admits any
 #      service-account token on /agents/*, authorization-policy.yaml rule 2; the controller's
 #      NetworkPolicy already admits namespace kagent);
-#   e. verifies every evidence link (telemetry re-run against Loki/Prometheus directly), posts one
-#      comment and labels the issue `investigated`;
-#   f. hands a verified likely cause to kagent/implementer for one fix pull request on Taskboard,
-#      then comments the PR link and labels `fix-proposed`. A person merges.
+#   e. verifies every evidence link (telemetry re-run against Loki/Prometheus directly; `ui` steps
+#      replayed by the taskboard-browser tool server at BROWSER_URL, §T.153), commits the replays'
+#      screenshots to Taskboard's `bug-investigator-evidence` branch, posts one comment showing them
+#      and labels the issue `investigated` (a failed upload: the comment goes out without images);
+#   f. hands a verified likely cause to kagent/implementer for one fix pull request on Taskboard
+#      (with a verified UI reproduction as ui-tests/repros/issue-<N>.json, which Taskboard's
+#      ui-check replays on the PR), then comments the PR link and labels `fix-proposed`. A person
+#      merges.
 # The agent holds no credential. This pod holds one: a Taskboard-only GitHub installation token
-# (issues write; contents and pull requests read) that External Secrets mints from the
-# arigsela-implementer App every 30 minutes (ExternalSecret below). It never reaches the agent.
+# (issues and contents write, pull requests read; contents only for the screenshots, see the
+# GithubAccessToken below) that External Secrets mints from the arigsela-implementer App every 30
+# minutes (ExternalSecret below). It never reaches the agent.
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -95,7 +100,12 @@ spec:
     - taskboard
   permissions:
     issues: write
-    contents: read
+    # write (§T.153): the trigger commits the browser replays' screenshots to the
+    # bug-investigator-evidence branch, and only there: it writes through the core's
+    # evidence.Uploader, which takes no branch argument (verify, render and the clones only read).
+    # Residual: the token itself could push to any branch, and Taskboard is private on GitHub Free,
+    # so main has no branch protection to refuse it (§V.113).
+    contents: write
     pull_requests: read
     metadata: read
   auth:
@@ -153,7 +163,7 @@ spec:
           annotations:
             # sha256 (first 16 hex) over the bug-investigator-trigger-code ConfigMap's values,
             # sorted by key; written by scripts/gen-bug-investigator-trigger-configmap.py.
-            checksum/code: 47daad84bb29c35f
+            checksum/code: 891e0a9bd2edc1b0
         spec:
           serviceAccountName: bug-investigator-trigger
           restartPolicy: Never
@@ -186,6 +196,10 @@ spec:
                   value: /var/run/github/token
                 - name: PROMETHEUS_URL
                   value: http://prometheus.logging.svc.cluster.local:9090
+                # The browser tool server (taskboard-browser-mcp.yaml) that replays `ui` evidence
+                # during verify (§T.153): the same namespace, through the waypoint.
+                - name: BROWSER_URL
+                  value: http://taskboard-browser-mcp.kagent.svc.cluster.local:3000/mcp
                 - name: LOKI_URL
                   value: http://loki.logging.svc.cluster.local:3100
                 - name: NAMESPACE
