@@ -612,9 +612,10 @@ a port-forward (runbook, "taskboard-browser"); PR K2 binds it to `bug-investigat
 
 - **One call** starts the Taskboard code that is live as its own `server.py` process on a fresh
   database with the demo data, loads `/` in headless Chromium, runs up to 15 steps and tears
-  everything down; nothing persists between calls. The code is ConfigMap `taskboard-browser-code`,
-  which `scripts/gen-taskboard-configmap.py` writes in the same commit as the app's own ConfigMap,
-  so it is the deployed commit; every result reports it as `commit`. A step is an action
+  everything down; nothing persists between calls (one known exception, under "What it can
+  touch"). The code is ConfigMap `taskboard-browser-code`, which
+  `scripts/gen-taskboard-configmap.py` writes in the same commit as the app's own ConfigMap, so
+  it is the deployed commit; every result reports it as `commit`. A step is an action
   (`click`, `fill`, `select`, `press`, or `goto` a path) or a check (`expect_visible`,
   `expect_absent`, `expect_text`) on a target named by role, label, placeholder or text. An
   action's target must match exactly one element. The page settles after every action, and the
@@ -628,12 +629,15 @@ a port-forward (runbook, "taskboard-browser"); PR K2 binds it to `bug-investigat
   with `/`, never `//`), and the browser aborts every request to any other origin. The pod holds
   no credential (no Secret, no service account token), and the adapter's allowlist is exactly
   `replay_ui_steps`. Residual: the copy listens on all interfaces, so during a replay (at most
-  75 s) it is reachable on the pod IP from inside the cluster; it holds only seeded demo data and
-  no credential. A NetworkPolicy cannot close this in ambient mode: inbound traffic arrives as
-  HBONE on 15008 and ztunnel unwraps it inside the pod, so allowed callers would still reach the
-  copy's port, and a missed caller namespace would fail every bound agent. The follow-up is for
-  Taskboard to honour `HOST` and the engine to pass `HOST=127.0.0.1` (effective after the next
-  Taskboard deploy).
+  75 s) — or, until the core follow-up lands, until the pod restarts if the MCP session is killed
+  mid-replay — it is reachable on the pod IP from inside the cluster; it holds only seeded demo
+  data and no credential. A NetworkPolicy cannot close this in ambient mode: inbound traffic
+  arrives as HBONE on 15008 and ztunnel unwraps it inside the pod, so allowed callers would still
+  reach the copy's port, and a missed caller namespace would fail every bound agent. The
+  follow-up is for Taskboard to honour `HOST` and the engine to pass `HOST=127.0.0.1` (effective
+  after the next Taskboard deploy). Known issue: a session killed mid-replay leaves its copy
+  running (runbook, "Orphaned processes"). The core follow-up, which must merge before K2, kills
+  the copy with its parent and clears a stale one at the next replay (SPEC §T.153).
 - **Classified `read`, pinned** (owner, option 1, 2026-10-29). The tool clicks and types, but
   only in that copy, so it is `read` only when it is bound from `taskboard-browser`. Taxonomy key
   `server-pinned-tools` maps the tool to that server, and admission (`agent-capability` rule 2b)

@@ -42,8 +42,8 @@
 # agentgateway reads local.yaml once at start: checksum/config is the sha256 of the local.yaml text
 # (CI checks it); checksum/code and taskboard.arigsela.com/source-commit are written by
 # scripts/gen-taskboard-configmap.py (tests/taskboard/ checks them); checksum/core is the core
-# ConfigMap's checksum (scripts/gen-bug-investigator-core.py writes it). So a config change, a Taskboard deploy or a core
-# change in git rolls the pod.
+# ConfigMap's checksum (scripts/gen-bug-investigator-core.py writes it). So a config change, a
+# Taskboard deploy or a core change in git rolls the pod.
 # Recompute checksum/config: python3 -m pytest tests/agent-identity/test_mcp_server_manifests.py -q -k checksum
 apiVersion: v1
 kind: ServiceAccount
@@ -167,6 +167,11 @@ spec:
     spec:
       serviceAccountName: taskboard-browser-mcp
       automountServiceAccountToken: false
+      # The pod's pause container becomes PID 1 and reaps zombies. Without it agentgateway is PID 1
+      # and never reaps them: each replay left two `[chrome-headless] <defunct>` processes behind
+      # (none with an init process; Playwright recommends one). One long-running container, so
+      # sharing the process namespace exposes nothing to a neighbour.
+      shareProcessNamespace: true
       nodeSelector:
         node.kubernetes.io/workload: infrastructure
       tolerations:
