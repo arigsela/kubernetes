@@ -351,18 +351,34 @@ tool error (`isError`) whose text says which part failed. A step that fails (`ok
   stays in `Init` and retries; during a rollout the old pod keeps serving, but after a drain,
   eviction or node loss there is no old pod, and the server is down until PyPI answers. Once K2
   binds it, that fails every `bug-investigator` run at start ("an agent run fails at start").
+  No alert watches init containers (`Container crash-looping` reads app containers only; SPEC
+  §T.153 follow-up): a new pod stuck behind a serving old one stays silent, and after a drain only
+  `Deployment has no available replicas` fires, after 10 minutes.
   `THESE PACKAGES DO NOT MATCH THE HASHES` means a downloaded wheel is not the pinned one: never
   edit a hash here to make it pass. The pins change only in claude-agents
   `bug-investigator/browser-requirements.txt` plus a core regen, and together with the image tag
   (the `playwright` wheel and the image share the version, 1.64.0).
 - **Orphaned processes:** a call should leave nothing behind. With no call running,
-  `kubectl -n kagent exec deploy/taskboard-browser-mcp -c mcp-server -- ps -eo pid,ppid,etime,args`
-  shows agentgateway, plus a `browser_server.py` per open MCP session. A `python3 server.py` (the
-  app copy) or `chrome-headless-shell` processes still there after the session ended are orphans,
-  which happens if agentgateway SIGKILLs the stdio child before its cleanup runs. They hold memory
-  towards the limit. Kill them (`kubectl -n kagent exec deploy/taskboard-browser-mcp -c mcp-server -- sh -c 'kill <pid> …'`)
-  or delete the pod (the Deployment replaces it; its init container needs PyPI), and record it in
-  SPEC §T.153: it is a bug in the core.
+  `kubectl -n kagent exec deploy/taskboard-browser-mcp -c mcp-server -- ps -eo pid,ppid,stat,etime,args`
+  shows `/pause` as PID 1 (the pod shares one process namespace, `shareProcessNamespace`),
+  agentgateway, and a `browser_server.py` per open MCP session.
+  - **`<defunct>` entries** (state `Z`, such as `[chrome-headless] <defunct>`) are zombies, not
+    orphans: processes that have exited and wait for their parent to collect them. They hold no
+    memory, cannot be killed, and are harmless; the pause container (PID 1) reaps the ones
+    reparented to it. If they pile up, check that the Deployment still sets
+    `shareProcessNamespace: true` (without it agentgateway is PID 1 and never reaps them).
+  - **Known issue, until the core follow-up lands (before K2; SPEC §T.153 follow-ups):** an MCP
+    session killed mid-replay (agentgateway kills its stdio `browser_server.py` before the replay's
+    cleanup runs) orphans the Taskboard copy. A `python3 server.py` with PPID 1 (or
+    `chrome-headless-shell` processes that are not `<defunct>`) still there after the session
+    ended is that copy. Its database directory stays in `/tmp`, it holds memory towards the
+    container's limit, and it keeps listening on all interfaces, so it stays reachable on the pod
+    IP from inside the cluster until the pod restarts (seeded demo data, no credential). Clear it
+    by rolling the pod through git: add or bump a pod-template annotation on the Deployment (for
+    example `kubectl.kubernetes.io/restartedAt: "<now>"`) in a PR; the new pod's init container
+    needs PyPI. Or wait for the follow-up: the core regen that brings it (K2) rolls the pod
+    (`checksum/core`), and from then on the copy dies with its parent and a stale one is killed at
+    the next replay.
 
 ### Symptom: the trigger keeps filing `from-alert` issues
 It files one per route that answers 5xx with no `from-alert` issue open or closed in the last 6
@@ -401,6 +417,7 @@ the live Taskboard (docs, "The browser"). Nothing binds it until PR K2.
   kubectl -n kagent port-forward svc/taskboard-browser-mcp 13000:3000 &
   cd ../claude-agents/bug-investigator   # the core must be on PYTHONPATH
   PYTHONPATH=src python3 - <<'PY'
+  import time
   from bug_investigator.mcp_client import replay_via_mcp
   steps = [
       {"do": "select", "target": {"label": "User"}, "value": "dana (editor)"},
@@ -408,8 +425,10 @@ the live Taskboard (docs, "The browser"). Nothing binds it until PR K2.
                                  "within": {"css": ".card", "text": "Write copy for the pricing page"}}},
       {"do": "expect_text", "target": {"role": "status"}, "value": "moved to in progress"},
   ]
+  t0 = time.monotonic()
   r = replay_via_mcp("http://127.0.0.1:13000/mcp", steps, None)  # asks for every step's screenshot
-  print("ok", r["ok"], "commit", r["commit"], "seconds", r.get("seconds"), "error", r["error"])
+  # The result carries no duration: time the whole call (session, app start, Chromium, steps).
+  print("ok", r["ok"], "commit", r["commit"], "wall", f"{time.monotonic() - t0:.1f} s", "error", r["error"])
   for s in r["steps"]:
       print(s["n"], "ok" if s["ok"] else f"FAIL {s['failure']}: {s['error']}", s["text"])
   for n, png in r["screenshots"]:
@@ -419,9 +438,9 @@ the live Taskboard (docs, "The browser"). Nothing binds it until PR K2.
   ```
 
   Expect `ok True`, `commit` equal to the Deployment's `taskboard.arigsela.com/source-commit`
-  annotation, three passing steps and three PNGs in `/tmp`, in roughly 10-20 s. A set `error` is
-  the tool's `isError` text: see "`replay_ui_steps` answers `browser unavailable: …`" under
-  Failure modes. Then check for orphaned processes (same entry).
+  annotation, three passing steps and three PNGs in `/tmp`, with a wall time of roughly 10-20 s.
+  A set `error` is the tool's `isError` text: see "`replay_ui_steps` answers
+  `browser unavailable: …`" under Failure modes. Then check for orphaned processes (same entry).
 - **Roll back:** before K2 there is nothing to roll back; no agent binds the server, so a broken
   pod affects no agent. After K2, remove the `taskboard-browser` binding from
   `agent-templates/bug-investigator.yaml` by PR, and the agent investigates as before, without

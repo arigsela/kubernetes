@@ -226,3 +226,11 @@ def test_browser_installs_only_hash_pinned_wheels_and_runs_unprivileged():
     assert vols[mounts["/taskboard"]["name"]]["configMap"]["name"] == "taskboard-browser-code"
     assert vols[mounts["/core/src/bug_investigator"]["name"]]["configMap"]["name"] == "bug-investigator-core"
     assert mounts["/taskboard"]["readOnly"] is True and mounts["/deps"]["readOnly"] is True
+
+
+def test_browser_pod_reaps_zombies():
+    """Each replay leaves exited Chromium children (`[chrome-headless] <defunct>`) reparented to
+    PID 1. agentgateway as PID 1 never reaps them; with a shared process namespace the pause
+    container is PID 1 and does (§T.153)."""
+    pod = one("taskboard-browser-mcp", "Deployment")["spec"]["template"]["spec"]
+    assert pod.get("shareProcessNamespace") is True
