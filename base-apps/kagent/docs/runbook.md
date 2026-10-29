@@ -426,7 +426,10 @@ the live Taskboard (docs, "The browser"). Nothing binds it until PR K2.
   pod affects no agent. After K2, remove the `taskboard-browser` binding from
   `agent-templates/bug-investigator.yaml` by PR, and the agent investigates as before, without
   the browser. Delete nothing else: the Deployment, the RemoteMCPServer, the code copy and the
-  taxonomy pin can stay, and the pin keeps guarding the tool.
+  taxonomy pin can stay, and the pin keeps guarding the tool. To remove the replay surface
+  entirely, set the Deployment's `replicas: 0` in git (or delete `taskboard-browser-mcp.yaml`),
+  but only once nothing binds the server: a bound server that does not answer fails every run of
+  the agents bound to it at start.
 
 ### Weekly docs check: run it now, read it, reset its memory, dismiss a finding
 - **Run now:** `kubectl -n kagent create job --from=cronjob/docs-checker-trigger
