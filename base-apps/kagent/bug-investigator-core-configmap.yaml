@@ -3,7 +3,7 @@
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-bug-investigator-core.py
-# Source:     arigsela/claude-agents@023a685ca173ec6ac4ece37b5a1814db877177c7
+# Source:     arigsela/claude-agents@1d2b659b225eebd0b0442b1f406cf501c3ca0b16
 #             (bug-investigator/src/bug_investigator/*.py, bug-investigator/prompt.md, bug-investigator/findings.schema.json, bug-investigator/browser-requirements.txt)
 # Regenerate: ./scripts/gen-bug-investigator-core.py --source <claude-agents checkout> --commit <sha>
 # tests/taskboard/test_bug_investigator_core.py fails if this file and the consumers' checksum/core disagree.
@@ -22,7 +22,7 @@ metadata:
     app.kubernetes.io/part-of: kagent
     app.kubernetes.io/name: bug-investigator-core
   annotations:
-    bug-investigator.arigsela.com/source-commit: 023a685ca173ec6ac4ece37b5a1814db877177c7
+    bug-investigator.arigsela.com/source-commit: 1d2b659b225eebd0b0442b1f406cf501c3ca0b16
     bug-investigator.arigsela.com/source-repo: arigsela/claude-agents
 data:
   __init__.py: |
