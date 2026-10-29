@@ -198,6 +198,24 @@ def test_an_unreachable_browser_raises_into_check_ui():
         pc.v.ctxs[0].kw["ui_replay"](STEPS, 2)
 
 
+def test_at_most_two_replays_per_investigation():
+    """Ruling R18: the third and later `ui` items are not replayed; check_ui drops them with the reason.
+    The count starts again with every investigation (every verify)."""
+    pc = package_core(t.Config())
+    pc.verify({}, {}, 24, "/w/app", "/w/deploy")
+    replay = pc.v.ctxs[0].kw["ui_replay"]
+    replay(STEPS, 2)
+    replay(STEPS, None)
+    for _ in range(2):
+        with pytest.raises(Exception) as e:
+            replay(STEPS, 2)
+        assert str(e.value) == "only two browser reproductions are replayed per investigation"
+    assert len(pc.mcp.calls) == 2
+    pc.verify({}, {}, 25, "/w/app", "/w/deploy")                         # the next investigation
+    pc.v.ctxs[1].kw["ui_replay"](STEPS, 2)
+    assert len(pc.mcp.calls) == 3
+
+
 def test_last_shots_are_this_runs_only():
     pc = package_core(t.Config(), shots={"E3": [(1, PNG)]})
     pc.verify({}, {}, 24, "/w/app", "/w/deploy")
@@ -524,6 +542,21 @@ def test_the_deployed_core_drops_the_item_when_the_browser_is_unreachable(core_d
     assert verified["evidence"] == [] and core.last_shots == {}
     (dropped,) = verified["verification"]["dropped"]
     assert dropped["id"] == "E1" and "replay failed" in dropped["reason"]
+
+
+def test_the_deployed_core_drops_a_third_reproduction_unreplayed(core_dir, monkeypatch, tmp_path):
+    world = World(replay_result())
+    monkeypatch.setattr(urllib.request, "urlopen", world)
+    f = findings()
+    for k in (2, 3):
+        f["evidence"].append({**copy.deepcopy(f["evidence"][0]), "id": f"E{k}"})
+    core = t.PackageCore(t.Config(core_dir=str(core_dir)))
+    verified = core.verify(f, {}, 24, str(tmp_path / "app"), str(tmp_path / "deploy"))
+    assert len(world.tool_calls) == 2
+    assert [e["id"] for e in verified["evidence"]] == ["E1", "E2"] and set(core.last_shots) == {"E1", "E2"}
+    (dropped,) = verified["verification"]["dropped"]
+    assert dropped["id"] == "E3"
+    assert dropped["reason"].endswith("only two browser reproductions are replayed per investigation")
 
 
 def test_the_repro_file_loads_with_the_deployed_cores_validator(core_dir, tmp_path):

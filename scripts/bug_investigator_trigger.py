@@ -136,6 +136,11 @@ CLONE_TIMEOUT = 300
 # The browser (§T.153): taskboard-browser-mcp's replay_ui_steps, called during verify for `ui` evidence.
 BROWSER_URL = "http://taskboard-browser-mcp.kagent.svc.cluster.local:3000/mcp"
 BROWSER_SCREENSHOTS = ("all", "failure")   # every step's screenshot, or the failing (else last) step's
+# Ruling R18: a replay may take ~120 s (the engine's 75 s deadline plus the client's timeout), so one
+# investigation replays at most two `ui` items; check_ui drops the others with this reason. The
+# CronJob's activeDeadlineSeconds leaves room for exactly these two.
+UI_REPLAYS_MAX = 2
+UI_REPLAY_LIMIT = "only two browser reproductions are replayed per investigation"
 # The core's evidence.Uploader refuses a whole commit for one file over these limits, so the trigger
 # leaves such a file out instead: PNGs only, 2 MiB each, 30 per commit.
 SHOT_MAX_FILES = 30
@@ -185,6 +190,10 @@ change the steps; `ui-tests/` is not among the folders the rules above keep you 
 
 ui-check replays it on your branch; every step must pass with your fix.
 """
+
+
+class ReplayLimit(RuntimeError):
+    """A `ui` item past UI_REPLAYS_MAX in one investigation: not replayed (check_ui drops it)."""
 
 
 class Failure(RuntimeError):
@@ -773,10 +782,17 @@ class PackageCore:
         # scope-checked, no Grafana token; the comment's links still open Grafana Explore.
         # ui_replay: `ui` steps replayed by taskboard-browser-mcp. An McpError (HTTP, network) is raised
         # into the core's check_ui, which drops that item with the reason; None drops every `ui` item.
+        # At most UI_REPLAYS_MAX replays per verify (one verify per investigation): later items raise
+        # ReplayLimit, which check_ui also turns into a dropped item.
         ui_replay = None
         if c.browser_enabled:
-            url, shots, mcp = c.browser_url, c.browser_screenshots, self.mcp
-            ui_replay = lambda steps, fails_at: mcp.replay_via_mcp(url, steps, fails_at, screenshots=shots)  # noqa: E731
+            url, shots, mcp, replays = c.browser_url, c.browser_screenshots, self.mcp, [0]
+
+            def ui_replay(steps, fails_at):
+                replays[0] += 1
+                if replays[0] > UI_REPLAYS_MAX:
+                    raise ReplayLimit(UI_REPLAY_LIMIT)
+                return mcp.replay_via_mcp(url, steps, fails_at, screenshots=shots)
         ctx = self.v.Ctx(mode="full", repo=c.repo, app_dir=app_dir, deploy_dir=deploy_dir,
                          deploy_repo=c.deploy_repo, issue=issue,
                          issue_created=(facts.get("ticket") or {}).get("created_at"), namespace=c.namespace,
