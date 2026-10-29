@@ -727,7 +727,7 @@ def test_every_binding_of_a_pinned_tool_must_name_its_server(tmp_path, capsys):
     assert PIN_MESSAGE in capsys.readouterr().err
 
 
-def test_pinned_server_is_a_remote_mcp_server(tmp_path):
+def test_pinned_server_is_a_remote_mcp_server(tmp_path, capsys):
     """Pinned by RemoteMCPServer name: another kind with the same name is not the server."""
     repo = pinned_repo(tmp_path)
     path = repo / "base-apps" / "kagent" / "agent-templates" / "investigator.yaml"
@@ -735,6 +735,8 @@ def test_pinned_server_is_a_remote_mcp_server(tmp_path):
     doc["spec"]["tools"][0]["mcp"]["server"]["kind"] = "MCPServer"
     path.write_text(yaml.safe_dump(doc))
     assert run_repo(repo) == 1
+    err = capsys.readouterr().err
+    assert PIN_MESSAGE in err and "It names MCPServer/taskboard-browser" in err, err
 
 
 def test_taxonomy_without_server_pinned_tools_is_error(tmp_path, capsys):
