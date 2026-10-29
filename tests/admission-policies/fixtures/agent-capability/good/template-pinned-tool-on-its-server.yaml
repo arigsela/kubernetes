@@ -1,0 +1,28 @@
+# A server-pinned tool bound from the one server the taxonomy pins it to (§V.113), beside an
+# ordinary read binding of another server, which the pin does not touch.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: good-pinned-tool-on-its-server
+  namespace: kagent
+  labels:
+    capability.homelab/class: read
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: agent-docs
+        requireApproval: false
+        tools:
+          - get_file_contents
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: taskboard-browser
+        requireApproval: false
+        tools:
+          - replay_ui_steps

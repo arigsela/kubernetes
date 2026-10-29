@@ -19,6 +19,13 @@ SPEC = importlib.util.spec_from_file_location(
 vac = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(vac)
 
+GEN_SPEC = importlib.util.spec_from_file_location(
+    "gen_agent_capability_policy",
+    Path(__file__).resolve().parents[2] / "scripts" / "gen-agent-capability-policy.py",
+)
+gen = importlib.util.module_from_spec(GEN_SPEC)
+GEN_SPEC.loader.exec_module(gen)
+
 API = "api.kagent.dev/v1alpha3"
 REPO = Path(__file__).resolve().parents[2]
 GO_ADK = "ghcr.io/kagent-dev/kagent/golang-adk:1.0.0-alpha14@sha256:" + "0" * 64
@@ -29,13 +36,15 @@ DOCS_CHECKER_TOOLS = ["get_file_contents", "search_code", "list_commits", "get_c
 
 TAXONOMY = {
     "read": ["k8s_get_resources", "get_file_contents", "list_pull_requests", "search_code",
-             "list_commits", "get_commit"],
+             "list_commits", "get_commit", "replay_ui_steps"],
     "propose": ["create_pull_request", "push_files"],
     "write": ["k8s_patch_resource"],
     "destructive": ["k8s_delete_resource", "k8s_execute_command"],
     "runtime-images": ["ghcr.io/kagent-dev/kagent/golang-adk"],
     "byo-images": [DOCS_CHECKER],
     "read-only-servers": ["agent-docs"],
+    # A JSON object, not a list: {tool: the one RemoteMCPServer it may be bound from} (§V.113).
+    "server-pinned-tools": {"replay_ui_steps": "taskboard-browser"},
 }
 
 
@@ -678,3 +687,125 @@ def test_real_taxonomy_propose_list_is_exactly_the_four_pr_tools():
     tools, _ = vac.load_taxonomy(REPO)
     assert {t for t, c in tools.items() if c == "propose"} == {
         "create_branch", "create_or_update_file", "push_files", "create_pull_request"}
+
+
+# ------------------------------------- invariant 8: pinned tools (§V.113)
+# replay_ui_steps clicks and types, yet is `read`: only because taskboard-browser bounds what it
+# can touch (a throwaway copy it starts per call). From any other server it is denied
+# (owner option 1, 2026-10-29).
+
+PIN_MESSAGE = ("AgentTemplate 'investigator' binds replay_ui_steps from a server other than "
+               "taskboard-browser: a pinned tool is read only because that one server bounds "
+               "what it can touch.")
+
+
+def pinned_repo(tmp_path, cls="read", server="taskboard-browser", gated=None, taxonomy=None):
+    """A template binding replay_ui_steps (and a plain read tool) from `server`; gated adds a
+    second, requireApproval: true binding from kagent-tool-server."""
+    t = template("investigator", cls, tools=["get_file_contents", "replay_ui_steps"],
+                 approval=False, server=server, gated=gated)
+    return make_repo(tmp_path, [t], taxonomy=taxonomy,
+                     servers=("agent-docs", "kagent-tool-server", "implementer",
+                              "taskboard-browser"))
+
+
+def test_pinned_tool_bound_from_its_server_passes(tmp_path):
+    assert run_repo(pinned_repo(tmp_path)) == 0
+
+
+@pytest.mark.parametrize("cls", ["read", "admin"])
+def test_pinned_tool_bound_from_another_server_is_error(tmp_path, capsys, cls):
+    """The pin is not a class rule: even an admin template may not take the tool from another
+    server, where a tool of the same name could touch anything."""
+    assert run_repo(pinned_repo(tmp_path, cls=cls, server="implementer")) == 1
+    assert PIN_MESSAGE in capsys.readouterr().err
+
+
+def test_every_binding_of_a_pinned_tool_must_name_its_server(tmp_path, capsys):
+    """One binding from taskboard-browser does not excuse a second from another server."""
+    assert run_repo(pinned_repo(tmp_path, cls="admin", gated=["replay_ui_steps"])) == 1
+    assert PIN_MESSAGE in capsys.readouterr().err
+
+
+def test_pinned_server_is_a_remote_mcp_server(tmp_path):
+    """Pinned by RemoteMCPServer name: another kind with the same name is not the server."""
+    repo = pinned_repo(tmp_path)
+    path = repo / "base-apps" / "kagent" / "agent-templates" / "investigator.yaml"
+    doc = yaml.safe_load(path.read_text())
+    doc["spec"]["tools"][0]["mcp"]["server"]["kind"] = "MCPServer"
+    path.write_text(yaml.safe_dump(doc))
+    assert run_repo(repo) == 1
+
+
+def test_taxonomy_without_server_pinned_tools_is_error(tmp_path, capsys):
+    """Fail closed (§V.84), like the byo keys: a missing object is not an empty one."""
+    tax = {k: v for k, v in TAXONOMY.items() if k != "server-pinned-tools"}
+    assert run_repo(pinned_repo(tmp_path, taxonomy=tax)) == 1
+    assert "taxonomy missing 'server-pinned-tools' key" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("raw", [
+    '{"replay_ui_steps": ',                          # not JSON
+    '["replay_ui_steps"]',                           # a list names no server
+    '{"replay_ui_steps": ["taskboard-browser"]}',    # one server, never a list of them
+    '{"replay_ui_steps": ""}',                       # no server at all
+], ids=["unterminated", "list", "server-list", "empty-server"])
+def test_malformed_server_pinned_tools_is_a_named_error(tmp_path, capsys, raw):
+    repo = pinned_repo(tmp_path)
+    path = repo / "base-apps" / "admission-policies" / "agent-capability-taxonomy.yaml"
+    cm = yaml.safe_load(path.read_text())
+    cm["data"]["server-pinned-tools"] = raw
+    path.write_text(yaml.safe_dump(cm))
+    assert run_repo(repo) == 1
+    assert "taxonomy 'server-pinned-tools'" in capsys.readouterr().err
+
+
+def test_pinned_tool_must_itself_be_classified(tmp_path, capsys):
+    """A pin is not a classification: an unclassified pinned tool would still be denied when
+    bound, but the taxonomy itself is wrong, so CI says so even before anything binds it."""
+    tax = dict(TAXONOMY, **{"server-pinned-tools": {"replay_ui_steps": "taskboard-browser",
+                                                     "click_anything": "taskboard-browser"}})
+    assert run_repo(pinned_repo(tmp_path, taxonomy=tax)) == 1
+    assert "click_anything" in capsys.readouterr().err
+
+
+def test_real_taxonomy_classifies_replay_ui_steps_read_and_pins_it():
+    tools, _ = vac.load_taxonomy(REPO)
+    assert tools.get("replay_ui_steps") == "read"
+    pinned, errors = vac.load_pinned_tools(REPO)
+    assert not errors, errors
+    assert pinned == {"replay_ui_steps": "taskboard-browser"}
+
+
+# ----------------------------------- the generated admission policy (rule 2b)
+
+PIN_RULE = ("variables.mcp.all(b, b.?tools.orValue([]).all(n, !(n in variables.pinned) || "
+            "b.?server.?name.orValue('') == variables.pinned[n]))")
+
+
+def _capability_policy(text: str) -> dict:
+    return next(d for d in yaml.safe_load_all(text)
+                if d and d["kind"] == "ValidatingAdmissionPolicy"
+                and d["metadata"]["name"] == "agent-capability")
+
+
+def test_generated_policy_is_in_sync_with_the_taxonomy():
+    """The drift check CI runs: the committed policy is exactly what the taxonomy generates."""
+    assert gen.main(["--repo-root", str(REPO), "--check"]) == 0
+
+
+def test_generator_compiles_server_pinned_tools_into_the_pin_rule(tmp_path):
+    """The pins come from the taxonomy (a CEL map literal), never from the generator: a second
+    pin in a synthetic taxonomy shows up as is. The rule sits in agent-capability, beside the
+    class checks."""
+    pins = {"replay_ui_steps": "taskboard-browser", "get_commit": "agent-docs"}
+    repo = make_repo(tmp_path, [template("reader", "read", tools=["k8s_get_resources"])],
+                     taxonomy=dict(TAXONOMY, **{"server-pinned-tools": pins}))
+    policy = _capability_policy(gen.render_native(repo))
+    variables = {v["name"]: v["expression"] for v in policy["spec"]["variables"]}
+    assert json.loads(variables["pinned"]) == pins
+    rule = [v for v in policy["spec"]["validations"] if v["expression"] == PIN_RULE]
+    assert len(rule) == 1, policy["spec"]["validations"]
+    assert "from a server other than" in rule[0]["messageExpression"]
+    assert "a pinned tool is read only because that one server bounds what it can touch." in (
+        rule[0]["messageExpression"])

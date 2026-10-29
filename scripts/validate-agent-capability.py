@@ -34,17 +34,23 @@ against the manifests in git:
                         the server side (tests/agent-capability proves it per server). Every
                         byo-images entry is a real sha256 digest (REPLACE_WITH_DIGEST fails),
                         and every read-only server exists in git.
+  8. Pinned tools       every MCP binding of a tool in the taxonomy's server-pinned-tools names
+                        the one RemoteMCPServer it is pinned to, whatever the template's class.
+                        replay_ui_steps clicks and types, and is `read` only because
+                        taskboard-browser bounds what it can touch, a throwaway copy it starts
+                        per call (SPEC §V.113, owner option 1, 2026-10-29). Every pinned tool
+                        is itself classified.
 
 This is the authoritative gate. The native admission policies
-(base-apps/admission-policies/agent-capability.yaml) enforce 1-3, 5, 6 and one hop of 4.
+(base-apps/admission-policies/agent-capability.yaml) enforce 1-3, 5, 6, 8 and one hop of 4.
 The transitive closure of 4 and all of 7 span several objects, so CI is where they are
 decided; agent-definitions-from-git.yaml makes git the only way in, so what CI saw is what
 runs (SPEC §V.101).
 
 FAIL CLOSED (SPEC §V.84): a kagent manifest of a kind/version this script does not
 understand (e.g. the 0.10 kagent.dev/v1alpha2 Agent), an unparsable kagent file, zero
-AgentTemplates, a missing byo-images or read-only-servers key, or an Agent whose Harness is
-not in git is an error, never a vacuous pass.
+AgentTemplates, a missing byo-images, read-only-servers or server-pinned-tools key, or an
+Agent whose Harness is not in git is an error, never a vacuous pass.
 
 Exit 0 clean, 1 on any error.
 """
@@ -154,6 +160,27 @@ def load_byo_conditions(repo_root: Path) -> tuple[list[str], list[str], list[str
                           f"are exact images, never a repository (it would admit every digest "
                           f"pushed there later) or a tag (it moves)")
     return out[0], out[1], errors
+
+
+def load_pinned_tools(repo_root: Path) -> tuple[dict[str, str], list[str]]:
+    """(server-pinned-tools, errors) from the taxonomy: {tool: RemoteMCPServer name}. The key
+    is required, like the byo keys (an empty object `{}` pins nothing); its value is a JSON
+    object whose every value is one non-empty server name."""
+    data = _taxonomy_data(repo_root)
+    key = "server-pinned-tools"
+    if key not in data:
+        return {}, [f"taxonomy missing '{key}' key ({TAXONOMY_PATH}); an empty object {{}} pins "
+                    f"nothing, a missing one is not understood (§V.84)"]
+    try:
+        pinned = json.loads(data[key] or "{}")
+    except json.JSONDecodeError as exc:
+        return {}, [f"taxonomy '{key}' is not valid JSON ({exc}); it must be a JSON object of "
+                    f"tool name to RemoteMCPServer name"]
+    if not isinstance(pinned, dict) or not all(
+            isinstance(server, str) and server for server in pinned.values()):
+        return {}, [f"taxonomy '{key}' must be a JSON object of tool name to one RemoteMCPServer "
+                    f"name, e.g. {{\"replay_ui_steps\": \"taskboard-browser\"}}"]
+    return pinned, []
 
 
 def load_taxonomy(repo_root: Path) -> tuple[dict[str, str], list[str]]:
@@ -454,6 +481,29 @@ def check_byo_agents(agents, templates, harnesses, read_only_servers, taxonomy) 
     return errors
 
 
+def check_pinned_tools(templates, pinned, taxonomy) -> list[str]:
+    """Invariant 8: a pinned tool is bound only from its server, in every binding. The CRD
+    requires a binding's server to be a RemoteMCPServer in the template's namespace, so the
+    kind and name are the pin. Same message as the admission policy (rule 2b)."""
+    errors = [f"server-pinned-tools pins {tool!r}, which is not classified in the taxonomy. "
+              f"A pin bounds a classification; classify the tool in {TAXONOMY_PATH} first."
+              for tool in pinned if tool not in taxonomy]
+    for path, doc in templates:
+        for binding in _bindings(doc):
+            server = binding.get("server") or {}
+            for tool in binding.get("tools") or []:
+                want = pinned.get(tool)
+                if want is None or (server.get("kind") == "RemoteMCPServer"
+                                    and server.get("name") == want):
+                    continue
+                errors.append(
+                    f"AgentTemplate '{_name(doc)}' binds {tool} from a server other than {want}: "
+                    f"a pinned tool is read only because that one server bounds what it can "
+                    f"touch. It names {server.get('kind')}/{server.get('name')} ({path}; "
+                    f"§V.113).")
+    return errors
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate the agent-capability contract."
@@ -468,6 +518,8 @@ def main(argv=None) -> int:
 
     taxonomy, images = load_taxonomy(repo_root)
     byo_images, read_only_servers, errors = load_byo_conditions(repo_root)
+    pinned, pin_errors = load_pinned_tools(repo_root)
+    errors += pin_errors
     by_kind, collect_errors = collect(repo_root)
     errors += collect_errors
     templates = by_kind.get("AgentTemplate", [])
@@ -486,6 +538,7 @@ def main(argv=None) -> int:
     errors += check_read_only_servers_exist(read_only_servers,
                                             by_kind.get("RemoteMCPServer", []))
     errors += check_byo_agents(agents, templates, harnesses, read_only_servers, taxonomy)
+    errors += check_pinned_tools(templates, pinned, taxonomy)
 
     print(
         f"agent-capability: {len(templates)} templates, {len(agents)} agents, "

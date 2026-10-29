@@ -1,0 +1,23 @@
+# rule 2b: a server-pinned tool bound from a server other than the one the taxonomy pins it to.
+# replay_ui_steps is read only when bound from taskboard-browser (§V.113); every tool here is
+# classified and read, so the pin is the one rule this breaks.
+apiVersion: api.kagent.dev/v1alpha3
+kind: AgentTemplate
+metadata:
+  name: bad-pinned-tool-from-another-server
+  namespace: kagent
+  labels:
+    capability.homelab/class: read
+spec:
+  modelConfig:
+    name: anthropic-claude-haiku-5-5
+  systemPrompt: fixture
+  tools:
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: implementer
+        requireApproval: false
+        tools:
+          - get_file_contents
+          - replay_ui_steps
