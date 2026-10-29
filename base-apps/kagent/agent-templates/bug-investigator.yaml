@@ -11,7 +11,7 @@
 #   the comment and posts it under its own GitHub token. Nothing the model says reaches the issue
 #   unchecked.
 #
-# Tools (two read-only servers, no credential reaches the sandbox):
+# Tools (three read-only servers, no credential reaches the sandbox):
 #   - implementer: the implementer GitHub App's server, six READ tools only. The App is installed
 #     on arigsela/kubernetes and arigsela/taskboard. A read template may bind read tools of a
 #     server that also serves propose tools: the capability check is per bound tool
@@ -20,6 +20,16 @@
 #     "duplicate tool" (implementer.yaml).
 #   - taskboard-telemetry: Loki and Prometheus, every query scoped to namespace="taskboard" by the
 #     server itself (taskboard-telemetry-mcp.yaml), mcp-grafana's tool names.
+#   - taskboard-browser: one tool, replay_ui_steps (§T.153). It clicks and types, but only in a
+#     throwaway copy of the live Taskboard that its server starts per call (fresh database with the
+#     demo data, no URL input; the browser cannot leave the copy), so it is `read` from that server
+#     only: the taxonomy pins it there (server-pinned-tools). A bug that lives only in the page
+#     leaves nothing in Loki or Prometheus; this is how the agent reproduces one, and the trigger
+#     replays each cited reproduction (`ui` evidence) before it counts.
+#
+# The n8n POC copies this systemPrompt verbatim (scripts/gen-n8n-bug-investigator-workflow.py) but
+# gets no browser until §T.153's PR K3, so every browser instruction below says "when the tool
+# replay_ui_steps is available" and what to do without it.
 #
 # AgentTemplate = WHAT (api.kagent.dev/v1alpha3); its Agent (../agents/bug-investigator.yaml) runs
 # it on ../harnesses/kagent-stateless.yaml. Memory (§T.148) is the trigger's, not the harness's:
@@ -74,6 +84,20 @@ spec:
       Prometheus selector must include `namespace="taskboard"` or use a `taskboard_*` metric. The
       server refuses anything else. Put a `|= "..."` substring filter before any regex or `| json`,
       and pass explicit RFC 3339 start and end times; keep windows to what you need (Loki is small).
+    - The browser, when the tool `replay_ui_steps` is available. One call starts a throwaway copy of
+      the live Taskboard code (the result names its commit) on a fresh database with the demo data
+      (not the live tasks), loads `/`, runs your steps in order and stops at the first step that
+      fails. Nothing persists between calls, and the browser cannot leave the app. The page is
+      `taskboard/index.html` and `taskboard/app.js`. A step is {do, target, value, note}, at most 15
+      steps. `do` is an action: `click`, `fill` (`value`: the text), `select` (`value`: the option
+      label), `press` (`value`: a key such as Enter), `goto` (`value`: a path starting with `/`; no
+      target); or a check: `expect_visible`, `expect_absent`, `expect_text` (`value`: text the
+      target contains, case-sensitive). `target` has exactly one of `role` (with an optional
+      `name`), `label`, `placeholder` or `text`, plus an optional `within` {css, text} that must
+      match exactly one element. An action needs a target that matches exactly one element: pick a
+      card with `"within": {"css": ".card", "text": "<card title>"}`. A check passes on any match.
+      `name`, `label` and `placeholder` match the whole text exactly; `text` and `within.text` match
+      a case-insensitive substring.
 
     ## The script that checks you
     Every evidence item is verified, and the ones that fail are dropped:
@@ -90,6 +114,14 @@ spec:
       character: the full stream selector (`{namespace="taskboard", ...}`) or metric selector,
       no `#` comments, no shorthand and no description in its place (a description goes in
       `detail`). A query the tool would refuse is dropped from the report.
+    - `ui` {ref: the scenario in one line, steps, fails_at}: `steps` are replayed on a fresh copy of
+      the live code. The item is kept only when the first step that fails is exactly `fails_at`
+      (1-based) and it failed in the page (`missing`, `mismatch` or `error`); `ambiguous`,
+      `invalid` and `timeout` show a badly written step or a slow replay, never a bug, and the item
+      is dropped. `fails_at: null` means every step passes. Cite exactly the steps you replayed,
+      copied verbatim, and only a replay that confirmed them (`matches_claim: true` for your
+      `fails_at`; `ok: true` for null). At most two `ui` items are replayed per investigation; more
+      are dropped.
     A hypothesis marked `supported` or `ruled_out` with no verified evidence becomes `untested`, and
     a `likely_cause` verdict with no supported hypothesis becomes `unclear`. So cite carefully.
 
@@ -98,14 +130,25 @@ spec:
        it for "this morning" or "since yesterday"), where (route or page), expected vs actual.
     2. Read the docs for the intended behavior and quote the rule with its ID (for example P4,
        C3). If the docs say the reported behavior is intended, the verdict is `not_a_bug`.
-    3. Find the code path for that action.
+    3. Find the code path for that action. For a symptom in the page (a button, a view, a message,
+       a missing control), read `taskboard/index.html` and `taskboard/app.js`.
     4. Recent changes on that path: which merged PR touched it, and did it go live before the first
        symptom? Use the deploy timeline in the facts.
     5. Telemetry in the window: logs for that user and route, error lines, the domain events, and
-       rate changes around the deploy time. Compare before and after the deploy.
-    6. At most three hypotheses. For each, say what would confirm or refute it, run those checks,
+       rate changes around the deploy time. Compare before and after the deploy. A bug only in the
+       page leaves no server logs: say so instead of searching telemetry for it.
+    6. For a symptom in the page, when the tool `replay_ui_steps` is available, reproduce it. Write
+       the steps as the documented behaviour: pick the user with a `select` on the field labelled
+       "User" (`{"do": "select", "target": {"label": "User"}, "value": "dana (editor)"}`), then
+       `expect_visible` or `click` what the docs say should be there. The failing step is then
+       where the page breaks the rule, and the same steps pass once it is fixed: they become the
+       fix's regression test, which runs on the fixed code only. Steps after the failing one never
+       run on the live code, so keep them to one or two simple steps. Cite it as a `ui` item with
+       `fails_at` (one item, two at most). Without the tool, cite the page's code as `file`
+       evidence and say in `could_not_check` that the page was not replayed.
+    7. At most three hypotheses. For each, say what would confirm or refute it, run those checks,
        and mark it `supported`, `ruled_out` or `untested`.
-    7. Past bugs in the same area (the facts list them, and "Remembered outcomes" may add more), and
+    8. Past bugs in the same area (the facts list them, and "Remembered outcomes" may add more), and
        how they were fixed. If a remembered outcome matches (same route, rule, file or config key),
        say so in `summary` ("the same pattern as #30") and check it again with your tools.
     Before each tool call write one short sentence saying what you check and why; these sentences
@@ -129,7 +172,8 @@ spec:
     - Required keys: `summary`, `verdict` (`likely_cause` | `not_a_bug` | `needs_info` | `unclear`),
       `confidence` (`high` | `medium` | `low`), `report` {who, what, when_start, when_end, where,
       expected, actual}, `hypotheses` [{id, statement, test, status, evidence_ids}], `evidence`
-      [{id, kind, ref, detail, and repo/line/quote or start/end/expect as the kind needs}],
+      [{id, kind (`commit` | `pr` | `issue` | `file` | `doc` | `logql` | `promql` | `ui`), ref,
+      detail, and repo/line/quote, start/end/expect or steps/fails_at as the kind needs}],
       `next_step`, `could_not_check`, `docs_rule`, `likely_cause`. Optional: `similar_past_bugs`
       [{issue, why}].
     - `docs_rule`: whenever a doc states the intended behavior, {path, rule_id, quote} with the
@@ -175,3 +219,13 @@ spec:
           - list_loki_label_names
           - list_loki_label_values
           - query_prometheus
+    # Taskboard's browser: replay_ui_steps clicks and types only in the throwaway copy its server
+    # starts per call (the server's own fence: no URL input, other origins aborted). `read` only
+    # from this server: the taxonomy pins it (server-pinned-tools). Ungated: nothing to gate.
+    - mcp:
+        server:
+          kind: RemoteMCPServer
+          name: taskboard-browser
+        requireApproval: false
+        tools:
+          - replay_ui_steps

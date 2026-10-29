@@ -99,6 +99,17 @@ def test_agent_tools_are_the_agenttemplates():
     assert tools_in == {"Investigate"}
 
 
+def test_the_browser_waits_for_pr_k3():
+    """The AgentTemplate binds taskboard-browser (§T.153, PR K2); the n8n agent gets it only with
+    PR K3, so the generator skips that binding and the agent's MCP nodes stay github and telemetry."""
+    _, child = workflows()
+    assert template_tools("taskboard-browser") == ["replay_ui_steps"]
+    assert gen().NOT_YET_MAPPED == {"taskboard-browser"}
+    mcp = [x for x in child["nodes"] if x["type"] == "@n8n/n8n-nodes-langchain.mcpClientTool"]
+    assert sorted(x["name"] for x in mcp) == ["github", "telemetry"]
+    assert not any("replay_ui_steps" in x["parameters"].get("includeTools", []) for x in mcp)
+
+
 def test_model_and_limits():
     parent, child = workflows()
     n = nodes(child)

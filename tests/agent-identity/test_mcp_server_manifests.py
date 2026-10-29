@@ -20,11 +20,6 @@ SERVERS = {
     # No credential either: it replays UI steps on a throwaway copy of Taskboard it starts per call.
     "taskboard-browser-mcp": ("taskboard-browser-mcp-remote.yaml", "taskboard-browser", None),
 }
-# Tools an adapter allows although no AgentTemplate binds them yet, by RemoteMCPServer. Only for a
-# server that ships unbound and is bound in a later PR (a tool server that is down at initialize
-# fails every agent bound to it): taskboard-browser ships in K1, the bug investigator binds it in
-# K2 (§T.153). Task D2 deletes the entry with the binding; the test fails if it outlives it.
-UNBOUND = {"taskboard-browser": {"replay_ui_steps"}}
 BUILD_SCRIPT = REPO / "scripts" / "build-agentgateway-image.sh"
 AGW_VERSION = re.search(r"^AGW_VERSION=(\S+)$", BUILD_SCRIPT.read_text(), re.M).group(1)
 ADAPTER = re.compile(r"852893458518\.dkr\.ecr\.us-east-2\.amazonaws\.com/agentgateway:"
@@ -164,9 +159,6 @@ def test_gateway_allows_exactly_the_tools_agents_bind(name):
     allowed = {t.strip().strip('"') for t in m.group(1).split(",") if t.strip()}
     remote = SERVERS[name][1]
     want = bound_tools(remote)
-    if remote in UNBOUND:
-        assert not want, f"an AgentTemplate binds {remote} now: delete its UNBOUND entry"
-        want = UNBOUND[remote]
     assert want, f"no AgentTemplate binds {remote}"
     assert allowed == want, f"{name}: allow exactly {sorted(want)}"
 

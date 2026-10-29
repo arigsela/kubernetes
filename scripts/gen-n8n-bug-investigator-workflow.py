@@ -53,6 +53,10 @@ DEADLINE_MS = 240_000          # n8n's task runner kills a Code node at 300 s (T
 GITHUB_MCP = "http://n8n-github-read-mcp.n8n.svc.cluster.local:3000/mcp"
 TELEMETRY_MCP = "http://taskboard-telemetry-mcp.kagent.svc.cluster.local:3000/mcp"
 MCP_NODES = {"implementer": ("github", GITHUB_MCP), "taskboard-telemetry": ("telemetry", TELEMETRY_MCP)}
+# Bound by the AgentTemplate but not given to the n8n agent yet: the browser (§T.153) reaches n8n
+# with PR K3, with the `ui` check in lib/verify.js. Until then the copied prompt's browser
+# instructions ("when the tool replay_ui_steps is available") take their without-it branch.
+NOT_YET_MAPPED = {"taskboard-browser"}
 CONFIG = {
     "repo": "arigsela/taskboard", "deployRepo": "arigsela/kubernetes", "deployPath": "base-apps/taskboard",
     "namespace": "taskboard", "days": 14, "deadlineMs": DEADLINE_MS, "telemetryUrl": TELEMETRY_MCP,
@@ -109,9 +113,11 @@ def bundle(modules, body: str, config: dict | None, repo: Path | None = None) ->
 
 def _template(repo: Path) -> tuple[str, dict[str, list[str]]]:
     t = yaml.safe_load((repo / TEMPLATE).read_text())
-    tools = {x["mcp"]["server"]["name"]: list(x["mcp"]["tools"]) for x in t["spec"]["tools"] if "mcp" in x}
+    tools = {x["mcp"]["server"]["name"]: list(x["mcp"]["tools"]) for x in t["spec"]["tools"]
+             if "mcp" in x and x["mcp"]["server"]["name"] not in NOT_YET_MAPPED}
     if set(tools) != set(MCP_NODES):
-        raise ValueError(f"{TEMPLATE} binds {sorted(tools)}; the generator maps {sorted(MCP_NODES)}")
+        raise ValueError(f"{TEMPLATE} binds {sorted(tools)} (besides {sorted(NOT_YET_MAPPED)}); "
+                         f"the generator maps {sorted(MCP_NODES)}")
     return t["spec"]["systemPrompt"], tools
 
 

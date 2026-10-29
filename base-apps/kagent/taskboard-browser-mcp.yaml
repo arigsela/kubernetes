@@ -32,12 +32,10 @@
 # drives the browsers the image ships. A wheel that changes on PyPI fails the hash check and the
 # pod stays in Init.
 #
-# Nothing binds it yet (PR K1): a tool server that is down at `initialize` fails every agent bound
-# to it, and Chromium has not run on these nodes yet (CPU, libraries). The server imports
-# Playwright and launches Chromium only inside a tool call, so a launch failure is a tool error,
-# never a failed initialize. K1 ships it unbound and checks one real replay through a port-forward;
-# K2 binds it to the bug-investigator AgentTemplate. Until then tests/agent-identity's UNBOUND
-# names the tool the adapter allows.
+# The bug-investigator AgentTemplate binds it (PR K2). A tool server that is down at `initialize`
+# fails every agent bound to it, so the server imports Playwright and launches Chromium only inside
+# a tool call: a launch failure (CPU, libraries) is a tool error, never a failed initialize. PR K1
+# shipped it unbound and checked one real replay through a port-forward before K2 bound it.
 #
 # agentgateway reads local.yaml once at start: checksum/config is the sha256 of the local.yaml text
 # (CI checks it); checksum/code and taskboard.arigsela.com/source-commit are written by
@@ -79,7 +77,7 @@ data:
                       pathPrefix: /mcp
                 # Exactly the server's one tool (§T.134, tests/agent-identity): tools/list shows
                 # only it, and any other call is refused as "Unknown tool" before it reaches the
-                # server. No AgentTemplate binds it until K2 (UNBOUND in tests/agent-identity).
+                # server. The bug-investigator AgentTemplate binds it.
                 policies:
                   mcpAuthorization:
                     rules:
@@ -152,7 +150,7 @@ spec:
         app.kubernetes.io/name: taskboard-browser-mcp
       annotations:
         # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
-        checksum/config: "9f87ce2676aae77a5dc1f7e423765218f01fe627f07cd62fdb58f1515749b0aa"
+        checksum/config: "8b243049fea43f7074f83a5faf870a783e5c49ecb461b6f4cc6da3e1827a617e"
         # Written by scripts/gen-taskboard-configmap.py with taskboard-browser-code; CI checks both.
         # The checksum covers .source-commit, so a deploy that changes only the commit rolls this pod.
         checksum/code: "e956157c359aedc2efda1aca657466e86e127f1d0245e428e754bf3013b8cc53"
