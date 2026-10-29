@@ -154,8 +154,11 @@ spec:
       # the next scheduled run when it failed before the agent was asked).
       backoffLimit: 0
       # The investigation (AGENT_TIMEOUT 480 s) and the implementer's pull request (FIX_TIMEOUT
-      # 480 s) plus the clones and verify, with time left to log before the pod is killed.
-      activeDeadlineSeconds: 1200
+      # 480 s) plus the clones and verify, with time left to log before the pod is killed. Verify
+      # replays `ui` evidence in the browser: each replay may take up to ~120 s (the engine's 75 s
+      # deadline plus the client's timeout), at most two per investigation (UI_REPLAYS_MAX,
+      # ruling R18), so 300 s more than before (§T.153).
+      activeDeadlineSeconds: 1500
       template:
         metadata:
           labels:
@@ -163,7 +166,7 @@ spec:
           annotations:
             # sha256 (first 16 hex) over the bug-investigator-trigger-code ConfigMap's values,
             # sorted by key; written by scripts/gen-bug-investigator-trigger-configmap.py.
-            checksum/code: 891e0a9bd2edc1b0
+            checksum/code: c78a138f137091a1
         spec:
           serviceAccountName: bug-investigator-trigger
           restartPolicy: Never
@@ -200,6 +203,14 @@ spec:
                 # during verify (§T.153): the same namespace, through the waypoint.
                 - name: BROWSER_URL
                   value: http://taskboard-browser-mcp.kagent.svc.cluster.local:3000/mcp
+                # `failure` sends only the failing (else the last) step's screenshot: use it if
+                # agentgateway refuses multi-MB tool results.
+                - name: BROWSER_SCREENSHOTS
+                  value: all
+                # `false` turns browser verification off: `ui` items then drop as "the browser is
+                # not available in this run".
+                - name: BROWSER_ENABLED
+                  value: "true"
                 - name: LOKI_URL
                   value: http://loki.logging.svc.cluster.local:3100
                 - name: NAMESPACE

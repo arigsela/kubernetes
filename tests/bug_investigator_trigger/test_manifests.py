@@ -47,6 +47,10 @@ def test_cronjob_runs_every_two_minutes_one_at_a_time_without_retries():
     env = _env()
     budget = float(env["AGENT_TIMEOUT"]["value"]) + float(env["FIX_TIMEOUT"]["value"])
     assert budget + 120 <= job["activeDeadlineSeconds"]
+    # Ruling R18: and the browser replays during verify, at most two of ~120 s each (the engine's 75 s
+    # deadline plus the client's timeout), with the clones and gather in what is left.
+    assert job["activeDeadlineSeconds"] == 1500
+    assert budget + t.UI_REPLAYS_MAX * 120 + 120 <= job["activeDeadlineSeconds"]
     pod = _pod()["spec"]
     assert pod["serviceAccountName"] == "bug-investigator-trigger" and pod["restartPolicy"] == "Never"
     assert pod["securityContext"]["runAsNonRoot"] is True
@@ -138,6 +142,15 @@ def test_the_browser_url_is_the_tool_servers_service():
     port = svc["spec"]["ports"][0]["port"]
     assert t.Config().browser_url == (f"http://{svc['metadata']['name']}.{svc['metadata']['namespace']}"
                                       f".svc.cluster.local:{port}/mcp")
+
+
+def test_the_browser_settings_are_explicit_and_valid():
+    """BROWSER_SCREENSHOTS and BROWSER_ENABLED sit in the manifest at their defaults, so switching to
+    `failure` or off is a one-value edit; both parse."""
+    env = _env()
+    assert env["BROWSER_SCREENSHOTS"]["value"] == "all" and env["BROWSER_ENABLED"]["value"] == "true"
+    c = t.Config.from_env({k: v["value"] for k, v in env.items() if "value" in v})
+    assert c.browser_screenshots == "all" and c.browser_enabled is True and c.browser_url == t.BROWSER_URL
 
 
 def test_the_private_key_secret_is_the_implementers():
