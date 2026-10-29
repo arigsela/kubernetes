@@ -1,0 +1,324 @@
+# The bug investigator's browser (§T.153, §V.113): one tool, replay_ui_steps, which replays a list
+# of UI steps (click, fill, select, press, goto a path; expect_visible, expect_absent, expect_text)
+# in headless Chromium against a copy of the Taskboard code that is live, and returns each step's
+# result, the page's accessibility snapshot, the app's log lines and screenshots. Same pod shape as
+# taskboard-telemetry-mcp.yaml (agentgateway serves a stdio MCP server as Streamable HTTP on
+# :3000); the stdio child is `bug_investigator/browser_server.py` from the generated ConfigMap
+# bug-investigator-core (scripts/gen-bug-investigator-core.py; source arigsela/claude-agents
+# bug-investigator/).
+#
+# Why: a bug that lives only in the page (a missing button, a wrong view) leaves nothing in Loki or
+# Prometheus, so the investigator could only answer `unclear`. With this tool it reproduces the bug
+# and cites the steps as `ui` evidence, and the trigger's verify replays them: the claim stands only
+# if the same step fails. Not Microsoft's Playwright MCP: its clicks name per-snapshot element refs
+# that nothing can replay later.
+#
+# What it can touch: only a throwaway copy of Taskboard that each call starts and deletes (its own
+# server.py process, run from /taskboard on a fresh database with demo data under /tmp). The tool
+# takes no URL: the server starts the app itself, and the browser aborts every request to any other
+# origin. The code is ConfigMap taskboard-browser-code, which scripts/gen-taskboard-configmap.py
+# writes in the same commit as the app's own ConfigMap, so it is the deployed commit (its
+# .source-commit key, reported with every result). No credential: no envFrom, no Secret, no
+# service account token. That bound is why a tool that clicks and types is class `read`, pinned to
+# this server (taxonomy server-pinned-tools: admission rule 2b, validate-agent-capability.py
+# invariant 8, §V.113).
+#
+# Image without a build: mcr.microsoft.com/playwright/python ships Python 3.12 and the browsers
+# (/ms-playwright) but not the `playwright` Python package. The init container install-playwright
+# installs exactly four wheels from PyPI into the /deps emptyDir, each pinned by sha256
+# (--require-hashes --no-deps --only-binary=:all:, from browser-requirements.txt in the core
+# ConfigMap), as the bug-investigator trigger downloads gh at a pinned sha256. No ECR repository,
+# no Terraform. The image tag and the playwright pin name the same version (1.64.0), so the package
+# drives the browsers the image ships. A wheel that changes on PyPI fails the hash check and the
+# pod stays in Init.
+#
+# Nothing binds it yet (PR K1): a tool server that is down at `initialize` fails every agent bound
+# to it, and Chromium has not run on these nodes yet (CPU, libraries). The server imports
+# Playwright and launches Chromium only inside a tool call, so a launch failure is a tool error,
+# never a failed initialize. K1 ships it unbound and checks one real replay through a port-forward;
+# K2 binds it to the bug-investigator AgentTemplate. Until then tests/agent-identity's UNBOUND
+# names the tool the adapter allows.
+#
+# agentgateway reads local.yaml once at start: checksum/config is the sha256 of the local.yaml text
+# (CI checks it); checksum/code and taskboard.arigsela.com/source-commit are written by
+# scripts/gen-taskboard-configmap.py (tests/taskboard/ checks them); checksum/core is the core
+# ConfigMap's checksum (see the TODO beside it). So a config change, a Taskboard deploy or a core
+# change in git rolls the pod.
+# Recompute checksum/config: python3 -m pytest tests/agent-identity/test_mcp_server_manifests.py -q -k checksum
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: taskboard-browser-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: taskboard-browser-mcp
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskboard-browser-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: taskboard-browser-mcp
+data:
+  local.yaml: |
+    binds:
+      - port: 3000
+        listeners:
+          - name: default
+            protocol: HTTP
+            routes:
+              - name: mcp
+                matches:
+                  - path:
+                      pathPrefix: /sse
+                  - path:
+                      pathPrefix: /mcp
+                # Exactly the server's one tool (§T.134, tests/agent-identity): tools/list shows
+                # only it, and any other call is refused as "Unknown tool" before it reaches the
+                # server. No AgentTemplate binds it until K2 (UNBOUND in tests/agent-identity).
+                policies:
+                  mcpAuthorization:
+                    rules:
+                      - allow: >-
+                          mcp.tool.name in ["replay_ui_steps"]
+                backends:
+                  - weight: 100
+                    mcp:
+                      targets:
+                        - name: taskboard-browser-mcp
+                          stdio:
+                            # -I: no PYTHONPATH, no user site, no script dir on sys.path; the
+                            # server puts /core/src and DEPS_DIR (Playwright) on sys.path itself.
+                            cmd: python3
+                            args:
+                              - -I
+                              - /core/src/bug_investigator/browser_server.py
+    config: {}
+    # Spans to the cluster collector, as service taskboard-browser-mcp (a CEL string). Sample
+    # everything here; the collector's tail sampling cuts the volume (beacon §V.43).
+    # frontendPolicies, not config.tracing: 1.6 logs that one as deprecated. /metrics stays on :15020.
+    frontendPolicies:
+      tracing:
+        host: otel-collector.tracing.svc.cluster.local:4317
+        protocol: grpc
+        randomSampling: "true"
+        resources:
+          service.name: '"taskboard-browser-mcp"'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskboard-browser-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: taskboard-browser-mcp
+spec:
+  # The instance+name pair the other tool servers select on (tests/agent-identity).
+  selector:
+    app.kubernetes.io/instance: taskboard-browser-mcp
+    app.kubernetes.io/name: taskboard-browser-mcp
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+      # As the other tool servers: the waypoint serves MCP Services under this value.
+      appProtocol: kgateway.dev/mcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskboard-browser-mcp
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: taskboard-browser-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: taskboard-browser-mcp
+      app.kubernetes.io/name: taskboard-browser-mcp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: kagent
+        app.kubernetes.io/instance: taskboard-browser-mcp
+        app.kubernetes.io/name: taskboard-browser-mcp
+      annotations:
+        # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
+        checksum/config: "9f87ce2676aae77a5dc1f7e423765218f01fe627f07cd62fdb58f1515749b0aa"
+        # Written by scripts/gen-taskboard-configmap.py with taskboard-browser-code; CI checks both.
+        # The checksum covers .source-commit, so a deploy that changes only the commit rolls this pod.
+        checksum/code: "1bf544044ea802b2ca479decf5d14fbe639ecdd8b0c442f473d4491368cd3c60"
+        taskboard.arigsela.com/source-commit: "d7b37f21c045fc252f4033ef10501cbd582141f8"
+        # TODO(B2b): scripts/gen-bug-investigator-core.py does not write this one yet (this
+        # Deployment is not in its CONSUMERS, and the core has no browser-requirements.txt yet).
+        # Set by hand to the telemetry server's value (same ConfigMap); B2b makes the generator own it.
+        checksum/core: "0eceff5a0f552051a2983f13dbfd47e998d422d9e199b2795328e7586745234e"
+        # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
+        # containerPort would make the kubernetes-pods job scrape the pod twice.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15020"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: taskboard-browser-mcp
+      automountServiceAccountToken: false
+      nodeSelector:
+        node.kubernetes.io/workload: infrastructure
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          effect: NoSchedule
+      initContainers:
+        - name: copy-binary
+          # The adapter image built here (images/agentgateway/, §T.133). Same tag and digest in
+          # every tool server (tests/agent-identity). The copy keeps mode 0755, so uid 1001 runs it.
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d
+          args: ["--copy-self", "/adapterbin/agentgateway"]
+          volumeMounts:
+            - name: binary
+              mountPath: /adapterbin
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+        - name: install-playwright
+          # The same image as the server (index digest), so pip and the wheels' Python (3.12)
+          # match the interpreter that imports them.
+          image: mcr.microsoft.com/playwright/python:v1.64.0-noble@sha256:684df257a1fa0ef3fa288239819984008f560e8f8db5b635ee9e2a50cbcd2e23
+          # Only the four pinned wheels: every requirement must carry a matching --hash, nothing is
+          # resolved beyond the list (--no-deps), and nothing is built from source.
+          command:
+            - pip
+            - install
+            - --no-cache-dir
+            - --require-hashes
+            - --no-deps
+            # Quoted: a plain scalar ending in ":" would parse as a mapping key, not an argument.
+            - "--only-binary=:all:"
+            - --target
+            - /deps
+            - -r
+            - /core/browser-requirements.txt
+          env:
+            # No extra request to PyPI for pip's own version.
+            - name: PIP_DISABLE_PIP_VERSION_CHECK
+              value: "1"
+          # pwuser, the runtime user, so the files in /deps belong to the uid that imports them.
+          securityContext:
+            runAsUser: 1001
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # The one key it needs (items, below): a missing key fails the mount with a clear event.
+            - name: browser-requirements
+              mountPath: /core
+              readOnly: true
+            - name: deps
+              mountPath: /deps
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+      containers:
+        - name: mcp-server
+          # Microsoft's Playwright image, by index digest: Python 3.12 and Chromium (headless
+          # shell) at /ms-playwright for Playwright 1.64.0. Runs as its pwuser (uid 1001).
+          image: mcr.microsoft.com/playwright/python:v1.64.0-noble@sha256:684df257a1fa0ef3fa288239819984008f560e8f8db5b635ee9e2a50cbcd2e23
+          command: ["/adapterbin/agentgateway"]
+          args: ["-f", "/config/local.yaml"]
+          ports:
+            - name: http
+              containerPort: 3000
+          # The stdio child inherits these. No credential: the browser reaches only the app copy
+          # the server starts on localhost.
+          env:
+            # The live Taskboard code; the server reads the commit from APP_DIR/.source-commit.
+            - name: APP_DIR
+              value: /taskboard
+            # Where install-playwright put the wheels; the server adds it to sys.path itself.
+            - name: DEPS_DIR
+              value: /deps
+            - name: PLAYWRIGHT_BROWSERS_PATH
+              value: /ms-playwright
+            # Chromium and fontconfig write their profile and caches under HOME.
+            - name: HOME
+              value: /tmp
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            # The mount contract (gen-bug-investigator-core.py) plus the wheels. Ignored under
+            # python -I; kept so a debugging `python3 -c 'import bug_investigator'` in the pod works.
+            - name: PYTHONPATH
+              value: /core/src:/deps
+          securityContext:
+            runAsUser: 1001
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: binary
+              mountPath: /adapterbin
+            # The package only: the server reads none of the core's data files (install-playwright
+            # reads browser-requirements.txt).
+            - name: core
+              mountPath: /core/src/bug_investigator
+              readOnly: true
+            # Read-only: each call runs the app from here, with its database in /tmp.
+            - name: taskboard
+              mountPath: /taskboard
+              readOnly: true
+            - name: deps
+              mountPath: /deps
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            # Chromium's shared memory, above the runtime's 64Mi default (a known cause of crashes).
+            - name: dshm
+              mountPath: /dev/shm
+          # agentgateway, the Python server, and per call one Taskboard process and one headless
+          # Chromium (calls run one at a time, under a lock). First size, 2026-10-29; resize from the
+          # "Container near memory limit" alert if it fires.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: 1500m
+              memory: 1536Mi
+      volumes:
+        - name: config
+          configMap:
+            name: taskboard-browser-mcp
+        - name: binary
+          emptyDir: {}
+        - name: core
+          configMap:
+            name: bug-investigator-core
+        # The same ConfigMap, only the key install-playwright reads, at /core/browser-requirements.txt.
+        - name: browser-requirements
+          configMap:
+            name: bug-investigator-core
+            items:
+              - key: browser-requirements.txt
+                path: browser-requirements.txt
+        - name: taskboard
+          configMap:
+            name: taskboard-browser-code
+        - name: deps
+          emptyDir: {}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+        # Memory-backed: what Chromium writes here counts against mcp-server's memory limit.
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi

@@ -1,6 +1,7 @@
 """scripts/gen-taskboard-configmap.py: the code ConfigMap and both checksums come from one
-arigsela/taskboard commit (§T.145). CI cannot read that private repo, so the committed pair is
-checked for consistency, and the generator itself runs on a small fake checkout."""
+arigsela/taskboard commit (§T.145), and so do the taskboard-browser tool server's copy of that code
+and its checksum (§T.153). CI cannot read that private repo, so the committed files are checked
+for consistency, and the generator itself runs on a small fake checkout."""
 from pathlib import Path
 import hashlib
 import importlib.util
@@ -16,6 +17,8 @@ import yaml
 REPO = Path(__file__).resolve().parents[2]
 GEN = REPO / "scripts" / "gen-taskboard-configmap.py"
 APP = REPO / "base-apps" / "taskboard"
+BROWSER_CM = REPO / "base-apps" / "kagent" / "taskboard-browser-code-configmap.yaml"
+BROWSER_DEP = REPO / "base-apps" / "kagent" / "taskboard-browser-mcp.yaml"
 SHA = "0123456789abcdef0123456789abcdef01234567"
 OTHER_SHA = "fedcba9876543210fedcba9876543210fedcba98"
 
@@ -64,8 +67,33 @@ def test_committed_configmap_has_the_entry_points():
     assert cm["metadata"]["name"] == "taskboard-code" and cm["metadata"]["namespace"] == "taskboard"
 
 
+def test_browser_copy_matches_app_configmap():
+    """The browser replays the code that is live: the app ConfigMap's files, written in the same
+    commit, plus .source-commit = the deployed commit (the server reports it with every result)."""
+    app = yaml.safe_load((APP / "code-configmap.yaml").read_text())
+    text = BROWSER_CM.read_text()
+    browser = yaml.safe_load(text)
+    assert browser["metadata"]["name"] == "taskboard-browser-code"
+    assert browser["metadata"]["namespace"] == "kagent"
+    assert browser["metadata"]["annotations"] == app["metadata"]["annotations"]
+    commit = app["metadata"]["annotations"][gen.COMMIT_ANNOTATION]
+    data = dict(browser["data"])
+    assert data.pop(".source-commit") == commit
+    assert data == app["data"]
+    assert f"arigsela/taskboard@{commit}" in text, "the header names the commit"
+
+
+def test_browser_deployment_checksum_code():
+    browser = yaml.safe_load(BROWSER_CM.read_text())
+    deps = _deployments(BROWSER_DEP.read_text())
+    assert set(deps) == {"taskboard-browser-mcp"}
+    ann = deps["taskboard-browser-mcp"]["spec"]["template"]["metadata"]["annotations"]
+    assert ann["checksum/code"] == _checksum(browser["data"])
+    assert ann[gen.COMMIT_ANNOTATION] == browser["data"][".source-commit"]
+
+
 def test_committed_configmap_regenerates_from_its_own_data(tmp_path):
-    """Rebuilding a checkout from the committed data reproduces both files byte for byte, so
+    """Rebuilding a checkout from the committed data reproduces all four files byte for byte, so
     nobody hand-edited them."""
     text = (APP / "code-configmap.yaml").read_text()
     cm = yaml.safe_load(text)
@@ -80,6 +108,10 @@ def test_committed_configmap_regenerates_from_its_own_data(tmp_path):
     assert rendered == text
     deployment = (APP / "deployment.yaml").read_text()
     assert gen.render_deployment(deployment, rendered, commit) == deployment
+    browser = gen.render_browser(gen.collect(src), commit)
+    assert browser == BROWSER_CM.read_text()
+    browser_dep = BROWSER_DEP.read_text()
+    assert gen.render_browser_deployment(browser_dep, browser, commit) == browser_dep
 
 
 # --- the generator on a fake checkout -----------------------------------------------------------
@@ -89,6 +121,8 @@ def fake(tmp_path):
     repo = tmp_path / "repo"
     (repo / "base-apps" / "taskboard").mkdir(parents=True)
     shutil.copy(APP / "deployment.yaml", repo / gen.DEPLOYMENT)
+    (repo / "base-apps" / "kagent").mkdir(parents=True)
+    shutil.copy(BROWSER_DEP, repo / gen.BROWSER_DEPLOYMENT)
     src = tmp_path / "taskboard"
     (src / "taskboard").mkdir(parents=True)
     (src / "traffic").mkdir()
@@ -139,6 +173,22 @@ def test_round_trip(fake):
     assert all("checksum/code:" in a or "source-commit:" in a for a, _ in changed)
     assert "# No livenessProbe" in text
 
+    # The browser's copy: the same files plus .source-commit, in kagent; its Deployment edited in place.
+    browser_out = (repo / gen.BROWSER_OUT).read_text()
+    browser = yaml.safe_load(browser_out)
+    assert browser["data"] == {**cm["data"], ".source-commit": SHA}
+    assert (browser["metadata"]["name"], browser["metadata"]["namespace"]) == ("taskboard-browser-code", "kagent")
+    assert browser["metadata"]["annotations"] == cm["metadata"]["annotations"]
+    assert all(line == line.rstrip() for line in browser_out.splitlines()), "no trailing whitespace"
+    assert f"arigsela/taskboard@{SHA}" in browser_out
+    browser_dep = (repo / gen.BROWSER_DEPLOYMENT).read_text()
+    ann = _deployments(browser_dep)["taskboard-browser-mcp"]["spec"]["template"]["metadata"]["annotations"]
+    assert ann["checksum/code"] == _checksum(browser["data"]) and ann[gen.COMMIT_ANNOTATION] == SHA
+    original = BROWSER_DEP.read_text().splitlines()
+    changed = [a for a, b in zip(original, browser_dep.splitlines()) if a != b]
+    assert len(browser_dep.splitlines()) == len(original)
+    assert all("checksum/code:" in a or "source-commit:" in a for a in changed)
+
     assert _gen(repo, src, SHA, "--check").returncode == 0
 
 
@@ -156,12 +206,20 @@ def test_a_new_commit_changes_the_annotation_and_keeps_the_checksum(fake):
     repo, src = fake
     assert _gen(repo, src).returncode == 0
     before = _deployments((repo / gen.DEPLOYMENT).read_text())
+    browser_before = _deployments((repo / gen.BROWSER_DEPLOYMENT).read_text())
     assert _gen(repo, src, OTHER_SHA, "--check").returncode == 1
     assert _gen(repo, src, OTHER_SHA).returncode == 0
     after = _deployments((repo / gen.DEPLOYMENT).read_text())
     meta = lambda d, n: d[n]["spec"]["template"]["metadata"]["annotations"]  # noqa: E731
     assert meta(after, "taskboard")[gen.COMMIT_ANNOTATION] == OTHER_SHA
     assert meta(after, "taskboard")["checksum/code"] == meta(before, "taskboard")["checksum/code"]
+    # The browser's copy carries .source-commit, so a commit-only deploy rolls the browser too.
+    browser = yaml.safe_load((repo / gen.BROWSER_OUT).read_text())
+    assert browser["data"][".source-commit"] == OTHER_SHA
+    after = _deployments((repo / gen.BROWSER_DEPLOYMENT).read_text())
+    assert meta(after, "taskboard-browser-mcp")[gen.COMMIT_ANNOTATION] == OTHER_SHA
+    assert meta(after, "taskboard-browser-mcp")["checksum/code"] == _checksum(browser["data"])
+    assert meta(after, "taskboard-browser-mcp")["checksum/code"] != meta(browser_before, "taskboard-browser-mcp")["checksum/code"]
 
 
 @pytest.mark.parametrize("breakage, message", [
@@ -181,6 +239,7 @@ def test_refuses_what_a_configmap_cannot_carry_cleanly(fake, breakage, message):
     assert result.returncode != 0
     assert message in result.stderr
     assert not (repo / gen.OUT).exists(), "nothing written"
+    assert not (repo / gen.BROWSER_OUT).exists(), "nothing written"
 
 
 @pytest.mark.parametrize("commit", ["abc123", SHA.upper(), SHA + "0", "main"])

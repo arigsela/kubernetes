@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate base-apps/taskboard/code-configmap.yaml from an arigsela/taskboard commit.
+"""Generate base-apps/taskboard/code-configmap.yaml (and the browser's copy) from an arigsela/taskboard commit.
 
     ./scripts/gen-taskboard-configmap.py --source ../taskboard --commit "$(git -C ../taskboard rev-parse HEAD)"
     ./scripts/gen-taskboard-configmap.py --source ../taskboard --commit <sha> --check   # stale? exit 1
@@ -13,14 +13,21 @@ base-apps/taskboard/deployment.yaml:
 - both Deployments' checksum/code (the alert-demo formula), so a code change rolls both pods;
 - the app's taskboard.arigsela.com/source-commit, which the app reports as TASKBOARD_COMMIT.
 
-The commit that changes that annotation is the deploy: its merge time is when the code went live.
-deployment.yaml is edited in place (by regex) so its comments stay. When <source> is a git checkout,
-the commit must be its HEAD and the copied files must be committed, so the annotation never names
-code the pod does not run.
+It also writes the taskboard-browser tool server's copy of the same code (§T.153), so the browser
+replays exactly what is live: base-apps/kagent/taskboard-browser-code-configmap.yaml (ConfigMap
+kagent/taskboard-browser-code: the same data plus key .source-commit = the commit, which the server
+reports with every result; a pod mounts ConfigMaps from its own namespace only), and in
+base-apps/kagent/taskboard-browser-mcp.yaml that Deployment's checksum/code (over the copy's data,
+.source-commit included, so a commit-only deploy rolls it too) and its source-commit annotation.
 
-CI cannot read the private repo, so CI checks the committed pair for consistency instead
-(tests/taskboard/test_gen_configmap.py): the checksum matches the ConfigMap's data and the commit
-annotations agree.
+The commit that changes those annotations is the deploy: its merge time is when the code went live.
+Both Deployment files are edited in place (by regex) so their comments stay. When <source> is a git
+checkout, the commit must be its HEAD and the copied files must be committed, so the annotation
+never names code the pod does not run.
+
+CI cannot read the private repo, so CI checks the committed files for consistency instead
+(tests/taskboard/test_gen_configmap.py): each checksum matches its ConfigMap's data, the browser's
+copy matches the app's ConfigMap, and the commit annotations agree.
 """
 from __future__ import annotations
 
@@ -43,6 +50,9 @@ SOURCE_REPO = "arigsela/taskboard"
 COMMIT_ANNOTATION = "taskboard.arigsela.com/source-commit"
 REPO_ANNOTATION = "taskboard.arigsela.com/source-repo"
 DEPLOYMENTS = 2   # taskboard and taskboard-traffic both mount the ConfigMap
+BROWSER_OUT = "base-apps/kagent/taskboard-browser-code-configmap.yaml"
+BROWSER_DEPLOYMENT = "base-apps/kagent/taskboard-browser-mcp.yaml"
+SOURCE_COMMIT_KEY = ".source-commit"   # a dotfile in the mount, never a file collect() copies
 
 MAX_FILE_BYTES = 200 * 1024
 # Argo CD applies client-side, which copies the whole object into the last-applied-configuration
@@ -66,6 +76,24 @@ HEADER = """\
 #
 # Both Deployments (deployment.yaml) mount this at /opt/taskboard with python:3.12-slim and no pip
 # install: the app is standard-library only. The app runs server.py, the traffic one simulate.py.
+"""
+
+BROWSER_HEADER = """\
+---
+# Taskboard code for the taskboard-browser tool server (§T.153): the live code it replays UI steps on.
+#
+# !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
+# Generator:  scripts/gen-taskboard-configmap.py
+# Source:     {repo}@{commit}
+#             ({app_dir}/* and {extra}, plus .source-commit)
+# Regenerate: ./scripts/gen-taskboard-configmap.py --source <taskboard checkout> --commit <sha>
+# tests/taskboard/ fails if this file differs from base-apps/taskboard/code-configmap.yaml (apart
+# from .source-commit) or taskboard-browser-mcp.yaml's checksum/code or source-commit disagree.
+#
+# Written in the same commit as the app's ConfigMap, so it is the deployed code. A copy because a
+# pod mounts ConfigMaps from its own namespace only. taskboard-browser-mcp.yaml mounts it read-only
+# at /taskboard; each replay_ui_steps call starts server.py from it on a fresh database.
+# .source-commit is the commit, which the server reports with every result.
 """
 
 
@@ -152,10 +180,8 @@ def _why_not_block(name: str, text: str) -> str:
     return "PyYAML would not write it as a block literal"
 
 
-def render(data: dict[str, str], commit: str) -> str:
-    doc = {"apiVersion": "v1", "kind": "ConfigMap",
-           "metadata": {"name": "taskboard-code", "namespace": "taskboard", "labels": {"app": "taskboard"},
-                        "annotations": {COMMIT_ANNOTATION: commit, REPO_ANNOTATION: SOURCE_REPO}},
+def _render_configmap(out: str, header: str, metadata: dict, data: dict[str, str]) -> str:
+    doc = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": metadata,
            "data": {key: _Literal(value) for key, value in data.items()}}
     body = yaml.dump(doc, sort_keys=False, width=10_000, allow_unicode=True)
     # Every non-empty file must come out as a readable block literal with no trailing whitespace
@@ -163,11 +189,31 @@ def render(data: dict[str, str], commit: str) -> str:
     for key, value in data.items():
         if value and not re.search(rf"^  {re.escape(key)}: \|[-+0-9]*$", body, re.M):
             raise SystemExit(f"{APP_DIR}/{key} or {EXTRA}: {_why_not_block(key, value)}; fix it in {SOURCE_REPO}")
-    text = HEADER.format(repo=SOURCE_REPO, commit=commit, app_dir=APP_DIR, extra=EXTRA) + body
+    text = header + body
     bad = [n for n, line in enumerate(text.splitlines(), 1) if line != line.rstrip()]
     if bad:
-        raise SystemExit(f"{OUT}: trailing whitespace on lines {bad[:5]}")
+        raise SystemExit(f"{out}: trailing whitespace on lines {bad[:5]}")
     return text
+
+
+def render(data: dict[str, str], commit: str) -> str:
+    """The app's ConfigMap, taskboard/taskboard-code."""
+    return _render_configmap(
+        OUT, HEADER.format(repo=SOURCE_REPO, commit=commit, app_dir=APP_DIR, extra=EXTRA),
+        {"name": "taskboard-code", "namespace": "taskboard", "labels": {"app": "taskboard"},
+         "annotations": {COMMIT_ANNOTATION: commit, REPO_ANNOTATION: SOURCE_REPO}},
+        data)
+
+
+def render_browser(data: dict[str, str], commit: str) -> str:
+    """The browser's copy, kagent/taskboard-browser-code: the same data plus .source-commit."""
+    return _render_configmap(
+        BROWSER_OUT,
+        BROWSER_HEADER.format(repo=SOURCE_REPO, commit=commit, app_dir=APP_DIR, extra=EXTRA),
+        {"name": "taskboard-browser-code", "namespace": "kagent",
+         "labels": {"app.kubernetes.io/part-of": "kagent", "app.kubernetes.io/name": "taskboard-browser-code"},
+         "annotations": {COMMIT_ANNOTATION: commit, REPO_ANNOTATION: SOURCE_REPO}},
+        dict(sorted({**data, SOURCE_COMMIT_KEY: commit}.items())))
 
 
 def configmap_checksum(text: str) -> str:
@@ -176,16 +222,25 @@ def configmap_checksum(text: str) -> str:
     return hashlib.sha256(json.dumps(doc["data"], sort_keys=True).encode()).hexdigest()
 
 
-def render_deployment(text: str, code_configmap: str, commit: str) -> str:
-    """deployment.yaml with both checksum/code annotations and the app's source-commit set."""
+def _set_annotations(rel: str, text: str, code_configmap: str, commit: str, checksums: int) -> str:
     value = configmap_checksum(code_configmap)
     text, count = re.subn(r'(checksum/code: )"[0-9a-f]*"', rf'\g<1>"{value}"', text)
-    if count != DEPLOYMENTS:
-        raise SystemExit(f"{DEPLOYMENT}: expected {DEPLOYMENTS} checksum/code annotations, found {count}")
+    if count != checksums:
+        raise SystemExit(f"{rel}: expected {checksums} checksum/code annotations, found {count}")
     text, count = re.subn(rf'({re.escape(COMMIT_ANNOTATION)}: )"[0-9a-f]*"', rf'\g<1>"{commit}"', text)
     if count != 1:
-        raise SystemExit(f"{DEPLOYMENT}: expected one {COMMIT_ANNOTATION} annotation, found {count}")
+        raise SystemExit(f"{rel}: expected one {COMMIT_ANNOTATION} annotation, found {count}")
     return text
+
+
+def render_deployment(text: str, code_configmap: str, commit: str) -> str:
+    """deployment.yaml with both checksum/code annotations and the app's source-commit set."""
+    return _set_annotations(DEPLOYMENT, text, code_configmap, commit, DEPLOYMENTS)
+
+
+def render_browser_deployment(text: str, browser_configmap: str, commit: str) -> str:
+    """taskboard-browser-mcp.yaml with its checksum/code (over the copy's data) and source-commit set."""
+    return _set_annotations(BROWSER_DEPLOYMENT, text, browser_configmap, commit, 1)
 
 
 def main(argv=None) -> int:
@@ -200,8 +255,14 @@ def main(argv=None) -> int:
     if not SHA.match(args.commit):
         raise SystemExit(f"--commit must be a full 40-character lowercase SHA, got {args.commit!r}")
     check_source_commit(source, args.commit)
-    wanted = {OUT: render(collect(source), args.commit)}
-    wanted[DEPLOYMENT] = render_deployment((repo / DEPLOYMENT).read_text(), wanted[OUT], args.commit)
+    data = collect(source)
+    app, browser = render(data, args.commit), render_browser(data, args.commit)
+    # Everything is rendered before anything is written: a refusal leaves all four files as they were.
+    wanted = {OUT: app,
+              DEPLOYMENT: render_deployment((repo / DEPLOYMENT).read_text(), app, args.commit),
+              BROWSER_OUT: browser,
+              BROWSER_DEPLOYMENT: render_browser_deployment((repo / BROWSER_DEPLOYMENT).read_text(), browser,
+                                                            args.commit)}
     stale = []
     for rel, want in wanted.items():
         path = repo / rel
@@ -221,7 +282,7 @@ def main(argv=None) -> int:
             print(f"stale for {SOURCE_REPO}@{args.commit}: {', '.join(stale)}; "
                   "run scripts/gen-taskboard-configmap.py without --check", file=sys.stderr)
             return 1
-        print(f"{OUT} and {DEPLOYMENT} match {SOURCE_REPO}@{args.commit}")
+        print(f"{', '.join(wanted)} match {SOURCE_REPO}@{args.commit}")
     return 0
 
 

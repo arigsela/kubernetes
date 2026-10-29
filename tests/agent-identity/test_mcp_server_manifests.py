@@ -17,7 +17,14 @@ SERVERS = {
     "implementer-mcp": ("implementer-mcp-remote.yaml", "implementer", "implementer-github-app"),
     # No credential at all: Loki and Prometheus are queried in-cluster, scoped by the server.
     "taskboard-telemetry-mcp": ("taskboard-telemetry-mcp-remote.yaml", "taskboard-telemetry", None),
+    # No credential either: it replays UI steps on a throwaway copy of Taskboard it starts per call.
+    "taskboard-browser-mcp": ("taskboard-browser-mcp-remote.yaml", "taskboard-browser", None),
 }
+# Tools an adapter allows although no AgentTemplate binds them yet, by RemoteMCPServer. Only for a
+# server that ships unbound and is bound in a later PR (a tool server that is down at initialize
+# fails every agent bound to it): taskboard-browser ships in K1, the bug investigator binds it in
+# K2 (§T.153). Task D2 deletes the entry with the binding; the test fails if it outlives it.
+UNBOUND = {"taskboard-browser": {"replay_ui_steps"}}
 BUILD_SCRIPT = REPO / "scripts" / "build-agentgateway-image.sh"
 AGW_VERSION = re.search(r"^AGW_VERSION=(\S+)$", BUILD_SCRIPT.read_text(), re.M).group(1)
 ADAPTER = re.compile(r"852893458518\.dkr\.ecr\.us-east-2\.amazonaws\.com/agentgateway:"
@@ -155,8 +162,12 @@ def test_gateway_allows_exactly_the_tools_agents_bind(name):
     m = ALLOW.fullmatch(rules[0]["allow"])
     assert m, rules[0]["allow"]
     allowed = {t.strip().strip('"') for t in m.group(1).split(",") if t.strip()}
-    want = bound_tools(SERVERS[name][1])
-    assert want, f"no AgentTemplate binds {SERVERS[name][1]}"
+    remote = SERVERS[name][1]
+    want = bound_tools(remote)
+    if remote in UNBOUND:
+        assert not want, f"an AgentTemplate binds {remote} now: delete its UNBOUND entry"
+        want = UNBOUND[remote]
+    assert want, f"no AgentTemplate binds {remote}"
     assert allowed == want, f"{name}: allow exactly {sorted(want)}"
 
 
@@ -183,3 +194,35 @@ def test_prometheus_scrapes_the_adapter_stats_port(name):
     assert ann["prometheus.io/port"] == "15020" and ann["prometheus.io/path"] == "/metrics"
     assert all(p["containerPort"] != 15020 for c in pod["spec"]["containers"] for p in c.get("ports", []))
     assert "statsAddr" not in yaml.safe_load(one(name, "ConfigMap")["data"]["local.yaml"])["config"]
+
+
+PLAYWRIGHT = re.compile(r"mcr\.microsoft\.com/playwright/python:v\d+\.\d+\.\d+-noble@sha256:[0-9a-f]{64}")
+
+
+def test_browser_installs_only_hash_pinned_wheels_and_runs_unprivileged():
+    """taskboard-browser (§T.153, §V.113): the image ships Chromium but not the playwright package,
+    so an init container installs it from PyPI: hash-pinned wheels only (no sdist build, no
+    dependency resolution), as the uid that runs the server. The server holds no credential and
+    replays the live code from its own read-only copy."""
+    pod = one("taskboard-browser-mcp", "Deployment")["spec"]["template"]["spec"]
+    install, main = pod["initContainers"][1], pod["containers"][0]
+    assert install["name"] == "install-playwright"
+    assert PLAYWRIGHT.fullmatch(main["image"]) and install["image"] == main["image"]
+    cmd = install["command"] + install.get("args", [])
+    for flag in ("--require-hashes", "--no-deps", "--only-binary=:all:", "--no-cache-dir"):
+        assert flag in cmd, flag
+    assert cmd[cmd.index("--target") + 1] == "/deps"
+    assert cmd[cmd.index("-r") + 1] == "/core/browser-requirements.txt"
+    for c in (install, main):
+        sc = c["securityContext"]
+        assert sc["runAsUser"] == 1001 and sc["runAsNonRoot"] is True, c["name"]
+        assert sc["allowPrivilegeEscalation"] is False and sc["capabilities"] == {"drop": ["ALL"]}, c["name"]
+    assert not any("envFrom" in c for c in pod["initContainers"] + pod["containers"])
+    assert not any("secret" in v or "projected" in v for v in pod["volumes"])
+    env = {e["name"]: e["value"] for e in main["env"]}
+    assert env["APP_DIR"] == "/taskboard" and env["DEPS_DIR"] == "/deps"
+    vols = {v["name"]: v for v in pod["volumes"]}
+    mounts = {m["mountPath"]: m for m in main["volumeMounts"]}
+    assert vols[mounts["/taskboard"]["name"]]["configMap"]["name"] == "taskboard-browser-code"
+    assert vols[mounts["/core/src/bug_investigator"]["name"]]["configMap"]["name"] == "bug-investigator-core"
+    assert mounts["/taskboard"]["readOnly"] is True and mounts["/deps"]["readOnly"] is True

@@ -1,0 +1,2066 @@
+---
+# Taskboard code for the taskboard-browser tool server (§T.153): the live code it replays UI steps on.
+#
+# !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
+# Generator:  scripts/gen-taskboard-configmap.py
+# Source:     arigsela/taskboard@d7b37f21c045fc252f4033ef10501cbd582141f8
+#             (taskboard/* and traffic/simulate.py, plus .source-commit)
+# Regenerate: ./scripts/gen-taskboard-configmap.py --source <taskboard checkout> --commit <sha>
+# tests/taskboard/ fails if this file differs from base-apps/taskboard/code-configmap.yaml (apart
+# from .source-commit) or taskboard-browser-mcp.yaml's checksum/code or source-commit disagree.
+#
+# Written in the same commit as the app's ConfigMap, so it is the deployed code. A copy because a
+# pod mounts ConfigMaps from its own namespace only. taskboard-browser-mcp.yaml mounts it read-only
+# at /taskboard; each replay_ui_steps call starts server.py from it on a fresh database.
+# .source-commit is the commit, which the server reports with every result.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskboard-browser-code
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: taskboard-browser-code
+  annotations:
+    taskboard.arigsela.com/source-commit: d7b37f21c045fc252f4033ef10501cbd582141f8
+    taskboard.arigsela.com/source-repo: arigsela/taskboard
+data:
+  .source-commit: |-
+    d7b37f21c045fc252f4033ef10501cbd582141f8
+  app.js: |
+    "use strict";
+
+    // The board page. Every request names the picked user in X-User (docs/permissions.md).
+
+    const state = {
+      user: readUser(),
+      view: "board", // or "overdue"
+      me: null,
+    };
+
+    function readUser() {
+      try {
+        return localStorage.getItem("taskboard.user") || "dana";
+      } catch (e) {
+        return "dana";
+      }
+    }
+
+    function saveUser(name) {
+      try {
+        localStorage.setItem("taskboard.user", name);
+      } catch (e) {
+        /* private window: keep it for this page only */
+      }
+    }
+
+    async function api(method, path, body) {
+      const options = { method, headers: { "X-User": state.user } };
+      if (body !== undefined) {
+        options.headers["Content-Type"] = "application/json";
+        options.body = JSON.stringify(body);
+      }
+      const response = await fetch(path, options);
+      let data = null;
+      if (response.status !== 204) {
+        try {
+          data = await response.json();
+        } catch (e) {
+          data = null;
+        }
+      }
+      if (!response.ok) {
+        throw new Error(describeError(response.status, data));
+      }
+      return data;
+    }
+
+    function describeError(status, data) {
+      if (!data) return `Request failed (${status})`;
+      switch (data.error) {
+        case "forbidden":
+          return `Not allowed (rule ${data.rule})`;
+        case "unauthorized":
+          return `${state.user} is not a Taskboard user`;
+        case "conflict":
+          return `${data.detail} (rule ${data.rule})`;
+        case "internal":
+          return `Something went wrong. Request id: ${data.request_id}`;
+        default:
+          return data.detail || data.error || `Request failed (${status})`;
+      }
+    }
+
+    function today() {
+      return new Date().toISOString().slice(0, 10); // UTC, like the server
+    }
+
+    function el(tag, text, className) {
+      const node = document.createElement(tag);
+      if (text !== undefined && text !== null) node.textContent = text;
+      if (className) node.className = className;
+      return node;
+    }
+
+    function say(text, ok) {
+      const message = document.getElementById("message");
+      message.textContent = text || "";
+      message.className = ok ? "ok" : "";
+    }
+
+    async function loadMe() {
+      state.me = await api("GET", "/api/me");
+      const picker = document.getElementById("user");
+      const assignee = document.querySelector("#new-task select[name=assignee]");
+      picker.replaceChildren();
+      assignee.replaceChildren();
+      for (const user of state.me.users) {
+        const option = el("option", `${user.name} (${user.role})`);
+        option.value = user.name;
+        option.selected = user.name === state.user;
+        picker.append(option);
+        if (user.role !== "viewer") {
+          const choice = el("option", user.name);
+          choice.value = user.name;
+          choice.selected = user.name === state.user;
+          assignee.append(choice);
+        }
+      }
+      const features = state.me.features || {};
+      document.getElementById("show-overdue").hidden = !features.overdue_view;
+    }
+
+    async function loadBoard() {
+      const overdue = state.view === "overdue";
+      const query = overdue ? `?due_before=${today()}` : "";
+      const data = await api("GET", `/api/tasks${query}`);
+      let shown = data.tasks;
+      if (overdue) shown = shown.filter((task) => task.status !== "done");
+      const note = overdue
+        ? `Overdue: not done and due before ${today()}. ${shown.length} task(s).`
+        : `${data.tasks.length} of ${data.total} task(s).`;
+      document.getElementById("view-note").textContent = note;
+      render(shown);
+    }
+
+    function render(tasks) {
+      for (const column of document.querySelectorAll(".column")) {
+        const cards = column.querySelector(".cards");
+        cards.replaceChildren();
+        for (const task of tasks.filter((t) => t.status === column.dataset.status)) {
+          cards.append(card(task));
+        }
+      }
+    }
+
+    function card(task) {
+      const node = el("div", null, "card");
+      node.append(el("div", task.title, "title"));
+      const meta = el("div", `#${task.id} · ${task.project} · ${task.assignee}`, "meta");
+      if (task.due_date) {
+        const late = task.status !== "done" && task.due_date < today();
+        meta.append(" · ", el("span", `due ${task.due_date}`, late ? "late" : ""));
+      }
+      node.append(meta);
+      const actions = el("div", null, "actions");
+      const moves = {
+        open: [["Start", "in_progress"]],
+        in_progress: [["Done", "done"], ["Back to open", "open"]],
+        done: [["Reopen", "open"]],
+      }[task.status];
+      for (const [label, status] of moves) {
+        actions.append(button(label, () => move(task, status)));
+      }
+      if (state.me && state.me.role === "admin") {
+        actions.append(button("Delete", () => remove(task)));
+      }
+      node.append(actions);
+      return node;
+    }
+
+    function button(label, onClick) {
+      const node = el("button", label);
+      node.type = "button";
+      node.addEventListener("click", onClick);
+      return node;
+    }
+
+    async function move(task, status) {
+      try {
+        await api("PATCH", `/api/tasks/${task.id}`, { status });
+        say(`#${task.id} moved to ${status.replace("_", " ")}`, true);
+      } catch (e) {
+        say(e.message);
+      }
+      await refresh();
+    }
+
+    async function remove(task) {
+      try {
+        await api("DELETE", `/api/tasks/${task.id}`);
+        say(`#${task.id} deleted`, true);
+      } catch (e) {
+        say(e.message);
+      }
+      await refresh();
+    }
+
+    async function refresh() {
+      try {
+        await loadBoard();
+      } catch (e) {
+        say(e.message);
+      }
+    }
+
+    function setView(view) {
+      state.view = view;
+      document.getElementById("show-board").classList.toggle("active", view === "board");
+      document.getElementById("show-overdue").classList.toggle("active", view === "overdue");
+      say("");
+      refresh();
+    }
+
+    document.getElementById("user").addEventListener("change", async (event) => {
+      state.user = event.target.value;
+      saveUser(state.user);
+      say("");
+      await start();
+    });
+
+    document.getElementById("show-board").addEventListener("click", () => setView("board"));
+    document.getElementById("show-overdue").addEventListener("click", () => setView("overdue"));
+
+    document.getElementById("new-task").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.target;
+      const body = {
+        title: form.title.value.trim(),
+        project: form.project.value,
+        assignee: form.assignee.value,
+      };
+      if (form.due_date.value) body.due_date = form.due_date.value;
+      try {
+        const task = await api("POST", "/api/tasks", body);
+        say(`#${task.id} created`, true);
+        form.title.value = "";
+        form.due_date.value = "";
+      } catch (e) {
+        say(e.message);
+      }
+      await refresh();
+    });
+
+    async function start() {
+      try {
+        await loadMe();
+        await loadBoard();
+      } catch (e) {
+        say(e.message);
+      }
+    }
+
+    start();
+  app.py: |
+    """Taskboard HTTP application: routing, handlers and request telemetry.
+
+    App.handle() takes a method, target, headers and body and returns a Response,
+    so tests can call it directly. server.py adapts it to http.server.
+    """
+
+    import json
+    import logging
+    import os
+    import re
+    import time
+    import uuid
+    from contextlib import contextmanager
+    from dataclasses import dataclass, field
+    from datetime import date, datetime
+    from urllib.parse import parse_qs, urlsplit
+
+    import archive
+    import db
+    import logs
+    import metrics
+    import permissions
+    import seed
+    import tasks
+    import tracing
+    import workflow
+
+    log = logging.getLogger("taskboard.http")
+    events = logging.getLogger("taskboard.tasks")
+    access_log = logging.getLogger("taskboard.permissions")
+    config_log = logging.getLogger("taskboard.config")
+
+    _REQUEST_ID = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
+    _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    # Routes whose request lines are logged at DEBUG unless they fail (probes and scrapes).
+    _QUIET_ROUTES = {"/healthz", "/metrics"}
+    _HERE = os.path.dirname(os.path.abspath(__file__))
+    _STATIC = {"/": ("index.html", "text/html; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8")}
+
+
+    class HttpError(Exception):
+        def __init__(self, status, error, **extra):
+            super().__init__(error)
+            self.status = status
+            self.body = {"error": error, **extra}
+
+
+    @dataclass
+    class Response:
+        status: int
+        body: bytes = b""
+        content_type: str = "application/json"
+        headers: dict = field(default_factory=dict)
+
+
+    def json_response(status, payload):
+        return Response(status, json.dumps(payload).encode())
+
+
+    @dataclass
+    class Request:
+        method: str
+        path: str
+        query: dict
+        headers: dict
+        body: bytes
+        request_id: str
+        route: str = "unmatched"
+        user: str | None = None
+        role: str | None = None
+        task_id: int | None = None
+
+        def param(self, name, default=None):
+            values = self.query.get(name)
+            return values[-1] if values else default
+
+        def json(self):
+            if not self.body:
+                return {}
+            try:
+                data = json.loads(self.body)
+            except ValueError:
+                raise HttpError(400, "bad_request", detail="body is not valid JSON") from None
+            if not isinstance(data, dict):
+                raise HttpError(400, "bad_request", detail="body must be a JSON object")
+            return data
+
+
+    def _text(data, name, required=False, limit=200):
+        value = data.get(name)
+        if value is None:
+            if required:
+                raise HttpError(400, "bad_request", detail=f"{name} is required")
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise HttpError(400, "bad_request", detail=f"{name} must be a non-empty string")
+        if len(value) > limit:
+            raise HttpError(400, "bad_request", detail=f"{name} is longer than {limit} characters")
+        return value.strip()
+
+
+    def _reject_unknown(data, allowed):
+        unknown = sorted(set(data) - set(allowed))
+        if unknown:
+            raise HttpError(400, "bad_request", detail=f"unknown field(s): {', '.join(unknown)}")
+
+
+    def _int_param(value, name, minimum=1):
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            raise HttpError(400, "bad_request", detail=f"{name} must be a whole number") from None
+        if number < minimum:
+            raise HttpError(400, "bad_request", detail=f"{name} must be at least {minimum}")
+        return number
+
+
+    def _is_date(value):
+        if not _DATE.match(value):
+            return False
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            return False
+        return True
+
+
+    def _bool_param(value, name):
+        if value.lower() in ("true", "1", "yes"):
+            return True
+        if value.lower() in ("false", "0", "no", ""):
+            return False
+        raise HttpError(400, "bad_request", detail=f"{name} must be true or false")
+
+
+    class App:
+        def __init__(self, config):
+            self.config = config
+            self.registry = metrics.Registry()
+            self.requests_total = self.registry.counter(
+                "taskboard_http_requests_total",
+                "HTTP requests by method, route template and status code.",
+                ("method", "route", "status"),
+            )
+            self.request_seconds = self.registry.histogram(
+                "taskboard_http_request_duration_seconds",
+                "HTTP request duration in seconds by route template.",
+                ("route",),
+            )
+            self.permission_denied_total = self.registry.counter(
+                "taskboard_permission_denied_total",
+                "Requests refused by a permission rule (401 for P2, 403 otherwise).",
+                ("rule",),
+            )
+            self.status_changes_total = self.registry.counter(
+                "taskboard_status_changes_total", "Task status changes.", ("from", "to")
+            )
+            self.conflicts_total = self.registry.counter(
+                "taskboard_conflicts_total", "Status changes refused by a workflow rule (409).", ("rule",)
+            )
+            self.archive_runs_total = self.registry.counter("taskboard_archive_runs_total", "Archive job runs.")
+            self.tasks_archived_total = self.registry.counter(
+                "taskboard_tasks_archived_total", "Done tasks archived by the archive job."
+            )
+            self.registry.gauge(
+                "taskboard_tasks", "Tasks on the board by status (archived tasks excluded).", ("status",), self._task_counts
+            )
+            self.registry.gauge(
+                "taskboard_build_info",
+                "Always 1; the commit label names the Taskboard commit that is running.",
+                ("commit",),
+                lambda: [((config.commit,), 1)],
+            )
+            self._routes = []
+            self._static = {}
+            for path, (name, content_type) in _STATIC.items():
+                with open(os.path.join(_HERE, name), "rb") as f:
+                    self._static[path] = Response(200, f.read(), content_type, {"Cache-Control": "no-cache"})
+            for method, template, handler in (
+                ("GET", "/", self._page),
+                ("GET", "/app.js", self._page),
+                ("GET", "/healthz", self._healthz),
+                ("GET", "/metrics", self._metrics),
+                ("GET", "/api/me", self._me),
+                ("GET", "/api/tasks", self._list_tasks),
+                ("POST", "/api/tasks", self._create_task),
+                ("GET", "/api/tasks/{id}", self._get_task),
+                ("PATCH", "/api/tasks/{id}", self._update_task),
+                ("DELETE", "/api/tasks/{id}", self._delete_task),
+            ):
+                pattern = re.compile("^" + template.replace("{id}", r"(?P<id>\d+)") + "$")
+                self._routes.append((method, template, pattern, handler))
+            self._archive_job = archive.ArchiveJob(self.archive_now, config.archive_interval_seconds)
+
+        # -- lifecycle -----------------------------------------------------------------
+
+        def start(self):
+            """Log the configuration, migrate and seed the database, then start the archive job."""
+            logs.event(config_log, "config_loaded", **self.config.public())
+            with self.connection() as conn:
+                db.migrate(conn, tasks.iso(tasks.utcnow()))
+                if self.config.seed_demo_data:
+                    seed.seed_if_empty(conn, self.config.users)
+            self.archive_now()
+            self._archive_job.start()
+
+        def stop(self):
+            self._archive_job.stop()
+
+        def archive_now(self, now=None):
+            """One run of the archive job (S7). Returns how many tasks it archived."""
+            with self.connection() as conn:
+                archived = archive.run_once(conn, self.config.archive_done_after_seconds, now)
+            self.archive_runs_total.inc()
+            self.tasks_archived_total.inc(amount=archived)
+            return archived
+
+        @contextmanager
+        def connection(self):
+            conn = db.connect(self.config.db_path)
+            try:
+                yield conn
+            finally:
+                conn.close()
+
+        # -- request handling ------------------------------------------------------------
+
+        def handle(self, method, target, headers, body=b""):
+            started = time.perf_counter()
+            headers = {str(k).lower(): v for k, v in dict(headers).items()}
+            parts = urlsplit(target)
+            incoming_id = headers.get("x-request-id", "")
+            request_id = incoming_id if _REQUEST_ID.match(incoming_id) else uuid.uuid4().hex[:16]
+            req = Request(method, parts.path, parse_qs(parts.query), headers, body, request_id)
+            req.user = headers.get("x-user") or None
+            context = {"request_id": request_id}
+            token = logs.request_context.set(context)
+            error = None
+            try:
+                with tracing.request_span(method, parts.path, headers) as span:
+                    context["trace_id"] = tracing.trace_id(span)
+                    try:
+                        response = self._dispatch(req)
+                    except HttpError as exc:
+                        response = json_response(exc.status, exc.body)
+                    except permissions.Forbidden as exc:
+                        self._denied(req, exc.rule, exc.action)
+                        response = json_response(403, {"error": "forbidden", "rule": exc.rule})
+                    except workflow.Conflict as exc:
+                        self.conflicts_total.inc(exc.rule)
+                        logs.event(events, "conflict", rule=exc.rule, user=req.user, task_id=req.task_id, detail=exc.detail)
+                        response = json_response(409, {"error": "conflict", "rule": exc.rule, "detail": exc.detail})
+                    except Exception as exc:  # anything else is a bug: log it and answer 500
+                        error = exc
+                        response = json_response(500, {"error": "internal", "request_id": request_id})
+                    tracing.finish(span, method, req.route, response.status, req.user, error)
+                duration = time.perf_counter() - started
+                self._log_request(req, parts.query, response.status, duration, error)
+            finally:
+                logs.request_context.reset(token)
+            self.requests_total.inc(method, req.route, response.status)
+            self.request_seconds.observe(duration, req.route)
+            response.headers["X-Request-Id"] = request_id
+            return response
+
+        def _dispatch(self, req):
+            allowed = []
+            for method, template, pattern, handler in self._routes:
+                match = pattern.match(req.path)
+                if not match:
+                    continue
+                req.route = template
+                if method == req.method:
+                    if template.startswith("/api/"):
+                        return handler(req, self._identify(req), **match.groupdict())
+                    return handler(req, **match.groupdict())
+                allowed.append(method)
+            if allowed:
+                raise HttpError(405, "method_not_allowed", allowed=allowed)
+            raise HttpError(404, "not_found")
+
+        def _log_request(self, req, query, status, duration, error):
+            fields = {
+                "user": req.user,
+                "role": req.role,
+                "method": req.method,
+                "route": req.route,
+                "path": req.path,
+                "query": query or None,
+                "status": status,
+                "duration_ms": round(duration * 1000, 2),
+            }
+            if req.task_id is not None:
+                fields["task_id"] = req.task_id
+            if error is not None:
+                fields["error"] = logs.describe_error(error)
+                fields["stack"] = logs.compact_stack(error.__traceback__)
+            if status >= 500:
+                level = logging.ERROR
+            elif status >= 400:
+                level = logging.WARNING
+            elif req.route in _QUIET_ROUTES:
+                level = logging.DEBUG
+            else:
+                level = logging.INFO
+            logs.event(log, "request", level=level, **fields)
+
+        def _identify(self, req):
+            """P2: every /api/ request names a configured user in X-User."""
+            user = permissions.identify(self.config.users, req.user)
+            if user is None:
+                self._denied(req, "P2", "identify")
+                raise HttpError(401, "unauthorized", rule="P2")
+            req.role = user.role
+            return user
+
+        def _denied(self, req, rule, action):
+            self.permission_denied_total.inc(rule)
+            logs.event(
+                access_log,
+                "permission_denied",
+                level=logging.WARNING,
+                rule=rule,
+                user=req.user,
+                role=req.role,
+                action=action,
+                task_id=req.task_id,
+            )
+
+        def _task_counts(self):
+            with self.connection() as conn:
+                counts = tasks.count_by_status(conn)
+            return [((status,), count) for status, count in counts.items()]
+
+        # -- handlers ----------------------------------------------------------------------
+
+        def _page(self, req):
+            page = self._static[req.path]
+            return Response(page.status, page.body, page.content_type, dict(page.headers))
+
+        def _healthz(self, req):
+            with self.connection() as conn:
+                conn.execute("SELECT 1").fetchone()
+            return json_response(200, {"status": "ok", "commit": self.config.commit})
+
+        def _metrics(self, req):
+            return Response(200, self.registry.render().encode(), "text/plain; version=0.0.4; charset=utf-8")
+
+        def _me(self, req, user):
+            users = [{"name": name, "role": role} for name, role in self.config.users.items()]
+            features = {"overdue_view": self.config.feature_overdue_view}
+            return json_response(200, {"user": user.name, "role": user.role, "users": users, "features": features})
+
+        def _list_tasks(self, req, user):
+            permissions.require(user, "read")
+            status = req.param("status")
+            if status is not None and status not in tasks.STATUSES:
+                raise HttpError(400, "bad_request", detail=f"status must be one of {', '.join(tasks.STATUSES)}")
+            due_before = req.param("due_before")
+            if due_before is not None and not _is_date(due_before):
+                raise HttpError(400, "bad_request", detail="due_before must be a date, YYYY-MM-DD")
+            include_archived = _bool_param(req.param("include_archived", "false"), "include_archived")
+            page = _int_param(req.param("page", "1"), "page")
+            with self.connection() as conn:
+                result = tasks.list_tasks(
+                    conn,
+                    status=status,
+                    assignee=req.param("assignee"),
+                    due_before=due_before,
+                    include_archived=include_archived,
+                    page=page,
+                    page_size=self.config.page_size,
+                )
+            return json_response(200, result)
+
+        def _get_task(self, req, user, id):
+            req.task_id = int(id)
+            permissions.require(user, "read")
+            with self.connection() as conn:
+                task = self._load(conn, req.task_id)
+                task["events"] = tasks.events_for(conn, req.task_id)
+            return json_response(200, task)
+
+        def _create_task(self, req, user):
+            permissions.require(user, "create")
+            data = req.json()
+            _reject_unknown(data, ("project", "title", "assignee", "due_date"))
+            title = _text(data, "title", required=True)
+            project = _text(data, "project", limit=60) or "general"
+            created_by = user.name
+            assignee = _text(data, "assignee", limit=60) or created_by
+            self._check_assignee(assignee)
+            due_date = self._due_date(data.get("due_date"))
+            with self.connection() as conn, db.transaction(conn):
+                task = tasks.create_task(
+                    conn, project=project, title=title, created_by=created_by, assignee=assignee, due_date=due_date
+                )
+            req.task_id = task["id"]
+            logs.event(events, "task_created", task_id=task["id"], project=project, assignee=assignee, created_by=created_by)
+            return json_response(201, task)
+
+        def _update_task(self, req, user, id):
+            req.task_id = int(id)
+            data = req.json()
+            _reject_unknown(data, ("status", "assignee", "title", "due_date"))
+            changes = {}
+            if "status" in data:
+                if data["status"] not in tasks.STATUSES:
+                    raise HttpError(400, "bad_request", detail=f"status must be one of {', '.join(tasks.STATUSES)}")
+                changes["status"] = data["status"]
+            if "assignee" in data:
+                changes["assignee"] = _text(data, "assignee", required=True, limit=60)
+                self._check_assignee(changes["assignee"])
+            if "title" in data:
+                changes["title"] = _text(data, "title", required=True)
+            if "due_date" in data:
+                changes["due_date"] = self._due_date(data["due_date"])
+            if not changes:
+                raise HttpError(400, "bad_request", detail="nothing to change")
+            with self.connection() as conn, db.transaction(conn):
+                task = self._load(conn, req.task_id)
+                if "status" in changes:
+                    permissions.require(user, "change_status", task)
+                    in_progress = tasks.count_in_progress(conn, task["assignee"])
+                    if not workflow.check_transition(user, task, changes["status"], in_progress, self.config.wip_limit):
+                        del changes["status"]  # already there
+                if "assignee" in changes:
+                    permissions.require(user, "reassign", task)
+                if "title" in changes or "due_date" in changes:
+                    permissions.require(user, "edit", task)
+                updated =tasks.update_task(conn, task, changes, actor=user.name) if changes else task
+            if updated["status"] != task["status"]:
+                self.status_changes_total.inc(task["status"], updated["status"])
+                logs.event(
+                    events,
+                    "status_changed",
+                    task_id=task["id"],
+                    actor=user.name,
+                    assignee=task["assignee"],
+                    created_by=task["created_by"],
+                    **{"from": task["status"], "to": updated["status"]},
+                )
+            if updated["assignee"] != task["assignee"]:
+                logs.event(
+                    events, "task_reassigned", task_id=task["id"], actor=user.name, **{"from": task["assignee"], "to": updated["assignee"]}
+                )
+            return json_response(200, updated)
+
+        def _delete_task(self, req, user, id):
+            req.task_id = int(id)
+            permissions.require(user, "delete")
+            with self.connection() as conn, db.transaction(conn):
+                self._load(conn, req.task_id)
+                tasks.delete_task(conn, req.task_id)
+            logs.event(events, "task_deleted", task_id=req.task_id, actor=user.name)
+            return Response(204)
+
+        # -- helpers -------------------------------------------------------------------------
+
+        def _load(self, conn, task_id):
+            task = tasks.get_task(conn, task_id)
+            if task is None:
+                raise HttpError(404, "not_found", task_id=task_id)
+            return task
+
+        def _check_assignee(self, name):
+            if self.config.users.get(name) not in permissions.EDITOR_ROLES:
+                raise HttpError(400, "bad_request", detail=f"assignee {name!r} is not an editor or admin")
+
+        def _due_date(self, value):
+            """The due date as stored: YYYY-MM-DD (docs/api.md).
+
+            A date and time (2026-10-31T17:00) is accepted too; only its date is kept.
+            """
+            if value is None:
+                return None
+            if isinstance(value, str):
+                text = value.strip()
+                if _is_date(text):
+                    return text
+                try:
+                    return datetime.fromisoformat(text).date().isoformat()
+                except ValueError:
+                    pass
+            raise HttpError(400, "bad_request", detail="due_date must be a date, YYYY-MM-DD")
+  archive.py: |
+    """The archive job (S7): archive done tasks once they have been done for longer
+    than ARCHIVE_DONE_AFTER_DAYS (C3). It runs once at startup and then every
+    ARCHIVE_INTERVAL_SECONDS (C4) on a background thread.
+    """
+
+    import logging
+    import threading
+    from datetime import timedelta
+
+    import db
+    import logs
+    import tasks
+
+    log = logging.getLogger("taskboard.archive")
+
+
+    def run_once(conn, after_seconds, now=None):
+        """Archive done tasks whose done_at is before now - after_seconds. Returns how many."""
+        now = now or tasks.utcnow()
+        cutoff = now - timedelta(seconds=after_seconds)
+        with db.transaction(conn):
+            archived = conn.execute(
+                "UPDATE tasks SET archived_at = ? WHERE status = 'done' AND archived_at IS NULL AND done_at < ?",
+                (tasks.iso(now), tasks.iso(cutoff)),
+            ).rowcount
+        threshold_days = round(after_seconds / 86400, 2)
+        logs.event(log, "archive_run", archived=archived, threshold_days=threshold_days, cutoff=tasks.iso(cutoff))
+        return archived
+
+
+    class ArchiveJob:
+        def __init__(self, run, interval_seconds):
+            self._run = run
+            self._interval = interval_seconds
+            self._stopping = threading.Event()
+            self._thread = None
+
+        def start(self):
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._loop, name="archive", daemon=True)
+                self._thread.start()
+
+        def stop(self):
+            self._stopping.set()
+
+        def _loop(self):
+            while not self._stopping.wait(self._interval):
+                try:
+                    self._run()
+                except Exception:
+                    log.exception("archive_failed")
+  config.py: |
+    """Configuration, read once at startup from environment variables.
+
+    Each setting has an ID (C1, C5, ...) that docs/configuration.md uses.
+    """
+
+    import os
+    import re
+    from dataclasses import asdict, dataclass
+
+    DEFAULT_USERS = "dana:editor,lee:editor,priya:editor,sam:viewer,alex:admin"
+    ROLES = ("viewer", "editor", "admin")
+    LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+    MAX_PAGE_SIZE = 200
+
+    _DURATION = re.compile(r"^(\d+(?:\.\d+)?)\s*([smhd]?)$")
+    _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+    class ConfigError(ValueError):
+        """A setting has a value Taskboard cannot use."""
+
+
+    @dataclass(frozen=True)
+    class Config:
+        users: dict  # C1: name -> role
+        wip_limit: int  # C2
+        archive_done_after_seconds: float  # C3 (ARCHIVE_DONE_AFTER_DAYS)
+        archive_interval_seconds: int  # C4
+        page_size: int  # C5
+        seed_demo_data: bool  # C6
+        log_level: str  # C7
+        feature_overdue_view: bool  # C8
+        port: int
+        db_path: str
+        commit: str
+
+        def public(self):
+            """The settings as logged in config_loaded. None of them is secret."""
+            values = asdict(self)
+            values["users"] = ",".join(f"{name}:{role}" for name, role in self.users.items())
+            return values
+
+
+    def _users(text):
+        users = {}
+        for entry in text.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            name, _, role = entry.partition(":")
+            name, role = name.strip(), role.strip().lower()
+            if not name or role not in ROLES:
+                raise ConfigError(
+                    f"TASKBOARD_USERS: {entry!r} is not name:role with a role of {', '.join(ROLES)}"
+                )
+            users[name] = role
+        if not users:
+            raise ConfigError("TASKBOARD_USERS names no users")
+        return users
+
+
+    def _int(env, name, default, minimum=1):
+        raw = env.get(name, "").strip()
+        if not raw:
+            return default
+        try:
+            value = int(raw)
+        except ValueError:
+            raise ConfigError(f"{name}: {raw!r} is not a whole number") from None
+        if value < minimum:
+            raise ConfigError(f"{name}: must be at least {minimum}, got {value}")
+        return value
+
+
+    def parse_duration(text, default_unit="h"):
+        """Seconds in a duration such as '36h', '14d', '90m' or '45s'."""
+        match = _DURATION.match(text.strip().lower())
+        if not match:
+            raise ValueError(f"{text!r} is not a duration like 14d or 36h")
+        number, unit = match.groups()
+        return float(number) * _UNIT_SECONDS[unit or default_unit]
+
+
+    def _duration(env, name, default):
+        raw = env.get(name, "").strip() or default
+        try:
+            seconds = parse_duration(raw)
+        except ValueError as exc:
+            raise ConfigError(f"{name}: {exc}") from None
+        if seconds <= 0:
+            raise ConfigError(f"{name}: must be more than zero")
+        return seconds
+
+
+    def _bool(env, name, default):
+        raw = env.get(name, "").strip().lower()
+        if not raw:
+            return default
+        if raw in ("1", "true", "yes", "on"):
+            return True
+        if raw in ("0", "false", "no", "off"):
+            return False
+        raise ConfigError(f"{name}: {raw!r} is not true or false")
+
+
+    def load_config(env=None):
+        env = os.environ if env is None else env
+        log_level = env.get("LOG_LEVEL", "").strip().upper() or "INFO"
+        if log_level not in LOG_LEVELS:
+            raise ConfigError(f"LOG_LEVEL: {log_level!r} is not one of {', '.join(LOG_LEVELS)}")
+        return Config(
+            users=_users(env.get("TASKBOARD_USERS", DEFAULT_USERS)),
+            wip_limit=_int(env, "WIP_LIMIT", 3),
+            archive_done_after_seconds=_duration(env, "ARCHIVE_DONE_AFTER_DAYS", "14"),
+            archive_interval_seconds=_int(env, "ARCHIVE_INTERVAL_SECONDS", 60),
+            page_size=min(_int(env, "PAGE_SIZE", 50), MAX_PAGE_SIZE),
+            seed_demo_data=_bool(env, "SEED_DEMO_DATA", True),
+            log_level=log_level,
+            feature_overdue_view=_bool(env, "FEATURE_OVERDUE_VIEW", True),
+            port=_int(env, "PORT", 8080),
+            db_path=env.get("DB_PATH", "").strip() or "/data/taskboard.db",
+            commit=env.get("TASKBOARD_COMMIT", "").strip() or "dev",
+        )
+  db.py: |
+    """SQLite connections and numbered schema migrations.
+
+    Migrations run at startup, in order, each in its own transaction, and each one
+    applied is recorded in schema_migrations and logged as migration_applied.
+    """
+
+    import logging
+    import sqlite3
+    from contextlib import contextmanager
+
+    import logs
+
+    log = logging.getLogger("taskboard.db")
+
+    # (version, name, statements). Never edit a migration that has shipped; add a new one.
+    MIGRATIONS = [
+        (
+            1,
+            "create tasks",
+            [
+                """CREATE TABLE tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    assignee TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    done_at TEXT,
+                    due_date TEXT,
+                    archived_at TEXT
+                )""",
+                "CREATE INDEX tasks_status ON tasks (status)",
+                "CREATE INDEX tasks_assignee ON tasks (assignee)",
+            ],
+        ),
+        (
+            2,
+            "create task_events",
+            [
+                """CREATE TABLE task_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER NOT NULL REFERENCES tasks (id) ON DELETE CASCADE,
+                    actor TEXT NOT NULL,
+                    from_status TEXT,
+                    to_status TEXT NOT NULL,
+                    at TEXT NOT NULL
+                )""",
+                "CREATE INDEX task_events_task ON task_events (task_id)",
+            ],
+        ),
+        (
+            3,
+            "rename tasks.due_date to due_at",
+            [
+                # Same naming as created_at, updated_at, done_at and archived_at.
+                "ALTER TABLE tasks RENAME COLUMN due_date TO due_at",
+            ],
+        ),
+    ]
+
+
+    def connect(path):
+        conn = sqlite3.connect(path, timeout=10, isolation_level=None, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
+
+    @contextmanager
+    def transaction(conn):
+        """BEGIN IMMEDIATE ... COMMIT, or ROLLBACK if the block raises."""
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield conn
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+
+
+    def applied_versions(conn):
+        return [row[0] for row in conn.execute("SELECT version FROM schema_migrations ORDER BY version")]
+
+
+    def migrate(conn, now):
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+        done = set(applied_versions(conn))
+        for version, name, statements in MIGRATIONS:
+            if version in done:
+                continue
+            with transaction(conn):
+                for statement in statements:
+                    conn.execute(statement)
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", (version, now)
+                )
+            logs.event(log, "migration_applied", version=version, name=name)
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Taskboard</title>
+    <style>
+      :root {
+        --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5d6677; --line: #dde1e8;
+        --accent: #2f5bd3; --danger: #b42318; --ok: #1f7a4d;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #14171c; --panel: #1d2128; --text: #e6e9ef; --muted: #9aa3b2; --line: #2e3440;
+                --accent: #7b9cff; --danger: #ff8a7a; --ok: #6fd3a0; }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+      header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+      header h1 { font-size: 18px; margin: 0 auto 0 0; }
+      label { color: var(--muted); font-size: 13px; }
+      select, input, button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+      button { cursor: pointer; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.active { outline: 2px solid var(--accent); }
+      main { padding: 16px; }
+      #new-task { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+      #new-task input[name=title] { flex: 1 1 240px; }
+      #message { min-height: 1.4em; margin: 0 0 12px; color: var(--danger); }
+      #message.ok { color: var(--ok); }
+      #view-note { color: var(--muted); margin: 0 0 12px; }
+      .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+      @media (max-width: 760px) { .board { grid-template-columns: 1fr; } }
+      .column { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-height: 120px; }
+      .column h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+      .card { border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+      .card .title { font-weight: 600; }
+      .card .meta { color: var(--muted); font-size: 13px; margin: 2px 0 6px; }
+      .card .late { color: var(--danger); }
+      .card .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+      .card .actions button { font-size: 13px; padding: 2px 8px; }
+    </style>
+    </head>
+    <body>
+    <header>
+      <h1>Taskboard</h1>
+      <label>User <select id="user"></select></label>
+      <button id="show-board" class="active" type="button">Board</button>
+      <button id="show-overdue" type="button" hidden>Overdue</button>
+    </header>
+    <main>
+      <form id="new-task">
+        <input name="title" placeholder="New task" required maxlength="200">
+        <select name="project"><option>website</option><option>payments</option><option>general</option></select>
+        <select name="assignee"></select>
+        <input name="due_date" type="date" title="Due">
+        <button class="primary" type="submit">Add</button>
+      </form>
+      <p id="message" role="status"></p>
+      <p id="view-note"></p>
+      <div class="board">
+        <section class="column" data-status="open"><h2>Open</h2><div class="cards"></div></section>
+        <section class="column" data-status="in_progress"><h2>In progress</h2><div class="cards"></div></section>
+        <section class="column" data-status="done"><h2>Done</h2><div class="cards"></div></section>
+      </div>
+    </main>
+    <script src="app.js"></script>
+    </body>
+    </html>
+  logs.py: |
+    """Structured logs: one JSON object per line on stdout.
+
+    Every line has time, level, logger and msg. Lines written while a request is
+    being handled also carry its request_id (and trace_id when tracing is on).
+    Domain events are ordinary lines whose msg names the event, with their own
+    fields next to it, for example msg="status_changed", task_id=7.
+    """
+
+    import contextvars
+    import json
+    import logging
+    import os
+    import sys
+    import traceback
+    from datetime import datetime, timezone
+
+    # Set by app.App.handle for the duration of one request.
+    request_context = contextvars.ContextVar("request_context", default=None)
+
+
+    class JsonFormatter(logging.Formatter):
+        def format(self, record):
+            moment = datetime.fromtimestamp(record.created, timezone.utc)
+            line = {
+                "time": moment.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+                "level": record.levelname,
+                "logger": record.name,
+                "msg": record.getMessage(),
+            }
+            context = getattr(record, "context", None) or request_context.get()
+            if context:
+                for key in ("request_id", "trace_id"):
+                    if context.get(key):
+                        line[key] = context[key]
+            line.update(getattr(record, "fields", None) or {})
+            if record.exc_info and "error" not in line:
+                line["error"] = describe_error(record.exc_info[1])
+                line["stack"] = compact_stack(record.exc_info[2])
+            return json.dumps(line, default=str)
+
+
+    def setup(level="INFO"):
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(JsonFormatter())
+        root = logging.getLogger()
+        root.handlers[:] = [handler]
+        root.setLevel(level)
+
+
+    def event(logger, msg, level=logging.INFO, **fields):
+        """Log a domain event: msg names it, fields describe it."""
+        logger.log(level, msg, extra={"fields": fields, "context": dict(request_context.get() or {})})
+
+
+    def describe_error(exc):
+        """'ClassName: message', with the module for classes outside builtins."""
+        cls = type(exc)
+        name = cls.__qualname__ if cls.__module__ == "builtins" else f"{cls.__module__}.{cls.__qualname__}"
+        return f"{name}: {exc}"
+
+
+    def compact_stack(tb, limit=5):
+        """The innermost frames as 'file.py:line function', outermost first."""
+        frames = traceback.extract_tb(tb)[-limit:]
+        return " > ".join(f"{os.path.basename(f.filename)}:{f.lineno} {f.name}" for f in frames)
+  metrics.py: |
+    """Prometheus metrics in the text exposition format, without a client library."""
+
+    import logging
+    import threading
+
+    log = logging.getLogger("taskboard.metrics")
+
+    DURATION_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0)
+
+
+    def _escape(value):
+        return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+    def _labels(names, values):
+        if not names:
+            return ""
+        return "{" + ",".join(f'{n}="{_escape(v)}"' for n, v in zip(names, values)) + "}"
+
+
+    def _number(value):
+        if isinstance(value, float):
+            return "+Inf" if value == float("inf") else repr(value)
+        return str(value)
+
+
+    class Counter:
+        kind = "counter"
+
+        def __init__(self, name, help_text, labelnames=()):
+            self.name, self.help, self.labelnames = name, help_text, tuple(labelnames)
+            self._values = {}
+            self._lock = threading.Lock()
+
+        def inc(self, *labelvalues, amount=1):
+            key = tuple(str(v) for v in labelvalues)
+            with self._lock:
+                self._values[key] = self._values.get(key, 0) + amount
+
+        def value(self, *labelvalues):
+            return self._values.get(tuple(str(v) for v in labelvalues), 0)
+
+        def lines(self):
+            with self._lock:
+                items = sorted(self._values.items())
+            if not self.labelnames and not items:
+                items = [((), 0)]
+            for key, value in items:
+                yield f"{self.name}{_labels(self.labelnames, key)} {_number(value)}"
+
+
+    class Gauge:
+        """A gauge whose samples come from a callback at scrape time."""
+
+        kind = "gauge"
+
+        def __init__(self, name, help_text, labelnames, collect):
+            self.name, self.help, self.labelnames = name, help_text, tuple(labelnames)
+            self.collect = collect
+
+        def lines(self):
+            for key, value in self.collect():
+                yield f"{self.name}{_labels(self.labelnames, key)} {_number(value)}"
+
+
+    class Histogram:
+        kind = "histogram"
+
+        def __init__(self, name, help_text, labelnames=(), buckets=DURATION_BUCKETS):
+            self.name, self.help, self.labelnames = name, help_text, tuple(labelnames)
+            self.buckets = tuple(buckets)
+            self._values = {}  # key -> [per-bucket counts, sum, count]
+            self._lock = threading.Lock()
+
+        def observe(self, value, *labelvalues):
+            key = tuple(str(v) for v in labelvalues)
+            with self._lock:
+                state = self._values.setdefault(key, [[0] * len(self.buckets), 0.0, 0])
+                for i, bound in enumerate(self.buckets):
+                    if value <= bound:
+                        state[0][i] += 1
+                        break
+                state[1] += value
+                state[2] += 1
+
+        def lines(self):
+            with self._lock:
+                items = sorted((k, (list(v[0]), v[1], v[2])) for k, v in self._values.items())
+            names = self.labelnames + ("le",)
+            for key, (counts, total, count) in items:
+                cumulative = 0
+                for bound, n in zip(self.buckets, counts):
+                    cumulative += n
+                    yield f"{self.name}_bucket{_labels(names, key + (_number(float(bound)),))} {cumulative}"
+                yield f"{self.name}_bucket{_labels(names, key + ('+Inf',))} {count}"
+                yield f"{self.name}_sum{_labels(self.labelnames, key)} {_number(round(total, 6))}"
+                yield f"{self.name}_count{_labels(self.labelnames, key)} {count}"
+
+
+    class Registry:
+        def __init__(self):
+            self._metrics = []
+
+        def _add(self, metric):
+            self._metrics.append(metric)
+            return metric
+
+        def counter(self, name, help_text, labelnames=()):
+            return self._add(Counter(name, help_text, labelnames))
+
+        def gauge(self, name, help_text, labelnames, collect):
+            return self._add(Gauge(name, help_text, labelnames, collect))
+
+        def histogram(self, name, help_text, labelnames=(), buckets=DURATION_BUCKETS):
+            return self._add(Histogram(name, help_text, labelnames, buckets))
+
+        def render(self):
+            out = []
+            for metric in self._metrics:
+                out.append(f"# HELP {metric.name} {metric.help}")
+                out.append(f"# TYPE {metric.name} {metric.kind}")
+                try:
+                    out.extend(metric.lines())
+                except Exception:
+                    log.exception("metric_collect_failed", extra={"fields": {"metric": metric.name}})
+            return "\n".join(out) + "\n"
+  permissions.py: |
+    """Who may do what. Rule IDs (P1, P2, ...) refer to docs/permissions.md.
+
+    Identity is the X-User request header (no login; see the docs). Every check
+    goes through can(user, action, task): POLICY says, for each action, which rule
+    applies and who besides admins may do it. require() raises Forbidden naming
+    that rule.
+    """
+
+    from dataclasses import dataclass
+
+    EDITOR_ROLES = ("editor", "admin")
+
+
+    @dataclass(frozen=True)
+    class User:
+        name: str
+        role: str
+
+        @property
+        def is_admin(self):
+            return self.role == "admin"
+
+        @property
+        def is_editor(self):
+            return self.role == "editor"
+
+
+    class Forbidden(Exception):
+        def __init__(self, rule, action):
+            super().__init__(f"{action} denied by {rule}")
+            self.rule = rule
+            self.action = action
+
+
+    def identify(users, name):
+        """P2: the X-User header must name a configured user. Returns None otherwise."""
+        if not name or name not in users:
+            return None
+        return User(name, users[name])
+
+
+    def _owns(user, task):
+        """The task is the user's own."""
+        return task["created_by"] == user.name
+
+
+    def _works_on(user, task):
+        """The user created the task or is assigned to it."""
+        return _owns(user, task) or task["assignee"] == user.name
+
+
+    # action -> (rule, who may do it besides admins). Admins may do everything.
+    POLICY = {
+        "read": ("P1", lambda user, task: True),
+        "create": ("P3", lambda user, task: user.is_editor),
+        "change_status": ("P4", lambda user, task: user.is_editor and task["assignee"] == user.name),
+        "reassign": ("P5", lambda user, task: False),
+        "edit": ("P6", lambda user, task: user.is_editor and _works_on(user, task)),
+        "reopen": ("S4", lambda user, task: False),
+        "delete": ("P7", lambda user, task: False),
+    }
+
+
+    def can(user, action, task=None):
+        """True if user may do action (on task, for the actions about one task)."""
+        _, allowed = POLICY[action]
+        return user.is_admin or allowed(user, task)
+
+
+    def require(user, action, task=None):
+        """Raise Forbidden, naming the rule, unless user may do action."""
+        if not can(user, action, task):
+            raise Forbidden(POLICY[action][0], action)
+  seed.py: |
+    """Demo data (C6): about 25 tasks across two projects, timed relative to startup.
+
+    Seeding only happens when the tasks table is empty, so it runs once per fresh
+    database. Names that are not in TASKBOARD_USERS are replaced by a configured
+    user with the same role.
+    """
+
+    import logging
+    from datetime import timedelta
+
+    import db
+    import logs
+    import tasks
+
+    log = logging.getLogger("taskboard.seed")
+
+    DEFAULT_ROLES = {"dana": "editor", "lee": "editor", "priya": "editor", "sam": "viewer", "alex": "admin"}
+
+    # project, title, created_by, assignee, status, created (days ago), done (days ago), due (days from now)
+    DEMO_TASKS = [
+        ("website", "Write copy for the pricing page", "dana", "dana", "open", 6.2, None, 5),
+        ("website", "Fix broken footer links", "alex", "dana", "open", 9.5, None, -2),
+        ("website", "Compress hero images", "lee", "priya", "open", 4.1, None, 8),
+        ("payments", "Add retries to the webhook sender", "lee", "lee", "open", 3.3, None, 3),
+        ("payments", "Document the refund flow", "alex", "priya", "open", 11.0, None, -4),
+        ("payments", "Rotate sandbox API keys", "priya", "priya", "open", 2.4, None, None),
+        ("website", "Accessibility audit of the signup form", "alex", "lee", "open", 1.8, None, 10),
+        ("payments", "Reconcile October invoices", "alex", "dana", "open", 5.6, None, -1),
+        ("payments", "Load test the checkout API", "alex", "lee", "open", 0.9, None, 7),
+        ("website", "Translate the FAQ to Spanish", "priya", "priya", "open", 13.2, None, -6),
+        ("website", "Migrate the blog to the new CMS", "dana", "dana", "in_progress", 8.7, None, 4),
+        ("payments", "Investigate duplicate charge reports", "alex", "priya", "in_progress", 4.4, None, -3),
+        ("website", "Update the cookie banner copy", "lee", "dana", "in_progress", 3.9, None, 2),
+        ("payments", "Upgrade the payment SDK", "lee", "lee", "in_progress", 7.1, None, 2),
+        ("website", "Redesign the mobile navigation", "priya", "priya", "in_progress", 10.3, None, None),
+        ("payments", "Review fraud rule thresholds", "alex", "lee", "in_progress", 2.7, None, 6),
+        ("website", "Update the favicon", "dana", "dana", "done", 3.0, 1.2, None),
+        ("payments", "Fix currency rounding on invoices", "alex", "priya", "done", 6.5, 2.1, None),
+        ("website", "Add a staging banner", "lee", "lee", "done", 5.2, 3.4, None),
+        ("payments", "Add invoice PDF download", "alex", "dana", "done", 12.0, 5.3, None),
+        ("website", "Remove the old A/B test", "priya", "priya", "done", 9.1, 6.2, None),
+        ("payments", "Refund email template", "lee", "priya", "done", 14.4, 8.0, None),
+        ("website", "Newsletter signup endpoint", "alex", "lee", "done", 15.8, 9.6, None),
+        ("payments", "Archive Q2 payout reports", "dana", "dana", "done", 30.5, 21.3, None),
+        ("website", "Publish the launch announcement", "alex", "priya", "done", 34.0, 25.7, None),
+    ]
+
+
+    def _resolver(users):
+        by_role = {}
+        for name, role in users.items():
+            by_role.setdefault(role, name)
+
+        def resolve(name):
+            if name in users:
+                return name
+            role = DEFAULT_ROLES[name]
+            return by_role.get(role) or by_role.get("admin") or next(iter(users))
+
+        return resolve
+
+
+    def _history(conn, task_id, created_by, assignee, status, created_at, done_at, now):
+        """task_events that lead to the seeded status."""
+        tasks.add_event(conn, task_id, created_by, None, "open", tasks.iso(created_at))
+        if status == "open":
+            return
+        started = created_at + ((done_at or now) - created_at) * 0.3
+        tasks.add_event(conn, task_id, assignee, "open", "in_progress", tasks.iso(started))
+        if status == "done":
+            tasks.add_event(conn, task_id, assignee, "in_progress", "done", tasks.iso(done_at))
+
+
+    def seed_if_empty(conn, users, now=None):
+        """Insert the demo tasks into an empty database. Returns how many were inserted."""
+        if conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]:
+            return 0
+        now = now or tasks.utcnow()
+        resolve = _resolver(users)
+        with db.transaction(conn):
+            for project, title, created_by, assignee, status, created_ago, done_ago, due_in in DEMO_TASKS:
+                created_at = now - timedelta(days=created_ago)
+                done_at = now - timedelta(days=done_ago) if done_ago is not None else None
+                updated_at = done_at or created_at + (now - created_at) / 2
+                due_date = (now + timedelta(days=due_in)).date().isoformat() if due_in is not None else None
+                cursor = conn.execute(
+                    "INSERT INTO tasks (project, title, status, assignee, created_by, created_at, updated_at,"
+                    " done_at, due_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        project,
+                        title,
+                        status,
+                        resolve(assignee),
+                        resolve(created_by),
+                        tasks.iso(created_at),
+                        tasks.iso(updated_at),
+                        tasks.iso(done_at) if done_at else None,
+                        due_date,
+                    ),
+                )
+                _history(conn, cursor.lastrowid, resolve(created_by), resolve(assignee), status, created_at, done_at, now)
+        projects = sorted({row[0] for row in DEMO_TASKS})
+        logs.event(log, "seeded", tasks=len(DEMO_TASKS), projects=projects)
+        return len(DEMO_TASKS)
+  server.py: |
+    """Taskboard server entry point: python3 taskboard/server.py
+
+    Reads its configuration from environment variables (docs/configuration.md),
+    migrates and seeds the SQLite database, then serves HTTP on 0.0.0.0:$PORT.
+    """
+
+    import logging
+    import signal
+    import sys
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    import app as application
+    import config
+    import logs
+
+    log = logging.getLogger("taskboard.server")
+
+    MAX_BODY = 1024 * 1024
+
+
+    def make_handler(app):
+        class Handler(BaseHTTPRequestHandler):
+            server_version = "taskboard"
+
+            def _serve(self):
+                length = int(self.headers.get("Content-Length") or 0)
+                body = self.rfile.read(min(length, MAX_BODY)) if length else b""
+                response = app.handle(self.command, self.path, self.headers.items(), body)
+                self.send_response(response.status)
+                if response.body or response.status != 204:
+                    self.send_header("Content-Type", response.content_type)
+                for name, value in response.headers.items():
+                    self.send_header(name, value)
+                self.send_header("Content-Length", str(len(response.body)))
+                self.end_headers()
+                self.wfile.write(response.body)
+
+            do_GET = do_POST = do_PATCH = do_PUT = do_DELETE = _serve
+
+            def log_message(self, format, *args):
+                pass  # App.handle logs every request as JSON
+
+        return Handler
+
+
+    def main():
+        try:
+            settings = config.load_config()
+        except config.ConfigError as exc:
+            logs.setup("INFO")
+            logs.event(log, "config_error", level=logging.ERROR, error=str(exc))
+            return 1
+        logs.setup(settings.log_level)
+        app = application.App(settings)
+        app.start()
+        server = ThreadingHTTPServer(("0.0.0.0", settings.port), make_handler(app))
+
+        def shutdown(signum, frame):
+            logs.event(log, "shutting_down", signal=signal.Signals(signum).name)
+            threading.Thread(target=server.shutdown, daemon=True).start()
+
+        signal.signal(signal.SIGTERM, shutdown)
+        signal.signal(signal.SIGINT, shutdown)
+        logs.event(log, "listening", port=settings.port, commit=settings.commit)
+        server.serve_forever()
+        app.stop()
+        server.server_close()
+        return 0
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
+  simulate.py: |
+    """Traffic generator for Taskboard: a few people doing ordinary work, forever.
+
+        TASKBOARD_URL=http://localhost:8080 INTERVAL_SECONDS=1 python3 traffic/simulate.py
+
+    Personas (users from the default TASKBOARD_USERS):
+    - dana, lee, priya (editors) look at the board and work through the tasks
+      assigned to them, whoever created them: open -> in_progress -> done.
+      Now and then they add a task of their own or rename one.
+    - alex (admin) assigns new tasks to the editors, reassigns, sometimes reopens
+      a task finished today, and deletes tasks finished today when the Done column
+      gets long, so the board stays a sensible size.
+    - sam (viewer) browses and now and then tries something a viewer may not do.
+    - About once a minute someone opens the Overdue view (due_before=today).
+
+    Logs one JSON line per HTTP call (msg "sim_action") on stdout. Survives
+    Taskboard restarts by retrying with backoff. Standard library only.
+    """
+
+    import json
+    import os
+    import random
+    import sys
+    import time
+    import urllib.error
+    import urllib.request
+    import uuid
+    from datetime import datetime, timedelta, timezone
+
+    EDITORS = ("dana", "lee", "priya")
+    ADMIN = "alex"
+    VIEWER = "sam"
+    PROJECTS = ("website", "payments")
+    WIP_LIMIT = 3
+    MIN_ACTIVE = 12  # open + in progress: below this alex always adds a task
+    MAX_ACTIVE = 24  # open + in progress: above this nobody adds tasks
+    MAX_DONE = 12  # done tasks on the board: above this alex deletes some
+
+    VERBS = ("Update", "Fix", "Review", "Write", "Test", "Draft", "Clean up", "Document", "Check", "Simplify")
+    THINGS = (
+        "the onboarding email",
+        "checkout error messages",
+        "the status page",
+        "invoice totals",
+        "the search results page",
+        "the refund webhook",
+        "dark mode colours",
+        "the release checklist",
+        "card expiry handling",
+        "the sitemap",
+        "tax rounding",
+        "the password reset flow",
+        "the pricing table",
+        "payout reports",
+    )
+
+
+    def log(msg, level="INFO", **fields):
+        line = {
+            "time": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "level": level,
+            "logger": "simulate",
+            "msg": msg,
+            **fields,
+        }
+        print(json.dumps(line), flush=True)
+
+
+    class Unreachable(Exception):
+        """Taskboard did not answer at all (down, restarting, DNS)."""
+
+
+    class Client:
+        def __init__(self, base_url, timeout=10):
+            self.base_url = base_url.rstrip("/")
+            self.timeout = timeout
+
+        def call(self, persona, action, method, path, body=None, expect=None):
+            """One request as persona. Returns (status, parsed body or None)."""
+            request_id = f"sim-{uuid.uuid4().hex[:12]}"
+            headers = {"X-User": persona, "X-Request-Id": request_id, "User-Agent": "taskboard-simulate/1"}
+            data = None
+            if body is not None:
+                data = json.dumps(body).encode()
+                headers["Content-Type"] = "application/json"
+            request = urllib.request.Request(self.base_url + path, data=data, headers=headers, method=method)
+            started = time.monotonic()
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    status, raw = response.status, response.read()
+            except urllib.error.HTTPError as exc:
+                status, raw = exc.code, exc.read()
+            except (urllib.error.URLError, OSError) as exc:
+                raise Unreachable(f"{type(exc).__name__}: {exc}") from None
+            ms = round((time.monotonic() - started) * 1000, 1)
+            try:
+                payload = json.loads(raw) if raw else None
+            except ValueError:
+                payload = None
+            fields = {
+                "persona": persona,
+                "action": action,
+                "method": method,
+                "path": path,
+                "status": status,
+                "ms": ms,
+                "request_id": request_id,
+            }
+            if expect:
+                fields["expect"] = expect
+            if status >= 400 and isinstance(payload, dict):
+                for key in ("error", "rule", "detail"):
+                    if key in payload:
+                        fields[key] = payload[key]
+            if action in ("list_board", "overdue_view") and status == 200 and isinstance(payload, dict):
+                counts = {"open": 0, "in_progress": 0, "done": 0}
+                for task in payload.get("tasks", []):
+                    counts[task["status"]] = counts.get(task["status"], 0) + 1
+                fields["counts"] = counts
+                fields["total"] = payload.get("total")
+            level = "ERROR" if status >= 500 else "WARNING" if status >= 400 and not expect else "INFO"
+            log("sim_action", level=level, **fields)
+            return status, payload
+
+
+    class Simulator:
+        def __init__(self, client, rng=None, overdue_every=60.0):
+            self.client = client
+            self.rng = rng or random.Random()
+            self.overdue_every = overdue_every
+            self._last_overdue = None
+
+        # -- helpers ---------------------------------------------------------------------------
+
+        def board(self, persona, action="list_board", query=""):
+            status, data = self.client.call(persona, action, "GET", f"/api/tasks{query}")
+            return data.get("tasks", []) if status == 200 and data else []
+
+        def title(self):
+            return f"{self.rng.choice(VERBS)} {self.rng.choice(THINGS)}"
+
+        def due_date(self):
+            if self.rng.random() < 0.5:
+                return None
+            day = datetime.now(timezone.utc).date() + timedelta(days=self.rng.randint(-5, 10))
+            return day.isoformat()
+
+        def new_task(self, assignee):
+            body = {"title": self.title(), "project": self.rng.choice(PROJECTS), "assignee": assignee}
+            due = self.due_date()
+            if due:
+                body["due_date"] = due
+            return body
+
+        def move(self, persona, action, task, status, expect=None):
+            return self.client.call(
+                persona, action, "PATCH", f"/api/tasks/{task['id']}", {"status": status}, expect=expect
+            )
+
+        # -- one step ------------------------------------------------------------------------------
+
+        def step(self):
+            now = time.monotonic()
+            if self._last_overdue is None or now - self._last_overdue >= self.overdue_every:
+                self._last_overdue = now
+                today = datetime.now(timezone.utc).date().isoformat()
+                self.board(self.rng.choice(EDITORS + (ADMIN,)), "overdue_view", f"?due_before={today}")
+                return
+            persona = self.rng.choices(EDITORS + (ADMIN, VIEWER), weights=(3, 3, 3, 3, 1.5))[0]
+            if persona == ADMIN:
+                self.admin_turn(persona)
+            elif persona == VIEWER:
+                self.viewer_turn(persona)
+            else:
+                self.editor_turn(persona)
+
+        def editor_turn(self, me):
+            roll = self.rng.random()
+            if roll < 0.30:
+                self.board(me)
+            elif roll < 0.75:
+                self.work(me)
+            elif roll < 0.88:
+                tasks = self.board(me)
+                if sum(t["status"] != "done" for t in tasks) < MAX_ACTIVE:
+                    self.client.call(me, "create_task", "POST", "/api/tasks", self.new_task(me))
+            elif roll < 0.95:
+                tasks = self.board(me)
+                if tasks:
+                    task = self.rng.choice(tasks)
+                    self.client.call(me, "view_task", "GET", f"/api/tasks/{task['id']}")
+            else:
+                mine = [t for t in self.board(me, "list_my_tasks", f"?assignee={me}") if t["status"] != "done"]
+                if mine:
+                    task = self.rng.choice(mine)
+                    self.client.call(me, "rename_task", "PATCH", f"/api/tasks/{task['id']}", {"title": self.title()})
+
+        def work(self, me):
+            """Move one of my tasks along: finish one in progress, or start an open one."""
+            mine = self.board(me, "list_my_tasks", f"?assignee={me}")
+            doing = [t for t in mine if t["status"] == "in_progress"]
+            todo = [t for t in mine if t["status"] == "open"]
+            if doing and (len(doing) >= WIP_LIMIT or not todo or self.rng.random() < 0.5):
+                self.move(me, "finish_task", self.rng.choice(doing), "done")
+            elif todo:
+                self.move(me, "start_task", self.rng.choice(todo), "in_progress")
+
+        def admin_turn(self, me):
+            tasks = self.board(me)
+            active = [t for t in tasks if t["status"] != "done"]
+            done = [t for t in tasks if t["status"] == "done"]
+            # Clean-up and reopening only touch tasks finished in the last day, so the
+            # board's older history stays as it is.
+            since = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            recent = [t for t in done if (t["done_at"] or "") >= since]
+            roll = self.rng.random()
+            if len(done) > MAX_DONE and recent:
+                task = min(recent, key=lambda t: t["done_at"])
+                self.client.call(me, "delete_task", "DELETE", f"/api/tasks/{task['id']}")
+            elif roll < 0.55 or len(active) < MIN_ACTIVE:
+                if len(active) < MAX_ACTIVE:
+                    body = self.new_task(self.rng.choice(EDITORS))
+                    self.client.call(me, "create_task", "POST", "/api/tasks", body)
+            elif roll < 0.75:
+                candidates = [t for t in active if t["status"] == "open"]
+                if candidates:
+                    task = self.rng.choice(candidates)
+                    other = self.rng.choice([e for e in EDITORS if e != task["assignee"]] or list(EDITORS))
+                    self.client.call(me, "reassign_task", "PATCH", f"/api/tasks/{task['id']}", {"assignee": other})
+            elif roll < 0.82:
+                if recent:
+                    self.move(me, "reopen_task", self.rng.choice(recent), "open")
+            elif tasks:
+                task = self.rng.choice(tasks)
+                self.client.call(me, "view_task", "GET", f"/api/tasks/{task['id']}")
+
+        def viewer_turn(self, me):
+            roll = self.rng.random()
+            if roll < 0.40:
+                self.board(me)
+            elif roll < 0.60:
+                tasks = self.board(me)
+                if tasks:
+                    self.client.call(me, "view_task", "GET", f"/api/tasks/{self.rng.choice(tasks)['id']}")
+            elif roll < 0.70:
+                self.client.call(me, "whoami", "GET", "/api/me")
+            else:
+                # a viewer trying what viewers may not do (P3, P4, P5): expected to be refused
+                tasks = [t for t in self.board(me) if t["status"] == "open"]
+                attempt = self.rng.random()
+                if attempt < 0.5 or not tasks:
+                    self.client.call(me, "create_task", "POST", "/api/tasks", self.new_task(me), expect="denied")
+                elif attempt < 0.8:
+                    self.move(me, "start_task", self.rng.choice(tasks), "in_progress", expect="denied")
+                else:
+                    task = self.rng.choice(tasks)
+                    other = self.rng.choice([e for e in EDITORS if e != task["assignee"]])
+                    self.client.call(
+                        me, "reassign_task", "PATCH", f"/api/tasks/{task['id']}", {"assignee": other}, expect="denied"
+                    )
+
+
+    def main():
+        url = os.environ.get("TASKBOARD_URL", "http://taskboard:8080")
+        interval = float(os.environ.get("INTERVAL_SECONDS", "3"))
+        seed = os.environ.get("SIM_SEED")
+        rng = random.Random(int(seed)) if seed else random.Random()
+        simulator = Simulator(Client(url), rng)
+        log("sim_started", url=url, interval_seconds=interval)
+        backoff = 1.0
+        while True:
+            try:
+                simulator.step()
+                backoff = 1.0
+                time.sleep(interval * rng.uniform(0.5, 1.5))
+            except Unreachable as exc:
+                log("sim_unreachable", level="WARNING", url=url, error=str(exc), retry_in_seconds=backoff)
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
+            except Exception as exc:  # keep going whatever happens
+                log("sim_error", level="ERROR", error=f"{type(exc).__name__}: {exc}")
+                time.sleep(interval)
+
+
+    if __name__ == "__main__":
+        try:
+            main()
+        except KeyboardInterrupt:
+            sys.exit(0)
+  tasks.py: |
+    """Tasks in SQLite: create, read, list, change, delete."""
+
+    from datetime import datetime, timezone
+
+    STATUSES = ("open", "in_progress", "done")
+    DEFAULT_PAGE_SIZE = 50
+
+    COLUMNS = (
+        "id",
+        "project",
+        "title",
+        "status",
+        "assignee",
+        "created_by",
+        "created_at",
+        "updated_at",
+        "done_at",
+        "due_at",
+        "archived_at",
+    )
+    _SELECT = f"SELECT {', '.join(COLUMNS)} FROM tasks"
+    # API field -> column, where they differ. The API keeps due_date (docs/api.md).
+    _FIELD_COLUMNS = {"due_date": "due_at"}
+
+
+    def utcnow():
+        return datetime.now(timezone.utc)
+
+
+    def iso(moment):
+        return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+    def to_dict(row):
+        task = {name: row[name] for name in COLUMNS}
+        task["due_date"] = task.pop("due_at")
+        return task
+
+
+    def get_task(conn, task_id):
+        row = conn.execute(f"{_SELECT} WHERE id = ?", (task_id,)).fetchone()
+        return to_dict(row) if row else None
+
+
+    def list_tasks(
+        conn, status=None, assignee=None, due_before=None, include_archived=False, page=1, page_size=DEFAULT_PAGE_SIZE
+    ):
+        clauses, params = [], []
+        if not include_archived:
+            clauses.append("archived_at IS NULL")
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if assignee:
+            clauses.append("assignee = ?")
+            params.append(assignee)
+        if due_before:
+            clauses.append("due_date < ?")
+            params.append(due_before)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        total = conn.execute(f"SELECT COUNT(*) FROM tasks{where}", params).fetchone()[0]
+        rows = conn.execute(
+            f"{_SELECT}{where} ORDER BY id LIMIT ? OFFSET ?",
+            [*params, page_size, (page - 1) * page_size],
+        ).fetchall()
+        return {
+            "tasks": [to_dict(row) for row in rows],
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+        }
+
+
+    def create_task(conn, *, project, title, created_by, assignee, due_date=None, now=None):
+        stamp = iso(now or utcnow())
+        cursor = conn.execute(
+            "INSERT INTO tasks (project, title, status, assignee, created_by, created_at, updated_at, due_at)"
+            " VALUES (?, ?, 'open', ?, ?, ?, ?, ?)",
+            (project, title, assignee, created_by, stamp, stamp, due_date),
+        )
+        add_event(conn, cursor.lastrowid, created_by, None, "open", stamp)
+        return get_task(conn, cursor.lastrowid)
+
+
+    def update_task(conn, task, changes, actor, now=None):
+        """Apply changes (field -> value) to task and return the task as stored.
+
+        A status change sets or clears done_at and is recorded in task_events.
+        Reopening an archived task brings it back to the board.
+        """
+        stamp = iso(now or utcnow())
+        fields = {_FIELD_COLUMNS.get(name, name): value for name, value in changes.items()}
+        if "status" in fields and fields["status"] != task["status"]:
+            fields["done_at"] = stamp if fields["status"] == "done" else None
+            if task["status"] == "done":
+                fields["archived_at"] = None
+            add_event(conn, task["id"], actor, task["status"], fields["status"], stamp)
+        fields["updated_at"] = stamp
+        assignments = ", ".join(f"{name} = ?" for name in fields)
+        conn.execute(f"UPDATE tasks SET {assignments} WHERE id = ?", [*fields.values(), task["id"]])
+        return get_task(conn, task["id"])
+
+
+    def add_event(conn, task_id, actor, from_status, to_status, at):
+        conn.execute(
+            "INSERT INTO task_events (task_id, actor, from_status, to_status, at) VALUES (?, ?, ?, ?, ?)",
+            (task_id, actor, from_status, to_status, at),
+        )
+
+
+    def events_for(conn, task_id):
+        rows = conn.execute(
+            "SELECT actor, from_status, to_status, at FROM task_events WHERE task_id = ? ORDER BY id", (task_id,)
+        )
+        return [{"actor": a, "from": f, "to": t, "at": at} for a, f, t, at in rows]
+
+
+    def count_in_progress(conn, assignee):
+        return conn.execute(
+            "SELECT COUNT(*) FROM tasks WHERE assignee = ? AND status = 'in_progress'", (assignee,)
+        ).fetchone()[0]
+
+
+    def delete_task(conn, task_id):
+        return conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,)).rowcount > 0
+
+
+    def count_by_status(conn):
+        """Tasks on the board (not archived) by status."""
+        counts = dict.fromkeys(STATUSES, 0)
+        for status, count in conn.execute(
+            "SELECT status, COUNT(*) FROM tasks WHERE archived_at IS NULL GROUP BY status"
+        ):
+            counts[status] = count
+        return counts
+  tracing.py: |
+    """Optional OpenTelemetry spans.
+
+    When the opentelemetry API is importable (for example through the OpenTelemetry
+    operator's Python auto-instrumentation) each request gets a server span, and its
+    trace_id goes into the request's log lines. Otherwise this module does nothing.
+    """
+
+    from contextlib import contextmanager
+
+    try:
+        from opentelemetry import propagate, trace
+        from opentelemetry.trace import SpanKind, Status, StatusCode
+    except Exception:  # not installed: tracing is off
+        trace = None
+
+    ENABLED = trace is not None
+
+
+    @contextmanager
+    def request_span(method, path, headers):
+        if trace is None:
+            yield None
+            return
+        tracer = trace.get_tracer("taskboard")
+        parent = propagate.extract(headers)
+        with tracer.start_as_current_span(
+            f"{method} {path}",
+            context=parent,
+            kind=SpanKind.SERVER,
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            yield span
+
+
+    def trace_id(span):
+        if span is None:
+            return None
+        context = span.get_span_context()
+        return format(context.trace_id, "032x") if context.is_valid else None
+
+
+    def finish(span, method, route, status, user=None, error=None):
+        if span is None:
+            return
+        span.update_name(f"{method} {route}")
+        span.set_attribute("http.request.method", method)
+        span.set_attribute("http.route", route)
+        span.set_attribute("http.response.status_code", status)
+        if user:
+            span.set_attribute("enduser.id", user)
+        if error is not None:
+            span.record_exception(error)
+            span.set_status(Status(StatusCode.ERROR, str(error)))
+        elif status >= 500:
+            span.set_status(Status(StatusCode.ERROR))
+  workflow.py: |
+    """The status workflow. Rule IDs (S1, S2, ...) refer to docs/statuses.md.
+
+    Who may move a task at all is P4 (permissions.py); this module decides which
+    moves exist and when a move conflicts with the state of the board.
+    """
+
+    import permissions
+
+    # (from, to) -> the rule that allows the move
+    TRANSITIONS = {
+        ("open", "in_progress"): "S1",
+        ("in_progress", "done"): "S2",
+        ("in_progress", "open"): "S3",
+        ("done", "open"): "S4",
+    }
+
+
+    class Conflict(Exception):
+        def __init__(self, rule, detail):
+            super().__init__(detail)
+            self.rule = rule
+            self.detail = detail
+
+
+    def check_transition(user, task, to_status, assignee_in_progress, wip_limit):
+        """Returns the rule that allows moving task to to_status, or None if it is already there.
+
+        assignee_in_progress is how many tasks the task's assignee has in progress now.
+        """
+        from_status = task["status"]
+        if from_status == to_status:
+            return None
+        rule = TRANSITIONS.get((from_status, to_status))
+        if rule is None:
+            raise Conflict("S5", f"a task cannot move from {from_status} to {to_status}")
+        if rule == "S4":
+            permissions.require(user, "reopen", task)
+        if to_status == "in_progress" and assignee_in_progress >= wip_limit:
+            raise Conflict("S6", f"{task['assignee']} already has {assignee_in_progress} tasks in progress (limit {wip_limit})")
+        return rule
