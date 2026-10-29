@@ -87,9 +87,15 @@ it on every request. Kyverno also does not state support for Kubernetes 1.36, an
   taxonomy that generated the Kyverno version (now deleted); CI runs it with
   `--check`. Since the kagent 1.0 cutover (2026-10-11) it matches `api.kagent.dev/v1alpha3` and
   holds four policies:
-  - `agent-capability` (rules 1-5, on `AgentTemplate`s, where the class label lives): declared
-    class, every bound tool classified, the class permits the tools, and a write/destructive
-    tool sits in an MCP binding with `requireApproval: true` (approval is per binding in 1.0).
+  - `agent-capability` (rules 1-5 and 2b, on `AgentTemplate`s, where the class label lives):
+    declared class, every bound tool classified, the class permits the tools, and a
+    write/destructive tool sits in an MCP binding with `requireApproval: true` (approval is per
+    binding in 1.0). Rule 2b: a server-pinned tool is bound only from the one RemoteMCPServer the
+    taxonomy's `server-pinned-tools` key names (a JSON object, `{tool: server}`). Today that is
+    `replay_ui_steps` from `taskboard-browser`: it clicks and types, but only in a throwaway copy
+    of Taskboard that its server starts per call, so its class `read` holds only there (SPEC
+    §V.113, owner option 1). CI checks the same in `scripts/validate-agent-capability.py`
+    (invariant 8), and a missing `server-pinned-tools` key is an error there, as for the byo keys.
   - `agent-capability-delegation` (rules 6-7): no `subAgent` of a higher class. The policy uses
     the **AgentTemplate kind as its parameter** with `paramRef.selector: {}`, so the API server
     evaluates it once per AgentTemplate in the request's namespace, each one a potential

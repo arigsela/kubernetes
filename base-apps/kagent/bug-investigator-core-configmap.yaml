@@ -1,5 +1,5 @@
 ---
-# The bug investigator's shared core (scope check, gather, verify, render, telemetry, MCP server).
+# The bug investigator's shared core (scope check, gather, verify, render, telemetry, MCP servers, browser replay).
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-bug-investigator-core.py
@@ -9,8 +9,10 @@
 # tests/taskboard/test_bug_investigator_core.py fails if this file and the consumers' checksum/core disagree.
 #
 # Mount contract: the package at /core/src/bug_investigator/, prompt.md and findings.schema.json at
-# /core/, PYTHONPATH=/core/src. Standard library only, on python:3.12-slim. Consumers: the
-# taskboard-telemetry and taskboard-browser MCP servers and the bug-investigator trigger.
+# /core/, PYTHONPATH=/core/src; browser-requirements.txt at /core/browser-requirements.txt where the
+# browser's wheels are installed (taskboard-browser-mcp's init container). Standard library only
+# (browser.py imports Playwright from /deps, inside a call). Consumers: the taskboard-telemetry and
+# taskboard-browser MCP servers and the bug-investigator trigger.
 apiVersion: v1
 kind: ConfigMap
 metadata:
