@@ -1,0 +1,20 @@
+# Registers the Taskboard browser tool server (taskboard-browser-mcp.yaml) with kagent so the
+# bug-investigator AgentTemplate can bind replay_ui_steps by name (§T.153). Nothing binds it yet:
+# PR K2 does, after a real replay through a port-forward. Same shape as
+# taskboard-telemetry-mcp-remote.yaml; timeout 90s, not 30s, because one call starts the app and
+# Chromium and then replays up to 15 steps.
+apiVersion: api.kagent.dev/v1alpha3
+kind: RemoteMCPServer
+metadata:
+  name: taskboard-browser
+  namespace: kagent
+  labels:
+    app.kubernetes.io/part-of: kagent
+    app.kubernetes.io/name: taskboard-browser
+spec:
+  description: Replays UI steps in headless Chromium on a throwaway copy of the live Taskboard (fresh database with demo data; no URL input, no credential)
+  protocol: STREAMABLE_HTTP
+  url: http://taskboard-browser-mcp.kagent:3000/mcp
+  timeout: 90s
+  sseReadTimeout: 5m0s
+  terminateOnClose: true
