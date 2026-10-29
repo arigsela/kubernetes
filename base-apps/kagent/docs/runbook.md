@@ -30,6 +30,8 @@ sources:
   - base-apps/kagent/agent-docs-mcp.yaml
   - base-apps/kagent/agent-docs-mcp-remote.yaml
   - base-apps/kagent/backstage-catalog-mcp.yaml
+  - base-apps/kagent/taskboard-browser-mcp.yaml
+  - base-apps/kagent/taskboard-browser-mcp-remote.yaml
   - base-apps/kagent/kagent-postgres-owner-external-secret.yaml
   - base-apps/kagent/kagent-postgres-readwrite-external-secret.yaml
   - base-apps/kagent/kagent-anthropic-external-secret.yaml
@@ -321,6 +323,47 @@ group to the role, and note it in the manifest header's dated list.
   (`implementer-mcp` or `taskboard-telemetry-mcp`; "an agent run fails at start" above).
 - **Fix (owner):** remove `investigation-failed` to retry on the next run (every 2 minutes).
 
+### Symptom: `replay_ui_steps` answers `browser unavailable: …`, or `taskboard-browser-mcp` is stuck in `Init`
+`taskboard-browser` (§T.153; docs, "The browser") starts Chromium only inside a call, so
+`initialize` and `tools/list` answer even when the browser cannot run; the call itself returns a
+tool error (`isError`) whose text says which part failed. A step that fails (`ok: false` with a
+`failure` reason) is not this: that is the page's answer.
+- **`Chromium did not launch: …`** (Playwright's launch log follows). On these nodes, suspect the
+  CPU first: they are E5-2670 VMs, x86-64-v2 without AVX2, so an `Illegal instruction`, a SIGILL
+  or a crash at start means this Chromium build does not run here. A library error
+  (`error while loading shared libraries`) means the image is not the pinned digest or not amd64.
+  Neither is fixed by retrying: leave the server unbound (it is, until K2) or unbind it ("Roll
+  back" in the How-to below), and record the error in SPEC §T.153.
+- **`the browser went away during step <n>`**: Chromium crashed mid-run, most likely out of
+  memory (`/dev/shm` is 256Mi, the container's limit 1536Mi; both count against the limit). Check
+  the pod's `container_memory_working_set_bytes` and its last state.
+- **`the app exited … before answering /healthz` or `did not answer /healthz within 15 s`**: the
+  Taskboard copy itself failed; its last log lines follow. Either the deployed commit is broken
+  (compare with the live `taskboard` pod) or it needs a setting the copy does not get: the copy
+  runs with a fixed environment (`PORT`, `DB_PATH`, `PYTHONDONTWRITEBYTECODE`, `TASKBOARD_COMMIT`),
+  not the live Deployment's (claude-agents `bug-investigator/README.md`).
+- **`Playwright is not installed (DEPS_DIR=/deps)`**: `/deps` is empty or unreadable by uid 1001.
+  Read `kubectl -n kagent logs <pod> -c install-playwright`.
+- **`another replay held the lock for 120 s`**: one replay runs at a time per pod; one is still
+  running, or stuck (orphaned processes, below).
+- **Stuck in `Init` (`install-playwright`):** the init container downloads four hash-pinned wheels
+  from PyPI on every pod start (no image build, no cache). While PyPI is unreachable a NEW pod
+  stays in `Init` and retries; during a rollout the old pod keeps serving, but after a drain,
+  eviction or node loss there is no old pod, and the server is down until PyPI answers. Once K2
+  binds it, that fails every `bug-investigator` run at start ("an agent run fails at start").
+  `THESE PACKAGES DO NOT MATCH THE HASHES` means a downloaded wheel is not the pinned one: never
+  edit a hash here to make it pass. The pins change only in claude-agents
+  `bug-investigator/browser-requirements.txt` plus a core regen, and together with the image tag
+  (the `playwright` wheel and the image share the version, 1.64.0).
+- **Orphaned processes:** a call should leave nothing behind. With no call running,
+  `kubectl -n kagent exec deploy/taskboard-browser-mcp -c mcp-server -- ps -eo pid,ppid,etime,args`
+  shows agentgateway, plus a `browser_server.py` per open MCP session. A `python3 server.py` (the
+  app copy) or `chrome-headless-shell` processes still there after the session ended are orphans,
+  which happens if agentgateway SIGKILLs the stdio child before its cleanup runs. They hold memory
+  towards the limit. Kill them (`kubectl -n kagent exec deploy/taskboard-browser-mcp -c mcp-server -- sh -c 'kill <pid> …'`)
+  or delete the pod (the Deployment replaces it; its init container needs PyPI), and record it in
+  SPEC §T.153: it is a bug in the core.
+
 ### Symptom: the trigger keeps filing `from-alert` issues
 It files one per route that answers 5xx with no `from-alert` issue open or closed in the last 6
 hours. A **deleted** issue no longer counts, so the next run files it again while the errors last.
@@ -339,7 +382,51 @@ Close the issue instead (or fix the bug). Rehearsals: close, do not delete.
   `kubectl -n kagent create job --from=cronjob/bug-investigator-trigger bug-investigator-trigger-manual-$(date +%s)`.
 - **Change the core** (scope, gather, verify, render, MCP server): commit in arigsela/claude-agents
   `bug-investigator/`, then `scripts/gen-bug-investigator-core.py --source ../claude-agents --commit <sha>`
-  and open a PR; the tool server rolls on its `checksum/core`, the CronJob picks it up on its next run.
+  and open a PR; both tool servers roll on their `checksum/core`, the CronJob picks it up on its next run.
+
+### taskboard-browser: check it, run one replay by hand, roll back
+`taskboard-browser-mcp` (§T.153) replays UI steps in headless Chromium on a throwaway copy of
+the live Taskboard (docs, "The browser"). Nothing binds it until PR K2.
+- **Healthy:** `kubectl -n kagent get pods -l app.kubernetes.io/name=taskboard-browser-mcp` shows
+  `1/1 Running` (init containers `copy-binary` and `install-playwright` completed), and
+  `kubectl -n kagent describe remotemcpserver taskboard-browser` lists `replay_ui_steps` in
+  `status.discoveredTools`. A running pod says nothing about Chromium, which starts only inside a
+  call: run one replay.
+- **Run one replay by hand** (the smoke: dana starts her own open task). Port-forward the Service,
+  then call the tool with the core's own MCP client (`mcp_client.replay_via_mcp`, standard
+  library only) from an arigsela/claude-agents checkout, ideally at the commit the core ConfigMap
+  names (`bug-investigator.arigsela.com/source-commit`):
+
+  ```bash
+  kubectl -n kagent port-forward svc/taskboard-browser-mcp 13000:3000 &
+  cd ../claude-agents/bug-investigator   # the core must be on PYTHONPATH
+  PYTHONPATH=src python3 - <<'PY'
+  from bug_investigator.mcp_client import replay_via_mcp
+  steps = [
+      {"do": "select", "target": {"label": "User"}, "value": "dana (editor)"},
+      {"do": "click", "target": {"role": "button", "name": "Start",
+                                 "within": {"css": ".card", "text": "Write copy for the pricing page"}}},
+      {"do": "expect_text", "target": {"role": "status"}, "value": "moved to in progress"},
+  ]
+  r = replay_via_mcp("http://127.0.0.1:13000/mcp", steps, None)  # asks for every step's screenshot
+  print("ok", r["ok"], "commit", r["commit"], "seconds", r.get("seconds"), "error", r["error"])
+  for s in r["steps"]:
+      print(s["n"], "ok" if s["ok"] else f"FAIL {s['failure']}: {s['error']}", s["text"])
+  for n, png in r["screenshots"]:
+      open(f"/tmp/taskboard-browser-step-{n}.png", "wb").write(png)
+  PY
+  kill %1
+  ```
+
+  Expect `ok True`, `commit` equal to the Deployment's `taskboard.arigsela.com/source-commit`
+  annotation, three passing steps and three PNGs in `/tmp`, in roughly 10-20 s. A set `error` is
+  the tool's `isError` text: see "`replay_ui_steps` answers `browser unavailable: …`" under
+  Failure modes. Then check for orphaned processes (same entry).
+- **Roll back:** before K2 there is nothing to roll back; no agent binds the server, so a broken
+  pod affects no agent. After K2, remove the `taskboard-browser` binding from
+  `agent-templates/bug-investigator.yaml` by PR, and the agent investigates as before, without
+  the browser. Delete nothing else: the Deployment, the RemoteMCPServer, the code copy and the
+  taxonomy pin can stay, and the pin keeps guarding the tool.
 
 ### Weekly docs check: run it now, read it, reset its memory, dismiss a finding
 - **Run now:** `kubectl -n kagent create job --from=cronjob/docs-checker-trigger

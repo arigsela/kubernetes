@@ -51,6 +51,11 @@ sources:
   - base-apps/kagent/backstage-catalog-mcp.yaml
   - base-apps/kagent/implementer-mcp.yaml
   - base-apps/kagent/implementer-mcp-remote.yaml
+  - base-apps/kagent/taskboard-browser-mcp.yaml
+  - base-apps/kagent/taskboard-browser-mcp-remote.yaml
+  - id: browser-pin
+    resource: base-apps/admission-policies/agent-capability-taxonomy.yaml
+    title: capability taxonomy (replay_ui_steps is read, pinned to taskboard-browser by server-pinned-tools)
   - base-apps/kagent/implementer-mcp-secret-store.yaml
   - base-apps/kagent/eso-implementer-mcp-serviceaccount.yaml
   - base-apps/kagent/implementer-mcp-external-secret.yaml
@@ -283,6 +288,7 @@ In v1alpha3 an AgentTemplate MCP binding accepts only a same-namespace `RemoteMC
 | `kagent-tool-server` (chart) | `http://kagent-tools.kagent:8084/mcp`, the `kagent-tools` Deployment | read: `k8s_get_resources`, `k8s_get_resource_yaml`, `k8s_get_pod_logs`, `k8s_describe_resource`, `k8s_get_events`, `k8s_get_cluster_configuration`, `k8s_get_available_api_resources`, `k8s_check_service_connectivity`; the admin agents add the write/destructive tools in a gated binding |
 | `implementer` (`implementer-mcp-remote.yaml`) | `http://implementer-mcp.kagent:3000/mcp`, a second GitHub MCP server (`implementer-mcp.yaml`) under GitHub App auth (Secret `implementer-github-app`, Vault `implementer-github-app`), `--tools` naming 11 tools and no toolset; merge, update (close/retarget), review and delete tools are never loaded. The App is installed on `arigsela/kubernetes` and `arigsela/taskboard` (since 2026-10-27, §T.146) | the 7 read and 4 propose tools listed in `tests/implementer/conftest.py`; `bug-investigator` binds 6 of the read tools (`get_file_contents`, `search_code`, `list_commits`, `get_commit`, `list_pull_requests`, `pull_request_read`) |
 | `taskboard-telemetry` (`taskboard-telemetry-mcp-remote.yaml`) | `http://taskboard-telemetry-mcp.kagent:3000/mcp`, a stdio MCP server from arigsela/claude-agents `bug-investigator/` (`mcp_server.py`, run by agentgateway on `python:3.12-slim` from the generated ConfigMap `bug-investigator-core`; `taskboard-telemetry-mcp.yaml`). It queries Loki and Prometheus in `logging` directly with no credential, and refuses any query that is not scoped to `namespace="taskboard"` (the Action's `scope.py`, before any HTTP call) | `query_loki_logs`, `query_loki_stats`, `query_prometheus`, `list_loki_label_names`, `list_loki_label_values` (mcp-grafana's names, already classified read); bound by `bug-investigator` only |
+| `taskboard-browser` (`taskboard-browser-mcp-remote.yaml`) | `http://taskboard-browser-mcp.kagent:3000/mcp`, a second stdio server from the same core (`browser_server.py`, run by agentgateway on Microsoft's Playwright image; `taskboard-browser-mcp.yaml`). It replays UI steps in headless Chromium on a throwaway copy of the live Taskboard, with no URL input and no credential (see "The browser" under "Bug investigator") | none yet: `replay_ui_steps` (class `read`, pinned to this server) is bound by PR K2 |
 | `kagent-api` (chart) | the controller's own `/mcp` | none |
 
 A server Deployment registers no tools with agents; the `RemoteMCPServer` that points at its Service does.
@@ -550,7 +556,8 @@ that a person merges.
 | Agent `bug-investigator` (`agent-templates/bug-investigator.yaml`, `agents/`) | Class `read`, `kagent-stateless` (its memory of verified outcomes is the trigger's; see "Memory" below), Sonnet 5.5 on budget group `bug-investigator` ($8/day). Binds 6 read tools of the `implementer` GitHub server and the 5 `taskboard-telemetry` tools. Answers with the findings JSON only (`findings.schema.json`); it cannot write anywhere, not even a comment |
 | Tool server `taskboard-telemetry` (`taskboard-telemetry-mcp.yaml`) | Loki and Prometheus, every query refused unless scoped to `namespace="taskboard"` before any HTTP call. No credential (see "Tools via MCP servers") |
 | Trigger `bug-investigator-trigger` (`bug-investigator-trigger.yaml`, code `scripts/bug_investigator_trigger.py`) | CronJob every 2 minutes, `concurrencyPolicy: Forbid`, killed after 20 minutes. Files alert issues, gathers facts, asks the agent, verifies, posts, hands off the fix. The only piece that writes to GitHub |
-| Core ConfigMap `bug-investigator-core` (generated) | The Action's own package at a pinned claude-agents commit: scope check, gather, verify, render, post, the telemetry adapter and the MCP server. The trigger and the tool server mount it; the Action runs the same files |
+| Tool server `taskboard-browser` (`taskboard-browser-mcp.yaml`) | Replays UI steps in a browser on a throwaway copy of the live Taskboard. Not bound yet (see "The browser" below) |
+| Core ConfigMap `bug-investigator-core` (generated) | The Action's own package at a pinned claude-agents commit: scope check, gather, verify, render, post, the telemetry adapter, both MCP servers and the browser replay engine, plus `browser-requirements.txt`. The trigger and both tool servers mount it; the Action runs the same files |
 
 **One run of the trigger** (at most one investigation):
 1. **Alert-first.** Prometheus `5xx by route` on Taskboard (the same expression as the Grafana rule
@@ -593,6 +600,57 @@ it without data (ServerSideApply), so Argo CD never reverts it. `MEMORY_ENABLED=
 recall and save off. kagent's own memory (`kagent-memory`) was tried first and dropped: its
 embeddings on CPU-only Ollama took 3-5 minutes per call under the eval gate's load and timed a
 run out (2026-10-27).
+
+**The browser** (§T.153, §V.113): tool server `taskboard-browser` (`taskboard-browser-mcp.yaml`,
+RemoteMCPServer in `taskboard-browser-mcp-remote.yaml`) with one tool, `replay_ui_steps`. A bug
+that lives only in the page (a missing button, a wrong view) leaves nothing in Loki or
+Prometheus, so without a browser the agent can only answer `unclear`. **Nothing binds it yet.**
+A tool server that is down at `initialize` fails every agent bound to it, and Chromium had not
+run on these nodes when it shipped, so PR K1 ships it unbound and checks one real replay through
+a port-forward (runbook, "taskboard-browser"); PR K2 binds it to `bug-investigator` (plan
+`docs/superpowers/plans/2026-10-29-bug-investigator-ui-repro.md`).
+
+- **One call** starts the Taskboard code that is live as its own `server.py` process on a fresh
+  database with the demo data, loads `/` in headless Chromium, runs up to 15 steps and tears
+  everything down; nothing persists between calls. The code is ConfigMap `taskboard-browser-code`,
+  which `scripts/gen-taskboard-configmap.py` writes in the same commit as the app's own ConfigMap,
+  so it is the deployed commit; every result reports it as `commit`. A step is an action
+  (`click`, `fill`, `select`, `press`, or `goto` a path) or a check (`expect_visible`,
+  `expect_absent`, `expect_text`) on a target named by role, label, placeholder or text. An
+  action's target must match exactly one element. The page settles after every action, and the
+  first failing step ends the run with a reason: `missing`, `mismatch`, `ambiguous`, `invalid`,
+  `timeout` or `error`. The result holds each step's outcome, the page's accessibility snapshot,
+  the app's last log lines, the browser console and screenshots (by default only the failing
+  step's, or the last step's). One replay runs at a time per pod, and each gets 75 s, which fits
+  under the RemoteMCPServer's 90 s timeout. The step format and its matching rules are in
+  arigsela/claude-agents `bug-investigator/README.md`, "Reproducing UI bugs (kagent)".
+- **What it can touch:** only that copy. The tool takes no URL (`goto` takes a path starting
+  with `/`, never `//`), and the browser aborts every request to any other origin. The pod holds
+  no credential (no Secret, no service account token), and the adapter's allowlist is exactly
+  `replay_ui_steps`.
+- **Classified `read`, pinned** (owner, option 1, 2026-10-29). The tool clicks and types, but
+  only in that copy, so it is `read` only when it is bound from `taskboard-browser`. Taxonomy key
+  `server-pinned-tools` maps the tool to that server, and admission (`agent-capability` rule 2b)
+  and CI (`validate-agent-capability.py` invariant 8) deny a binding of `replay_ui_steps` from
+  any other server.[^browser-pin]
+- **Image without a build.** Microsoft's Playwright image (`mcr.microsoft.com/playwright/python:v1.64.0-noble`,
+  by digest) ships Python 3.12 and Chromium but not the `playwright` package. The init container
+  `install-playwright` installs four wheels from PyPI into an emptyDir, each pinned by sha256
+  (`browser-requirements.txt`, from the core ConfigMap). Playwright is imported, and Chromium
+  launched, only inside a call, so a Chromium that cannot start is a tool error
+  (`browser unavailable: …`), never a failed `initialize`.
+- **What comes with K2.** The agent cites a reproduction as evidence kind `ui`: the steps, plus
+  `fails_at`, the step it says fails on the live code. The trigger's verify replays the steps on
+  this server and keeps the item only if that step is the first to fail and its reason is not
+  `ambiguous`, `invalid` or `timeout` (those show a badly written step or a slow replay, not a
+  bug). The trigger then commits the screenshots to the branch `bug-investigator-evidence` of
+  arigsela/taskboard and shows the failing step's screenshot in the comment. Its token gains
+  contents write for this, and the code writes only that ref. The fix PR carries the steps as
+  `ui-tests/repros/issue-<N>.json`, which Taskboard's own `ui-check` workflow (a Taskboard change
+  in the same plan) replays on the PR, posting the "after" screenshots. Residual (§V.113):
+  Taskboard is private on GitHub Free, so its `main` has no branch protection and a
+  contents-write token could push to it; a deploy still needs a pull request here that a person
+  merges.
 
 **Credentials.** The agent and its sandbox hold none. The trigger holds one: an installation token
 of the `arigsela-implementer` App, minted every 30 minutes by an External Secrets
@@ -637,3 +695,4 @@ that checkout, so `tests/taskboard/` checks the committed ConfigMap, checksums a
 
 [^sonnet-config]: Sonnet 5.5 ModelConfig (maxTokens, prompt caching)
 [^httproute-mcp]: kagent-mcp HTTPRoute (/mcp and /agents/kagent/)
+[^browser-pin]: capability taxonomy (replay_ui_steps is read, pinned to taskboard-browser by server-pinned-tools)

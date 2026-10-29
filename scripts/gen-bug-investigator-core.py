@@ -4,20 +4,24 @@
     ./scripts/gen-bug-investigator-core.py --source ../claude-agents --commit "$(git -C ../claude-agents rev-parse HEAD)"
     ./scripts/gen-bug-investigator-core.py --source ../claude-agents --commit <sha> --check   # stale? exit 1
 
-The bug investigator's shared core (the scope check, gather, verify, render, the telemetry adapter
-and the stdio MCP server) lives in arigsela/claude-agents `bug-investigator/`, where the GitHub
-Action uses it too. Here it runs like alert-demo: python:3.12-slim, standard library only, no image
-build, the files from one ConfigMap. This script copies every
-`bug-investigator/src/bug_investigator/*.py` plus `bug-investigator/prompt.md`,
-`bug-investigator/findings.schema.json` and `bug-investigator/browser-requirements.txt` into ConfigMap `bug-investigator-core` (keys are the
+The bug investigator's shared core (the scope check, gather, verify, render, the telemetry adapter,
+the two stdio MCP servers and the browser replay engine) lives in arigsela/claude-agents
+`bug-investigator/`, where the GitHub Action uses it too. Here it runs like alert-demo: standard
+library only, no image build, the files from one ConfigMap (python:3.12-slim; the browser server
+runs on Microsoft's Playwright image and imports Playwright from /deps, inside a call only). This
+script copies every `bug-investigator/src/bug_investigator/*.py` plus the data files
+`bug-investigator/prompt.md`, `bug-investigator/findings.schema.json` and
+`bug-investigator/browser-requirements.txt` into ConfigMap `bug-investigator-core` (keys are the
 basenames), and writes the ConfigMap's checksum into every consumer listed in CONSUMERS (pod
 template annotation `checksum/core`), so a core change rolls those pods.
 
-The mount contract (every consumer): the package at /core/src/bug_investigator/ and the two data
-files at /core/prompt.md and /core/findings.schema.json, with PYTHONPATH=/core/src. The package's
-own code finds the data files two levels above itself. Either mount the ConfigMap whole at
-/core/src/bug_investigator (the two data files appear there too, harmlessly) plus two subPath mounts
-for /core/prompt.md and /core/findings.schema.json, or list `items` key by key.
+The mount contract (every consumer): the package at /core/src/bug_investigator/ and the data files
+at /core/prompt.md, /core/findings.schema.json and /core/browser-requirements.txt, with
+PYTHONPATH=/core/src. The package's own code finds prompt.md and findings.schema.json two levels
+above itself; browser-requirements.txt is read only by whatever installs the browser's wheels
+(taskboard-browser-mcp's init container, which mounts that one key). Either mount the ConfigMap
+whole at /core/src/bug_investigator (the data files appear there too, harmlessly) plus a subPath
+mount per data file a consumer reads, or list `items` key by key.
 
 When <source> is a git checkout, the commit must be its HEAD and the copied files committed, so the
 annotation never names code the pods do not run. A `git archive` export (no .git) is accepted as is.
@@ -60,7 +64,7 @@ SHA = re.compile(r"^[0-9a-f]{40}$")
 
 HEADER = """\
 ---
-# The bug investigator's shared core (scope check, gather, verify, render, telemetry, MCP server).
+# The bug investigator's shared core (scope check, gather, verify, render, telemetry, MCP servers, browser replay).
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-bug-investigator-core.py
@@ -70,8 +74,10 @@ HEADER = """\
 # tests/taskboard/test_bug_investigator_core.py fails if this file and the consumers' checksum/core disagree.
 #
 # Mount contract: the package at /core/src/bug_investigator/, prompt.md and findings.schema.json at
-# /core/, PYTHONPATH=/core/src. Standard library only, on python:3.12-slim. Consumers: the
-# taskboard-telemetry and taskboard-browser MCP servers and the bug-investigator trigger.
+# /core/, PYTHONPATH=/core/src; browser-requirements.txt at /core/browser-requirements.txt where the
+# browser's wheels are installed (taskboard-browser-mcp's init container). Standard library only
+# (browser.py imports Playwright from /deps, inside a call). Consumers: the taskboard-telemetry and
+# taskboard-browser MCP servers and the bug-investigator trigger.
 """
 
 
@@ -113,7 +119,7 @@ def check_source_commit(source: Path, commit: str) -> None:
 
 
 def collect(source: Path) -> dict[str, str]:
-    """ConfigMap data: every <PACKAGE>/*.py plus the two data files, by basename."""
+    """ConfigMap data: every <PACKAGE>/*.py plus the DATA_FILES, by basename."""
     package = source / PACKAGE
     if not package.is_dir():
         raise SystemExit(f"{package}: not a directory")
