@@ -23,7 +23,7 @@
 #      merges.
 # The agent holds no credential. This pod holds one: a Taskboard-only GitHub installation token
 # (issues and contents write, pull requests read; contents only for the screenshots, see the
-# GithubAccessToken below) that External Secrets mints from the arigsela-implementer App every 30
+# GithubAccessToken below) that External Secrets mints from the arigsela-implementer App every 20
 # minutes (ExternalSecret below). It never reaches the agent.
 ---
 apiVersion: v1
@@ -85,7 +85,7 @@ subjects:
 # secrets, docs/platform/implementer.md), narrowed to one repository and four permissions. ESO
 # signs the App JWT with the private key already in Secret implementer-github-app (Vault
 # k8s-secrets/implementer-github-app, implementer-mcp-external-secret.yaml); the key never leaves
-# the ESO controller. Installation tokens live 1 h, so the token is re-minted every 30 minutes.
+# the ESO controller. Installation tokens live 1 h, so the token is re-minted every 20 minutes.
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: GithubAccessToken
 metadata:
@@ -121,8 +121,17 @@ metadata:
   namespace: kagent
   labels:
     app: bug-investigator-trigger
+  annotations:
+    # The generator's spec.permissions as sorted key=value (a test holds them together). ESO
+    # re-mints when this ExternalSecret's generation, labels or annotations change, or when
+    # refreshInterval elapses, never because the GithubAccessToken CR changed: a permissions change
+    # must change this value too, so the merge that ships it also re-mints the token.
+    bug-investigator.arigsela.com/token-permissions: "contents=write,issues=write,metadata=read,pull_requests=read"
 spec:
-  refreshInterval: 30m
+  # The token lives 1 h and the trigger reads it once at pod start, when it is at most 20 min old
+  # plus the Secret's propagation: 20m leaves >= ~35 min of it for a run of up to 25 min
+  # (activeDeadlineSeconds 1500).
+  refreshInterval: 20m
   target:
     name: bug-investigator-trigger-github
     creationPolicy: Owner
