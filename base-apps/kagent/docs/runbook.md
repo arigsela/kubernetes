@@ -320,8 +320,46 @@ group to the role, and note it in the manifest header's dated list.
   `SecretSynced`. A failure there means the App lost its Taskboard installation or the
   `implementer-github-app` Secret changed.
 - **Agent:** an `agent run failed … failed to init MCP session` names a tool server that is down
-  (`implementer-mcp` or `taskboard-telemetry-mcp`; "an agent run fails at start" above).
+  (`implementer-mcp`, `taskboard-telemetry-mcp` or `taskboard-browser-mcp`, whose new pod waits on
+  PyPI in `Init` after a drain; "an agent run fails at start" above).
 - **Fix (owner):** remove `investigation-failed` to retry on the next run (every 2 minutes).
+
+### Symptom: the investigation comment shows a browser reproduction but no screenshots
+The trigger posts the comment even when the screenshots cannot be committed (§T.153): the run's
+log has `{"event": "screenshots_failed", "issue": N, "error": "…"}` instead of
+`screenshots_posted`.
+- **`HTTP 403` (`Resource not accessible by integration`) on `git/blobs`, `git/trees`,
+  `git/commits` or `git/refs`:** the token lacks contents write. Check
+  `kubectl -n kagent get externalsecret bug-investigator-trigger-github -o jsonpath='{.status.refreshTime}'`
+  is after the change that granted it, and that the ExternalSecret's annotation
+  `bug-investigator.arigsela.com/token-permissions` matches the `GithubAccessToken`'s
+  `spec.permissions` (a test keeps them equal): ESO re-mints when the ExternalSecret itself
+  changes or every 20 minutes, never because the generator changed. A recent refresh that still
+  gets 403 means the App installation lacks Contents write (`docs/platform/implementer.md`).
+- **`refused …` (not a PNG, over 2 MiB, more than 30 files):** the core's Uploader refused the
+  commit; the trigger already leaves such files out, so record the error in SPEC §T.153.
+- **No `screenshots_*` line at all:** no `ui` item was verified, or the replay returned no
+  screenshots (`BROWSER_SCREENSHOTS`).
+- **Fix:** nothing to undo; the comment stands. For images, fix the cause and re-run the
+  investigation ("Bug investigator: re-run an investigation" under How-to).
+
+### Symptom: `ui` evidence dropped as `replay failed: …`
+Verify replays every `ui` item through `taskboard-browser-mcp` (`BROWSER_URL`). A replay that does
+not come back drops that item only; the rest of the comment stands. The `posted` line and the
+comment give the reason after `replay failed:`:
+- **`MCP initialize: URLError …`, `HTTP 503` or `connection refused`:** the browser server is down
+  or not Ready (`kubectl -n kagent get pods -l app.kubernetes.io/name=taskboard-browser-mcp`; "stuck
+  in `Init`" below).
+- **`another replay held the lock for 120 s`:** busy with another replay (an eval-gate session, a
+  live agent's replay, or one stuck: "Orphaned processes" below).
+- **`TimeoutError`:** slow. A call first waits up to 120 s for a replay in progress, outside the
+  engine's 75 s, so a queued call can pass the trigger's 120 s per request (docs, "The browser").
+- **Fix:** once the server is free and Ready, re-run the investigation ("Bug investigator: re-run
+  an investigation" under How-to).
+
+### Symptom: `only two browser reproductions are replayed per investigation`
+Expected, not an error (ruling R18): verify replays at most two `ui` items per investigation
+(`UI_REPLAYS_MAX`), and drops the third and later ones with this reason, unreplayed. Nothing to fix.
 
 ### Symptom: `replay_ui_steps` answers `browser unavailable: …`, or `taskboard-browser-mcp` is stuck in `Init`
 `taskboard-browser` (§T.153; docs, "The browser") starts Chromium only inside a call, so
