@@ -175,7 +175,7 @@ spec:
           annotations:
             # sha256 (first 16 hex) over the bug-investigator-trigger-code ConfigMap's values,
             # sorted by key; written by scripts/gen-bug-investigator-trigger-configmap.py.
-            checksum/code: 996ac64650bef56c
+            checksum/code: 387fd3ce1920d0c2
         spec:
           serviceAccountName: bug-investigator-trigger
           restartPolicy: Never

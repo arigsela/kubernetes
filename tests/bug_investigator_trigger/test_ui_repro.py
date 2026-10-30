@@ -359,15 +359,70 @@ def repro_of(text):
     return json.loads(m.group(1))
 
 
+TESTS_RULE = "- Fix the faulty line and add a regression test under `tests/` that fails before the fix."
+REPRO_RULE = ("- Fix the faulty line. Add the file `ui-tests/repros/issue-24.json` with exactly the content under"
+              " \"UI reproduction file\" at the end: it is the regression test for the page (Taskboard's ui-check"
+              " replays it on the pull request, and every step must pass with your fix). Add a test under `tests/`"
+              " too only if the cause can be tested there. At most three files.")
+
+
+def rules_of(text):
+    """The "Rules for this pull request" list, one rule per line."""
+    return text.split("Rules for this pull request:\n", 1)[1].split("\n\n", 1)[0].splitlines()
+
+
 def test_fix_request_carries_repro_file():
+    """The instruction to add the repro file is a rule (the implementer reads the rules as its task and
+    the rest as evidence); the end of the request carries only the file's header and content."""
     i = tt.issue(24, "bug", title="Example UI reproduction")
     text = t.fix_request(i, verified_ui())
-    assert "UI reproduction: add the file ui-tests/repros/issue-24.json with exactly this content" in text
-    assert "ui-check replays it on your branch; every step must pass with your fix." in text
+    rules = rules_of(text)
+    assert rules[1] == REPRO_RULE and TESTS_RULE not in text
+    assert "- Change nothing under `docs/`, `.github/` or `.claude/`." in rules  # the other rules still hold
+    tail = text.split("Verified evidence:\n", 1)[1]
+    head = ("\nUI reproduction file (ui-tests/repros/issue-24.json), file content, verbatim:\n"
+            "The steps the investigation cited; step 2 reproduced the bug on a copy of the live code."
+            " Do not change them.\n\n```json\n")
+    assert head in tail and text.endswith("\n```\n")                      # the JSON is the last thing
     assert repro_of(text) == {"title": "Example UI reproduction", "issue": 24, "steps": STEPS}
-    assert "verbatim" in text
-    # the rules still hold; the repro file is the one addition outside tests/
-    assert "`docs/`, `.github/`" in text and "regression test under `tests/`" in text
+    assert "not among the folders" not in text and "ui-check replays it on your branch" not in text
+
+
+def test_without_a_repro_the_rule_is_the_regression_test_under_tests():
+    for v in (copy.deepcopy(tt.VERIFIED_FIXABLE), {**copy.deepcopy(tt.VERIFIED_FIXABLE), "evidence": []}):
+        text = t.fix_request(tt.issue(24, "bug"), v)
+        assert rules_of(text)[1] == TESTS_RULE
+        assert "UI reproduction file" not in text and "At most three files" not in text
+
+
+def two_reproductions(*hypotheses):
+    second = copy.deepcopy(UI_ITEM)
+    second["id"], second["steps"] = "E4", [{"do": "goto", "value": "/"}, STEPS[1]]
+    v = verified_ui(second)
+    v["hypotheses"] = list(hypotheses)
+    return v, second
+
+
+def test_fix_request_prefers_the_reproduction_behind_a_supported_hypothesis():
+    """Minor 1: the repro file must be one the fix can make pass, so the `ui` item a supported
+    hypothesis cites wins over an earlier one."""
+    v, second = two_reproductions(
+        {"id": "H1", "status": "ruled_out", "evidence_ids": ["E3"]},
+        {"id": "H2", "status": "supported", "evidence_ids": ["E1", "E4"]})
+    text = t.fix_request(tt.issue(24, "bug"), v)
+    assert repro_of(text)["steps"] == second["steps"] and text.count("```json") == 1
+    assert rules_of(text)[1] == REPRO_RULE
+
+
+@pytest.mark.parametrize("hypotheses", [
+    (),                                                                      # none at all
+    ({"id": "H1", "status": "untested", "evidence_ids": ["E4"]},),           # cites it, not supported
+    ({"id": "H1", "status": "supported", "evidence_ids": ["E1"]},),          # supported, cites no ui item
+    ({"id": "H1", "status": "supported", "evidence_ids": "E4"}, "H2"),        # malformed: ignored
+], ids=["none", "untested", "no-ui", "malformed"])
+def test_fix_request_falls_back_to_the_first_reproduction(hypotheses):
+    v, _ = two_reproductions(*hypotheses)
+    assert repro_of(t.fix_request(tt.issue(24, "bug"), v))["steps"] == STEPS
 
 
 def test_fix_request_takes_the_first_reproduction_only():
@@ -378,7 +433,7 @@ def test_fix_request_takes_the_first_reproduction_only():
     v = verified_ui(later)
     v["evidence"].insert(0, works)                                         # works as documented: not a repro
     text = t.fix_request(tt.issue(24, "bug"), v)
-    assert text.count("ui-tests/repros/issue-24.json") == 1 and repro_of(text)["steps"] == STEPS
+    assert text.count("```json") == 1 and repro_of(text)["steps"] == STEPS
 
 
 def test_no_repro_block_without_a_reproduction():
@@ -386,7 +441,7 @@ def test_no_repro_block_without_a_reproduction():
     works["fails_at"] = None
     for v in (copy.deepcopy(tt.VERIFIED_FIXABLE), {**tt.VERIFIED_FIXABLE, "evidence": [works]}):
         text = t.fix_request(tt.issue(24, "bug"), v)
-        assert "ui-tests/" not in text and "```" not in text
+        assert "ui-tests/" not in text and "```" not in text and rules_of(text)[1] == TESTS_RULE
 
 
 def test_a_backtick_in_a_step_cannot_end_the_fence():
