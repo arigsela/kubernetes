@@ -10809,7 +10809,7 @@ data:
         {
           "type": "state-timeline",
           "title": "Journey",
-          "description": "One lane per stage, top to bottom in the order a report travels; a lane is coloured in each 30 s its stage happened. Trigger stages: its JSON step lines (Loki). Agent and implementer calls: the collector's per-agent counters (agent_model_calls_total, agent_tool_calls_total). Alert signal: Taskboard's 5xx counter, the trigger's alert expression. Refused tool call: an MCP adapter's `Unknown tool` (a tool off its allowlist); a Loki/Prometheus query outside namespace taskboard comes back to the agent as a tool error instead (`ok: false` in the trigger's AGENT line). The agent lanes also show the eval gate's test sessions, and the implementer lane its work for other callers, such as resource alerts.",
+          "description": "One lane per stage, top to bottom in the order a report travels; a lane is coloured in each 30 s its stage happened. Trigger stages: its JSON step lines (Loki). Agent and implementer calls: the collector's per-agent counters (agent_model_calls_total, agent_tool_calls_total; the browser lane is replay_ui_steps). Alert signal: Taskboard's 5xx counter, the trigger's alert expression. Refused tool call: an MCP adapter's `Unknown tool` (a tool off its allowlist); a Loki/Prometheus query outside namespace taskboard comes back to the agent as a tool error instead (`ok: false` in the trigger's AGENT line). The agent lanes also show the eval gate's test sessions, and the implementer lane its work for other callers, such as resource alerts.",
           "datasource": {
             "type": "datasource",
             "uid": "-- Mixed --"
@@ -10901,11 +10901,22 @@ data:
             },
             {
               "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "refId": "I",
+              "expr": "sum by () (((last_over_time(agent_tool_calls_total{service_name=\"bug-investigator\", gen_ai_tool_name=~\"replay_ui_steps\"}[$__interval] offset -$__interval) - last_over_time(agent_tool_calls_total{service_name=\"bug-investigator\", gen_ai_tool_name=~\"replay_ui_steps\"}[1h])) >= 0) or last_over_time(agent_tool_calls_total{service_name=\"bug-investigator\", gen_ai_tool_name=~\"replay_ui_steps\"}[$__interval] offset -$__interval))",
+              "legendFormat": "Agent: browser replays (taskboard copy)",
+              "instant": false,
+              "range": true
+            },
+            {
+              "datasource": {
                 "type": "loki",
                 "uid": "loki"
               },
-              "refId": "I",
-              "expr": "sum(count_over_time({namespace=\"kagent\", container=\"mcp-server\", pod=~\"(taskboard-telemetry|implementer)-mcp-.*\"} |= \"mcp.method.name=tools/call\" |= \"Unknown tool\" [$__interval])) or vector(0)",
+              "refId": "J",
+              "expr": "sum(count_over_time({namespace=\"kagent\", container=\"mcp-server\", pod=~\"(taskboard-telemetry|taskboard-browser|implementer)-mcp-.*\"} |= \"mcp.method.name=tools/call\" |= \"Unknown tool\" [$__interval])) or vector(0)",
               "legendFormat": "Refused tool call",
               "queryType": "range"
             },
@@ -10914,7 +10925,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "refId": "J",
+              "refId": "K",
               "expr": "sum(count_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"posted\"` [$__interval])) or vector(0)",
               "legendFormat": "Verify every link, post the comment",
               "queryType": "range"
@@ -10924,7 +10935,7 @@ data:
                 "type": "prometheus",
                 "uid": "${prometheus}"
               },
-              "refId": "K",
+              "refId": "L",
               "expr": "sum by () (((last_over_time(agent_tool_calls_total{service_name=\"implementer\"}[$__interval] offset -$__interval) - last_over_time(agent_tool_calls_total{service_name=\"implementer\"}[1h])) >= 0) or last_over_time(agent_tool_calls_total{service_name=\"implementer\"}[$__interval] offset -$__interval))",
               "legendFormat": "Fix PR: kagent/implementer",
               "instant": false,
@@ -10935,7 +10946,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "refId": "L",
+              "refId": "M",
               "expr": "sum(count_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"remembered\"` [$__interval])) or vector(0)",
               "legendFormat": "Remember the verified outcome",
               "queryType": "range"
@@ -10945,7 +10956,7 @@ data:
                 "type": "loki",
                 "uid": "loki"
               },
-              "refId": "M",
+              "refId": "N",
               "expr": "sum(count_over_time({namespace=\"kagent\", app=\"bug-investigator-trigger\"} |= `\"event\": \"investigation_failed\"` [$__interval])) or vector(0)",
               "legendFormat": "Failed: nothing posted",
               "queryType": "range"
@@ -10973,11 +10984,12 @@ data:
                   "Agent: model calls": 6,
                   "Agent: GitHub reads": 7,
                   "Agent: Loki + Prometheus (taskboard only)": 8,
-                  "Refused tool call": 9,
-                  "Verify every link, post the comment": 10,
-                  "Fix PR: kagent/implementer": 11,
-                  "Remember the verified outcome": 12,
-                  "Failed: nothing posted": 13
+                  "Agent: browser replays (taskboard copy)": 9,
+                  "Refused tool call": 10,
+                  "Verify every link, post the comment": 11,
+                  "Fix PR: kagent/implementer": 12,
+                  "Remember the verified outcome": 13,
+                  "Failed: nothing posted": 14
                 },
                 "excludeByName": {},
                 "renameByName": {}
@@ -11271,7 +11283,7 @@ data:
         {
           "type": "logs",
           "title": "Tool calls through the MCP adapters",
-          "description": "Every tools/call through the two servers these agents use: implementer-mcp (GitHub: the agent's reads, the implementer's branch and PR) and taskboard-telemetry-mcp (Loki and Prometheus, held to namespace taskboard). Arguments and results are never shown.",
+          "description": "Every tools/call through the three servers these agents use: implementer-mcp (GitHub: the agent's reads, the implementer's branch and PR), taskboard-telemetry-mcp (Loki and Prometheus, held to namespace taskboard) and taskboard-browser-mcp (UI replays on a copy of Taskboard). Arguments and results are never shown.",
           "datasource": {
             "type": "loki",
             "uid": "loki"
@@ -11283,7 +11295,7 @@ data:
                 "uid": "loki"
               },
               "refId": "A",
-              "expr": "{namespace=\"kagent\", container=\"mcp-server\", pod=~\"(taskboard-telemetry|implementer)-mcp-.*\"} |= \"mcp.method.name=tools/call\" | logfmt | line_format `{{ .mcp_target }}  {{ .gen_ai_tool_name }}  HTTP {{ .http_status }}  {{ .duration }}`",
+              "expr": "{namespace=\"kagent\", container=\"mcp-server\", pod=~\"(taskboard-telemetry|taskboard-browser|implementer)-mcp-.*\"} |= \"mcp.method.name=tools/call\" | logfmt | line_format `{{ .mcp_target }}  {{ .gen_ai_tool_name }}  HTTP {{ .http_status }}  {{ .duration }}`",
               "legendFormat": "",
               "queryType": "range"
             }
