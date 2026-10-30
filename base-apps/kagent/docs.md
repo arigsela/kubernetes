@@ -6,7 +6,7 @@ app: kagent
 catalog_entity: kagent
 kind: docs
 namespace: kagent
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-30
 status: stable
 tags: [ai-agent, kagent, mcp, anthropic, substrate]
 sources:
@@ -185,7 +185,7 @@ group moves all five charts in one PR, and only after approval on the Dependency
 | `implementer` | `anthropic-claude-sonnet-5-5-implementer` | `kagent-stateless` | propose | `implementer` (7 read + the 4 propose tools, ungated: the merge is the gate) and the 8 read tools of `kagent-tool-server` (not `agent-docs` too: a tool name bound twice is refused by the runtime). Opens PRs under GitHub App `arigsela-implementer`; called by a human (ask-hk) or the dispatcher (§T.116) |
 | `restarter` | `anthropic-claude-sonnet-5-5-restarter` | `kagent-stateless` | admin | `kagent-tool-server` bound twice: the 8 read tools `requireApproval: false`, and ONLY `k8s_delete_resource` `requireApproval: true`. Restarts the one pod a request names; the dispatcher opens its session after the implementer's `leak` or `rollout-pending` verdict and the owner approves the pending delete on the approvals page `https://dispatcher.arigsela.com/approvals` (Dex login; fallback `ask-hk --agent kagent/restarter --as-serviceaccount dispatcher/dispatcher --context <id> --task <task> --approve`) (§T.118, §T.119) |
 | `docs-checker` | `anthropic-claude-sonnet-5-5-docs-checker` | `docs-checker` (byo) | read | `agent-docs` (`get_file_contents`, `search_code`, `list_commits`, `get_commit`), nothing else. Finds lines in this repo's docs that no longer match the manifests they describe and proposes the corrected line; it never edits. A LangGraph app on kagent's BYO contract (code in `arigsela/claude-agents` `docs-checker/`) that picks its model per graph node (Haiku 5.5, Sonnet 5.5 to escalate): the ModelConfig decides the key the egress gateway injects, not the model of every call. Ask it `check all` or `check <path>` (§T.131); every Monday the `docs-checker-trigger` CronJob runs it over every doc and posts the findings to Slack (§T.132, "Weekly docs check" below) |
-| `bug-investigator` | `anthropic-claude-sonnet-5-5-bug-investigator` | `kagent-stateless` | read | `implementer` (6 read tools only) and `taskboard-telemetry` (5 scoped Loki/Prometheus tools); its memory is the trigger's (§T.146, §T.148) |
+| `bug-investigator` | `anthropic-claude-sonnet-5-5-bug-investigator` | `kagent-stateless` | read | `implementer` (6 read tools only), `taskboard-telemetry` (5 scoped Loki/Prometheus tools) and `taskboard-browser` (`replay_ui_steps`); its memory is the trigger's (§T.146, §T.148) |
 
 The class label lives on the AgentTemplate and is checked against the capability taxonomy
 (`base-apps/admission-policies/agent-capability-taxonomy.yaml`): a `read` template binds only
@@ -288,7 +288,7 @@ In v1alpha3 an AgentTemplate MCP binding accepts only a same-namespace `RemoteMC
 | `kagent-tool-server` (chart) | `http://kagent-tools.kagent:8084/mcp`, the `kagent-tools` Deployment | read: `k8s_get_resources`, `k8s_get_resource_yaml`, `k8s_get_pod_logs`, `k8s_describe_resource`, `k8s_get_events`, `k8s_get_cluster_configuration`, `k8s_get_available_api_resources`, `k8s_check_service_connectivity`; the admin agents add the write/destructive tools in a gated binding |
 | `implementer` (`implementer-mcp-remote.yaml`) | `http://implementer-mcp.kagent:3000/mcp`, a second GitHub MCP server (`implementer-mcp.yaml`) under GitHub App auth (Secret `implementer-github-app`, Vault `implementer-github-app`), `--tools` naming 11 tools and no toolset; merge, update (close/retarget), review and delete tools are never loaded. The App is installed on `arigsela/kubernetes` and `arigsela/taskboard` (since 2026-10-27, §T.146) | the 7 read and 4 propose tools listed in `tests/implementer/conftest.py`; `bug-investigator` binds 6 of the read tools (`get_file_contents`, `search_code`, `list_commits`, `get_commit`, `list_pull_requests`, `pull_request_read`) |
 | `taskboard-telemetry` (`taskboard-telemetry-mcp-remote.yaml`) | `http://taskboard-telemetry-mcp.kagent:3000/mcp`, a stdio MCP server from arigsela/claude-agents `bug-investigator/` (`mcp_server.py`, run by agentgateway on `python:3.12-slim` from the generated ConfigMap `bug-investigator-core`; `taskboard-telemetry-mcp.yaml`). It queries Loki and Prometheus in `logging` directly with no credential, and refuses any query that is not scoped to `namespace="taskboard"` (the Action's `scope.py`, before any HTTP call) | `query_loki_logs`, `query_loki_stats`, `query_prometheus`, `list_loki_label_names`, `list_loki_label_values` (mcp-grafana's names, already classified read); bound by `bug-investigator` only |
-| `taskboard-browser` (`taskboard-browser-mcp-remote.yaml`) | `http://taskboard-browser-mcp.kagent:3000/mcp`, a second stdio server from the same core (`browser_server.py`, run by agentgateway on Microsoft's Playwright image; `taskboard-browser-mcp.yaml`). It replays UI steps in headless Chromium on a throwaway copy of the live Taskboard, with no URL input and no credential (see "The browser" under "Bug investigator") | none yet: `replay_ui_steps` (class `read`, pinned to this server) is bound by PR K2 |
+| `taskboard-browser` (`taskboard-browser-mcp-remote.yaml`) | `http://taskboard-browser-mcp.kagent:3000/mcp`, a second stdio server from the same core (`browser_server.py`, run by agentgateway on Microsoft's Playwright image; `taskboard-browser-mcp.yaml`). It replays UI steps in headless Chromium on a throwaway copy of the live Taskboard, with no URL input and no credential (see "The browser" under "Bug investigator") | `replay_ui_steps` (class `read`, pinned to this server); bound by `bug-investigator` only |
 | `kagent-api` (chart) | the controller's own `/mcp` | none |
 
 A server Deployment registers no tools with agents; the `RemoteMCPServer` that points at its Service does.
@@ -553,10 +553,10 @@ that a person merges.
 
 | Piece | What it does |
 |---|---|
-| Agent `bug-investigator` (`agent-templates/bug-investigator.yaml`, `agents/`) | Class `read`, `kagent-stateless` (its memory of verified outcomes is the trigger's; see "Memory" below), Sonnet 5.5 on budget group `bug-investigator` ($8/day). Binds 6 read tools of the `implementer` GitHub server and the 5 `taskboard-telemetry` tools. Answers with the findings JSON only (`findings.schema.json`); it cannot write anywhere, not even a comment |
+| Agent `bug-investigator` (`agent-templates/bug-investigator.yaml`, `agents/`) | Class `read`, `kagent-stateless` (its memory of verified outcomes is the trigger's; see "Memory" below), Sonnet 5.5 on budget group `bug-investigator` ($8/day). Binds 6 read tools of the `implementer` GitHub server, the 5 `taskboard-telemetry` tools and `replay_ui_steps` of `taskboard-browser`. Answers with the findings JSON only (`findings.schema.json`); it cannot write anywhere, not even a comment |
 | Tool server `taskboard-telemetry` (`taskboard-telemetry-mcp.yaml`) | Loki and Prometheus, every query refused unless scoped to `namespace="taskboard"` before any HTTP call. No credential (see "Tools via MCP servers") |
 | Trigger `bug-investigator-trigger` (`bug-investigator-trigger.yaml`, code `scripts/bug_investigator_trigger.py`) | CronJob every 2 minutes, `concurrencyPolicy: Forbid`, killed after 25 minutes. Files alert issues, gathers facts, asks the agent, verifies, posts, hands off the fix. The only piece that writes to GitHub |
-| Tool server `taskboard-browser` (`taskboard-browser-mcp.yaml`) | Replays UI steps in a browser on a throwaway copy of the live Taskboard. Not bound yet (see "The browser" below) |
+| Tool server `taskboard-browser` (`taskboard-browser-mcp.yaml`) | Replays UI steps in a browser on a throwaway copy of the live Taskboard. Bound by `bug-investigator` only (see "The browser" below) |
 | Core ConfigMap `bug-investigator-core` (generated) | The Action's own package at a pinned claude-agents commit: scope check, gather, verify, render, post, the telemetry adapter, both MCP servers and the browser replay engine, plus `browser-requirements.txt`. The trigger and both tool servers mount it; the Action runs the same files |
 
 **One run of the trigger** (at most one investigation):
@@ -604,23 +604,31 @@ run out (2026-10-27).
 **The browser** (§T.153, §V.113): tool server `taskboard-browser` (`taskboard-browser-mcp.yaml`,
 RemoteMCPServer in `taskboard-browser-mcp-remote.yaml`) with one tool, `replay_ui_steps`. A bug
 that lives only in the page (a missing button, a wrong view) leaves nothing in Loki or
-Prometheus, so without a browser the agent can only answer `unclear`. **Nothing binds it yet.**
-A tool server that is down at `initialize` fails every agent bound to it, and Chromium had not
-run on these nodes when it shipped, so PR K1 ships it unbound and checks one real replay through
-a port-forward (runbook, "taskboard-browser"); PR K2 binds it to `bug-investigator` (plan
-`docs/superpowers/plans/2026-10-29-bug-investigator-ui-repro.md`).
+Prometheus, so without a browser the agent can only answer `unclear`. `bug-investigator` binds
+it since PR K2. A tool server that is down at `initialize` fails every agent bound to it, and
+Chromium had not run on these nodes when it shipped, so PR K1 (#1013, 2026-10-29) shipped it
+unbound and checked one real replay through a port-forward first (runbook, "taskboard-browser"):
+the pod was Ready in about 4 minutes (image pull and the PyPI init container), the smoke replay
+passed in 6.5 s with 3 screenshots on the deployed commit, a 15-step call with every screenshot
+passed in 10.9 s (1.5 MB) through agentgateway, only `pause` and agentgateway were left running
+afterwards, and there were no restarts. Chromium runs on the E5-2670 nodes. To unbind it, see
+the runbook.
 
 - **One call** starts the Taskboard code that is live as its own `server.py` process on a fresh
   database with the demo data, loads `/` in headless Chromium, runs up to 15 steps and tears
-  everything down; nothing persists between calls (one known exception, under "What it can
-  touch"). The code is ConfigMap `taskboard-browser-code`, which
+  everything down; nothing persists between calls. The code is ConfigMap `taskboard-browser-code`, which
   `scripts/gen-taskboard-configmap.py` writes in the same commit as the app's own ConfigMap, so
   it is the deployed commit; every result reports it as `commit`. A step is an action
   (`click`, `fill`, `select`, `press`, or `goto` a path) or a check (`expect_visible`,
   `expect_absent`, `expect_text`) on a target named by role, label, placeholder or text. An
   action's target must match exactly one element. The page settles after every action, and the
   first failing step ends the run with a reason: `missing`, `mismatch`, `ambiguous`, `invalid`,
-  `timeout` or `error`. The result holds each step's outcome, the page's accessibility snapshot,
+  `timeout` or `error`. Before the app starts, every `within.css` is checked on a blank page
+  (`document.querySelector`, then `CSS.supports('selector(:is(<css>))')`, so only standard CSS
+  passes; Playwright's own extensions such as `:has-text()` are refused) and every `press` key
+  must be one Playwright knows; a step that fails this check fails with `invalid` before any step
+  runs. Only `missing`, `mismatch` and `error` can be evidence (an allowlist; `ambiguous`,
+  `invalid` and `timeout` never). The result holds each step's outcome, the page's accessibility snapshot,
   the app's last log lines, the browser console and screenshots (by default only the failing
   step's, or the last step's). One replay runs at a time per pod, and each gets 75 s, which fits
   under the RemoteMCPServer's 90 s timeout. The step format and its matching rules are in
@@ -629,15 +637,14 @@ a port-forward (runbook, "taskboard-browser"); PR K2 binds it to `bug-investigat
   with `/`, never `//`), and the browser aborts every request to any other origin. The pod holds
   no credential (no Secret, no service account token), and the adapter's allowlist is exactly
   `replay_ui_steps`. Residual: the copy listens on all interfaces, so during a replay (at most
-  75 s) — or, until the core follow-up lands, until the pod restarts if the MCP session is killed
-  mid-replay — it is reachable on the pod IP from inside the cluster; it holds only seeded demo
+  75 s) it is reachable on the pod IP from inside the cluster; it holds only seeded demo
   data and no credential. A NetworkPolicy cannot close this in ambient mode: inbound traffic
   arrives as HBONE on 15008 and ztunnel unwraps it inside the pod, so allowed callers would still
   reach the copy's port, and a missed caller namespace would fail every bound agent. The
   follow-up is for Taskboard to honour `HOST` and the engine to pass `HOST=127.0.0.1` (effective
-  after the next Taskboard deploy). Known issue: a session killed mid-replay leaves its copy
-  running (runbook, "Orphaned processes"). The core follow-up, which must merge before K2, kills
-  the copy with its parent and clears a stale one at the next replay (SPEC §T.153).
+  after the next Taskboard deploy). A session killed mid-replay does not orphan its copy: the app
+  gets `PR_SET_PDEATHSIG` (SIGKILL), so it dies with its parent, and the next call reaps a stale
+  recorded process group (claude-agents #105, `fbba65f`; runbook, "Orphaned processes").
 - **Classified `read`, pinned** (owner, option 1, 2026-10-29). The tool clicks and types, but
   only in that copy, so it is `read` only when it is bound from `taskboard-browser`. Taxonomy key
   `server-pinned-tools` maps the tool to that server, and admission (`agent-capability` rule 2b)
@@ -649,23 +656,29 @@ a port-forward (runbook, "taskboard-browser"); PR K2 binds it to `bug-investigat
   (`browser-requirements.txt`, from the core ConfigMap). Playwright is imported, and Chromium
   launched, only inside a call, so a Chromium that cannot start is a tool error
   (`browser unavailable: …`), never a failed `initialize`.
-- **What comes with K2.** The agent cites a reproduction as evidence kind `ui`: the steps, plus
-  `fails_at`, the step it says fails on the live code. The trigger's verify replays the steps on
-  this server and keeps the item only if that step is the first to fail and its reason is not
-  `ambiguous`, `invalid` or `timeout` (those show a badly written step or a slow replay, not a
-  bug). The trigger then commits the screenshots to the branch `bug-investigator-evidence` of
-  arigsela/taskboard and shows the failing step's screenshot in the comment. Its token gains
-  contents write for this, and the code writes only that ref. The fix PR carries the steps as
-  `ui-tests/repros/issue-<N>.json`, which Taskboard's own `ui-check` workflow (a Taskboard change
-  in the same plan) replays on the PR, posting the "after" screenshots. Residual (§V.113):
-  Taskboard is private on GitHub Free, so its `main` has no branch protection and a
-  contents-write token could push to it; a deploy still needs a pull request here that a person
-  merges.
+- **How the trigger uses it (K2).** The agent cites a reproduction as evidence kind `ui`: the
+  steps, plus `fails_at`, the step it says fails on the live code. The trigger's verify replays
+  the steps through this server (`http://taskboard-browser-mcp.kagent.svc.cluster.local:3000/mcp`,
+  env `BROWSER_URL`) and keeps the item only if that step is the first to fail and its reason is
+  `missing`, `mismatch` or `error`. At most two `ui` items are replayed per investigation (a
+  third is dropped with "only two browser reproductions are replayed per investigation"), and the
+  trigger Job's `activeDeadlineSeconds` is 1500 for it. The trigger then commits the screenshots
+  to the orphan branch `bug-investigator-evidence` of arigsela/taskboard (paths
+  `issue-<N>/<run>/<id>-step-<n>.png`) and links them in the comment's "Reproduced in the
+  browser" section. Its token has contents write for this, and the code writes only that ref
+  (`evidence.Uploader` takes no branch argument; PNG at most 2 MiB, at most 30 per commit). The
+  fix PR carries the steps as `ui-tests/repros/issue-<N>.json`, which Taskboard's `ui-check`
+  workflow (arigsela/taskboard#42; its engine bump to `fbba65f` is #44) replays on the PR,
+  posting screenshots of the fixed action. Residual (§V.113): Taskboard is private on GitHub
+  Free, so its `main` has no branch protection and a contents-write token could push to it; a
+  deploy still needs a pull request here that a person merges.
 
 **Credentials.** The agent and its sandbox hold none. The trigger holds one: an installation token
 of the `arigsela-implementer` App, minted every 30 minutes by an External Secrets
-`GithubAccessToken` generator, limited to `arigsela/taskboard` (issues write; contents and pull
-requests read). It shares the implementer's private key Secret (owner's call, 2026-10-27).
+`GithubAccessToken` generator, limited to `arigsela/taskboard` (issues write, contents write, pull
+requests read). Contents write is used only to commit screenshots to the branch
+`bug-investigator-evidence`; the code writes no other ref, and Taskboard has no branch
+protection (see "The browser"). It shares the implementer's private key Secret (owner's call, 2026-10-27).
 
 **Labels on Taskboard:** `bug` (investigate), `investigated` (done), `investigation-failed` (the
 agent was asked and something failed; remove it to retry), `fix-proposed`, `from-alert`,

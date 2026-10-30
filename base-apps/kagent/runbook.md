@@ -6,7 +6,7 @@ app: kagent
 catalog_entity: kagent
 kind: runbook
 namespace: kagent
-last_reviewed: 2026-10-18
+last_reviewed: 2026-10-30
 status: stable
 tags: [ai-agent, kagent, mcp, anthropic, substrate]
 sources:
@@ -332,8 +332,8 @@ tool error (`isError`) whose text says which part failed. A step that fails (`ok
   CPU first: they are E5-2670 VMs, x86-64-v2 without AVX2, so an `Illegal instruction`, a SIGILL
   or a crash at start means this Chromium build does not run here. A library error
   (`error while loading shared libraries`) means the image is not the pinned digest or not amd64.
-  Neither is fixed by retrying: leave the server unbound (it is, until K2) or unbind it ("Roll
-  back" in the How-to below), and record the error in SPEC §T.153.
+  Neither is fixed by retrying: unbind the server ("Roll back" in the How-to below) so
+  `bug-investigator` keeps running on its other tools, and record the error in SPEC §T.153.
 - **`the browser went away during step <n>`**: Chromium crashed mid-run, most likely out of
   memory (`/dev/shm` is 256Mi, the container's limit 1536Mi; both count against the limit). Check
   the pod's `container_memory_working_set_bytes` and its last state.
@@ -349,7 +349,7 @@ tool error (`isError`) whose text says which part failed. A step that fails (`ok
 - **Stuck in `Init` (`install-playwright`):** the init container downloads four hash-pinned wheels
   from PyPI on every pod start (no image build, no cache). While PyPI is unreachable a NEW pod
   stays in `Init` and retries; during a rollout the old pod keeps serving, but after a drain,
-  eviction or node loss there is no old pod, and the server is down until PyPI answers. Once K2
+  eviction or node loss there is no old pod, and the server is down until PyPI answers. Since K2
   binds it, that fails every `bug-investigator` run at start ("an agent run fails at start").
   No alert watches init containers (`Container crash-looping` reads app containers only; SPEC
   §T.153 follow-up): a new pod stuck behind a serving old one stays silent, and after a drain only
@@ -367,18 +367,15 @@ tool error (`isError`) whose text says which part failed. A step that fails (`ok
     memory, cannot be killed, and are harmless; the pause container (PID 1) reaps the ones
     reparented to it. If they pile up, check that the Deployment still sets
     `shareProcessNamespace: true` (without it agentgateway is PID 1 and never reaps them).
-  - **Known issue, until the core follow-up lands (before K2; SPEC §T.153 follow-ups):** an MCP
-    session killed mid-replay (agentgateway kills its stdio `browser_server.py` before the replay's
-    cleanup runs) orphans the Taskboard copy. A `python3 server.py` with PPID 1 (or
-    `chrome-headless-shell` processes that are not `<defunct>`) still there after the session
-    ended is that copy. Its database directory stays in `/tmp`, it holds memory towards the
-    container's limit, and it keeps listening on all interfaces, so it stays reachable on the pod
-    IP from inside the cluster until the pod restarts (seeded demo data, no credential). Clear it
-    by rolling the pod through git: add or bump a pod-template annotation on the Deployment (for
-    example `kubectl.kubernetes.io/restartedAt: "<now>"`) in a PR; the new pod's init container
-    needs PyPI. Or wait for the follow-up: the core regen that brings it (K2) rolls the pod
-    (`checksum/core`), and from then on the copy dies with its parent and a stale one is killed at
-    the next replay.
+  - **A leftover `python3 server.py` or non-`<defunct>` `chrome-headless-shell`** with no call
+    running is a bug, not an expected state. A session killed mid-replay (agentgateway kills its
+    stdio `browser_server.py` before the replay's cleanup runs) no longer orphans the Taskboard
+    copy: the app gets `PR_SET_PDEATHSIG` (SIGKILL) and dies with its parent, and the next call
+    reaps a stale recorded process group (claude-agents #105, `fbba65f`). If one persists, note
+    its PID, PPID and `etime`, record it in SPEC §T.153, and clear it by rolling the pod through
+    git: add or bump a pod-template annotation on the Deployment (for example
+    `kubectl.kubernetes.io/restartedAt: "<now>"`) in a PR; the new pod's init container needs
+    PyPI.
 
 ### Symptom: the trigger keeps filing `from-alert` issues
 It files one per route that answers 5xx with no `from-alert` issue open or closed in the last 6
@@ -402,7 +399,7 @@ Close the issue instead (or fix the bug). Rehearsals: close, do not delete.
 
 ### taskboard-browser: check it, run one replay by hand, roll back
 `taskboard-browser-mcp` (§T.153) replays UI steps in headless Chromium on a throwaway copy of
-the live Taskboard (docs, "The browser"). Nothing binds it until PR K2.
+the live Taskboard (docs, "The browser"). `bug-investigator` binds it.
 - **Healthy:** `kubectl -n kagent get pods -l app.kubernetes.io/name=taskboard-browser-mcp` shows
   `1/1 Running` (init containers `copy-binary` and `install-playwright` completed), and
   `kubectl -n kagent describe remotemcpserver taskboard-browser` lists `replay_ui_steps` in
@@ -441,14 +438,14 @@ the live Taskboard (docs, "The browser"). Nothing binds it until PR K2.
   annotation, three passing steps and three PNGs in `/tmp`, with a wall time of roughly 10-20 s.
   A set `error` is the tool's `isError` text: see "`replay_ui_steps` answers
   `browser unavailable: …`" under Failure modes. Then check for orphaned processes (same entry).
-- **Roll back:** before K2 there is nothing to roll back; no agent binds the server, so a broken
-  pod affects no agent. After K2, remove the `taskboard-browser` binding from
+- **Roll back:** `bug-investigator` binds the server, so a broken pod fails its runs at start.
+  Remove the `taskboard-browser` binding from
   `agent-templates/bug-investigator.yaml` by PR, and the agent investigates as before, without
   the browser. Delete nothing else: the Deployment, the RemoteMCPServer, the code copy and the
   taxonomy pin can stay, and the pin keeps guarding the tool. To remove the replay surface
   entirely, set the Deployment's `replicas: 0` in git (or delete `taskboard-browser-mcp.yaml`),
-  but only once nothing binds the server: a bound server that does not answer fails every run of
-  the agents bound to it at start.
+  but unbind it first (above), or accept that `bug-investigator` runs fail while it is down: a
+  bound server that does not answer fails every run of the agents bound to it at start.
 
 ### Weekly docs check: run it now, read it, reset its memory, dismiss a finding
 - **Run now:** `kubectl -n kagent create job --from=cronjob/docs-checker-trigger
