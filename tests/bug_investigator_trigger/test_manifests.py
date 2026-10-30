@@ -125,6 +125,20 @@ def test_the_github_token_is_taskboard_only_and_narrow():
     assert es["spec"]["target"]["name"] == "bug-investigator-trigger-github"
 
 
+def test_a_permissions_change_re_mints_the_token():
+    """ESO re-mints when the ExternalSecret's generation, labels or annotations change (or the
+    interval elapses), never because the generator CR changed: the ExternalSecret's annotation is
+    the generator's permissions as sorted key=value, so a permissions change changes it too."""
+    perms = _one("GithubAccessToken", "bug-investigator-trigger")["spec"]["permissions"]
+    es = _one("ExternalSecret", "bug-investigator-trigger-github")
+    want = ",".join(f"{k}={v}" for k, v in sorted(perms.items()))
+    assert es["metadata"]["annotations"]["bug-investigator.arigsela.com/token-permissions"] == want
+    assert want == "contents=write,issues=write,metadata=read,pull_requests=read"
+    # 20m: the 1 h token has >= ~35 min left at pod start, for a run of up to 25 min.
+    assert es["spec"]["refreshInterval"] == "20m"
+    assert _one("CronJob")["spec"]["jobTemplate"]["spec"]["activeDeadlineSeconds"] <= 25 * 60
+
+
 def test_token_has_contents_write():
     """§T.153: contents write, for the screenshots on the bug-investigator-evidence branch only (the
     core's Uploader takes no branch argument); the comment beside it names that and the residual."""

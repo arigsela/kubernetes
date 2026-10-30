@@ -674,11 +674,16 @@ the runbook.
   deploy still needs a pull request here that a person merges.
 
 **Credentials.** The agent and its sandbox hold none. The trigger holds one: an installation token
-of the `arigsela-implementer` App, minted every 30 minutes by an External Secrets
+of the `arigsela-implementer` App, minted every 20 minutes by an External Secrets
 `GithubAccessToken` generator, limited to `arigsela/taskboard` (issues write, contents write, pull
 requests read). Contents write is used only to commit screenshots to the branch
 `bug-investigator-evidence`; the code writes no other ref, and Taskboard has no branch protection
 (see "The browser"). It shares the implementer's private key Secret (owner's call, 2026-10-27).
+ESO re-mints the token when the ExternalSecret's generation, labels or annotations change or the
+interval elapses, never because the generator changed, so the ExternalSecret carries the
+generator's permissions in the annotation `bug-investigator.arigsela.com/token-permissions` (a
+test keeps them equal) and a permissions change re-mints on sync. The token lives 1 h and is
+read once at pod start: 20 minutes leaves at least ~35 minutes of it for a run of up to 25.
 
 **Labels on Taskboard:** `bug` (investigate), `investigated` (done), `investigation-failed` (the
 agent was asked and something failed; remove it to retry), `fix-proposed`, `from-alert`,
