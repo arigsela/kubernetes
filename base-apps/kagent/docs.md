@@ -616,22 +616,22 @@ the runbook.
 
 - **One call** starts the Taskboard code that is live as its own `server.py` process on a fresh
   database with the demo data, loads `/` in headless Chromium, runs up to 15 steps and tears
-  everything down; nothing persists between calls. The code is ConfigMap `taskboard-browser-code`, which
-  `scripts/gen-taskboard-configmap.py` writes in the same commit as the app's own ConfigMap, so
-  it is the deployed commit; every result reports it as `commit`. A step is an action
-  (`click`, `fill`, `select`, `press`, or `goto` a path) or a check (`expect_visible`,
-  `expect_absent`, `expect_text`) on a target named by role, label, placeholder or text. An
-  action's target must match exactly one element. The page settles after every action, and the
-  first failing step ends the run with a reason: `missing`, `mismatch`, `ambiguous`, `invalid`,
-  `timeout` or `error`. Before the app starts, every `within.css` is checked on a blank page
-  (`document.querySelector`, then `CSS.supports('selector(:is(<css>))')`, so only standard CSS
-  passes; Playwright's own extensions such as `:has-text()` are refused) and every `press` key
-  must be one Playwright knows; a step that fails this check fails with `invalid` before any step
-  runs. Only `missing`, `mismatch` and `error` can be evidence (an allowlist; `ambiguous`,
-  `invalid` and `timeout` never). The result holds each step's outcome, the page's accessibility snapshot,
-  the app's last log lines, the browser console and screenshots (by default only the failing
-  step's, or the last step's). One replay runs at a time per pod, and each gets 75 s, which fits
-  under the RemoteMCPServer's 90 s timeout. The step format and its matching rules are in
+  everything down; nothing persists between calls. The code is ConfigMap `taskboard-browser-code`,
+  which `scripts/gen-taskboard-configmap.py` writes in the same commit as the app's own ConfigMap,
+  so it is the deployed commit; every result reports it as `commit`. A step is an action (`click`,
+  `fill`, `select`, `press`, or `goto` a path) or a check (`expect_visible`, `expect_absent`,
+  `expect_text`) on a target named by role, label, placeholder or text. An action's target must
+  match exactly one element. The page settles after every action, and the first failing step ends
+  the run with a reason: `missing`, `mismatch`, `ambiguous`, `invalid`, `timeout` or `error`.
+  Before the app starts, every `within.css` is checked on a blank page (`document.querySelector`,
+  then `CSS.supports('selector(:is(<css>))')`, so only standard CSS passes; Playwright's own
+  extensions such as `:has-text()` are refused) and every `press` key must be one Playwright knows;
+  a step that fails this check fails with `invalid` before any step runs. Only `missing`,
+  `mismatch` and `error` can be evidence (an allowlist; `ambiguous`, `invalid` and `timeout`
+  never). The result holds each step's outcome, the page's accessibility snapshot, the app's last
+  log lines, the browser console and screenshots (by default only the failing step's, or the last
+  step's). One replay runs at a time per pod, and each gets 75 s, which fits under the
+  RemoteMCPServer's 90 s timeout. The step format and its matching rules are in
   arigsela/claude-agents `bug-investigator/README.md`, "Reproducing UI bugs (kagent)".
 - **What it can touch:** only that copy. The tool takes no URL (`goto` takes a path starting
   with `/`, never `//`), and the browser aborts every request to any other origin. The pod holds
@@ -677,8 +677,8 @@ the runbook.
 of the `arigsela-implementer` App, minted every 30 minutes by an External Secrets
 `GithubAccessToken` generator, limited to `arigsela/taskboard` (issues write, contents write, pull
 requests read). Contents write is used only to commit screenshots to the branch
-`bug-investigator-evidence`; the code writes no other ref, and Taskboard has no branch
-protection (see "The browser"). It shares the implementer's private key Secret (owner's call, 2026-10-27).
+`bug-investigator-evidence`; the code writes no other ref, and Taskboard has no branch protection
+(see "The browser"). It shares the implementer's private key Secret (owner's call, 2026-10-27).
 
 **Labels on Taskboard:** `bug` (investigate), `investigated` (done), `investigation-failed` (the
 agent was asked and something failed; remove it to retry), `fix-proposed`, `from-alert`,
