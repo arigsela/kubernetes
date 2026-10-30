@@ -572,11 +572,16 @@ that a person merges.
 4. **Ask** `kagent/bug-investigator` over A2A as service account `kagent/bug-investigator-trigger`
    (projected token, audience `kagent`), up to 8 minutes.
 5. **Verify** every evidence item (commits, PRs, file lines and quotes, doc quotes; every
-   Loki/Prometheus query re-run in its window), render, and **post** one comment (marker mode
-   `kagent`, so it never edits the Action's comment) plus the `investigated` label.
+   Loki/Prometheus query re-run in its window; `ui` steps replayed through `BROWSER_URL`, at most
+   two per investigation), render, and **post** one comment (marker mode `kagent`, so it never
+   edits the Action's comment) plus the `investigated` label. Before posting, the replays'
+   screenshots are committed to Taskboard's `bug-investigator-evidence` branch and linked in the
+   comment (see "The browser").
 6. **Fix.** A verified likely cause (change and code line both verified) goes to
    `kagent/implementer`: one PR on `agent/taskboard-issue-<N>` with a regression test, nothing under
-   `docs/` or `.github/`, body `Fixes #N`. A follow-up comment links the PR and the issue gets
+   `docs/` or `.github/`, body `Fixes #N`. With a verified UI reproduction, the request carries it
+   as the file `ui-tests/repros/issue-<N>.json`, the page's regression test (the likely cause's
+   reproduction, else the first). A follow-up comment links the PR and the issue gets
    `fix-proposed`. A person merges; taskboard CI runs on the PR (the implementer cannot run tests).
    Only a PR on `agent/taskboard-issue-<N>` is reported as proposed: when the implementer finds an
    open fix for the same bug and opens none, the comment links that PR as "not opened for this issue".
