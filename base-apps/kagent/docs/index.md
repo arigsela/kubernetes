@@ -631,7 +631,11 @@ the runbook.
   never). The result holds each step's outcome, the page's accessibility snapshot, the app's last
   log lines, the browser console and screenshots (by default only the failing step's, or the last
   step's). One replay runs at a time per pod, and each gets 75 s, which fits under the
-  RemoteMCPServer's 90 s timeout. The step format and its matching rules are in
+  RemoteMCPServer's 90 s timeout. A call first waits for any replay in progress (up to 120 s,
+  `LOCK_WAIT_S`), and that wait is outside the 75 s, so a queued call can exceed the 90 s (the
+  agent gets a tool error) or the trigger's 120 s per request (the item is dropped as a failed
+  replay). The prompt therefore asks the agent for one `replay_ui_steps` call at a time, with
+  `"screenshots": "none"` (verify takes its own). The step format and its matching rules are in
   arigsela/claude-agents `bug-investigator/README.md`, "Reproducing UI bugs (kagent)".
 - **What it can touch:** only that copy. The tool takes no URL (`goto` takes a path starting
   with `/`, never `//`), and the browser aborts every request to any other origin. The pod holds
