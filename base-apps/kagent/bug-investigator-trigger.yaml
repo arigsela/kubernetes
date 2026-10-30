@@ -164,9 +164,11 @@ spec:
       backoffLimit: 0
       # The investigation (AGENT_TIMEOUT 480 s) and the implementer's pull request (FIX_TIMEOUT
       # 480 s) plus the clones and verify, with time left to log before the pod is killed. Verify
-      # replays `ui` evidence in the browser: each replay may take up to ~120 s (the engine's 75 s
-      # deadline plus the client's timeout), at most two per investigation (UI_REPLAYS_MAX,
-      # ruling R18), so 300 s more than before (§T.153).
+      # replays `ui` evidence in the browser, at most two per investigation (UI_REPLAYS_MAX, ruling
+      # R18). The client's 120 s timeout applies per MCP request (initialize, then the call; the
+      # session DELETE has 10 s), so one replay is bounded by about 250 s and typically takes
+      # 10-20 s: the 300 s added here (§T.153) covers two typical replays with room, not two worst
+      # cases.
       activeDeadlineSeconds: 1500
       template:
         metadata:
@@ -175,7 +177,7 @@ spec:
           annotations:
             # sha256 (first 16 hex) over the bug-investigator-trigger-code ConfigMap's values,
             # sorted by key; written by scripts/gen-bug-investigator-trigger-configmap.py.
-            checksum/code: 387fd3ce1920d0c2
+            checksum/code: 20d474f889292ecf
         spec:
           serviceAccountName: bug-investigator-trigger
           restartPolicy: Never
