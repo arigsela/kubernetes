@@ -1490,7 +1490,8 @@ def bug_investigation_live():
     b.line(15, [(24, timeline("Journey", lanes, (
         "One lane per stage, top to bottom in the order a report travels; a lane is coloured in each 30 s "
         "its stage happened. Trigger stages: its JSON step lines (Loki). Agent and implementer calls: the "
-        "collector's per-agent counters (agent_model_calls_total, agent_tool_calls_total; the browser lane is replay_ui_steps). Alert signal: "
+        "collector's per-agent counters (agent_model_calls_total, agent_tool_calls_total); the browser lane "
+        "counts replay_ui_steps calls. Alert signal: "
         "Taskboard's 5xx counter, the trigger's alert expression. Refused tool call: an MCP adapter's "
         "`Unknown tool` (a tool off its allowlist); a Loki/Prometheus query outside namespace taskboard "
         "comes back to the agent as a tool error instead (`ok: false` in the trigger's AGENT line). The "
