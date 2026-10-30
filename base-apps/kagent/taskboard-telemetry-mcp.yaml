@@ -138,7 +138,7 @@ spec:
         # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
         checksum/config: "55f6123311618caf2463304df1d53c36a450e94f8acb7b7299223cbee947937a"
         # Written by scripts/gen-bug-investigator-core.py; CI checks it.
-        checksum/core: "4743d884853d6ca88f6b6a88bb793fa935f77c8bf1d4eb624026540c40759b26"
+        checksum/core: "06a2f90b9834012a76296f1f1a5996f2bc29d7acc065cd2a821e553ab136e634"
         # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
         # containerPort would make the kubernetes-pods job scrape the pod twice.
         prometheus.io/scrape: "true"

@@ -3,7 +3,7 @@
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-bug-investigator-core.py
-# Source:     arigsela/claude-agents@1d2b659b225eebd0b0442b1f406cf501c3ca0b16
+# Source:     arigsela/claude-agents@fbba65f68bc7ec4a522282f2e76c7bb3bd4dfb59
 #             (bug-investigator/src/bug_investigator/*.py, bug-investigator/prompt.md, bug-investigator/findings.schema.json, bug-investigator/browser-requirements.txt)
 # Regenerate: ./scripts/gen-bug-investigator-core.py --source <claude-agents checkout> --commit <sha>
 # tests/taskboard/test_bug_investigator_core.py fails if this file and the consumers' checksum/core disagree.
@@ -22,7 +22,7 @@ metadata:
     app.kubernetes.io/part-of: kagent
     app.kubernetes.io/name: bug-investigator-core
   annotations:
-    bug-investigator.arigsela.com/source-commit: 1d2b659b225eebd0b0442b1f406cf501c3ca0b16
+    bug-investigator.arigsela.com/source-commit: fbba65f68bc7ec4a522282f2e76c7bb3bd4dfb59
     bug-investigator.arigsela.com/source-repo: arigsela/claude-agents
 data:
   __init__.py: |
@@ -49,6 +49,13 @@ data:
     when it runs out, the current step fails (`timeout`, "the replay took longer than 75 s") and no
     later step runs, so a call answers within agentgateway's 90 s.
 
+    A replay whose process is killed mid-call (agentgateway kills the server when a session is deleted)
+    runs no finally block, so the app is stopped two other ways (ruling R19). On Linux the app gets
+    SIGKILL when the thread that ran replay() exits (PR_SET_PDEATHSIG). And the app's process group is
+    recorded in $TMPDIR/bug-investigator-browser.pgid while it runs: the next replay, once it holds the
+    lock, kills a group still recorded there (only with its leader's start time from /proc, so Linux
+    only) and removes this engine's leftover temp dirs ($TMPDIR/bug-investigator-replay-*).
+
         python3 -I browser.py replay --app-dir D --steps F [--commit SHA] --out DIR
         python3 -I browser.py check --app-dir D --repros DIR --out DIR [--changed a.json,b.json]
 
@@ -63,10 +70,17 @@ data:
     (expect_visible: one is visible; expect_text: one contains the value; expect_absent: none). A failed
     step says why in `failure`: ambiguous (an action target or `within` matched more than one element),
     missing (nothing matched), mismatch (expect_text found no match with the value; expect_absent found
-    some), invalid (the step cannot run on any page: `within.css` is not a CSS selector, read as
-    `css=<css>` so another selector engine does not parse either, or `press` names a key Playwright does
-    not know; the key is checked before the target is looked for), timeout (the replay's REPLAY_S ran
-    out during or before the step), error (anything else, such as a disabled button).
+    some), invalid (the step cannot run on any page: `within.css` is not CSS that the browser parses
+    strictly, with document.querySelector and CSS.supports('selector(:is(<css>))'), so Playwright's
+    own pseudo-classes such as :has-text or :visible are refused too, or Playwright's parser refuses it,
+    read as `css=<css>` so another selector engine does not parse either; or `press` names a key
+    Playwright does not know), timeout (the replay's REPLAY_S
+    ran out during or before the step), error (anything else, such as a disabled button).
+
+    Before the app starts, every step's within.css and press key is tried on a blank page (ruling R16):
+    the first step that cannot run on any page ends the replay as its only result (`invalid`), and no
+    step runs, so a malformed step is found even after a step that would fail on the page. The run loop
+    keeps the same checks, a press step's key before its target is looked for.
     """
 
     from __future__ import annotations
@@ -80,7 +94,9 @@ data:
     import json
     import os
     import signal
+    import shutil
     import socket
+    import stat
     import subprocess
     import sys
     import tempfile
@@ -97,6 +113,8 @@ data:
 
     APP_START_S = 15  # the app must answer GET /healthz within this
     LOCK_WAIT_S = 120
+    TMP_PREFIX = "bug-investigator-replay-"  # each replay's temp dir in $TMPDIR (the app's HOME and database)
+    PR_SET_PDEATHSIG = 1  # <linux/prctl.h>
     STEP_S = 3  # actions, expect_visible and expect_text wait this long for their target
     IDLE_S = 5  # after load and after every action: wait (at most this) for the network to go idle
     # The whole replay, from Chromium's launch through app start, load and every step (ruling R14): under the
@@ -114,6 +132,20 @@ data:
     # key its keyboard does not know.
     MALFORMED = ("while parsing css selector", "while parsing selector", "is not a valid selector", '" engine expects ',
                  "Unknown key: ")
+    # The browser's own CSS parser, on a blank page before the run (ruling R16): Playwright reads some of a selector (a
+    # pseudo-class it does not know, :nth-match's arguments) only when the elements to its right exist, so a malformed
+    # within.css can read `missing` on one page. The browser parses all of it at once, and only it decides what CSS is:
+    # Playwright's own pseudo-classes (:has-text, :visible, :nth-match) are refused too. querySelector throws only
+    # SyntaxError, but forgives a malformed argument inside :is() and :where() (it matches nothing there), so the css must
+    # also pass the unforgiving parse CSS.supports('selector(:is(<css>))') (ruling R23): true for every standard selector,
+    # selector lists included; false for .x:is(:bogus), :where(:contains('x')), ::after. Both, querySelector first: a
+    # css that passes it has balanced brackets, so it cannot close the :is( it is wrapped in.
+    NATIVE_CSS_JS = """css => {
+      try { document.querySelector(css); }
+      catch (e) { return e && e.name === 'SyntaxError' ? String(e.message) : null; }
+      const strict = 'selector(:is(' + css + '))';
+      return CSS.supports(strict) ? null : "CSS.supports('" + strict + "') is false";
+    }"""
     # Defence in depth behind the request fence: the browser resolves no host name at all.
     RESOLVER_RULES = "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"
     # The texts expect_text reads: a field's value, a select's chosen label, otherwise the rendered text.
@@ -210,13 +242,152 @@ data:
         return f"the step cannot run on any page ({head})"
 
 
+    def _precheck(api, browser, steps: list[dict]) -> StepResult | None:
+        """The first step that cannot run on any page, as a failed `invalid` StepResult; None when every step can.
+
+        Runs before the app starts and before any step (ruling R16), on a page of its own on about:blank: every
+        within.css must parse in the browser (document.querySelector, then the unforgiving CSS.supports; see
+        NATIVE_CSS_JS) and in Playwright's selector engine, and every
+        press key must be one Playwright's keyboard knows. So a malformed step is found even when an earlier step would
+        fail on the page first, and a lazily parsed selector cannot read `missing`. api.Error: the browser failed.
+        """
+        page = browser.new_page()  # its own context on about:blank: no app, no network
+        try:
+            for n, step in enumerate(steps, 1):
+                error = None
+                w = (step.get("target") or {}).get("within")
+                if w:
+                    native = page.evaluate(NATIVE_CSS_JS, w["css"])
+                    if native:
+                        error = f'within css "{w["css"]}" is not a valid CSS selector, so no step ran ({native})'
+                    else:
+                        try:
+                            page.locator("css=" + w["css"]).count()
+                        except api.Error as e:
+                            if not _malformed(e):
+                                raise
+                            error = f'within css "{w["css"]}" is not a valid selector, so no step ran ({_first_line(e)})'
+                if error is None and step["do"] == "press":
+                    try:
+                        page.keyboard.press(step["value"])
+                    except api.Error as e:
+                        if not _malformed(e):
+                            raise
+                        error = f'"{step["value"]}" is not a key Playwright can press, so no step ran ({_first_line(e)})'
+                if error:
+                    return StepResult(n, stepfmt.describe(step), False, error, None, "invalid")
+            return None
+        finally:
+            with contextlib.suppress(api.Error):
+                page.close()
+
+
     def _lock_path() -> str:
         return os.path.join(tempfile.gettempdir(), "bug-investigator-browser.lock")
 
 
+    def _pgid_path() -> str:
+        """Where the running app's process group is recorded, next to the lock."""
+        return os.path.join(tempfile.gettempdir(), "bug-investigator-browser.pgid")
+
+
+    def _start_time(pid: int) -> str | None:
+        """The process's start time (clock ticks after boot, /proc/<pid>/stat field 22); None when it is gone or there
+        is no /proc (macOS)."""
+        try:
+            with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as f:
+                return f.read().rsplit(")", 1)[1].split()[19]
+        except (OSError, IndexError):
+            return None
+
+
+    def _record_app(pgid: int) -> None:
+        """Record the app's process group (with its leader's start time) for the next replay, in case this process is
+        killed before stop(). Best effort: PR_SET_PDEATHSIG still covers the app itself."""
+        path = _pgid_path()
+        tmp = f"{path}.{os.getpid()}"
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(fd, "w", encoding="ascii") as f:
+                f.write(f"{pgid} {_start_time(pgid) or '-'}\n")
+            os.replace(tmp, path)
+        except OSError as e:
+            print(f"browser.py: cannot record the app's process group in {path}: {e}", file=sys.stderr)
+
+
+    def _forget_app() -> None:
+        """Remove the record. Best effort: a file that cannot be removed (another user's, in a shared /tmp) is ignored,
+        and _read_record never trusts one that is not ours."""
+        with contextlib.suppress(OSError):
+            os.remove(_pgid_path())
+
+
+    def _read_record() -> tuple[int, str] | None:
+        """(pgid, start time or "-") from the pgid file; None when there is none or it is not ours to trust: anything but
+        a regular file of this user. Opened non-blocking, so a FIFO there never blocks the replay holding the lock."""
+        try:
+            fd = os.open(_pgid_path(), os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
+        except OSError:
+            return None
+        try:
+            st = os.fstat(fd)
+            if not (stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid()):  # a directory, a FIFO, someone else's file
+                return None
+            words = os.read(fd, 200).decode("ascii", "replace").split()
+        except OSError:
+            return None
+        finally:
+            os.close(fd)
+        if len(words) != 2 or not words[0].isdigit():
+            return None
+        return int(words[0]), words[1]
+
+
+    def _kill_recorded_group() -> None:
+        record = _read_record()
+        if record is None:
+            return
+        pgid, started = record
+        # Only with the leader's start time (ruling R23): without it (no /proc: macOS) nothing tells our group from an id
+        # reused since. A group's id is not reused while any member lives, so if a process with that id runs but started at
+        # another time, the recorded group is gone and the id is someone else's. Never our own group.
+        if started == "-" or pgid <= 1 or pgid == os.getpgrp():
+            return
+        now = _start_time(pgid)
+        if now is not None and now != started:
+            return
+        # OverflowError: a pgid too big for a pid_t.
+        with contextlib.suppress(ProcessLookupError, PermissionError, OverflowError):
+            os.killpg(pgid, signal.SIGKILL)
+            print(f"browser.py: killed process group {pgid}, the app of a replay that did not finish", file=sys.stderr)
+
+
+    def _reap() -> None:
+        """Clear what a replay killed mid-call left behind: kill the app's process group still recorded in the pgid
+        file, and remove this engine's temp dirs. Runs with the lock held, so no other replay is using either. Best
+        effort: nothing here fails the replay; what goes wrong is logged to stderr only (stdout is browser_server's MCP
+        channel), and the record is forgotten either way."""
+        try:
+            _kill_recorded_group()
+        except Exception as e:  # noqa: BLE001
+            print(f"browser.py: could not stop the app a replay left behind: {e!r}", file=sys.stderr)
+        finally:
+            _forget_app()
+        try:
+            with os.scandir(tempfile.gettempdir()) as entries:
+                for entry in entries:
+                    with contextlib.suppress(OSError):  # one entry gone or unremovable: go on with the others
+                        if (entry.name.startswith(TMP_PREFIX) and entry.is_dir(follow_symlinks=False)
+                                and entry.stat(follow_symlinks=False).st_uid == os.getuid()):
+                            shutil.rmtree(entry.path, ignore_errors=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"browser.py: could not remove the temp dirs a replay left behind: {e!r}", file=sys.stderr)
+
+
     @contextlib.contextmanager
     def _lock():
-        """One replay at a time on this machine: Chromium and the app are heavy."""
+        """One replay at a time on this machine: Chromium and the app are heavy. Holding it, first clear what a killed
+        replay left behind (_reap)."""
         try:
             fd = os.open(_lock_path(), os.O_RDWR | os.O_CREAT, 0o600)
         except OSError as e:
@@ -231,6 +402,7 @@ data:
                     if time.monotonic() >= deadline:
                         raise BrowserError(f"another replay held the lock for {LOCK_WAIT_S} s") from None
                     time.sleep(0.2)
+            _reap()
             yield
         finally:
             os.close(fd)
@@ -240,6 +412,39 @@ data:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("127.0.0.1", 0))
             return s.getsockname()[1]
+
+
+    def _die_with_parent():
+        """A preexec_fn that gives the app SIGKILL as its parent-death signal (Linux); None elsewhere, or when prctl
+        cannot be found. Never fails the start: an error inside is ignored.
+
+        prctl is looked up here, in the parent, so the forked child runs as little Python as possible. PR_SET_PDEATHSIG
+        follows the *thread* that forks the app, whichever thread runs replay(), not the process: the app gets SIGKILL
+        when that thread exits. So replay() must run on a thread that lives at least as long as the replay; any such
+        thread will do. (browser_server runs calls on its main thread for another reason: so SIGTERM's SystemExit can
+        unwind a running replay.)
+        """
+        if not sys.platform.startswith("linux"):
+            return None
+        try:
+            import ctypes
+
+            prctl = ctypes.CDLL(None, use_errno=True).prctl
+            prctl.restype = ctypes.c_int
+            prctl.argtypes = [ctypes.c_int, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
+        except (ImportError, OSError, AttributeError):
+            return None
+        parent, sig = os.getpid(), int(signal.SIGKILL)
+
+        def preexec() -> None:
+            try:
+                prctl(PR_SET_PDEATHSIG, sig, 0, 0, 0)
+                if os.getppid() != parent:  # the parent died before prctl, so the signal will never come
+                    os.kill(os.getpid(), sig)
+            except Exception:  # noqa: BLE001 - never fail the start because of it
+                pass
+
+        return preexec
 
 
     class _App:
@@ -261,10 +466,14 @@ data:
             if not os.path.isfile(os.path.join(self.dir, "server.py")):
                 raise BrowserError(f"no server.py in {self.dir}")
             # Not -I: Taskboard's server.py imports its sibling modules. Its own process group, so stop()
-            # also ends anything it started.
+            # also ends anything it started; SIGKILL when the thread running this replay exits, so a killed replay
+            # does not leave it running (ruling R19); and the group recorded until stop(), for the next replay to kill
+            # if we never get there.
             self.proc = subprocess.Popen([sys.executable, "server.py"], cwd=self.dir, env=self.env,
                                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                         text=True, encoding="utf-8", errors="replace", start_new_session=True)
+                                         text=True, encoding="utf-8", errors="replace", start_new_session=True,
+                                         preexec_fn=_die_with_parent())
+            _record_app(self.proc.pid)
             self.reader = threading.Thread(target=self._read, daemon=True)
             self.reader.start()
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never via a proxy
@@ -309,6 +518,7 @@ data:
             self._signal_group(signal.SIGKILL)
             with contextlib.suppress(subprocess.TimeoutExpired):
                 self.proc.wait(5)
+            _forget_app()
             self.reader.join(2)
             if not self.reader.is_alive():  # a grandchild may still hold the pipe; never block on it
                 self.proc.stdout.close()
@@ -571,7 +781,7 @@ data:
         problems = stepfmt.validate(steps)
         if problems:
             raise ValueError("; ".join(problems))
-        with _lock(), tempfile.TemporaryDirectory(prefix="bug-investigator-replay-") as tmp:
+        with _lock(), tempfile.TemporaryDirectory(prefix=TMP_PREFIX) as tmp:
             started = time.monotonic()
             deadline = started + REPLAY_S  # Chromium's launch, app start and load count against it
             api = _playwright()
@@ -583,22 +793,30 @@ data:
                 except Exception as e:  # a missing browser, libraries, CPU features: all one setup failure
                     detail = " | ".join(line.strip() for line in str(e).splitlines() if line.strip())
                     raise BrowserError(f"Chromium did not launch: {detail[:1500]}") from e
-                app = _App(app_dir, tmp, commit)
-                app.start()
                 try:
-                    session = _Session(api, browser, app.origin, deadline)
-                    session.load()
-                    results, failed_at = session.run(steps, shots)
-                    snapshot, console = session.snapshot(), session.console
-                except api.Error as e:  # outside a step: the browser itself failed
+                    bad = _precheck(api, browser, steps)
+                except api.Error as e:
                     raise BrowserError(f"the browser failed: {_first_line(e)}") from e
+                if bad is not None:  # a step that cannot run on any page: the replay ends there and no step runs
+                    results, failed_at, snapshot = [bad], bad.n, ""
+                    console = [f"replay: step {bad.n} cannot run on any page, so no step ran and the app was not started"]
+                else:
+                    app = _App(app_dir, tmp, commit)
+                    app.start()
+                    try:
+                        session = _Session(api, browser, app.origin, deadline)
+                        session.load()
+                        results, failed_at = session.run(steps, shots)
+                        snapshot, console = session.snapshot(), session.console
+                    except api.Error as e:  # outside a step: the browser itself failed
+                        raise BrowserError(f"the browser failed: {_first_line(e)}") from e
             finally:
                 for close in (browser and browser.close, pw and pw.stop, app and app.stop):
                     if close:
                         with contextlib.suppress(Exception):
                             close()
         return Replay(ok=failed_at is None, failed_at=failed_at, steps=results, snapshot=snapshot,
-                      app_log=list(app.log), console=console, commit=commit,
+                      app_log=list(app.log) if app else [], console=console, commit=commit,
                       seconds=round(time.monotonic() - started, 2))
 
 
@@ -719,6 +937,11 @@ data:
     on a background thread and tool calls run on the main thread, one at a time (replays take a
     machine-wide lock anyway). SIGTERM raises SystemExit there, so a running replay unwinds through its
     finally blocks, which close Chromium and stop the app's process group, before the process exits.
+    A SIGKILL (agentgateway ending a deleted session) runs no finally block: the app then dies by its
+    parent-death signal, which follows whichever thread runs the replay (here the main thread, which
+    lives as long as the process), and the next call kills its recorded process group and removes the
+    replay's temp dir (browser.py, ruling R19). Calls stay on the main thread for SIGTERM's sake, not
+    for that signal's.
 
         python3 -I /core/src/bug_investigator/browser_server.py      # env APP_DIR, DEPS_DIR
     """
@@ -757,7 +980,9 @@ data:
         "satisfies it. A step is {do, target, value, note}: `do` is one of click, fill, select, press, goto, "
         "expect_visible, expect_absent, expect_text; `target` has exactly one of role (an ARIA role Playwright "
         "knows, such as button, link, textbox, heading, status; with an optional name), label, placeholder or "
-        "text, plus an optional within {css, text} that must match one element (css is one CSS selector). "
+        "text, plus an optional within {css, text} that must match one element (css is one standard CSS selector "
+        "that the browser parses strictly, so a malformed part even inside :is() or :where() is refused, as are "
+        "Playwright's own pseudo-classes such as :has-text or :visible; pick the element by within.text). "
         "`name`, `label` and `placeholder` match the whole text exactly; `text` and `within.text` match a "
         "case-insensitive substring. `value` is the text to fill, the option label to select, the key to press "
         "(a Playwright key name such as Enter, Escape, Control+a), the path to goto (it starts with /; goto has "
@@ -765,11 +990,12 @@ data:
         f"value); at most {stepfmt.MAX_STEPS} steps. A failed step says why in `failure`: "
         "`ambiguous` (an action target or within matched more than one element), `missing` (nothing matched), "
         "`mismatch` (no match had the text; for expect_absent, something matched), `invalid` (the step cannot run "
-        "on any page: a css that does not parse, a key Playwright does not know), `timeout` (the replay took "
+        "on any page: a css that does not parse, a key Playwright does not know; every step is checked for this "
+        "before any runs, so the result then holds the first such step alone), `timeout` (the replay took "
         f"longer than {browser.REPLAY_S} s and stopped at that step), `error` (anything else, such as a disabled "
         "button). Set `fails_at` to the step you expect to fail and the result says whether it matches "
-        "(`matches_claim`); an `ambiguous`, `invalid` or `timeout` failure never matches a claim, since it shows a "
-        "badly written step or a slow replay, not a bug; "
+        "(`matches_claim`): only a `missing`, `mismatch` or `error` failure matches; an `ambiguous`, `invalid` or "
+        "`timeout` failure never matches a claim, since it shows a badly written step or a slow replay, not a bug; "
         "omit `fails_at` when you expect every step to pass, and read `ok`. `screenshots`: failure (the default: "
         "the failing step, or the last one), all, or none. The result holds each step's outcome, the page's "
         "accessibility snapshot, the app's last log lines and the browser console, then the screenshots."
@@ -803,17 +1029,15 @@ data:
     INSTRUCTIONS = (f"One tool, {TOOL_NAME}: it replays UI steps in headless Chromium on a throwaway copy of the live "
                     "Taskboard (a fresh database with the demo data). Nothing persists between calls.")
 
-    # A badly written step (rulings R8, R13) or a replay that ran out of time (R14b): never a reproduction.
-    NOT_EVIDENCE = ("ambiguous", "invalid", "timeout")
-
 
     def matches_claim(r: browser.Replay, fails_at: int) -> bool:
-        """Did the replay fail at the step the caller named? An ambiguous, invalid or timed-out step is never
-        evidence."""
+        """Did the replay fail at the step the caller named, with a failure that can show a bug? Only `missing`,
+        `mismatch` and `error` count (steps.EVIDENCE_FAILURES, ruling R16): an ambiguous or invalid step is badly
+        written (R8, R13), a timeout is a slow replay (R14b), and anything else is not known to show a bug."""
         if r.failed_at != fails_at:
             return False
         failed = next((s for s in r.steps if s.n == fails_at), None)
-        return failed is not None and failed.failure not in NOT_EVIDENCE
+        return failed is not None and failed.failure in stepfmt.EVIDENCE_FAILURES
 
 
     def content(r: browser.Replay, fails_at: int | None = None) -> list[dict]:
@@ -1732,7 +1956,7 @@ data:
                           "properties": {
                             "css": {
                               "type": "string",
-                              "description": "one CSS selector (no >>)"
+                              "description": "one standard CSS selector, as the browser parses it strictly (no >>, no Playwright pseudo-classes such as :has-text or :visible)"
                             },
                             "text": {
                               "type": "string"
@@ -5157,6 +5381,10 @@ data:
     CHECKS = ("expect_visible", "expect_absent", "expect_text")
     MAX_STEPS = 15
     MAX_TEXT = 200
+    # The failure kinds (browser.FAILURES) that can show a bug: a claimed failing step is evidence only when it failed
+    # with one of these (an allowlist, ruling R16). ambiguous and invalid show a badly written step, timeout a slow
+    # replay; no kind at all, or one this list does not know, never counts. browser_server and verify both use it.
+    EVIDENCE_FAILURES = ("missing", "mismatch", "error")
 
     # The roles Playwright's get_by_role accepts: the `role` Literal of Page.get_by_role in Playwright 1.64.0
     # (playwright/sync_api/_generated.py). Any other role matches nothing on any page (ruling R13).
@@ -5268,7 +5496,7 @@ data:
 
 
     def phrase(t: dict) -> str:
-        """A (valid) target in words: 'button "Done" in .card "Update the cookie banner copy"'."""
+        """A (valid) target in words: 'button "Done" in .card "Review the quarterly report"'."""
         if "role" in t:
             p = f'{t["role"]} "{t["name"]}"' if t.get("name") else t["role"]
         elif "label" in t:
@@ -6192,9 +6420,11 @@ data:
     at most 24 h) through Grafana (`--telemetry grafana`, the Action) or straight against Loki and
     Prometheus (`--telemetry direct`, the in-cluster trigger: no token); "found" needs data, "none" none.
     ui: valid steps (steps.py), then a replay through `Ctx.ui_replay` (the in-cluster trigger only; the
-    Action and n8n mode have no browser): `fails_at` k needs step k to be the first failure, and not
-    because its target matched more than one element (`ambiguous`), because the step cannot run on any
-    page (`invalid`) or because the replay ran out of time (`timeout`); null needs every step to pass.
+    Action and n8n mode have no browser): `fails_at` k needs step k to be the first failure, with a
+    failure kind that can show a bug (an allowlist, steps.EVIDENCE_FAILURES: `missing`, `mismatch`,
+    `error`), never because its target matched more than one element (`ambiguous`), because the step
+    cannot run on any page (`invalid`), because the replay ran out of time (`timeout`) or with no or an
+    unknown kind; null needs every step to pass.
     The result must show exactly steps 1..k (null: all of them), in order, every one before the claimed
     step passing. The verified item keeps the commit and per-step outcomes; the screenshots go to
     `ctx.ui_shots[id]`, never the JSON.
@@ -6506,15 +6736,20 @@ data:
             return f"expected step {fails_at} to fail; {what}", {}
         elif failed is None:
             return f"replay failed: the result does not show step {fails_at}", {}
+        # The kind first: a step the engine found invalid before the run ends the replay with that step alone in the
+        # result (ruling R16), and that, not the steps it never ran, is why it proves nothing.
+        kind = failed["failure"] if failed else None
+        if fails_at is not None and kind not in stepfmt.EVIDENCE_FAILURES:  # an allowlist (ruling R16)
+            if kind == "ambiguous":  # ruling R8: a step that matched two elements proves nothing
+                return f"step {fails_at} failed only because its target matched more than one element: {error}", {}
+            if kind == "invalid":  # ruling R13: nor does one that can never pass on any code
+                return f"step {fails_at} failed only because the step itself is invalid: {error}", {}
+            if kind == "timeout":  # ruling R14b: nor a replay that ran out of time there
+                return f"step {fails_at} failed only because the replay ran out of time: {error}", {}
+            return f"step {fails_at} failed with failure kind {kind!r}, which is never evidence: {error}", {}
         shape = _ui_shape(ran, len(steps) if fails_at is None else fails_at, fails_at)
         if shape:
             return shape, {}
-        if failed and failed["failure"] == "ambiguous":  # ruling R8: a step that matched two elements proves nothing
-            return f"step {fails_at} failed only because its target matched more than one element: {error}", {}
-        if failed and failed["failure"] == "invalid":  # ruling R13: nor does one that can never pass on any code
-            return f"step {fails_at} failed only because the step itself is invalid: {error}", {}
-        if failed and failed["failure"] == "timeout":  # ruling R14b: nor a replay that ran out of time there
-            return f"step {fails_at} failed only because the replay ran out of time: {error}", {}
         shots = r.get("screenshots") if isinstance(r.get("screenshots"), list) else []
         ctx.ui_shots[str(item.get("id"))] = [(x[0], bytes(x[1])) for x in shots if isinstance(x, (list, tuple))
                                              and len(x) == 2 and isinstance(x[0], int)
