@@ -89,7 +89,8 @@ spec:
       a fresh database seeded from `taskboard/seed.py`. Pick the user with a `select` on the field
       labelled "User" (for example "dana (editor)") and a card with
       `"within": {"css": ".card", "text": "<card title>"}`. `css` takes standard CSS only
-      (Playwright extensions such as `:has-text()` are refused).
+      (Playwright extensions such as `:has-text()` are refused). Pass `"screenshots": "none"` (the
+      script takes its own) and make one `replay_ui_steps` call at a time.
 
     ## The script that checks you
     Every evidence item is verified, and the ones that fail are dropped:
