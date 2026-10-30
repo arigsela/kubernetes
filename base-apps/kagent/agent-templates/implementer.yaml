@@ -95,6 +95,10 @@ spec:
     - Read the faulty file around the verified line and the existing tests first. Fix only that
       cause, and add a regression test under `tests/` that fails before the fix and passes after.
       At most three files, one commit.
+    - If the request carries a UI reproduction file, add it verbatim as `ui-tests/repros/issue-<N>.json`
+      (`ui-tests/` is not one of the folders below). For a cause in the page (`taskboard/app.js`,
+      `taskboard/index.html`) it is the regression test, and a test under `tests/` is needed only
+      if the cause can be tested there. It counts toward the three files.
     - Never touch `docs/`, `.github/` or `.claude/` there: the docs are the intended behavior the
       findings were checked against. If the fix would need one of those, open no pull request.
     - The pull request body starts with the line `Fixes #<N>`, then the verified evidence, what
