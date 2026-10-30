@@ -124,7 +124,7 @@ Work in `bug-investigator/`. Tests: `uv run pytest -q` (stdlib tests). Browser t
 **Interfaces — Produces:**
 - `ACTIONS = ("click", "fill", "select", "press", "goto")`, `CHECKS = ("expect_visible", "expect_absent", "expect_text")`, `MAX_STEPS = 15`, `MAX_TEXT = 200`
 - `validate(steps, fails_at=None) -> list[str]` (problems, `[]` when valid; `fails_at` must be `None` or an int in 1..len(steps))
-- `describe(step: dict) -> str` (one plain sentence, e.g. `click button "Done" in .card "Review the quarterly report"`)
+- `describe(step: dict) -> str` (one plain sentence, e.g. `click button "Frobnicate" in .card "Example card"`)
 - `load_repro(path) -> dict` (a repro file, validated; raises `ValueError` with the problems)
 
 - [ ] **Step 1: Failing tests** — `test_valid_click_with_within`, `test_target_needs_exactly_one_locator` (`{"role": "button", "label": "x"}` → problem), `test_goto_rejects_other_origins` (`//evil.example`, `https://x`, `evil` → problems; `/` ok), `test_limits` (16 steps, 201-char value → problems), `test_fails_at_range` (0, len+1, `"2"` → problems; None ok), `test_unknown_keys_rejected`, `test_describe_sentences` (one exact string per `do`), `test_load_repro_requires_title_and_steps`.

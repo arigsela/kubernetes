@@ -30,18 +30,16 @@ SHA = "c0ffee" + "0" * 34
 UPLOADABLE = re.compile(r"[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\.png")
 
 STEPS = [
-    {"do": "click", "target": {"role": "button", "name": "Start",
-                               "within": {"css": ".card", "text": "Write copy for the pricing page"}},
-     "note": "dana starts her task"},
-    {"do": "expect_visible", "target": {"text": "In progress",
-                                        "within": {"css": ".card", "text": "Write copy for the pricing page"}}},
+    {"do": "click", "target": {"role": "button", "name": "Frobnicate", "within": {"css": ".card", "text": "Example card"}},
+     "note": "the example step"},
+    {"do": "expect_visible", "target": {"text": "Frobnicated", "within": {"css": ".card", "text": "Example card"}}},
 ]
 UI_ITEM = {
-    "id": "E3", "kind": "ui", "ref": "dana starts her task", "detail": "Start leaves the card in To do",
+    "id": "E3", "kind": "ui", "ref": "the example step", "detail": "the example step fails",
     "steps": STEPS, "fails_at": 2,
     "verified": {"commit": "a" * 40, "failed_at": 2, "steps": [
-        {"n": 1, "text": "click button Start", "ok": True, "error": None, "failure": None},
-        {"n": 2, "text": "expect_visible In progress", "ok": False, "error": "missing: no element", "failure": "missing"}]},
+        {"n": 1, "text": "click button Frobnicate", "ok": True, "error": None, "failure": None},
+        {"n": 2, "text": "expect_visible Frobnicated", "ok": False, "error": "missing: no element", "failure": "missing"}]},
 }
 
 
@@ -362,11 +360,11 @@ def repro_of(text):
 
 
 def test_fix_request_carries_repro_file():
-    i = tt.issue(24, "bug", title="Start does nothing for dana")
+    i = tt.issue(24, "bug", title="Example UI reproduction")
     text = t.fix_request(i, verified_ui())
     assert "UI reproduction: add the file ui-tests/repros/issue-24.json with exactly this content" in text
     assert "ui-check replays it on your branch; every step must pass with your fix." in text
-    assert repro_of(text) == {"title": "Start does nothing for dana", "issue": 24, "steps": STEPS}
+    assert repro_of(text) == {"title": "Example UI reproduction", "issue": 24, "steps": STEPS}
     assert "verbatim" in text
     # the rules still hold; the repro file is the one addition outside tests/
     assert "`docs/`, `.github/`" in text and "regression test under `tests/`" in text
@@ -374,7 +372,7 @@ def test_fix_request_carries_repro_file():
 
 def test_fix_request_takes_the_first_reproduction_only():
     later = copy.deepcopy(UI_ITEM)
-    later["id"], later["steps"] = "E4", [{"do": "goto", "value": "/archive"}]
+    later["id"], later["steps"] = "E4", [{"do": "goto", "value": "/"}]
     works = copy.deepcopy(UI_ITEM)
     works["id"], works["fails_at"], works["steps"] = "E2b", None, [{"do": "goto", "value": "/"}]
     v = verified_ui(later)
@@ -498,16 +496,16 @@ class World:
 
 def replay_result(failed_at=2):
     return {"ok": False, "failed_at": failed_at, "matches_claim": True, "commit": "b" * 40, "seconds": 9.5,
-            "steps": [{"n": 1, "text": "click button Start", "ok": True, "error": None, "failure": None},
-                      {"n": 2, "text": "expect_visible In progress", "ok": False,
+            "steps": [{"n": 1, "text": "click button Frobnicate", "ok": True, "error": None, "failure": None},
+                      {"n": 2, "text": "expect_visible Frobnicated", "ok": False,
                        "error": "missing: no element matches", "failure": "missing"}],
-            "snapshot": "- button Start", "app_log": [], "console": []}
+            "snapshot": "- button Frobnicate", "app_log": [], "console": []}
 
 
 def findings():
-    return {"verdict": "unclear", "confidence": "medium", "summary": "Start does nothing (E1).",
-            "evidence": [{"id": "E1", "kind": "ui", "ref": "dana starts her task",
-                          "detail": "Start leaves the card in To do", "steps": copy.deepcopy(STEPS), "fails_at": 2}],
+    return {"verdict": "unclear", "confidence": "medium", "summary": "Example UI reproduction (E1).",
+            "evidence": [{"id": "E1", "kind": "ui", "ref": "the example step",
+                          "detail": "the example step fails", "steps": copy.deepcopy(STEPS), "fails_at": 2}],
             "hypotheses": [], "likely_cause": None, "docs_rule": None, "similar_past_bugs": []}
 
 
@@ -562,7 +560,7 @@ def test_the_deployed_core_drops_a_third_reproduction_unreplayed(core_dir, monke
 def test_the_repro_file_loads_with_the_deployed_cores_validator(core_dir, tmp_path):
     t.PackageCore(t.Config(core_dir=str(core_dir)))                        # puts /core/src on the path
     from bug_investigator import steps as stepfmt
-    text = t.fix_request(tt.issue(24, "bug", title="Start does nothing for dana"), verified_ui())
+    text = t.fix_request(tt.issue(24, "bug", title="Example UI reproduction"), verified_ui())
     f = tmp_path / "issue-24.json"
     f.write_text(text.split("```json\n", 1)[1].split("\n```", 1)[0])
     doc = stepfmt.load_repro(str(f))
