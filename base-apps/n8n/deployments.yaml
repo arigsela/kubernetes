@@ -33,7 +33,7 @@ spec:
         # The n8n bug-investigator POC workflows (§T.152): sha256 (first 16 hex) of both keys of
         # bug-investigator-workflow-configmap.yaml in sorted-key order. Generated: run
         # scripts/gen-n8n-bug-investigator-workflow.py --repo-root . --write after any change.
-        checksum/bug-investigator-workflow: "2046f019bf158340"
+        checksum/bug-investigator-workflow: "3cb8414a72680f9b"
     spec:
       nodeSelector:
         node.kubernetes.io/workload: application

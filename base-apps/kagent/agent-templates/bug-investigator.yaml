@@ -88,7 +88,8 @@ spec:
       format): the page is `taskboard/index.html` and `taskboard/app.js`, and every replay runs on
       a fresh database seeded from `taskboard/seed.py`. Pick the user with a `select` on the field
       labelled "User" (for example "dana (editor)") and a card with
-      `"within": {"css": ".card", "text": "<card title>"}`.
+      `"within": {"css": ".card", "text": "<card title>"}`. `css` takes standard CSS only
+      (Playwright extensions such as `:has-text()` are refused).
 
     ## The script that checks you
     Every evidence item is verified, and the ones that fail are dropped:
