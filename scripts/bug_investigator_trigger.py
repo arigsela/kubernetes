@@ -137,9 +137,10 @@ CLONE_TIMEOUT = 300
 # The browser (§T.153): taskboard-browser-mcp's replay_ui_steps, called during verify for `ui` evidence.
 BROWSER_URL = "http://taskboard-browser-mcp.kagent.svc.cluster.local:3000/mcp"
 BROWSER_SCREENSHOTS = ("all", "failure")   # every step's screenshot, or the failing (else last) step's
-# Ruling R18: a replay may take ~120 s (the engine's 75 s deadline plus the client's timeout), so one
-# investigation replays at most two `ui` items; check_ui drops the others with this reason. The
-# CronJob's activeDeadlineSeconds leaves room for exactly these two.
+# Ruling R18: one investigation replays at most two `ui` items; check_ui drops the others with this
+# reason. The client's 120 s timeout applies per MCP request (initialize, then the call; the session
+# DELETE has 10 s), so one replay is bounded by about 250 s and typically takes 10-20 s. The 300 s
+# added to the CronJob's activeDeadlineSeconds covers two typical replays with room, not two worst cases.
 UI_REPLAYS_MAX = 2
 UI_REPLAY_LIMIT = "only two browser reproductions are replayed per investigation"
 # The core's evidence.Uploader refuses a whole commit for one file over these limits, so the trigger
