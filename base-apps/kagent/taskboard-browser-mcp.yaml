@@ -156,7 +156,7 @@ spec:
         checksum/code: "e956157c359aedc2efda1aca657466e86e127f1d0245e428e754bf3013b8cc53"
         taskboard.arigsela.com/source-commit: "ebaa62d7a7f4ca62e3ad89033c20cdc13ad58524"
         # Written by scripts/gen-bug-investigator-core.py; CI checks it.
-        checksum/core: "4743d884853d6ca88f6b6a88bb793fa935f77c8bf1d4eb624026540c40759b26"
+        checksum/core: "06a2f90b9834012a76296f1f1a5996f2bc29d7acc065cd2a821e553ab136e634"
         # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
         # containerPort would make the kubernetes-pods job scrape the pod twice.
         prometheus.io/scrape: "true"
