@@ -1328,8 +1328,9 @@ def bit_event(name):
 # The agent's tools (base-apps/kagent/agent-templates/bug-investigator.yaml), by the server they run on.
 GITHUB_READS = "get_file_contents|search_code|list_commits|get_commit|list_pull_requests|pull_request_read"
 TELEMETRY_TOOLS = "query_loki_logs|query_loki_stats|query_prometheus|list_loki_label_names|list_loki_label_values"
+BROWSER_TOOLS = "replay_ui_steps"
 TB_5XX = 'taskboard_http_requests_total{namespace="taskboard", status=~"5.."}'   # the trigger's ALERT_EXPR counter
-TB_MCP_CALLS = ('{namespace="kagent", container="mcp-server", pod=~"(taskboard-telemetry|implementer)-mcp-.*"} '
+TB_MCP_CALLS = ('{namespace="kagent", container="mcp-server", pod=~"(taskboard-telemetry|taskboard-browser|implementer)-mcp-.*"} '
                 '|= "mcp.method.name=tools/call"')
 NO_INVESTIGATION = "No investigation in this time range: label a Taskboard issue bug"
 
@@ -1477,23 +1478,25 @@ def bug_investigation_live():
         prom(agent_calls("agent_tool_calls_total", "bug-investigator", GITHUB_READS), "Agent: GitHub reads", ref="G"),
         prom(agent_calls("agent_tool_calls_total", "bug-investigator", TELEMETRY_TOOLS),
              "Agent: Loki + Prometheus (taskboard only)", ref="H"),
+        prom(agent_calls("agent_tool_calls_total", "bug-investigator", BROWSER_TOOLS),
+             "Agent: browser replays (taskboard copy)", ref="I"),
         loki(f'sum(count_over_time({TB_MCP_CALLS} |= "Unknown tool" [$__interval])) or vector(0)',
-             "Refused tool call", ref="I"),
-        loki(steps("posted"), "Verify every link, post the comment", ref="J"),
-        prom(agent_calls("agent_tool_calls_total", "implementer"), "Fix PR: kagent/implementer", ref="K"),
-        loki(steps("remembered"), "Remember the verified outcome", ref="L"),
-        loki(steps("investigation_failed"), "Failed: nothing posted", ref="M"),
+             "Refused tool call", ref="J"),
+        loki(steps("posted"), "Verify every link, post the comment", ref="K"),
+        prom(agent_calls("agent_tool_calls_total", "implementer"), "Fix PR: kagent/implementer", ref="L"),
+        loki(steps("remembered"), "Remember the verified outcome", ref="M"),
+        loki(steps("investigation_failed"), "Failed: nothing posted", ref="N"),
     ]
     b.line(15, [(24, timeline("Journey", lanes, (
         "One lane per stage, top to bottom in the order a report travels; a lane is coloured in each 30 s "
         "its stage happened. Trigger stages: its JSON step lines (Loki). Agent and implementer calls: the "
-        "collector's per-agent counters (agent_model_calls_total, agent_tool_calls_total). Alert signal: "
+        "collector's per-agent counters (agent_model_calls_total, agent_tool_calls_total; the browser lane is replay_ui_steps). Alert signal: "
         "Taskboard's 5xx counter, the trigger's alert expression. Refused tool call: an MCP adapter's "
         "`Unknown tool` (a tool off its allowlist); a Loki/Prometheus query outside namespace taskboard "
         "comes back to the agent as a tool error instead (`ok: false` in the trigger's AGENT line). The "
         "agent lanes also show the eval gate's test sessions, and the implementer lane its work for other "
         "callers, such as resource alerts."),
-        colors={"A": "orange", "B": "orange", "I": "red", "J": "green", "K": "green", "L": "green", "M": "red"}))])
+        colors={"A": "orange", "B": "orange", "J": "red", "K": "green", "L": "green", "M": "green", "N": "red"}))])
 
     b.row("Behind the scenes, line by line")
     b.line(11, [
@@ -1503,9 +1506,10 @@ def bug_investigation_live():
         (12, logs("Tool calls through the MCP adapters", loki(
             TB_MCP_CALLS + " | logfmt | line_format `{{ .mcp_target }}  {{ .gen_ai_tool_name }}  "
             "HTTP {{ .http_status }}  {{ .duration }}`"),
-            "Every tools/call through the two servers these agents use: implementer-mcp (GitHub: the "
-            "agent's reads, the implementer's branch and PR) and taskboard-telemetry-mcp (Loki and "
-            "Prometheus, held to namespace taskboard). Arguments and results are never shown.",
+            "Every tools/call through the three servers these agents use: implementer-mcp (GitHub: the "
+            "agent's reads, the implementer's branch and PR), taskboard-telemetry-mcp (Loki and "
+            "Prometheus, held to namespace taskboard) and taskboard-browser-mcp (UI replays on a "
+            "copy of Taskboard). Arguments and results are never shown.",
             no_value="No tool calls in this time range")),
     ])
 
