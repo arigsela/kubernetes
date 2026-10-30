@@ -47,9 +47,9 @@ def test_cronjob_runs_every_two_minutes_one_at_a_time_without_retries():
     env = _env()
     budget = float(env["AGENT_TIMEOUT"]["value"]) + float(env["FIX_TIMEOUT"]["value"])
     assert budget + 120 <= job["activeDeadlineSeconds"]
-    # Ruling R18: and the browser replays during verify, at most two. The client's 120 s timeout
-    # applies per MCP request (initialize, then the call; the session DELETE has 10 s), so one replay
-    # is bounded by about 250 s and typically takes 10-20 s: the 300 s added covers two typical replays
+    # Ruling R18: and the browser replays during verify, at most two. A replay typically takes 10-20 s;
+    # each of its MCP requests (initialize, the initialized notification, the call) may take up to the
+    # client's 120 s and the session DELETE 10 s: the 300 s added covers two typical replays
     # with room (120 s each below), not two worst cases, and the clones and gather fit in what is left.
     assert job["activeDeadlineSeconds"] == 1500
     assert budget + t.UI_REPLAYS_MAX * 120 + 120 <= job["activeDeadlineSeconds"]

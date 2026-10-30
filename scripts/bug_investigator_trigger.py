@@ -138,8 +138,8 @@ CLONE_TIMEOUT = 300
 BROWSER_URL = "http://taskboard-browser-mcp.kagent.svc.cluster.local:3000/mcp"
 BROWSER_SCREENSHOTS = ("all", "failure")   # every step's screenshot, or the failing (else last) step's
 # Ruling R18: one investigation replays at most two `ui` items; check_ui drops the others with this
-# reason. The client's 120 s timeout applies per MCP request (initialize, then the call; the session
-# DELETE has 10 s), so one replay is bounded by about 250 s and typically takes 10-20 s. The 300 s
+# reason. A replay typically takes 10-20 s; each of its MCP requests (initialize, the initialized
+# notification, the call) may take up to the client's 120 s and the session DELETE 10 s. The 300 s
 # added to the CronJob's activeDeadlineSeconds covers two typical replays with room, not two worst cases.
 UI_REPLAYS_MAX = 2
 UI_REPLAY_LIMIT = "only two browser reproductions are replayed per investigation"
