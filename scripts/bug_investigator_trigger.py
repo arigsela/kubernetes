@@ -181,8 +181,8 @@ Verified evidence:
 # Appended to FIX_REQUEST for the first verified `ui` item that reproduces the bug (fails_at set).
 UI_REPRO = """
 UI reproduction: add the file ui-tests/repros/issue-{issue}.json with exactly this content, verbatim:
-the steps the script replayed on a copy of the live code, where step {fails_at} fails today. Do not
-change the steps; `ui-tests/` is not among the folders the rules above keep you out of.
+the steps the investigation cited (step {fails_at} reproduced the bug on a copy of the live code).
+Do not change the steps; `ui-tests/` is not among the folders the rules above keep you out of.
 
 ```json
 {doc}
