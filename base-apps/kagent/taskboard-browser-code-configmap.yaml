@@ -3,7 +3,7 @@
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-taskboard-configmap.py
-# Source:     arigsela/taskboard@d7b37f21c045fc252f4033ef10501cbd582141f8
+# Source:     arigsela/taskboard@ebaa62d7a7f4ca62e3ad89033c20cdc13ad58524
 #             (taskboard/* and traffic/simulate.py, plus .source-commit)
 # Regenerate: ./scripts/gen-taskboard-configmap.py --source <taskboard checkout> --commit <sha>
 # tests/taskboard/ fails if this file differs from base-apps/taskboard/code-configmap.yaml (apart
@@ -22,11 +22,11 @@ metadata:
     app.kubernetes.io/part-of: kagent
     app.kubernetes.io/name: taskboard-browser-code
   annotations:
-    taskboard.arigsela.com/source-commit: d7b37f21c045fc252f4033ef10501cbd582141f8
+    taskboard.arigsela.com/source-commit: ebaa62d7a7f4ca62e3ad89033c20cdc13ad58524
     taskboard.arigsela.com/source-repo: arigsela/taskboard
 data:
   .source-commit: |-
-    d7b37f21c045fc252f4033ef10501cbd582141f8
+    ebaa62d7a7f4ca62e3ad89033c20cdc13ad58524
   app.js: |
     "use strict";
 
@@ -36,6 +36,13 @@ data:
       user: readUser(),
       view: "board", // or "overdue"
       me: null,
+    };
+
+    // The table of moves per status (shared with keyboard shortcuts later).
+    const MOVES = {
+      open: [["Start", "in_progress"]],
+      "in-progress": [["Done", "done"], ["Back to open", "open"]],
+      done: [["Reopen", "open"]],
     };
 
     function readUser() {
@@ -163,12 +170,7 @@ data:
       }
       node.append(meta);
       const actions = el("div", null, "actions");
-      const moves = {
-        open: [["Start", "in_progress"]],
-        in_progress: [["Done", "done"], ["Back to open", "open"]],
-        done: [["Reopen", "open"]],
-      }[task.status];
-      for (const [label, status] of moves) {
+      for (const [label, status] of MOVES[task.status] || []) {
         actions.append(button(label, () => move(task, status)));
       }
       if (state.me && state.me.role === "admin") {
