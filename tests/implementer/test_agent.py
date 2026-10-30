@@ -109,3 +109,14 @@ def test_prompt_ends_resource_answers_with_a_verdict_line():
     assert "no pull request: already in git" in p
     # The fifth verdict (2026-10-14): a merged fix that has not reached the live pod (OnDelete)
     assert "`verdict: rollout-pending`" in p and "OnDelete" in p
+
+
+# ------------------------------------------- Taskboard fix pull requests: the UI reproduction (§T.153)
+
+def test_prompt_allows_the_ui_repro_file():
+    """The bug-investigator trigger's fix request carries a verified UI reproduction as a file to add;
+    the Taskboard contract allows it (outside `docs/`, `.github/`, `.claude/`), as the page's
+    regression test, within the three-file cap."""
+    p = prompt()
+    assert "ui-tests/repros/issue-<N>.json" in p
+    assert "It counts toward the three files" in p
