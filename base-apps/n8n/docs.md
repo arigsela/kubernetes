@@ -30,7 +30,7 @@ sources:
 # n8n
 
 ## What it is
-n8n (`n8nio/n8n`, version pinned in `deployments.yaml`, `2.45.5` since 2026-10-28 (§T.151), same tag on the init container) is a workflow-automation platform, deployed as a single-replica `Deployment` (`deployments.yaml`) in the `n8n` namespace, listening on container port `5678`.
+n8n (`n8nio/n8n`, version pinned in `deployments.yaml`, `2.46.4` since 2026-11-02 (a release n8n still tags beta), `2.45.5` before that (§T.151), same tag on the init container) is a workflow-automation platform, deployed as a single-replica `Deployment` (`deployments.yaml`) in the `n8n` namespace, listening on container port `5678`.
 
 ## GitOps-managed workflows
 Every active workflow is declared in Git: `workflows-configmap.yaml` holds the workflow JSON, and the n8n Deployment's `import-workflows` **initContainer** unpublishes, imports and publishes it with the n8n CLI at pod start (idempotent upsert by fixed workflow id). Six workflows are managed this way:
