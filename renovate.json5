@@ -134,6 +134,15 @@
       allowedVersions: '<1.6.0',
     },
     {
+      // 3.15 (2026-10-09) arrived as one PR moving CI and ten workloads (#1053). PyYAML has no
+      // cp315 wheel yet, so wan-ip-monitor's start-up `pip install pyyaml` would compile it from
+      // source and be OOM-killed at its 256Mi limit; ansible-core and ansible-lint list support up
+      // to 3.14. matchDepNames covers both the python images and setup-python's python-version.
+      description: 'Python stays below 3.15 until PyYAML ships cp315 wheels and Ansible supports 3.15. Lift this then.',
+      matchDepNames: ['python'],
+      allowedVersions: '<3.15',
+    },
+    {
       // kagent 1.0 is built against one Substrate version (1.0.0-alpha11 -> 0.5.0-alpha2, its
       // go.mod), and every alpha so far has needed clean databases. So the five charts move in
       // ONE PR, and only when someone ticks it on the Dependency Dashboard: a Substrate-only
@@ -177,7 +186,7 @@
       matchPackageNames: ['agentgateway/agentgateway'],
       groupName: 'mcp-adapter',
       prBodyNotes: [
-        '**Finish this PR by hand (§T.133).** Set `AGW_SHA256` in `scripts/build-agentgateway-image.sh` from the release\'s `agentgateway-linux-amd64.sha256`, read the release notes for `binds`/MCP changes, run `scripts/build-agentgateway-image.sh --push`, and pin the printed reference in the init containers of `base-apps/kagent/{agent-docs,brave-search,implementer}-mcp.yaml`. CI fails until all three match the new version.',
+        '**Finish this PR by hand (§T.133).** Set `AGW_SHA256` in `scripts/build-agentgateway-image.sh` from the release\'s `agentgateway-linux-amd64.sha256`, read the release notes for `binds`/MCP changes, run `scripts/build-agentgateway-image.sh --push`, and pin the printed reference everywhere the adapter image is pinned: the five kagent MCP servers (`base-apps/kagent/{agent-docs,brave-search,implementer,taskboard-browser,taskboard-telemetry}-mcp.yaml`), `base-apps/model-gateway/deployment.yaml` and `base-apps/n8n/github-read-mcp.yaml` (`git grep` the old digest). CI fails until every pin matches the new version.',
       ],
     },
     {
