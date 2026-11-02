@@ -606,7 +606,8 @@ Then:
   passwords), then restart `deploy/kagent-controller`. Same procedure as Substrate's
   (`base-apps/substrate/runbook.md`, "Rotate the database passwords").
 
-A `SecretSyncedError` with Vault **403 permission denied** means the Vault side of the scope is
+A `SecretSyncedError` with Vault **403 permission denied** (in the controller log since ESO 2.14:
+`kubectl -n external-secrets logs deploy/external-secrets | grep <name>`) means the Vault side of the scope is
 wrong: the policy must grant `read` on exactly that path, and the kubernetes-auth role must bind
 that ESO ServiceAccount in `kagent`.
 

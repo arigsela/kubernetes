@@ -30,7 +30,8 @@ sources:
 
 ### Symptom: ExternalSecrets in ate-system / podcertificate-controller-system show `SecretSyncedError`
 - **Check:** `kubectl get externalsecret -n ate-system; kubectl get externalsecret -n podcertificate-controller-system`
-  and `kubectl describe externalsecret -n ate-system actor-id-ca-pool`. "permission denied" = role
+  and `kubectl -n external-secrets logs deploy/external-secrets | grep actor-id-ca-pool` (since ESO
+  2.14 the Event carries no provider error; the log does). "permission denied" = role
   `substrate` missing or not bound to `eso-substrate` in that namespace; "secret not found" =
   `k8s-secrets/substrate-cas` or `substrate-db` was never written.
 - **Fix:** run `scripts/provision-kagent-1-0-vault.sh` (see How-to: Install), then force a refresh:
