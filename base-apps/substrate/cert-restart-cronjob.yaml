@@ -85,7 +85,7 @@ spec:
               # The official kubectl image (distroless, no shell): one kubectl invocation restarts
               # both deployments. bitnami/kubectl tags were removed from Docker Hub in 2025 and
               # 1.30 no longer pulls (SPEC T115 for the other user of that tag).
-              image: registry.k8s.io/kubectl:v1.37.1@sha256:b7cab618e281b1ee7484e7b706a96e2135fbb6e072c2a573a7dab4e87d7f2385
+              image: registry.k8s.io/kubectl:v1.37.2@sha256:fe049faa65ae483ac200009a949a68fa4c9985daea12c9cb1195c9c7965301fc
               args:
                 - -n
                 - ate-system
