@@ -21,7 +21,11 @@ RUN set -eu; \
     d=/root/.ollama/models/manifests/registry.ollama.ai/library/nomic-embed-text; \
     grep -q "\"${MODEL_DIGEST}\"" "$d/${MODEL_TAG}" \
       || { echo "model digest != ${MODEL_DIGEST}:"; cat "$d/${MODEL_TAG}"; exit 1; }; \
-    [ "$MODEL_TAG" = latest ] || cp "$d/${MODEL_TAG}" "$d/latest"
+    [ "$MODEL_TAG" = latest ] || cp "$d/${MODEL_TAG}" "$d/latest"; \
+    mkdir -p /root/.ollama/models/manifests-v2
+# Ollama >= 0.40 runs os.MkdirAll(<OLLAMA_MODELS>/manifests-v2) on every model lookup. /models is
+# a read-only image volume, so without this empty directory /api/embed, /api/tags and /api/show
+# all fail with "read-only file system" (HTTP 500). Ollama 0.35 ignores the directory.
 
 FROM scratch
 COPY --from=pull /root/.ollama/models/ /
