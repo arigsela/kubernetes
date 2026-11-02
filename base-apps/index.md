@@ -35,7 +35,7 @@ stubs pending backfill (see `scripts/agent-docs-scope.txt`).
 | coroot | eBPF-based observability/APM (Coroot operator + instance, node/cluster agents, ClickHouse) | coroot | [docs.md](coroot/docs.md) | [runbook.md](coroot/runbook.md) | [catalog-info.yaml](coroot/catalog-info.yaml) |
 | crossplane-aws-provider | Upbound AWS provider family v2.5.3 (S3 and IAM providers) with its ProviderConfig and DeploymentRuntimeConfig | crossplane-system |  |  |  |
 | crossplane-compositions | XApplication XRD and Composition (the Crossplane IDP path, dormant since the Backstage New App template replaced it) plus their RBAC | crossplane-system |  |  |  |
-| crossplane-functions | Crossplane composition functions: function-python v0.4.0 and function-extra-resources v0.3.0 | crossplane-system |  |  |  |
+| crossplane-functions | Crossplane composition functions: function-python v0.6.0 and function-extra-resources v0.3.0 | crossplane-system |  |  |  |
 | crossplane-system | Crossplane core 2.2.1 (umbrella Helm chart) and the vault-backend SecretStore in crossplane-system | crossplane-system |  |  |  |
 | dex | OIDC provider fronting GitHub — human SSO for Vault, Argo CD, kubectl (kubelogin), agent-audit-web and Jupyter | dex | [docs.md](dex/docs.md) | [runbook.md](dex/runbook.md) | [catalog-info.yaml](dex/catalog-info.yaml) |
 | dispatcher | Routes Grafana alerts to a read-only agent investigation by a declared table; humans keep every alert (ADP path 1, dispatch work) | dispatcher | [docs.md](dispatcher/docs.md) | [runbook.md](dispatcher/runbook.md) | [catalog-info.yaml](dispatcher/catalog-info.yaml) |

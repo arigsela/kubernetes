@@ -9,7 +9,7 @@ Crossplane provisions the AWS resources apps need (S3 buckets, IAM users, polici
 |---|---|
 | `crossplane-system` | Crossplane core **2.2.1**. An umbrella Helm chart (`base-apps/crossplane-system/Chart.yaml` depends on `crossplane` 2.2.1 from `https://charts.crossplane.io/stable`), with resource requests/limits and metrics in `values.yaml`. |
 | `crossplane-aws-provider` | Upbound `provider-family-aws`, `provider-aws-s3` and `provider-aws-iam`, all **v2.5.3**. The `default` ProviderConfig and the `aws-provider-runtime` DeploymentRuntimeConfig. |
-| `crossplane-functions` | `function-python` v0.4.0, `function-extra-resources` v0.3.0. |
+| `crossplane-functions` | `function-python` v0.6.0, `function-extra-resources` v0.3.0. |
 | `crossplane-compositions` | `XApplication` XRD (`platform.arigsela.com/v1alpha1`, namespaced), the `application` Composition, and an aggregated ClusterRole. |
 | `loki-`, `argo-workflows-`, `jupyter-`, `agent-audit-aws-infrastructure` | The managed resources (table below). |
 

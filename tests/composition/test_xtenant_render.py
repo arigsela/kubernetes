@@ -14,7 +14,7 @@ init Job done: the whole stack), offboarding (and its dump Job verified the dump
 Run (CI does, in the composition-validate job):
     python -m pytest tests/composition/ -q
 needs `crossplane` (or CROSSPLANE_BIN) and Docker for function-python. Locally without Docker,
-start function-python yourself (`python -m function.main --insecure` from its v0.4.0 source,
+start function-python yourself (`python -m function.main --insecure` from its v0.6.0 source,
 listening on :9443) and set COMPOSITION_RUNTIME=Development. COMPOSITION_REQUIRE=1 turns a
 missing CLI into a failure instead of a skip. UPDATE_GOLDENS=1 rewrites the goldens: review
 the diff, it is the change every tenant gets (a beacon promotion changes the images in them).
