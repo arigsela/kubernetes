@@ -78,7 +78,12 @@ MODEL_NAME = "span.gen_ai.request.model"
 # `__error__=""` drops a line that is not JSON (a traceback); a metric query fails on one otherwise.
 EVAL = '{namespace="kagent", container="eval-gate"} | json | __error__="" | event="eval-gate"'
 DISP = '{namespace="dispatcher"} | json | __error__=""'
-REFUSED = '{namespace="kagent", container="mcp-server"} |= "mcp.method.name=tools/call" |= "Unknown tool"'
+# A tools/call an MCP adapter refused (a tool off its allowlist). agentgateway 1.6 logged it as
+# `error="mcp: Unknown tool: X" reason=MCP`, 1.7 as `error="mcp: authorization denied for tool: X"
+# reason=Authorization` (the caller still gets HTTP 400). Both, so a range that reaches back before
+# the upgrade still counts the older lines.
+REFUSED_TOOL = '|~ "Unknown tool|authorization denied for tool"'
+REFUSED = '{namespace="kagent", container="mcp-server"} |= "mcp.method.name=tools/call" ' + REFUSED_TOOL
 
 # Substrate templates are <agent>-<12 hex>; one label per agent across template revisions.
 def by_agent(expr):
@@ -440,7 +445,7 @@ def landing():
             prom(window_total("agent_tool_calls_total", "", "$__interval", forward=True), ref="A", interval="5m"),
             loki(f"sum(count_over_time({REFUSED} [7d])) or vector(0)", ref="B", instant=True)],
             "Tool calls the agents made and calls the MCP adapters refused in 7 days (a tool off the "
-            "adapter's allowlist: `Unknown tool`).",
+            "adapter's allowlist: `authorization denied for tool`, `Unknown tool` before agentgateway 1.7).",
             names={"A": "tool calls", "B": "refused (7 d)"}, calcs="sum", graph=True,
             link=("mcp-tool-calls", "MCP Tool Calls"))),
         (8, stat("Gateway + tokens", [
@@ -930,8 +935,9 @@ def mcp():
                 "panel on the right.", stack=True)),
         (12, ts("Refused tool calls (not on the allowlist)",
                 [loki(f"sum by (pod) (count_over_time({REFUSED} [$__interval]))", "{{pod}}")],
-                "tools/call requests the adapter refused with `Unknown tool`: the agent asked for a tool its "
-                "allowlist does not hold.", bars=True, no_value="0", calcs=("sum",))),
+                "tools/call requests the adapter refused: the agent asked for a tool its allowlist does not "
+                "hold. Logged as `authorization denied for tool` since agentgateway 1.7, `Unknown tool` "
+                "before.", bars=True, no_value="0", calcs=("sum",))),
     ])
     b.line(8, [
         (12, ts("MCP requests per minute, by method",
@@ -1480,7 +1486,7 @@ def bug_investigation_live():
              "Agent: Loki + Prometheus (taskboard only)", ref="H"),
         prom(agent_calls("agent_tool_calls_total", "bug-investigator", BROWSER_TOOLS),
              "Agent: browser replays (taskboard copy)", ref="I"),
-        loki(f'sum(count_over_time({TB_MCP_CALLS} |= "Unknown tool" [$__interval])) or vector(0)',
+        loki(f'sum(count_over_time({TB_MCP_CALLS} {REFUSED_TOOL} [$__interval])) or vector(0)',
              "Refused tool call", ref="J"),
         loki(steps("posted"), "Verify every link, post the comment", ref="K"),
         prom(agent_calls("agent_tool_calls_total", "implementer"), "Fix PR: kagent/implementer", ref="L"),
@@ -1493,7 +1499,8 @@ def bug_investigation_live():
         "collector's per-agent counters (agent_model_calls_total, agent_tool_calls_total); the browser lane "
         "counts replay_ui_steps calls. Alert signal: "
         "Taskboard's 5xx counter, the trigger's alert expression. Refused tool call: an MCP adapter's "
-        "`Unknown tool` (a tool off its allowlist); a Loki/Prometheus query outside namespace taskboard "
+        "`authorization denied for tool` (`Unknown tool` before agentgateway 1.7; a tool off its "
+        "allowlist); a Loki/Prometheus query outside namespace taskboard "
         "comes back to the agent as a tool error instead (`ok: false` in the trigger's AGENT line). The "
         "agent lanes also show the eval gate's test sessions, and the implementer lane its work for other "
         "callers, such as resource alerts."),
