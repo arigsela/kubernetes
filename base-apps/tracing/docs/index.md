@@ -93,7 +93,7 @@ them; tool arguments stay.
 each of these. One replica on purpose: tail sampling needs a whole trace on one instance.
 
 ## The OpenTelemetry Operator (`base-apps/opentelemetry-operator.yaml`)
-Helm chart 0.126.0 (operator 0.161.0), namespace `opentelemetry-operator-system`. One job:
+Helm chart 0.128.0 (operator 0.162.0), namespace `opentelemetry-operator-system`. One job:
 Python auto-instrumentation. Its pod webhook only sees namespaces labelled
 `platform.arigsela.com/otel: python` (today only `beacon`; the chart default would be every
 pod in the cluster) and fails open: with the operator down, a pod starts untraced rather than
