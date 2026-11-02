@@ -70,8 +70,8 @@ spec:
           # Uploads the database dumps; smoke-run on a node by beacon-smoke (beacon §V.18).
           AWS_CLI = ("public.ecr.aws/aws-cli/aws-cli:2.37.13"
                      "@sha256:d32864c20087d486f5988c3e70817d67a73f584a47535cada9ad97e0ea1e5196")
-          PY_LAYER = ("ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b1"
-                      "@sha256:e71f3eaf1a84225a54b9bb42dbf22dde723fea9c499dc21954720541531b62f0")
+          PY_LAYER = ("ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b2"
+                      "@sha256:d3a1dae864158a561a99fd7bb8e4ac1c7c5f2f80a4d9d095b1813866da52693a")
           OTEL = "http://otel-collector.tracing.svc.cluster.local:4318"
           SELF_HOSTS = "dex.arigsela.com,beacon.arigsela.com"
           # beacon's fault flags (beacon §I.flags), every one off: faults are injected on homelab only.
