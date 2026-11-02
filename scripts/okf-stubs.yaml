@@ -46,7 +46,7 @@ crossplane-compositions:
   namespace: crossplane-system
 
 crossplane-functions:
-  description: "Crossplane composition functions: function-python v0.4.0 and function-extra-resources v0.3.0"
+  description: "Crossplane composition functions: function-python v0.6.0 and function-extra-resources v0.3.0"
   namespace: crossplane-system
 
 crossplane-system:

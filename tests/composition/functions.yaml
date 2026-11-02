@@ -8,4 +8,4 @@ metadata:
   annotations:
     render.crossplane.io/runtime: Docker
 spec:
-  package: xpkg.upbound.io/crossplane-contrib/function-python:v0.4.0
+  package: xpkg.upbound.io/crossplane-contrib/function-python:v0.6.0

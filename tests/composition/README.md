@@ -13,7 +13,7 @@ python -m pytest tests/composition/ -q                  # needs crossplane + Doc
 UPDATE_GOLDENS=1 python -m pytest tests/composition/    # after a composition change; review the diff
 ```
 
-Without Docker, run function-python v0.4.0 from source (`python -m function.main --insecure`,
+Without Docker, run function-python v0.6.0 from source (`python -m function.main --insecure`,
 listening on :9443) and set `COMPOSITION_RUNTIME=Development`.
 
 ## XApplication — local only
