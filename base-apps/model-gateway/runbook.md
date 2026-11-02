@@ -49,7 +49,9 @@ Every group with `gateway: true` fails its model calls.
   `ecr-registry` into it every 15 minutes; wait.
 - CrashLoopBackOff: `kubectl -n model-gateway logs deploy/model-gateway --previous`. "failed to
   connect postgres database": see Postgres below. "environment variable not found": a group in
-  `budgets.yaml` has no Vault key yet; run `scripts/provision-model-gateway-vault.sh`.
+  `budgets.yaml` has no Vault key yet; run `scripts/provision-model-gateway-vault.sh`. "migration N
+  was previously applied but is missing": an older agentgateway on a database a newer one migrated;
+  see "Upgrade or roll back agentgateway" below.
 - ExternalSecrets not Ready (`kubectl -n model-gateway get externalsecret`): the Vault script has not
   run, or the role was changed.
 - Emergency: point a group back at the reference ModelConfig (`anthropic-claude-<model>`) in its
@@ -57,6 +59,9 @@ Every group with `gateway: true` fails its model calls.
   spec §4).
 
 ## Every call fails 503 "invalid peer certificate"
+
+Since agentgateway 1.7 the caller only sees `503 upstream connection failed`; the gateway's log
+line carries the cause (`invalid peer certificate: UnknownIssuer`).
 
 The gateway cannot verify api.anthropic.com. The image is FROM scratch; the trust store is the
 CA bundle the `ca-bundle` init container copies from the pinned alpine into `/etc/ssl/certs`
@@ -86,3 +91,28 @@ The budget counter is keyed by the key's hash, so a new key starts its group's d
 
 `request-log-retention` (daily, 03:17 UTC) deletes `request_logs` rows older than 30 days. A failed
 run: `kubectl -n model-gateway logs job/<name>`; the table only grows a few MB a day.
+
+## Upgrade or roll back agentgateway
+
+The gateway runs the MCP adapters' image (`scripts/build-agentgateway-image.sh`), so a bump moves
+both. Before merging one:
+
+1. Run the local proof on the new image (`tests/model-gateway/proof/run-proof.sh`) and record it
+   next to `results-2026-11-02.md`.
+2. Dump the database. The plain `postgresql` instance has no scheduled backup:
+   `kubectl -n postgresql exec deploy/postgresql -- sh -c 'pg_dump -U "$POSTGRES_USER" -d model_gateway -Fc' > model_gateway-$(date -u +%Y%m%dT%H%M%SZ).dump`
+
+agentgateway migrates its request log when it starts, before the pod is Ready, and records each
+step in `_agentgateway_request_log_migrations`. 1.7.0 added steps 2 and 3: five nullable analytics
+columns on `request_logs`, filled from the existing rows. The old pod keeps serving during the
+rollout, but an older agentgateway refuses to start on a database that holds a step it does not know
+("migration 2 was previously applied but is missing in the resolved migrations"). Reverting the
+image alone therefore crash-loops the gateway. To go back from 1.7 to 1.6, revert the pull request
+and remove the two steps (the columns can stay; a later 1.7 start records the steps again):
+
+```bash
+kubectl -n postgresql exec deploy/postgresql -- sh -c \
+  'psql -U "$POSTGRES_USER" -d model_gateway -c "DELETE FROM _agentgateway_request_log_migrations WHERE version IN (2, 3)"'
+```
+
+All of this was run locally on 2026-11-02 (`tests/model-gateway/proof/results-2026-11-02.md`).
