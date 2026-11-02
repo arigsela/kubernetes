@@ -160,7 +160,7 @@ docs.md, "DRY_RUN").
 - **Symptom:** job fails fast with a `pip` error (connection timeout / could
   not find a version) instead of ever reaching `reconcile.py`.
 - **Cause:** `cronjob.yaml`'s `command` runs `pip install --quiet
-  boto3==1.35.99 pyyaml==6.0.2` at container start rather than baking a custom
+  boto3==1.35.99 pyyaml==6.0.3` at container start rather than baking a custom
   image (see docs.md, "Container image choice") — so this job now depends on
   PyPI being reachable from the cluster on **every single run**, not just at
   deploy time. A PyPI outage, or an egress/DNS problem specific to this

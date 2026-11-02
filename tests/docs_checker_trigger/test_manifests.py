@@ -46,7 +46,7 @@ def test_cronjob_container_identity_run_id_and_timeout():
     cron = _one(TRIGGER, "CronJob", "docs-checker-trigger")
     pod = _pod(cron)["spec"]
     c = pod["containers"][0]
-    assert c["image"].startswith("python:3.12-slim")
+    assert c["image"].startswith("python:3.14-slim")
     assert c["command"] == ["python", "-u", "/opt/docs-checker-trigger/docs_checker_trigger.py"]
     env = {e["name"]: e for e in c["env"]}
     # The run id is the Job's name: a retried pod of the same Job shares it, the next week's does not.

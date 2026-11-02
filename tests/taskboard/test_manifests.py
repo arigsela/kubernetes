@@ -8,7 +8,7 @@ import yaml
 
 REPO = Path(__file__).resolve().parents[2]
 APP = REPO / "base-apps" / "taskboard"
-IMAGE = re.compile(r"^python:3\.12-slim@sha256:[0-9a-f]{64}$")
+IMAGE = re.compile(r"^python:3\.14-slim@sha256:[0-9a-f]{64}$")
 
 
 def _docs(name):

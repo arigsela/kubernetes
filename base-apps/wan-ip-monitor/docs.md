@@ -227,7 +227,7 @@ the real AWS-touching code path needs it, and every test that reaches that
 path replaces `aws_json` first via `monkeypatch`.
 
 The CronJob's container `command` installs `boto3==1.35.99` and
-`pyyaml==6.0.2` at start (`pip install --quiet ... && python3
+`pyyaml==6.0.3` at start (`pip install --quiet ... && python3
 /app/reconcile.py`, see `cronjob.yaml`) rather than baking a custom image —
 the few seconds of install time are immaterial twice a day, and
 there is then no bespoke image to build, publish, or keep patched.
@@ -316,7 +316,7 @@ Disarming (back to `"true"`) is the soft disable — see runbook: "Disabling it"
 
 ## Known limitations (deferred, not part of this task)
 - **`pip install` at container start is version-pinned but not hash-pinned.**
-  `boto3==1.35.99` and `pyyaml==6.0.2` are exact versions, but nothing stops
+  `boto3==1.35.99` and `pyyaml==6.0.3` are exact versions, but nothing stops
   PyPI (or a MITM on the way to it) from serving a different artifact for the
   same version string. Hash-pinning (`--require-hashes` with a lockfile) or
   moving to a baked, digest-pinned custom image would close this gap. Neither
