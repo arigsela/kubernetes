@@ -14,7 +14,7 @@ spec:
     # Policy (removed in v1.20). None are left: every policy moved to native admission
     # policies (base-apps/admission-policies/, SPEC T80) and Kyverno only reports, so
     # v1.20's removal no longer blocks a bump.
-    targetRevision: 3.9.1
+    targetRevision: 3.9.2
     helm:
       releaseName: kyverno
       values: |
