@@ -15,7 +15,7 @@ spec:
     # node carries stale NotReady sandboxes left from a reboot (seen on
     # k3s-worker-02 after the first Ansible patch run, 2026-09-29): falco
     # crash-looped on that node until upgraded. 0.7.x guards those fields.
-    targetRevision: 9.2.0
+    targetRevision: 9.2.2
     helm:
       releaseName: falco
       values: |
