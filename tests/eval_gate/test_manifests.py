@@ -25,7 +25,7 @@ def test_job_is_a_postsync_hook_with_the_eval_identity():
     assert job["spec"]["backoffLimit"] == 0 and job["spec"]["activeDeadlineSeconds"] >= 1500
     assert job["spec"]["template"]["metadata"]["labels"]["app"] == "eval-gate"
     c = pod["containers"][0]
-    assert c["image"].startswith("python:3.12-slim")
+    assert c["image"].startswith("python:3.14-slim")
     assert c["command"] == ["python", "-u", "/opt/eval-gate/eval_gate.py"]
     env = {e["name"]: e for e in c["env"]}
     for key in ("ANTHROPIC_API_KEY", "TYPESAFE_API_KEY", "GITHUB_TOKEN"):

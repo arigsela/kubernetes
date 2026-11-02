@@ -117,7 +117,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run agent-docs validator tests
         run: python -m pytest tests/agent-docs/ -q
       - name: Validate agent-docs contract
@@ -132,7 +132,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run catalog-refs validator tests
         run: python -m pytest tests/catalog-refs/ -q
       - name: Validate catalog references resolve
@@ -147,7 +147,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run WAF scope validator tests
         run: python -m pytest tests/waf/ -q
       - name: Validate every public host is covered by the WAF
@@ -177,7 +177,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run dashboard generator tests
         run: python -m pytest tests/dashboards/ -q
       - name: Check the Cluster Overview dashboard is in sync with its generator
@@ -209,7 +209,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       # Boots rancher/k3s (the cluster's version) in Docker and server-side dry-runs the
       # policy fixtures against it. Static tools cannot be trusted for these policies.
       - name: Run admission-policy tests against a real API server
@@ -241,7 +241,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pytest==8.3.3 pyyaml==6.0.2
+        run: pip install pytest==8.3.3 pyyaml==6.0.3
       - name: Run wan-ip-monitor tests
         run: python -m pytest tests/wan_ip/ -q
 
@@ -260,7 +260,7 @@ jobs:
         with:
           node-version: 22
       - name: Install deps
-        run: pip install pytest==8.3.3 pyyaml==6.0.2
+        run: pip install pytest==8.3.3 pyyaml==6.0.3
       - name: Generated n8n workflows are current
         run: python scripts/gen-n8n-bug-investigator-workflow.py --repo-root . --check
       - name: Run n8n bug-investigator tests
@@ -275,7 +275,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pytest==8.3.3 pyyaml==6.0.2
+        run: pip install pytest==8.3.3 pyyaml==6.0.3
       - name: Gateway access log strips query strings
         run: python -m pytest tests/istio_logging/ -q
 
@@ -288,7 +288,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pytest==8.3.3 pyyaml==6.0.2
+        run: pip install pytest==8.3.3 pyyaml==6.0.3
       - name: Run cve-report tests
         run: python -m pytest tests/cve_report/ -q
 
@@ -302,7 +302,7 @@ jobs:
           python-version: "3.14"
       - name: Install deps
         run: |
-          pip install pyyaml==6.0.2 pytest==8.3.3 jinja2==3.1.4
+          pip install pyyaml==6.0.3 pytest==8.3.3 jinja2==3.1.4
           curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
           sudo mv kubeconform /usr/local/bin/
           pip install yamllint==1.35.1
@@ -318,7 +318,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run gen-okf tests
         run: python -m pytest tests/okf/ -q
       - name: Check OKF bundle is in sync with doc frontmatter
@@ -333,7 +333,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run agent-identity validator tests
         run: python -m pytest tests/agent-identity/ -q
       - name: Validate agent-identity contract
@@ -355,7 +355,7 @@ jobs:
           python-version: "3.14"
       - name: Install deps
         # pyyaml is needed by test_prune_scope.py, which parses the PVC manifests.
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Install sqlite3
         run: sudo apt-get update && sudo apt-get install -y sqlite3
       - name: Run backup/restore/scan tests (includes containerised k3s drill)
@@ -376,7 +376,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run agent-capability validator tests
         run: python -m pytest tests/agent-capability/ -q
       - name: Validate agent-capability contract
@@ -404,7 +404,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run agent-audit redaction tests
         run: python -m pytest tests/agent-audit/ -q
       - name: Run eval-corpus tests
@@ -432,7 +432,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run dispatcher tests
         run: python -m pytest tests/dispatch/ -q
       - name: Check the dispatcher ConfigMap is in sync with the scripts
@@ -450,7 +450,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run alert-demo tests
         run: python -m pytest tests/alert_demo/ -q
       - name: Check the alert-demo ConfigMap is in sync with the script
@@ -470,7 +470,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run Taskboard tests
         run: python -m pytest tests/taskboard/ -q
 
@@ -486,7 +486,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run Slack bridge tests
         run: python -m pytest tests/slack_bridge/ -q
       - name: Check the Slack bridge ConfigMap is in sync with the scripts
@@ -503,7 +503,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run promotion tests
         run: python -m pytest tests/promotion/ -q
 
@@ -516,7 +516,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run identity tests
         run: python -m pytest tests/identity/ -q
 
@@ -531,7 +531,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run beacon tests
         # BEACON_REQUIRE_DOCKER: tests/beacon/test_collector.py runs the pinned collector image
         # (beacon §V.42) and must not skip here.
@@ -562,7 +562,7 @@ jobs:
         # binary on releases.crossplane.io does not match its own published .sha256 for v2.2.0
         # and v2.2.1 (checked 2026-10-19; darwin and linux_arm64 do), so it is not used.
         run: |
-          pip install pyyaml==6.0.2 pytest==8.3.3
+          pip install pyyaml==6.0.3 pytest==8.3.3
           GOFLAGS=-trimpath go install github.com/crossplane/crossplane/v2/cmd/crank@v2.2.1
           sudo install -m 0755 "$(go env GOPATH)/bin/crank" /usr/local/bin/crossplane
       - name: Render every XTenant
@@ -583,7 +583,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run Substrate tests
         run: python -m pytest tests/substrate/ -q
 
@@ -596,7 +596,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run eval-gate tests
         run: python -m pytest tests/eval_gate/ -q
       - name: Check the shared adversarial corpus is in sync with the vendored catalog
@@ -616,7 +616,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run docs-checker trigger tests
         run: python -m pytest tests/docs_checker_trigger/ -q
       - name: Check the docs-checker trigger ConfigMap is in sync with the scripts
@@ -635,7 +635,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run bug-investigator trigger tests
         run: python -m pytest tests/bug_investigator_trigger/ -q
       - name: Check the bug-investigator trigger ConfigMap is in sync with the scripts
@@ -650,7 +650,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run implementer tests
         run: python -m pytest tests/implementer/ -q
 
@@ -666,7 +666,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run model gateway tests
         run: python -m pytest tests/model-gateway/ -q
       - name: Check the generated files are in sync with budgets.yaml
@@ -686,7 +686,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Install deps
-        run: pip install pyyaml==6.0.2 pytest==8.3.3
+        run: pip install pyyaml==6.0.3 pytest==8.3.3
       - name: Run managed-apps ApplicationSet config tests
         run: python -m pytest tests/appset/ -q
 

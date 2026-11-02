@@ -61,7 +61,7 @@ def test_cronjob_runs_every_two_minutes_one_at_a_time_without_retries():
 def test_container_runs_the_tested_script_on_the_full_python_image_pinned():
     c = _pod()["spec"]["containers"][0]
     image = c["image"]
-    assert image.startswith("python:3.12@sha256:") and "slim" not in image   # git is in the full image
+    assert image.startswith("python:3.14@sha256:") and "slim" not in image   # git is in the full image
     assert c["command"][-1] == "/opt/bug-investigator-trigger/bug_investigator_trigger.py"
     assert c["securityContext"]["readOnlyRootFilesystem"] is True
     env = _env()

@@ -25,8 +25,8 @@ read [`index.md`](index.md) (the bundle root and navigation front door).
 
 ## Build, test, and validation commands
 
-CI (`.github/workflows/validate.yaml`) runs everything below with Python 3.12.
-Base deps: `pip install pyyaml==6.0.2 pytest==8.3.3`.
+CI (`.github/workflows/validate.yaml`) runs everything below with Python 3.14.
+Base deps: `pip install pyyaml==6.0.3 pytest==8.3.3`.
 
 **Run pytest one suite at a time**, as CI does (`python -m pytest tests/<suite>/ -q`).
 Each suite has its own conftest; `pytest tests/` as a whole is not what CI runs.
