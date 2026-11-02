@@ -115,7 +115,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run agent-docs validator tests
@@ -130,7 +130,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run catalog-refs validator tests
@@ -145,7 +145,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run WAF scope validator tests
@@ -160,7 +160,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pytest==8.3.3
       - name: Run gen-techdocs tests
@@ -175,7 +175,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run dashboard generator tests
@@ -192,7 +192,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pytest==8.3.3
       - name: Run resize-pod.sh tests (stub kubectl, no cluster)
@@ -207,7 +207,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       # Boots rancher/k3s (the cluster's version) in Docker and server-side dry-runs the
@@ -224,7 +224,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install Ansible, lint, and test deps
         run: |
           pip install ansible-core==2.21.4 ansible-lint==26.9.0 pytest==8.3.3 pyyaml==6.0.3 kubernetes==36.0.3
@@ -239,7 +239,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pytest==8.3.3 pyyaml==6.0.2
       - name: Run wan-ip-monitor tests
@@ -254,7 +254,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -273,7 +273,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pytest==8.3.3 pyyaml==6.0.2
       - name: Gateway access log strips query strings
@@ -286,7 +286,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pytest==8.3.3 pyyaml==6.0.2
       - name: Run cve-report tests
@@ -299,7 +299,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: |
           pip install pyyaml==6.0.2 pytest==8.3.3 jinja2==3.1.4
@@ -316,7 +316,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run gen-okf tests
@@ -331,7 +331,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run agent-identity validator tests
@@ -352,7 +352,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         # pyyaml is needed by test_prune_scope.py, which parses the PVC manifests.
         run: pip install pyyaml==6.0.2 pytest==8.3.3
@@ -374,7 +374,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run agent-capability validator tests
@@ -402,7 +402,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run agent-audit redaction tests
@@ -430,7 +430,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run dispatcher tests
@@ -448,7 +448,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run alert-demo tests
@@ -468,7 +468,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run Taskboard tests
@@ -484,7 +484,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run Slack bridge tests
@@ -501,7 +501,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run promotion tests
@@ -514,7 +514,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run identity tests
@@ -529,7 +529,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run beacon tests
@@ -550,7 +550,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
@@ -581,7 +581,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run Substrate tests
@@ -594,7 +594,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run eval-gate tests
@@ -614,7 +614,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run docs-checker trigger tests
@@ -633,7 +633,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run bug-investigator trigger tests
@@ -648,7 +648,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run implementer tests
@@ -664,7 +664,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run model gateway tests
@@ -684,7 +684,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Install deps
         run: pip install pyyaml==6.0.2 pytest==8.3.3
       - name: Run managed-apps ApplicationSet config tests
