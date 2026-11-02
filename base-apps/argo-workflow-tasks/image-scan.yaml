@@ -144,7 +144,7 @@ spec:
         # (GHSA in aquasecurity/trivy discussion #10425). This is the multi-arch
         # index digest of 0.74.0 (pushed 2026-08-14), checked with
         # `docker buildx imagetools inspect` and the Docker Hub tags API.
-        image: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+        image: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
         command: [trivy]
         args:
           - server
@@ -237,7 +237,7 @@ spec:
           factor: "2"
       script:
         # Same digest as trivy-server (see the comment there).
-        image: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+        image: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
         command: [sh]
         source: |
           set -eo pipefail
