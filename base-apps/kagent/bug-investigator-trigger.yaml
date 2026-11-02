@@ -195,7 +195,7 @@ spec:
               # The FULL python image (not -slim): it ships git, which gather and verify run on the
               # clones. gh is fetched at a pinned version and sha256-checked by the script itself,
               # only when a run investigates.
-              image: python:3.12@sha256:98d8fe4e28bb2efeed9d9bce6a4705e80a6764367b65aea1dc4b96ded7b05620
+              image: python:3.12@sha256:17b9724493d916f56565c131f389faff2597f46dec6ce09516f95125bc9f519f
               command: ["python", "-u", "-B", "/opt/bug-investigator-trigger/bug_investigator_trigger.py"]
               env:
                 - name: RUN_ID
