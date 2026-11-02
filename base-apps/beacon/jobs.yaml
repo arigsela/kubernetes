@@ -276,7 +276,7 @@ spec:
         # The enterprise tenants' dump uploader (beacon §T.46, composition-tenant.yaml AWS_CLI):
         # third-party, so it runs on a node here before any tenant needs it (beacon §V.18).
         - name: aws-cli
-          image: public.ecr.aws/aws-cli/aws-cli:2.37.13@sha256:d32864c20087d486f5988c3e70817d67a73f584a47535cada9ad97e0ea1e5196
+          image: public.ecr.aws/aws-cli/aws-cli:2.39.3@sha256:d557b3524475d70dd3104cf44d96568ee3188897b73a6ece2b37aa50e1af362f
           command: ["/bin/sh", "-c"]
           args:
             - aws --version && echo "aws-cli smoke ok"
