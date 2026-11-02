@@ -65,6 +65,14 @@ def test_images_match_agent_docs_mcp():
     assert "@sha256:" in spec["containers"][0]["image"] and "@sha256:" in spec["initContainers"][0]["image"]
 
 
+def test_session_key_is_disabled_as_in_agent_docs_mcp():
+    """agentgateway 1.7 warns at every start unless config.session.key is set (the read-only
+    ConfigMap cannot store a generated key); same setting as the kagent servers."""
+    ours = yaml.safe_load(local_yaml_text())["config"]
+    assert ours == {"session": {"key": "disabled"}}
+    assert ours == yaml.safe_load(local_yaml_text(AGENT_DOCS))["config"]
+
+
 def test_checksum_config_matches_local_yaml():
     want = hashlib.sha256(local_yaml_text().encode()).hexdigest()
     got = one("Deployment")["spec"]["template"]["metadata"]["annotations"]["checksum/config"]

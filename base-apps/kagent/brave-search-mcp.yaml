@@ -39,7 +39,8 @@ data:
                       pathPrefix: /mcp
                 # Exactly the tools the AgentTemplates bind from this server (§T.134,
                 # tests/agent-identity): tools/list shows only these, and any other call is
-                # refused as "Unknown tool" before it reaches the server.
+                # refused before it reaches the server (HTTP 400 "unknown resource"; logged as
+                # "authorization denied for tool: <name>", "Unknown tool" before 1.7).
                 policies:
                   mcpAuthorization:
                     rules:
@@ -60,7 +61,11 @@ data:
                               BRAVE_MCP_ENABLED_TOOLS: brave_web_search brave_news_search
                               BRAVE_MCP_LOG_LEVEL: warning
                               NODE_OPTIONS: --max-old-space-size=320
-    config: {}
+    # 1.7 generates an MCP session key at start and tries to write it into this file, a read-only
+    # ConfigMap, then warns at every start. disabled: plain session ids, as 1.6 served them.
+    config:
+      session:
+        key: disabled
     # Spans to the cluster collector, as service brave-search-mcp (a CEL string). Sample everything
     # here; the collector's tail sampling cuts the volume (beacon §V.43). frontendPolicies, not
     # config.tracing: 1.6 logs that one as deprecated. /metrics stays on the default :15020.
@@ -133,7 +138,7 @@ spec:
         app.kubernetes.io/name: brave-search-mcp
       annotations:
         # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
-        checksum/config: "9a4716c200546cd54ada6e69f56cccf57764766b40d6625e205866ec67dd2395"
+        checksum/config: "e72c161e21b494a68b7ae400622400e12b17c4cddae37d157200d50d1be89f84"
         # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
         # containerPort would make the kubernetes-pods job scrape the pod twice.
         prometheus.io/scrape: "true"
@@ -152,7 +157,7 @@ spec:
           # Built here from the pinned static release binary (images/agentgateway/,
           # scripts/build-agentgateway-image.sh, §T.133): upstream publishes no musl image after
           # v1.3.1, and only a musl build has --copy-self. Same tag in all three servers.
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.7.0@sha256:3deb61f286641d4577202d11a10d5e7c1dcf83f23c6f44692f36d9310d894b8e
           args: ["--copy-self", "/adapterbin/agentgateway"]
           volumeMounts:
             - name: binary

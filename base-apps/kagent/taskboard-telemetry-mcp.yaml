@@ -62,7 +62,8 @@ data:
                       pathPrefix: /mcp
                 # Exactly the tools the AgentTemplates bind from this server (§T.134,
                 # tests/agent-identity): tools/list shows only these, and any other call is
-                # refused as "Unknown tool" before it reaches the server.
+                # refused before it reaches the server (HTTP 400 "unknown resource"; logged as
+                # "authorization denied for tool: <name>", "Unknown tool" before 1.7).
                 policies:
                   mcpAuthorization:
                     rules:
@@ -81,7 +82,11 @@ data:
                             args:
                               - -I
                               - /core/src/bug_investigator/mcp_server.py
-    config: {}
+    # 1.7 generates an MCP session key at start and tries to write it into this file, a read-only
+    # ConfigMap, then warns at every start. disabled: plain session ids, as 1.6 served them.
+    config:
+      session:
+        key: disabled
     # Spans to the cluster collector, as service taskboard-telemetry-mcp (a CEL string). Sample
     # everything here; the collector's tail sampling cuts the volume (beacon §V.43).
     # frontendPolicies, not config.tracing: 1.6 logs that one as deprecated. /metrics stays on :15020.
@@ -136,7 +141,7 @@ spec:
         app.kubernetes.io/name: taskboard-telemetry-mcp
       annotations:
         # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
-        checksum/config: "55f6123311618caf2463304df1d53c36a450e94f8acb7b7299223cbee947937a"
+        checksum/config: "86457dfba1b8de5498bd0eaa6071aaa8f3cf94dff91e66432d5b7e86745bea69"
         # Written by scripts/gen-bug-investigator-core.py; CI checks it.
         checksum/core: "06a2f90b9834012a76296f1f1a5996f2bc29d7acc065cd2a821e553ab136e634"
         # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
@@ -156,7 +161,7 @@ spec:
         - name: copy-binary
           # The adapter image built here (images/agentgateway/, §T.133). Same tag and digest in
           # every tool server (tests/agent-identity).
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.7.0@sha256:3deb61f286641d4577202d11a10d5e7c1dcf83f23c6f44692f36d9310d894b8e
           args: ["--copy-self", "/adapterbin/agentgateway"]
           volumeMounts:
             - name: binary

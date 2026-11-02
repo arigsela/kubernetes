@@ -19,12 +19,14 @@
 #
 # Bumping: Renovate edits AGW_VERSION only, and tests/agent-identity fails until the rest
 # follows. Set AGW_SHA256 from the release's agentgateway-linux-amd64.sha256, run with --push,
-# and pin the printed reference in the three Deployments' init containers.
+# and pin the printed reference wherever the old one is (`git grep` its digest: the kagent MCP
+# servers, n8n's github-read-mcp, the model gateway, tests/model-gateway). Read the release notes
+# for config and log changes, and run the model gateway's proof (its runbook, "Upgrade or roll back").
 #
 # Needs: curl, docker buildx (a builder that can export OCI), aws CLI with ECR push rights (--push).
 set -euo pipefail
 
-usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; }
 die() { echo "build-agentgateway-image: $*" >&2; exit 2; }
 
 PUSH=0; NOCACHE=()
@@ -40,7 +42,7 @@ done
 # renovate: datasource=github-releases depName=agentgateway/agentgateway
 AGW_VERSION=v1.7.0
 # sha256 of the release asset agentgateway-linux-amd64 (its .sha256 asset says the same)
-AGW_SHA256=496ed27e6a96b55a9ad7cabe5c2be7172511f44a3cb113e533d22bf93a7f079d
+AGW_SHA256=1b2fc01a2de29ca113bbb6258b5cae7b1eb3c724071c09d687a449132f2f42f8
 
 REGION=us-east-2
 REGISTRY="852893458518.dkr.ecr.${REGION}.amazonaws.com"

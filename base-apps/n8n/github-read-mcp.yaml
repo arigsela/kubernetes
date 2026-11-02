@@ -9,7 +9,7 @@
 # mcpAuthorization has no caller check), so pointing n8n at it would hand n8n write tools. This
 # one is read-only three times over: github-mcp-server runs with --read-only and only the six
 # --tools, agentgateway's mcpAuthorization allows only those six (tools/list shows nothing
-# else; any other call is refused as "Unknown tool"), and its token (PAT B,
+# else; any other call is refused: HTTP 400 "unknown resource"), and its token (PAT B,
 # github-read-mcp-secrets.yaml) has read permissions only, on arigsela/taskboard.
 #
 # The Service has no auth: the NetworkPolicy below is what limits callers, to the n8n pod
@@ -72,7 +72,11 @@ data:
                               - --read-only
                               - --tools
                               - get_file_contents,search_code,list_commits,get_commit,list_pull_requests,pull_request_read
-    config: {}
+    # 1.7 generates an MCP session key at start and tries to write it into this file, a read-only
+    # ConfigMap, then warns at every start. disabled: plain session ids, as 1.6 served them.
+    config:
+      session:
+        key: disabled
     # Spans to the cluster collector, as service n8n-github-read-mcp (a CEL string), as the
     # kagent servers do. /metrics stays on the default :15020.
     frontendPolicies:
@@ -120,7 +124,7 @@ spec:
         app.kubernetes.io/name: n8n-github-read-mcp
       annotations:
         # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
-        checksum/config: "a0a2d84443de6059cd8d6eef88f3e83fb6aed684744b2bb8df6ce4f67aec78a5"
+        checksum/config: "7d4d8056248e51e4188a769efe537c59acab7acdad370f5523fee22fe5dd8b65"
         # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
         # containerPort would make the kubernetes-pods job scrape the pod twice.
         prometheus.io/scrape: "true"
@@ -135,7 +139,7 @@ spec:
       initContainers:
         - name: copy-binary
           # The agentgateway image the kagent MCP servers use (images/agentgateway/, §T.133).
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.7.0@sha256:3deb61f286641d4577202d11a10d5e7c1dcf83f23c6f44692f36d9310d894b8e
           args: ["--copy-self", "/adapterbin/agentgateway"]
           volumeMounts:
             - name: binary

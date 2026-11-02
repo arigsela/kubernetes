@@ -93,6 +93,12 @@ def test_database_metrics_and_addresses(cfg):
     assert "adminAddr" not in c, "the admin API (/api/budgets/status) stays on 127.0.0.1: port-forward to read it"
 
 
+def test_session_key_is_disabled(cfg):
+    """1.7 generates an MCP session key at start and writes it into the config file, which is a
+    read-only ConfigMap here: without this every start logs two warnings. No MCP is served."""
+    assert cfg["config"]["session"] == {"key": "disabled"}
+
+
 def test_tracing_to_the_collector(cfg):
     assert cfg["frontendPolicies"]["tracing"] == {
         "host": "otel-collector.tracing.svc.cluster.local:4317", "protocol": "grpc",
