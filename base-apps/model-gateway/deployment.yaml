@@ -1,4 +1,4 @@
-# The model gateway (spec §3): agentgateway v1.6.0, our own static image (the MCP adapters' one,
+# The model gateway (spec §3): agentgateway v1.7.0, our own static image (the MCP adapters' one,
 # images/agentgateway/), on the generated configmap.yaml.
 #
 # ONE replica, on purpose (final review I1, spec §3.1a). Sharing budget counts between replicas
@@ -38,7 +38,7 @@ spec:
       annotations:
         # sha256 of configmap.yaml's data (scripts/gen-model-budgets.py writes it): a budget change
         # rolls the pods. agentgateway also watches its file, but a rollout is the reviewed path.
-        checksum/config: 1cc690fb1aac448ee365cea782ffcd82849af0ad06a950018faa40b6689434ab
+        checksum/config: 44129661826fd7932bf1f4c90a32c5beff8878b435dd92c4d81375fc2a81bce8
         # The gateway reads its keys from the environment once, at start. After
         # scripts/provision-model-gateway-vault.sh --rotate <group>, bump this (a pull request) so the
         # pods restart on the new key (runbook, "Rotate a virtual key").
@@ -87,7 +87,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.7.0@sha256:3deb61f286641d4577202d11a10d5e7c1dcf83f23c6f44692f36d9310d894b8e
           args: ["-f", "/config/config.yaml"]
           # MODEL_GATEWAY_KEY_<GROUP> (expanded into configmap.yaml) and PGPASSWORD (the database
           # login; the URL in the config carries none, because the startup log prints it).

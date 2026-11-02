@@ -149,8 +149,8 @@ def test_gateway_allows_exactly_the_tools_agents_bind(name):
     """The adapter enforces its own tool allowlist (§T.134), a second layer under the server's
     flags (--tools, --read-only, BRAVE_MCP_ENABLED_TOOLS). It is exactly the tools some
     AgentTemplate binds from this server: tools/list shows only those, and any other call is
-    refused ("Unknown tool") before it reaches the server. Binding a new tool therefore means
-    adding it here too, or this fails."""
+    refused (HTTP 400 "unknown resource"; logged "authorization denied for tool" since 1.7) before
+    it reaches the server. Binding a new tool therefore means adding it here too, or this fails."""
     cfg = yaml.safe_load(one(name, "ConfigMap")["data"]["local.yaml"])
     rules = cfg["binds"][0]["listeners"][0]["routes"][0]["policies"]["mcpAuthorization"]["rules"]
     assert len(rules) == 1 and set(rules[0]) == {"allow"}, rules  # allow, not deny: errors then fail closed
@@ -161,6 +161,15 @@ def test_gateway_allows_exactly_the_tools_agents_bind(name):
     want = bound_tools(remote)
     assert want, f"no AgentTemplate binds {remote}"
     assert allowed == want, f"{name}: allow exactly {sorted(want)}"
+
+
+@pytest.mark.parametrize("name", sorted(SERVERS))
+def test_session_key_is_disabled(name):
+    """1.7 generates an MCP session key at start and tries to store it in local.yaml, a read-only
+    ConfigMap: without a key it warns at every start. disabled keeps the plain session ids 1.6
+    served (local run of each config on 1.7.0, 2026-11-02)."""
+    cfg = yaml.safe_load(one(name, "ConfigMap")["data"]["local.yaml"])
+    assert cfg["config"]["session"] == {"key": "disabled"}
 
 
 @pytest.mark.parametrize("name", sorted(SERVERS))

@@ -76,8 +76,9 @@ data:
                   - path:
                       pathPrefix: /mcp
                 # Exactly the server's one tool (§T.134, tests/agent-identity): tools/list shows
-                # only it, and any other call is refused as "Unknown tool" before it reaches the
-                # server. The bug-investigator AgentTemplate binds it.
+                # only it, and any other call is refused before it reaches the server (HTTP 400
+                # "unknown resource"; logged as "authorization denied for tool: <name>", "Unknown
+                # tool" before 1.7). The bug-investigator AgentTemplate binds it.
                 policies:
                   mcpAuthorization:
                     rules:
@@ -95,7 +96,11 @@ data:
                             args:
                               - -I
                               - /core/src/bug_investigator/browser_server.py
-    config: {}
+    # 1.7 generates an MCP session key at start and tries to write it into this file, a read-only
+    # ConfigMap, then warns at every start. disabled: plain session ids, as 1.6 served them.
+    config:
+      session:
+        key: disabled
     # Spans to the cluster collector, as service taskboard-browser-mcp (a CEL string). Sample
     # everything here; the collector's tail sampling cuts the volume (beacon §V.43).
     # frontendPolicies, not config.tracing: 1.6 logs that one as deprecated. /metrics stays on :15020.
@@ -150,7 +155,7 @@ spec:
         app.kubernetes.io/name: taskboard-browser-mcp
       annotations:
         # sha256 of the ConfigMap's local.yaml text (see the header); CI checks it.
-        checksum/config: "8b243049fea43f7074f83a5faf870a783e5c49ecb461b6f4cc6da3e1827a617e"
+        checksum/config: "db11cc8bc2c98ba132a0b9046afdb333e67c548648a6446c3ca33237f85e74c1"
         # Written by scripts/gen-taskboard-configmap.py with taskboard-browser-code; CI checks both.
         # The checksum covers .source-commit, so a deploy that changes only the commit rolls this pod.
         checksum/code: "e956157c359aedc2efda1aca657466e86e127f1d0245e428e754bf3013b8cc53"
@@ -179,7 +184,7 @@ spec:
         - name: copy-binary
           # The adapter image built here (images/agentgateway/, §T.133). Same tag and digest in
           # every tool server (tests/agent-identity). The copy keeps mode 0755, so uid 1001 runs it.
-          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d
+          image: 852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.7.0@sha256:3deb61f286641d4577202d11a10d5e7c1dcf83f23c6f44692f36d9310d894b8e
           args: ["--copy-self", "/adapterbin/agentgateway"]
           volumeMounts:
             - name: binary

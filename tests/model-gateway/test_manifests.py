@@ -12,8 +12,8 @@ import model_budgets as mb
 from conftest import REPO
 
 APP = REPO / "base-apps/model-gateway"
-IMAGE = ("852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0"
-         "@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d")
+IMAGE = ("852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.7.0"
+         "@sha256:3deb61f286641d4577202d11a10d5e7c1dcf83f23c6f44692f36d9310d894b8e")
 
 
 def docs(path):

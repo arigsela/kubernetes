@@ -29,8 +29,8 @@ REPO = HERE.parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
 import model_budgets as mb  # noqa: E402
 
-IMAGE = ("852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.6.0"
-         "@sha256:083adf216093ed57813debcfdbb5f6aa9cb119741b373455233f6c0605faca2d")
+IMAGE = ("852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.7.0"
+         "@sha256:3deb61f286641d4577202d11a10d5e7c1dcf83f23c6f44692f36d9310d894b8e")
 NET = "mgproof"
 ALPINE = "alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a"
 VOLUME = "mgproof-files"
@@ -207,10 +207,16 @@ def tls_check(work: Path, keys: dict) -> None:
            *extra, "-p", "18082:8080", IMAGE, "-f", "/config/config-tls.yaml")
         wait_for(lambda: http(18082, "/v1/messages", key="probe", body=msg("claude-haiku-5-5"))[0] != 0, 60, 2)
         results[label] = http(18082, "/v1/messages", key=keys["k8s-reader"], body=msg("claude-haiku-5-5"))
+        out = sh("docker", "logs", name, check=False)
+        results[label] += (out.stdout + out.stderr,)
         sh("docker", "rm", "-f", name, check=False)
-    s0, _, b0 = results["no bundle"]
-    s1, h1, b1 = results["bundle"]
-    check("14a. without a CA bundle the upstream TLS fails (the live bug)", s0 == 503 and "UnknownIssuer" in b0, f"{s0} {b0[:120]}")
+    s0, _, b0, log0 = results["no bundle"]
+    s1, h1, b1, _ = results["bundle"]
+    # Since 1.7 the client gets a sanitized body ("upstream connection failed"); the certificate
+    # error itself is only in the gateway's log.
+    cause = "log" if "UnknownIssuer" in log0 else "body" if "UnknownIssuer" in b0 else "neither"
+    check("14a. without a CA bundle the upstream TLS fails (the live bug)", s0 == 503 and cause != "neither",
+          f"{s0} {b0[:120]}; UnknownIssuer in the {cause}")
     check("14b. with the Deployment's CA bundle Anthropic itself answers (401 for the made-up key)",
           s1 == 401 and "request-id" in h1, f"{s1} request-id={'request-id' in h1} {b1[:120]}")
 
