@@ -68,7 +68,7 @@ mmproj-F16.gguf 56e4c6cfe73b0c82e3e82bc518d7591997e61d81f723fc41a586f4fa69ea2453
     ;;
   nomic-embed-text)
     REPO=models/nomic-embed-text
-    TAG=v1.5
+    TAG=v1.5-r2   # immutable: -r2 adds the empty manifests-v2/ Ollama >= 0.40 needs (Dockerfile)
     BUILD_ARGS=(--build-arg MODEL_TAG=v1.5
                 --build-arg MODEL_DIGEST=sha256:970aa74c0a90ef7482477cf803618e776e173c007bf957f635f1015bfcfef0e6)
     CONTEXT="$REPO_ROOT/models/nomic-embed-text"
