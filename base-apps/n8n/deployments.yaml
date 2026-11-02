@@ -67,7 +67,7 @@ spec:
       # A new workflow: add `<ConfigMap key without .json>:<workflow id>` to the list and
       # recompute checksum/workflows above.
       - name: import-workflows
-        image: n8nio/n8n:2.45.5@sha256:9f6d0a5987ab5a297c4b0b38fbf1a22285dd1364551478e93f03d506908fa74c
+        image: n8nio/n8n:2.46.4@sha256:4384b9ff20a78bc1708c35ce7864f84f724611de7801fb36d715998db7c000f1
         command: ["/bin/sh", "-c"]
         args:
         - |
@@ -160,7 +160,7 @@ spec:
         # before an upgrade (runbook, "Upgrade n8n"). Never bump n8n without running the init
         # script on the new version: it drives the n8n CLI, which changes between minor versions
         # (promotion denies base-apps/n8n for that reason).
-        image: n8nio/n8n:2.45.5@sha256:9f6d0a5987ab5a297c4b0b38fbf1a22285dd1364551478e93f03d506908fa74c
+        image: n8nio/n8n:2.46.4@sha256:4384b9ff20a78bc1708c35ce7864f84f724611de7801fb36d715998db7c000f1
         env:
         # Database Configuration
         - name: DB_TYPE
