@@ -50,7 +50,7 @@ Vault-side roles and policies are **not in git**. They are written inside Vault 
 
 ## Runbook
 ### Symptom: an ExternalSecret shows `SecretSyncedError` / not Ready
-- **Check:** `kubectl -n <ns> describe externalsecret <name>` (the event carries the provider error), and `kubectl -n <ns> get secretstore`.
+- **Check:** `kubectl -n <ns> describe externalsecret <name>` and `kubectl -n <ns> get secretstore`. Since ESO 2.14 the Event and status say only that the provider failed; the provider error itself (Vault 403, missing key) is in the controller log: `kubectl -n external-secrets logs deploy/external-secrets | grep <name>`.
 - **Fix, by error:**
   - **"could not get secret data from provider"**, or a missing key/property: the Vault path or property doesn't exist. `remoteRef.key` is relative to `k8s-secrets`; don't add `data/`. The store must say `version: "v2"`. Write the value to Vault. That was the cause of the three long-standing failures (`langflow-ide`, `oncall-crewai`, `whoami-test`, §T.7).
   - **`permission denied` / 403:** the role's Vault policy doesn't grant that path. Scoped stores read only their own path, so an ExternalSecret pointed at another consumer's key through a scoped store fails by design.

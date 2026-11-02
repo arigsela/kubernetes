@@ -55,7 +55,7 @@ sources:
 - **Fix:** they differ after a token rotation that skipped a step. Force-sync both ExternalSecrets, then restart the pod (see "Rotate the Jupyter token"). If they match, the pod started before the Secrets updated: restart it. Both containers read the token only at startup.
 
 ### Symptom: ExternalSecret shows SecretSyncedError
-- **Check:** `kubectl -n jupyter describe externalsecret jupyter-secrets jupyter-oauth2`
+- **Check:** `kubectl -n jupyter describe externalsecret jupyter-secrets jupyter-oauth2`, then the provider error, which since ESO 2.14 is only in the controller log: `kubectl -n external-secrets logs deploy/external-secrets | grep jupyter`
 - **Fix:** confirm the Vault role exists and is bound to this namespace: `vault read auth/kubernetes/role/jupyter`. The role name must equal the namespace. For `jupyter-oauth2`, also confirm `k8s-secrets/jupyter` has `oauth2-client-secret`, `oauth2-cookie-secret` and `allowed-emails` (see "Provision the GitHub login secrets").
 
 ### Symptom: boto3 calls fail with AccessDenied
