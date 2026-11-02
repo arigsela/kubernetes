@@ -38,7 +38,7 @@ for a in "$@"; do
 done
 
 # renovate: datasource=github-releases depName=agentgateway/agentgateway
-AGW_VERSION=v1.6.0
+AGW_VERSION=v1.7.0
 # sha256 of the release asset agentgateway-linux-amd64 (its .sha256 asset says the same)
 AGW_SHA256=496ed27e6a96b55a9ad7cabe5c2be7172511f44a3cb113e533d22bf93a7f079d
 
