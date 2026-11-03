@@ -16,21 +16,23 @@ Renovate keeps this repo's pinned versions current by opening PRs. Most CVEs in 
 |---|---|---|
 | `kubernetes` | `base-apps/**/*.yaml` | Container images, **pinned by digest** (`tag@sha256:…`) |
 | `argocd` | `base-apps/*.yaml` | Helm chart `targetRevision` (HTTP and OCI repos) and git-source tags |
-| `crossplane` | `base-apps/crossplane-*/` | Provider and Function packages (plain tags, no digest) |
+| `crossplane` | `base-apps/crossplane-*/`, `tests/composition/functions.yaml` | Provider and Function packages (plain tags, no digest); the test copy is the Function `crossplane render` runs in CI |
 | `github-actions` | `.github/workflows/` | Actions, pinned to a commit SHA with a version comment |
-| `custom.regex` | lines marked `# renovate:` | The Atlantis image tag in `base-apps/atlantis.yaml` (inline Helm values) and the Argo CD chart in `terraform/modules/argocd/variables.tf` |
+| `custom.regex` | lines marked `# renovate:` | The Atlantis image tag in `base-apps/atlantis.yaml` (inline Helm values), the Argo CD chart in `terraform/modules/argocd/variables.tf` and the agentgateway release in `scripts/build-agentgateway-image.sh` |
+| `custom.regex` | copies of tracked images | `repository`/`tag` pairs in the inline Helm values of `base-apps/opentelemetry-operator.yaml`; the `AWS_CLI` and `PY_LAYER` constants in `base-apps/crossplane-compositions/composition-tenant.yaml` and the digest-pinned images in its goldens (`tests/composition/xtenant/**/expected.yaml`); `ALPINE` in `tests/model-gateway/` |
 
 **Deliberately not updated:**
 - **Our own ECR images** (`852893458518.dkr.ecr.*`): no CI rebuilds yet, and looking them up needs AWS credentials. This is a plan follow-up.
 - **`base-apps/postgresql/agent-audit-cronjob.yaml`:** generated, so CI fails on drift. Its image comes from `scripts/gen-agent-audit-cronjob.py`.
 - **`rancher/k3s-upgrade`:** the system-upgrade-controller appends the k3s version as the tag, so a digest pin would break upgrades. k3s follows `base-apps/system-upgrade-controller/runbook.md`.
 - **Terraform providers, Ansible collections, CI Python pins:** manual for now.
-- **`tests/**`, `docs/**`, `templates/**`:** fixtures and quoted examples.
+- **`tests/**`, `docs/**`, `templates/**`:** fixtures and quoted examples. Exception: `tests/composition/` and `tests/model-gateway/` are not ignored, and only the file patterns in the table above read them.
 
 ## What the PRs look like
 
 - **One PR per dependency.** A single-image bump changes one or two lines, so pr-triage labels it `review:skip`.
-- **Groups for things that must move together:** `istio` (base, cni, istiod, ztunnel), `kagent-substrate`, `crossplane-aws` (provider family + s3 + iam), and Grafana's monorepo.
+- **Every copy of one image moves in one PR.** Copies share a branch whichever manager found them: aws-cli moves `base-apps/beacon/jobs.yaml`, the tenant Composition and two goldens together; autoinstrumentation-python its nine copies. Those PRs touch more than two files, so promotion leaves them for you, but they arrive green instead of failing until the copies are moved by hand (#1045, #1052).
+- **Groups for things that must move together:** `istio` (base, cni, istiod, ztunnel), `kagent-substrate`, `crossplane-aws` (provider family + s3 + iam), `opentelemetry-operator` (the chart and the operator image, which must be the chart's appVersion; a PR that moves the image past the chart waits for the chart), and Grafana's monorepo.
 - **`kagent-substrate`** holds the five charts of kagent 1.0 and Agent Substrate (`base-apps/kagent.yaml`, `kagent-crds.yaml`, `substrate-crds.yaml`, `substrate-podcert.yaml`, `substrate.yaml`). It never opens a PR on its own: tick it on the Dependency Dashboard (`dependencyDashboardApproval`). A pre-release bump also gets the label `clean-db-migration`, because every kagent 1.0 alpha so far has needed empty databases. Renovate can't see the image digests pinned in those Helm values, and it does see the golang-adk image in `base-apps/kagent/harnesses/*.yaml`; a rule puts that image in the same `kagent-substrate` group behind the same approval (#749), so it can't arrive as a Harness-only PR. Follow "Bump kagent and Substrate" in `base-apps/kagent/runbook.md`.
 - **Digest pinning arrives once, in four PRs**, so no single merge restarts everything: workloads (`renovate/pin-dependencies`), logging (`renovate/pin-image-digests-logging`), stateful Vault and PostgreSQL (`renovate/pin-image-digests-stateful`), and GitHub Actions (`renovate/pin-github-actions-digests`). Merge the stateful one in a quiet window. Every pinned workload restarts once.
 - **Major versions** don't open a PR until you tick them on the **Dependency Dashboard** issue.
