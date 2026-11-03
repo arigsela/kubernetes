@@ -125,6 +125,22 @@ for an outside audience.
 On that date both agents called Anthropic directly through Substrate's egress. The model
 gateway (§T.137) is not drawn, because it was not yet in their path.
 
+## How I deploy agents safely — 2026-11-03
+
+Five illustrated panels for a technical reader new to this platform: the deployment path from
+Git to a sandboxed session, three levels of autonomy, the two different gates on a fix (a PR
+merge and a runtime tool approval), the boundaries around a session (caller identity, gVisor,
+credential placement, model budgets), and evaluation, audit and the regression hold. It was
+drawn from repository revision `0a1beba0` (no cluster, agent or live approval was exercised),
+and each panel's notes list the residual gaps alongside the controls. Unlike the decks above it
+is **not anonymized**: the footer names the homelab and the notes link to this repository.
+Anonymize it before it goes to an outside audience.
+
+| file | what it is |
+|---|---|
+| `safe-agent-deployment-infographics.pdf` | Five 16:9 infographic panels (the deployment path; three levels of autonomy; a fix has two different gates; boundaries around every session; test the agent, watch the guardrails). Raster pages, no selectable text; the notes below carry the text. |
+| `safe-agent-deployment-speaker-notes.md` | Per-panel text alternative, what to say, evidence and scope. Its scope lines are the ones to keep in mind when presenting: the Git-only policy covers agent definitions, not every resource; the shared Kubernetes tool server stays broadly privileged; the UI still shares one identity; the eval gate runs after sync and does not roll back. |
+
 ## Tech-stack talk — 2026-10-11
 
 | file | what it is |
