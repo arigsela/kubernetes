@@ -29,7 +29,12 @@
     managerFilePatterns: ['/^base-apps/[^/]+\\.ya?ml$/'],
   },
   crossplane: {
-    managerFilePatterns: ['/^base-apps/crossplane-[^/]+/.+\\.ya?ml$/'],
+    // tests/composition/functions.yaml is the Function `crossplane render` runs in CI; it must
+    // be the version base-apps/crossplane-functions/function-python.yaml installs (#1054).
+    managerFilePatterns: [
+      '/^base-apps/crossplane-[^/]+/.+\\.ya?ml$/',
+      '/^tests/composition/functions\\.yaml$/',
+    ],
   },
   customManagers: [
     {
@@ -61,14 +66,60 @@
       depNameTemplate: 'ghcr.io/renovatebot/renovate',
       datasourceTemplate: 'docker',
     },
+    // Copies of image pins that the managers above can't parse. Each is a copy of an image
+    // the kubernetes manager already tracks somewhere in base-apps/, and Renovate puts every
+    // copy of one image (same depName) in one branch whichever manager found it. So a bump
+    // now arrives with all its copies moved, instead of failing CI until they're moved by
+    // hand (#977, #978, #1045, #1052).
+    {
+      // repository/tag pairs (digest in the tag) in the opentelemetry-operator Application's
+      // inline Helm values: manager.image, collectorImage, autoInstrumentationImage.python and
+      // testFramework. The argocd manager reads only the chart. beacon §V.18 requires them to
+      // equal the digests base-apps/tracing/smoke-job.yaml runs.
+      customType: 'regex',
+      managerFilePatterns: ['/^base-apps/opentelemetry-operator\\.yaml$/'],
+      matchStrings: [
+        'repository:\\s*(?<depName>[a-z0-9./_-]+)\\s*\\n\\s*tag:\\s*"(?<currentValue>[^"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"',
+      ],
+      datasourceTemplate: 'docker',
+    },
+    {
+      // Image constants in Python code: AWS_CLI and PY_LAYER in the tenant Composition's
+      // script (a string split over two lines, tag then digest), and ALPINE in the
+      // model-gateway tests, which check the Deployment's CA-bundle init container against it.
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^base-apps/crossplane-compositions/composition-tenant\\.yaml$/',
+        '/^tests/model-gateway/test_manifests\\.py$/',
+        '/^tests/model-gateway/proof/proof\\.py$/',
+      ],
+      matchStrings: [
+        '[A-Z_]+ = \\("(?<depName>[a-z0-9./_-]+):(?<currentValue>[^"@\\s]+)"\\s*\\n\\s*"@(?<currentDigest>sha256:[a-f0-9]{64})"\\)',
+        '[A-Z_]+ = "(?<depName>[a-z0-9./_-]+):(?<currentValue>[^"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"',
+      ],
+      datasourceTemplate: 'docker',
+    },
+    {
+      // The XTenant goldens: `crossplane render` output of the tenant Composition, compared
+      // with a fresh render in CI (tests/composition/test_xtenant_render.py). Their
+      // digest-pinned images are the Composition's constants above.
+      customType: 'regex',
+      managerFilePatterns: ['/^tests/composition/xtenant/.*expected\\.yaml$/'],
+      matchStrings: [
+        'image:\\s*(?<depName>[a-z0-9./_-]+):(?<currentValue>[^\\s"@]+)@(?<currentDigest>sha256:[a-f0-9]{64})',
+      ],
+      datasourceTemplate: 'docker',
+    },
   ],
 
   // Never edit these. tests/ fixtures hold bad images on purpose; the audit
   // CronJob is generated (CI fails on drift; its source is
   // scripts/gen-agent-audit-cronjob.py); docs/ and templates/ only quote images.
+  // tests/composition and tests/model-gateway stay visible: they hold pin copies the
+  // managers above read, and only by those exact file patterns.
   ignorePaths: [
     '**/node_modules/**',
-    'tests/**',
+    'tests/!(composition|model-gateway)/**',
     'docs/**',
     'templates/**',
     'ansible/**',
@@ -210,6 +261,23 @@
       matchManagers: ['kubernetes'],
       matchDatasources: ['docker'],
       pinDigests: true,
+    },
+    {
+      // The operator image is pinned in the chart's values and in base-apps/tracing/smoke-job.yaml,
+      // and it must be the chart's appVersion (chart 0.128.0 ships operator 0.162.0). On their
+      // own they arrived as two half PRs (#1040, #1045).
+      // Version bumps only: a re-pushed digest of the running tag keeps its own branch, so one
+      // branch never carries two updates to the same pin.
+      description: 'The OpenTelemetry Operator chart and its operator image move in one PR.',
+      matchPackageNames: [
+        'opentelemetry-operator',
+        'ghcr.io/open-telemetry/opentelemetry-operator/opentelemetry-operator',
+      ],
+      matchUpdateTypes: ['major', 'minor', 'patch'],
+      groupName: 'opentelemetry-operator',
+      prBodyNotes: [
+        '**Operator image = chart appVersion.** `helm show chart opentelemetry-operator --repo https://open-telemetry.github.io/opentelemetry-helm-charts --version <new chart>` names the operator version the chart is built for. If this PR moves the image past it (the chart release has not caught up), hold it: the chart bump joins this PR when it is released.',
+      ],
     },
     {
       description: 'The Crossplane AWS provider family must stay on one version.',
