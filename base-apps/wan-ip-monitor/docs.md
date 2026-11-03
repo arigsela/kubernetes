@@ -17,7 +17,10 @@ sources:
   - base-apps/wan-ip-monitor/namespace.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
   - base-apps/n8n/workflows-configmap.yaml
-  - tests/wan_ip
+  - tests/wan_ip/conftest.py
+  - tests/wan_ip/test_main.py
+  - tests/wan_ip/test_route53.py
+  - tests/wan_ip/test_policy_annotation.py
 ---
 
 # wan-ip-monitor

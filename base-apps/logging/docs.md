@@ -89,7 +89,7 @@ under `base-apps/logging/`.
    against S3. Loki has no local index/chunk PVC — S3 is the only durable store (the pod's
    `/loki` mount is an `emptyDir`).
 3. **Prometheus** (`prometheus-statefulset.yaml`, single-replica StatefulSet, image
-   `prom/prometheus:v3.0.1`) stores metrics on a 50Gi `local-path` PVC with 15-day retention
+   `prom/prometheus:v3.15.1`) stores metrics on a 50Gi `local-path` PVC with 15-day retention
    (`--storage.tsdb.retention.time=15d`) bounded by a 40GB size cap
    (`--storage.tsdb.retention.size=40GB`, base-2, so ~43 GB on disk). The size cap matters
    because `local-path` is a hostPath directory with no quota enforcement — without it the
