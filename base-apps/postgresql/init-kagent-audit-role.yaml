@@ -122,8 +122,15 @@ spec:
                     )" != "1" ]; then
                 echo "database '$AUDIT_DB_V1' does not exist yet: skipping the kagent 1.0 grants"
               else
-                PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" \
+                # One transaction that stops at the first error, so the REVOKEs never stand
+                # without the GRANTs. On 2026-11-03 the other audit Job's GRANT on schema kagent
+                # ran at the same moment, this one failed with "tuple concurrently updated",
+                # psql carried on and exited 0, and the role was left without USAGE on the
+                # schema. A failure now rolls back, is retried twice, then fails the hook.
+                attempt=1
+                until PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$PG_HOST" -p "$PG_PORT" \
                   -U "$POSTGRES_USER" -d "$AUDIT_DB_V1" \
+                  -v ON_ERROR_STOP=1 --single-transaction \
                   -v audit_user="$AUDIT_USER" \
                   -v audit_db="$AUDIT_DB_V1" \
                   -v kagent_schema="$KAGENT_V1_SCHEMA" \
@@ -138,6 +145,15 @@ spec:
                 ALTER DEFAULT PRIVILEGES FOR ROLE :"owner_role" IN SCHEMA :"kagent_schema"
                   GRANT SELECT ON TABLES TO :"audit_user";
               EOSQL
+                do
+                  if [ "$attempt" -ge 3 ]; then
+                    echo "kagent 1.0 grants failed $attempt times (rolled back): failing the hook"
+                    exit 1
+                  fi
+                  attempt=$((attempt + 1))
+                  echo "kagent 1.0 grants failed (rolled back): attempt $attempt of 3 in 5 s"
+                  sleep 5
+                done
                 echo "SELECT-only access to '$AUDIT_DB_V1' schema '$KAGENT_V1_SCHEMA' granted"
               fi
 
