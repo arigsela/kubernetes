@@ -6,7 +6,7 @@
 openapi: 3.0.3
 info:
   title: hk-demo
-  version: 0.7.2
+  version: 0.8.0
   description: |
     The API behind the hk demo page. Ask the homelab-knowledge (hk) agent a question, then
     follow the run as server-sent events: the agent's progress, its answer, then eight evidence
@@ -22,6 +22,13 @@ info:
     handed them to the implementer, which usually opened a pull request); a journey's events give
     ten boxes and the run's steps. `POST /api/journeys/demo` starts a real demo run on the
     cluster's alert-demo workload.
+
+    **Bug investigator.** `/api/bugs` lists Taskboard bug reports the platform investigated (the
+    bug-investigator trigger handed them to a read-only agent, a script verified every evidence
+    link, and the implementer proposed the fix); a run's events give thirteen boxes, its steps, the
+    verified findings and the agent's tool calls (never what they returned). Built from the
+    trigger's own log lines, the sessions' traces and Taskboard's deploy commits in the public
+    kubernetes repository: the private Taskboard repository is never read.
 
     **Who can call it.** The host answers only addresses on the Gateway's allow-list. An
     oauth2-proxy sidecar sits in front of the app: a request without a session is redirected
@@ -47,6 +54,8 @@ tags:
     description: Ask a question and follow its run.
   - name: journeys
     description: On its own, alerts the platform handled by itself, and the demo trigger.
+  - name: bugs
+    description: Bug investigator, Taskboard bug reports the platform investigated.
   - name: page
     description: The page itself.
   - name: health
@@ -353,6 +362,69 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /api/bugs:
+    get:
+      tags: [bugs]
+      summary: Bug reports the platform investigated
+      operationId: listBugs
+      description: >-
+        The Bug investigator tab's list: the bug-investigator trigger's investigations of Taskboard
+        issues from the last 7 days, newest first, joined from the trigger's own log lines. Whether
+        a fix shipped comes from Taskboard's deploy commits (the public kubernetes repository).
+      responses:
+        "200":
+          description: The runs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BugSummary"
+        "401":
+          $ref: "#/components/responses/LoginRequired"
+        "503":
+          description: Loki did not answer (`could not read the bug-investigator trigger's log (Loki); try again`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/bugs/{run_id}/events:
+    get:
+      tags: [bugs]
+      summary: Follow a bug report the platform investigated
+      operationId: bugEvents
+      description: |
+        Server-sent events: `bug` (the run's summary, steps, verified findings and the agent's tool
+        calls), then `boxes` and `bug` again after each piece of evidence arrives (Taskboard's
+        deploys, the waypoint's line, the agent's trace, the implementer's trace); the last of each
+        is final. `done` is always last. An unknown id gives `failed` then `done`.
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          description: The id from `GET /api/bugs` (the issue number and when the trigger picked it).
+          schema:
+            type: string
+            pattern: "^[0-9]{1,7}-[0-9]{9,11}$"
+      responses:
+        "200":
+          description: The event stream.
+          content:
+            text/event-stream:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/BugEvent"
+                  - $ref: "#/components/schemas/BoxesEvent"
+                  - $ref: "#/components/schemas/FailedEvent"
+                  - $ref: "#/components/schemas/DoneEvent"
+        "401":
+          $ref: "#/components/responses/LoginRequired"
+        "404":
+          description: The id is not in the run id format (`no such run`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /healthz:
     get:
       tags: [health]
@@ -602,7 +674,8 @@ components:
       type: object
       description: >-
         The evidence boxes, in map order: eight for a run, ten for an alert the platform handled
-        (On its own). Sent more than once as the trace and log lines arrive; the last one is final.
+        (On its own), thirteen for a bug report (Bug investigator). Sent more than once as the trace
+        and log lines arrive; the last one is final.
       required: [event, data]
       properties:
         event:
@@ -615,7 +688,7 @@ components:
             boxes:
               type: array
               minItems: 8
-              maxItems: 10
+              maxItems: 13
               items:
                 $ref: "#/components/schemas/Box"
     FailedEvent:
@@ -724,6 +797,131 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/JourneyStep"
+    BugSummary:
+      type: object
+      required: [run_id, issue, title, started, alert, state, verdict, verified, total, fix_pr]
+      properties:
+        run_id:
+          type: string
+          example: 30-1793124365
+        issue:
+          type: integer
+        title:
+          type: string
+          description: The issue's title, as the trigger logged it (masked).
+        started:
+          type: string
+          format: date-time
+          description: When the trigger picked the issue.
+        alert:
+          type: boolean
+          description: The trigger's alert check filed the issue (alert-first).
+        state:
+          type: string
+          enum: [investigating, posted, failed, stopped]
+        verdict:
+          type: string
+          nullable: true
+          enum: [likely_cause, not_a_bug, needs_info, unclear, null]
+        verified:
+          type: integer
+          nullable: true
+        total:
+          type: integer
+          nullable: true
+        fix_pr:
+          type: object
+          nullable: true
+          required: [number, url, deployed]
+          properties:
+            number:
+              type: integer
+            url:
+              type: string
+            deployed:
+              type: boolean
+              description: A Taskboard deploy commit names this pull request.
+    BugStep:
+      type: object
+      required: [at, who, text, boxes, state]
+      properties:
+        at:
+          type: string
+          format: date-time
+          nullable: true
+        who:
+          type: string
+          enum: [Alert check, Person, Trigger, Script, Agent, Implementer, Human, Argo CD]
+        text:
+          type: string
+          description: Masked.
+        boxes:
+          type: array
+          items:
+            type: string
+        state:
+          type: string
+          enum: [ok, failed, waiting, human]
+    BugFindings:
+      type: object
+      nullable: true
+      description: >-
+        What the comment said, from the trigger's posted line (masked): verdict, confidence,
+        summary, ticket, likely_cause, docs_rule, hypotheses, evidence (kept and dropped, each with
+        its reason), dropped_other, next_step, comment_url, verified, total, and `truncated` (the
+        lists the trigger's 16 KB cap shortened). Null before the comment is posted. Lines from
+        before the trigger logged its evidence carry only the verdict and the counts.
+      additionalProperties: true
+    BugTrail:
+      type: object
+      required: [source, calls, truncated]
+      properties:
+        source:
+          type: string
+          nullable: true
+          enum: [trigger, trace, null]
+          description: The trigger's own record (tool, target, ok), else the trace's tool spans.
+        calls:
+          type: array
+          items:
+            type: object
+            required: [tool, target, ok]
+            properties:
+              tool:
+                type: string
+              target:
+                type: string
+                nullable: true
+              ok:
+                type: boolean
+                nullable: true
+        truncated:
+          type: boolean
+    BugEvent:
+      type: object
+      description: The run's summary, steps, findings and trail. Sent first, then again with each `boxes`.
+      required: [event, data]
+      properties:
+        event:
+          type: string
+          enum: [bug]
+        data:
+          type: object
+          required: [bug, steps, findings, trail, legacy]
+          properties:
+            bug:
+              $ref: "#/components/schemas/BugSummary"
+            steps:
+              type: array
+              items:
+                $ref: "#/components/schemas/BugStep"
+            findings:
+              $ref: "#/components/schemas/BugFindings"
+            trail:
+              $ref: "#/components/schemas/BugTrail"
+            legacy:
+              type: boolean
+              description: The run predates the trigger's evidence lines (taskboard #30, #32, #33).
     DemoStatus:
       type: object
       required: [workload, reachable, open_prs, last_investigated, can_start, reason, alert_expected]
@@ -766,10 +964,12 @@ components:
         id:
           type: string
           enum: [gateway, login, app, identity, kagent, sandbox, model, tools, alert, dispatcher, pr,
-                 slack, human]
+                 slack, human, report, trigger, gather, verify, comment, fix, review, deploy]
           description: >-
-            The Ask hk tab's eight boxes, and the On its own tab's ten (alert, dispatcher, identity,
-            kagent, sandbox, model, tools, pr, slack, human).
+            The Ask hk tab's eight boxes, the On its own tab's ten (alert, dispatcher, identity,
+            kagent, sandbox, model, tools, pr, slack, human), and the Bug investigator tab's thirteen
+            (report, trigger, gather, kagent, verify, identity, sandbox, model, tools, comment, fix,
+            review, deploy).
         title:
           type: string
         what:
