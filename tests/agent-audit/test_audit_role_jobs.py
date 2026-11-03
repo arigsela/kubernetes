@@ -97,3 +97,27 @@ def test_v1_grants_are_skipped_not_failed_without_a_database():
         script = _container(job)["command"][2]
         assert 'if [ -z "${AUDIT_DB_V1:-}" ]' in script
         assert "does not exist yet: skipping the kagent 1.0 grants" in script
+
+
+def _wave(job: str) -> int:
+    doc = yaml.safe_load((ROOT / "base-apps/postgresql" / job).read_text())
+    return int(doc["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"])
+
+
+def test_audit_role_jobs_never_share_a_wave():
+    """Both Jobs GRANT/REVOKE on schema kagent. In one wave they run at once, and two changes to
+    one object's privileges fail with "tuple concurrently updated" (2026-11-03: kagent_audit_ro
+    lost USAGE on schema kagent and the agent-kpis CronJob failed)."""
+    assert len({_wave(job) for job in JOBS}) == len(JOBS)
+
+
+def test_v1_grants_run_in_one_transaction_that_stops_at_the_first_error():
+    """Without both flags psql carries on past a failed GRANT and exits 0: the REVOKEs stand,
+    the role loses its access and the hook still succeeds."""
+    for job in JOBS:
+        script = _container(job)["command"][2]
+        call = script[script.index('-d "$AUDIT_DB_V1"'):]
+        call = call[:call.index("<<'EOSQL'")]
+        assert "-v ON_ERROR_STOP=1" in call and "--single-transaction" in call, job
+        assert re.search(r"until PGPASSWORD=\S+ psql[^\n]*\\\n\s*-U \S+ -d \"\$AUDIT_DB_V1\"", script), job
+        assert "exit 1" in script[script.index("<<'EOSQL'", script.index('-d "$AUDIT_DB_V1"')):], job
