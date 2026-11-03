@@ -13,13 +13,14 @@ sources:
   - base-apps/argo-cd.yaml
   - base-apps/master-app.yaml
   - base-apps/managed-apps.yaml
-  - appsets/managed-apps
   - docs/managed-apps-appset.md
   - base-apps/argo-cd/httproute.yaml
   - base-apps/argo-cd/certificate.yaml
   - base-apps/argo-cd/reference-grant.yaml
   - base-apps/istio-ingress/authorizationpolicy.yaml
-  - terraform/modules/argocd
+  - terraform/modules/argocd/helm.tf
+  - terraform/modules/argocd/variables.tf
+  - terraform/modules/argocd/namespaces.tf
   - terraform/roots/asela-cluster/argocd.tf
   - scripts/argo-sync-window.sh
 ---
@@ -27,7 +28,7 @@ sources:
 # argo-cd
 
 ## What it is
-The GitOps control plane for this cluster. Argo CD itself is installed via Terraform (Helm release in `terraform/modules/argocd/helm.tf`, chart pin in `terraform/modules/argocd/variables.tf` — `10.9.2`, app `v3.5.3` at time of writing — invoked from `terraform/roots/asela-cluster/argocd.tf`). It is not one of the `base-apps/*.yaml` Applications it manages. `base-apps/argo-cd/` only holds this app's own GitOps-synced supplementary resources, the UI's `httproute.yaml`, `certificate.yaml` and `reference-grant.yaml`, synced by the `argo-cd-config` Application defined in `base-apps/argo-cd.yaml`.
+The GitOps control plane for this cluster. Argo CD itself is installed via Terraform (Helm release in `terraform/modules/argocd/helm.tf`, chart pin in `terraform/modules/argocd/variables.tf` — `10.11.6`, app `v3.5.6` at time of writing — invoked from `terraform/roots/asela-cluster/argocd.tf`). It is not one of the `base-apps/*.yaml` Applications it manages. `base-apps/argo-cd/` only holds this app's own GitOps-synced supplementary resources, the UI's `httproute.yaml`, `certificate.yaml` and `reference-grant.yaml`, synced by the `argo-cd-config` Application defined in `base-apps/argo-cd.yaml`.
 
 ## Architecture & data flow
 Applications are discovered two ways, and the two sets are disjoint (`tests/appset/test_disjoint.py`):
