@@ -3,7 +3,7 @@
 #
 # !!! GENERATED FILE — DO NOT EDIT BY HAND !!!
 # Generator:  scripts/gen-taskboard-configmap.py
-# Source:     arigsela/taskboard@ebaa62d7a7f4ca62e3ad89033c20cdc13ad58524
+# Source:     arigsela/taskboard@7bb693c6046f2d923e0580e336201eadc49c691a
 #             (taskboard/* and traffic/simulate.py)
 # Regenerate: ./scripts/gen-taskboard-configmap.py --source <taskboard checkout> --commit <sha>
 # tests/taskboard/ fails if this file and deployment.yaml's checksum/code or source-commit disagree.
@@ -18,7 +18,7 @@ metadata:
   labels:
     app: taskboard
   annotations:
-    taskboard.arigsela.com/source-commit: ebaa62d7a7f4ca62e3ad89033c20cdc13ad58524
+    taskboard.arigsela.com/source-commit: 7bb693c6046f2d923e0580e336201eadc49c691a
     taskboard.arigsela.com/source-repo: arigsela/taskboard
 data:
   app.js: |
@@ -33,9 +33,10 @@ data:
     };
 
     // The table of moves per status (shared with keyboard shortcuts later).
+    // Keys are the task statuses the API returns: open, in_progress, done.
     const MOVES = {
       open: [["Start", "in_progress"]],
-      "in-progress": [["Done", "done"], ["Back to open", "open"]],
+      in_progress: [["Done", "done"], ["Back to open", "open"]], // issue #45, 2026-10-30: was keyed "in-progress", so no buttons rendered
       done: [["Reopen", "open"]],
     };
 

@@ -31,8 +31,8 @@ spec:
         # start, so checksum/code rolls it on a code change. source-commit is the arigsela/taskboard
         # commit the pod runs: the app reports it (TASKBOARD_COMMIT below), and the commit here that
         # changed it is the deploy, live from its merge.
-        checksum/code: "05162e3974c80dfaecd3fc767c067267cb3a27173493dc3ac62605c9dd2e70c7"
-        taskboard.arigsela.com/source-commit: "ebaa62d7a7f4ca62e3ad89033c20cdc13ad58524"
+        checksum/code: "800ff0829617876ee8f9c8ba5da856e2ea14809373d605dd7ca9960e52d54f05"
+        taskboard.arigsela.com/source-commit: "7bb693c6046f2d923e0580e336201eadc49c691a"
     spec:
       serviceAccountName: taskboard
       automountServiceAccountToken: false
@@ -123,7 +123,7 @@ spec:
         app.kubernetes.io/name: taskboard-traffic
       annotations:
         # Written by scripts/gen-taskboard-configmap.py, as on the app.
-        checksum/code: "05162e3974c80dfaecd3fc767c067267cb3a27173493dc3ac62605c9dd2e70c7"
+        checksum/code: "800ff0829617876ee8f9c8ba5da856e2ea14809373d605dd7ca9960e52d54f05"
     spec:
       serviceAccountName: taskboard-traffic
       automountServiceAccountToken: false
