@@ -158,8 +158,8 @@ spec:
         checksum/config: "db11cc8bc2c98ba132a0b9046afdb333e67c548648a6446c3ca33237f85e74c1"
         # Written by scripts/gen-taskboard-configmap.py with taskboard-browser-code; CI checks both.
         # The checksum covers .source-commit, so a deploy that changes only the commit rolls this pod.
-        checksum/code: "e956157c359aedc2efda1aca657466e86e127f1d0245e428e754bf3013b8cc53"
-        taskboard.arigsela.com/source-commit: "ebaa62d7a7f4ca62e3ad89033c20cdc13ad58524"
+        checksum/code: "38e1e178c770dafe2d5069342ebd3bb3b72a66508bb3c3e68dd8e3e5dadf2bed"
+        taskboard.arigsela.com/source-commit: "7bb693c6046f2d923e0580e336201eadc49c691a"
         # Written by scripts/gen-bug-investigator-core.py; CI checks it.
         checksum/core: "06a2f90b9834012a76296f1f1a5996f2bc29d7acc065cd2a821e553ab136e634"
         # agentgateway's /metrics (default statsAddr). Annotation only: a 15020
