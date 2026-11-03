@@ -28,7 +28,11 @@ spec:
         runAsGroup: 999
       containers:
       - name: postgresql
-        image: pgvector/pgvector:0.8.7-pg18@sha256:2358fcba361ed2233a5ed81b5fe4ca779ccb304120ce531a3bf51c0ed7e2bc11
+        # The Debian release is in the tag on purpose: it fixes glibc (bookworm = 2.36), and glibc
+        # decides how text sorts in every index built on the default collation. The plain tag
+        # once moved this server from postgres:18.1 (trixie, 2.41) to bookworm without anyone
+        # noticing (2026-04-10). Changing it again needs a reindex: runbook, "collation version mismatch".
+        image: pgvector/pgvector:0.8.7-pg18-bookworm@sha256:c29f30688a9ad961691bdf0ec1650717cc132a5814619d80f80463d6e4c42e47
         env:
         - name: POSTGRES_DB
           valueFrom:
