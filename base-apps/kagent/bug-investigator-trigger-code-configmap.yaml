@@ -1108,7 +1108,10 @@ data:
                 status = 1
         issue = pick_issue(cfg, gh, log)
         if not issue:
-            log({"event": "idle"})
+            # Nothing to do: write nothing. Each run is a new pod and so a new Loki stream; an "idle"
+            # line every 2 minutes made ~3,900 streams a week, and hk-demo's 7-day read of this
+            # trigger's lines then took over 30 s on a cold cache (2026-11-03). The Job's status shows
+            # that the run happened.
             return status
         n = issue["number"]
         try:

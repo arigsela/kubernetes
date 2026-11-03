@@ -432,12 +432,14 @@ def test_a_broken_alert_step_does_not_block_bug_reports():
     assert holder["core"].posted
 
 
-def test_an_idle_run_exits_zero():
+def test_an_idle_run_exits_zero_and_logs_nothing():
+    # Every run is a new pod and so a new Loki stream. One "idle" line per run made ~3,900 streams
+    # a week, and hk-demo's 7-day read of this trigger's lines took over 30 s on a cold cache.
     gh = FakeGitHub()
     cfg, d, asked, _ = make(gh)
     logs = []
     d.log = logs.append
-    assert t.run(cfg, TOKEN, d) == 0 and not asked and logs[-1] == {"run": None, "event": "idle"}
+    assert t.run(cfg, TOKEN, d) == 0 and not asked and logs == []
 
 
 # ---------------------------------------------------------------- the token

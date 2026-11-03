@@ -316,7 +316,10 @@ group to the role, and note it in the manifest header's dated list.
   access (or the App).
 - **Read the run:** `kubectl -n kagent get jobs --sort-by=.metadata.creationTimestamp | grep bug-investigator-trigger | tail -3`,
   then `kubectl -n kagent logs job/<name>` (one JSON line per step, token scrubbed). The same
-  lines are in Loki: `{namespace="kagent", pod=~"bug-investigator-trigger-.*"}`.
+  lines are in Loki: `{namespace="kagent", pod=~"bug-investigator-trigger-.*"}`. A run with
+  nothing to pick writes no line at all, so an empty log is a normal idle run. Idle runs stopped
+  logging on 2026-11-03: each run is a new pod, so its line was a new Loki stream (~3,900 a week),
+  which made 7-day reads of these lines slow on a cold cache.
 - **Token:** `kubectl -n kagent get externalsecret bug-investigator-trigger-github` must be
   `SecretSynced`. A failure there means the App lost its Taskboard installation or the
   `implementer-github-app` Secret changed.
