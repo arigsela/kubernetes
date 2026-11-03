@@ -87,6 +87,27 @@ beacon's role hook (beacon §T.15). "skipping" means Vault has no beacon passwor
 `postgresql-cluster-superuser` is missing: `enableSuperuserAccess` must stay `true` in
 `cnpg-cluster.yaml`. The rest is in `base-apps/beacon/runbook.md`.
 
+### Symptom: `database "<db>" has a collation version mismatch` (pg_dump, psql, logs)
+The database was created under a different glibc than the server now runs, so indexes on text
+built before the change may be sorted by the old rules (lookups can miss rows, unique checks can
+let duplicates in). The plain instance's glibc comes from the image's Debian release, which is why
+`deployments.yaml` names it in the tag (`-bookworm`, glibc 2.36). History: databases created on
+`postgres:18.1` (trixie, 2.41) before the 2026-04-10 switch to the pgvector image carried 2.41;
+found 2026-11-03 in `backstage`, `chores_tracker`, `kagent`, `langflow`, `n8n` and `weather_kitchen`
+(amcheck: all 582 indexes in order).
+- **Check:** `select datname, datcollversion, pg_database_collation_actual_version(oid) from pg_database;`
+  lists the mismatched databases. Whether an index is actually out of order: in each database,
+  `BEGIN; CREATE EXTENSION IF NOT EXISTS amcheck;` then `bt_index_check(<index>, true, <indisunique>)`
+  over its btree indexes, then `ROLLBACK;` (nothing stays behind). The read-only `kagent` archive
+  needs `SET TRANSACTION READ WRITE;` after `BEGIN` for that check.
+- **Fix:** dump first (this instance has no backup; `pg_dump -Fc` to
+  `s3://mysql-backups-asela-cluster/pg/`). Then in each writable database
+  `REINDEX DATABASE CONCURRENTLY <db>` (reads and writes continue), and from `postgres`
+  `ALTER DATABASE <db> REFRESH COLLATION VERSION`. The read-only `kagent` archive has no writers,
+  so a clean amcheck plus the refresh is enough.
+- **Before changing the Debian release** in the tag (e.g. to `-trixie`): plan the same reindex and
+  refresh for every database, right after the new image starts.
+
 ## CNPG cluster (`postgresql-cluster`)
 
 ### Find the primary / check cluster health

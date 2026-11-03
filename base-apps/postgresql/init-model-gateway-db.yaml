@@ -34,7 +34,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: init-model-gateway-db
-          image: pgvector/pgvector:0.8.7-pg18@sha256:2358fcba361ed2233a5ed81b5fe4ca779ccb304120ce531a3bf51c0ed7e2bc11
+          image: pgvector/pgvector:0.8.7-pg18-bookworm@sha256:c29f30688a9ad961691bdf0ec1650717cc132a5814619d80f80463d6e4c42e47
           command:
             - /bin/sh
             - -c
