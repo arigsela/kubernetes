@@ -44,7 +44,7 @@ spec:
       containers:
         - name: taskboard
           # The dispatcher's image and digest; Renovate keeps both pinned (pinDigests for base-apps).
-          image: python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966
+          image: python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f
           command: ["python", "-u", "/opt/taskboard/server.py"]
           env:
             - name: PORT
@@ -134,7 +134,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: traffic
-          image: python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966
+          image: python:3.14-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980916788d80f04802f
           command: ["python", "-u", "/opt/taskboard/simulate.py"]
           env:
             - name: TASKBOARD_URL
