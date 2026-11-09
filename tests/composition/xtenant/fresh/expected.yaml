@@ -207,7 +207,7 @@ spec:
       value: none
     - name: OTEL_LOGS_EXPORTER
       value: none
-    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b2@sha256:d3a1dae864158a561a99fd7bb8e4ac1c7c5f2f80a4d9d095b1813866da52693a
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b2@sha256:f0eb2c59acb53cea7e9bca8d6bf98f813cecb4776ea3129f487e1cf8db2f2adb
   sampler:
     argument: '1.0'
     type: parentbased_traceidratio
