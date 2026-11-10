@@ -141,6 +141,25 @@ Anonymize it before it goes to an outside audience.
 | `safe-agent-deployment-infographics.pdf` | Five 16:9 infographic panels (the deployment path; three levels of autonomy; a fix has two different gates; boundaries around every session; test the agent, watch the guardrails). Raster pages, no selectable text; the notes below carry the text. |
 | `safe-agent-deployment-speaker-notes.md` | Per-panel text alternative, what to say, evidence and scope. Its scope lines are the ones to keep in mind when presenting: the Git-only policy covers agent definitions, not every resource; the shared Kubernetes tool server stays broadly privileged; the UI still shares one identity; the eval gate runs after sync and does not roll back. |
 
+## How our AI gateway works — 2026-11-10
+
+Three illustrated panels for one non-technical reader: the author of Human Driven AI's
+"AI Routers Are Changing AI Governance" (August 2026), to show a working example of the
+article's idea that governance follows the pathway a request takes. Panel 1 is why the gateway
+was built (the shared spending limit that stopped every agent on 2026-10-14); panel 2 is the
+pathway, the gateway's three checks and what happens when a group's daily budget runs out;
+panel 3 is model size matched to the work, the three kinds of action of which one needs
+approval, what the platform shares with the article and what it chose not to build. The images
+use plain words only: no product names, paths or status codes. Drawn from repository revision
+`02dd5725` (no cluster or agent was exercised). It is **not anonymized**: the footer carries
+the owner's name, which the owner chose.
+
+| file | what it is |
+|---|---|
+| `ai-gateway-infographics.pdf` | Three 16:9 infographic panels (one limit stopped everything; the pathway and what the gateway checks; match the model to the work and keep a person on the risky steps). Raster pages, no selectable text; the notes below carry the text. |
+| `ai-gateway-speaker-notes.md` | The visible copy as text, a glossary from each plain term to what it is in the repository, the evidence and status of every claim, and the limits to keep in mind: the pathway covers the ten budget groups and is not the only route to the provider; a daily limit is not an exact cap; the gateway does not inspect requests or choose the model. |
+| `ai-gateway-presentation-brief.md` | The source brief handed to the infographic agent: audience, exact copy per region, diagram topology, evidence table and the "do not claim" list. |
+
 ## Tech-stack talk — 2026-10-11
 
 | file | what it is |
