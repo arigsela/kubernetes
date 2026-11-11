@@ -75,13 +75,18 @@ spec:
                 secretKeyRef:
                   name: agent-audit-web-s3-creds
                   key: attribute.secret
+          # Limits sized for the Findings page's default 30-day window. Measured on
+          # 2026-11-11 with v0.3.0 (one GET /, cgroup counters): 36 s wall, 16.2 s CPU,
+          # throttled in 294 of 357 periods at 500m, memory peak at the 384Mi limit
+          # (a second request was OOMKilled). The page decodes every event in the
+          # window in one Python thread, so more than 1 CPU would not help.
           resources:
             requests:
               cpu: 50m
               memory: 128Mi
             limits:
-              cpu: 500m
-              memory: 384Mi
+              cpu: "1"
+              memory: 768Mi
           # exec probes: the app listens on loopback, which kubelet cannot reach.
           startupProbe:
             exec:
@@ -119,6 +124,9 @@ spec:
           args:
             - --http-address=0.0.0.0:4180
             - --upstream=http://127.0.0.1:8000/
+            # The default 30s returned 502 ("timeout awaiting response headers") once
+            # the 30-day Findings page passed 30 s (31-36 s on 2026-11-11).
+            - --upstream-timeout=120s
             - --provider=oidc
             - --provider-display-name=GitHub (via Dex)
             - --oidc-issuer-url=https://dex.arigsela.com
