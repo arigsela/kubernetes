@@ -1,12 +1,14 @@
 crossplane:
   # Resource limits for Crossplane
+  # Memory raised 256Mi/512Mi -> 384Mi/768Mi: alert "Container near memory limit"
+  # (crossplane-system/crossplane, 96% of limit, no OOMKilled), 2026-11-11.
   resourcesCrossplane:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 384Mi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 768Mi
 
   # RBAC manager resources
   resourcesRBACManager:
