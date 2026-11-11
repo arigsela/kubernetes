@@ -37,6 +37,10 @@ sources:
 - **Check:** `kubectl -n agent-audit logs deploy/agent-audit-web -c app | grep "archive refresh"`; `kubectl get accesskey.iam.aws.upbound.io agent-audit-web-s3-read-key`; `kubectl -n agent-audit get secret agent-audit-web-s3-creds`.
 - **Fix:** the Crossplane AccessKey or the S3 read policy (`base-apps/agent-audit-aws-infrastructure/web-s3-read*.yaml`). Since v0.1.1 a bucket that can be listed but not read also lands here (archive down; the log says `archive refresh: N files listed, none readable: <ErrorClass>`) instead of passing for a healthy, empty archive.
 
+### Symptom: login works, then a page returns 502 Bad Gateway (oauth2-proxy), or the app restarts `OOMKilled`
+- **Check:** `kubectl -n agent-audit logs deploy/agent-audit-web -c oauth2-proxy | grep "timeout awaiting response headers"`; `kubectl -n agent-audit get pod -l app=agent-audit-web -o jsonpath='{.items[0].status.containerStatuses[?(@.name=="app")].lastState}'`. Time a page from inside the pod (skips oauth2-proxy): `kubectl -n agent-audit exec deploy/agent-audit-web -c app -- python -c "import time,urllib.request as u; t=time.time(); u.urlopen('http://127.0.0.1:8000/', timeout=180).read(); print(round(time.time()-t,1))"`. `/sys/fs/cgroup/cpu.stat` (`nr_throttled`) and `memory.peak` in the same container show whether the CPU or memory limit is the bottleneck.
+- **Fix:** the page took longer than `--upstream-timeout` or needed more memory than the app's limit. Pages decode every event in their window, so time and memory grow with the window (Findings defaults to 30 days) and with kagent's event volume. Workaround: a shorter window, `?days=1`. Raise the limits or the timeout in `deployment.yaml` (sized 2026-11-11: `1` CPU, 768Mi, 120s). A lasting fix bounds the work in the app.
+
 ### Symptom: `ImagePullBackOff` on a first deploy or a new namespace
 - **Check:** `kubectl -n agent-audit get secret ecr-registry`.
 - **Fix:** none needed - the `ecr-auth` app's CronJob `kube-system/ecr-credentials-sync` copies `ecr-registry` into every namespace every 15 minutes. Wait.
