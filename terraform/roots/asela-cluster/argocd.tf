@@ -387,6 +387,22 @@ module "argocd" {
           g, arigsela, role:admin
         EOT
       }
+
+      # Git submodules off, added 2026-11-11 for CVE-2026-111760: a crafted
+      # submodule can run code during a recursive clone (fixed in Git 2.56.1
+      # and its backports, released 2026-11-10). When a source repo has a
+      # .gitmodules file, the repo-server and the ApplicationSet controller
+      # run `git submodule update --init --recursive`. No source here has one
+      # (this repo, and kubernetes-sigs/gateway-api at v1.5.1), so turning
+      # it off changes nothing we render. The argocd image installs Ubuntu's
+      # git package, and every release so far (through v3.6.1) predates the
+      # fix. Re-enable only if a source starts using submodules, and only on
+      # an image with a patched Git. Both deployments carry a
+      # checksum/cmd-params annotation, so applying this restarts them.
+      params = {
+        "reposerver.enable.git.submodule"               = "false"
+        "applicationsetcontroller.enable.git.submodule" = "false"
+      }
     }
   }
 }
