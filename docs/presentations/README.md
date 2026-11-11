@@ -96,8 +96,10 @@ implementer deck's "not yet: gated operator action for leaks" is the leak restar
 the same day. Restart approvals are now decided on the dispatcher's approvals page (live later
 that afternoon, and it logs the approver's email) or with Slack buttons (that evening), so the
 command-line approval on the restarter deck's panel 05 is the fallback. And the runtime moved
-from kagent 1.0.0-alpha11 to alpha14 on 2026-10-19; the implementer notes' sandbox limitation
-was written against alpha11.
+from kagent 1.0.0-alpha11 to alpha14 on 2026-10-19. The implementer notes were corrected on
+2026-11-11: the agent has always run in a Substrate sandbox, and the limitation written
+against alpha11 is that it has no workbench there; it has had an evaluation corpus since
+2026-10-17; and the template header now says four proposal tools, as the deck does.
 
 | file | what it is |
 |---|---|

@@ -6,15 +6,18 @@ What landed on 2026-10-14, what it may do, how to use it, and where its gates ar
 invariants §V.87 (amended), §V.94, §V.95.
 
 ## In one paragraph
-A kagent agent named `implementer` runs in the cluster and can change this repository, but
-only one way: it edits files on a branch named `agent/<slug>` and opens a pull request under
-its own GitHub App, `arigsela-implementer`. It never merges, closes, reviews or comments; it
-cannot push to `main` (the ruleset requires a PR) or touch `.github/workflows` (the App has
-no Workflows permission). Triage labels its PRs like any other, promotion refuses them by
-author and by every commit on the branch, and the owner merges or closes. Two callers exist:
-a person through `scripts/ask-hk --agent kagent/implementer "..."`, and the dispatcher, which
-routes the two resource alerts to it so a "limit too low" finding becomes a pull request with
-no human in between. Nothing the agent does is a production change; the merge is the gate.
+A kagent agent named `implementer` runs in the cluster and can change this repository (and,
+since 2026-10-27, `arigsela/taskboard` for a verified bug), but only one way: it edits files on
+a branch named `agent/<slug>` and opens a pull request under its own GitHub App,
+`arigsela-implementer`. It never merges, closes, reviews or comments; it cannot push to `main`
+(the ruleset requires a PR) or touch `.github/workflows` (the App has no Workflows
+permission). Triage labels its PRs like any other, promotion refuses them by author and by
+every commit on the branch, and the owner merges or closes. Three callers exist: a person
+through `scripts/ask-hk --agent kagent/implementer "..."`; the dispatcher, which routes the two
+resource alerts to it so a "limit too low" finding becomes a pull request with no human in
+between; and the bug-investigator trigger, which asks for one fix pull request on
+`arigsela/taskboard` from script-verified findings (§T.146). Nothing the agent does is a
+production change; the merge is the gate.
 
 ## What was deployed
 
@@ -93,7 +96,7 @@ comment repeated, `review:skim`, promotion → `owner`).
 ## Where the gates are (and what each one stops)
 | Gate | Stops |
 |---|---|
-| GitHub App permissions (one repo; Contents + PRs; no Workflows; no admin) | changing CI, any other repo, settings |
+| GitHub App permissions (two repos, this one and `arigsela/taskboard`; Contents + PRs; no Workflows; no admin) | changing CI, any other repo, settings |
 | `main` ruleset (PR required; bypass actors in pull-request mode only) | a direct push to `main` by anyone, the App included |
 | Taxonomy at admission + CI (`propose` ≠ `write`) | an agent template binding a cluster-mutating tool without approval, or a read agent binding PR tools |
 | Explicit `--tools` list (11 names, no toolset; tests pin them) | merge, close/retarget, review, delete, fork from ever existing in the server |
@@ -102,15 +105,19 @@ comment repeated, `review:skim`, promotion → `owner`).
 | Dispatcher: budget (4/h, 6 h repeat), `open_prs_max` (3), NetworkPolicy (Grafana only) | PR floods, forged alerts from other workloads |
 | Verified caller identity (V91) | sessions under a borrowed name; the dispatcher's sessions are owned by its ServiceAccount |
 | Audit + risk review | silent activity; every propose call is a candidate |
+| Evaluation gate: `tests/eval-corpus/implementer.yaml` (since 2026-10-17) plus the shared adversarial corpus | a definition change that makes it open a branch for a plain question, or repeat a planted credential, going unnoticed: it is scored after the change syncs, and a regression alerts; the dispatcher and the Slack bridge then open no session with it until a later sync scores it clean (`base-apps/kagent/docs.md`, "Evaluation gate") |
 
 ## What it is not (yet)
-- No Substrate sandbox: sandboxes have no network egress at kagent alpha11, so the GitHub API is
-  the workbench and CI is the validation. The contract would not change if a sandbox arrived.
+- No workbench: it runs in a Substrate sandbox like every agent (Harness `kagent-stateless`,
+  worker pool `kagent-default`), but none of its tools clones the repository or runs a test. At
+  kagent alpha11 a sandbox could not reach GitHub, so the git work could not happen inside one;
+  whether alpha14 sandboxes can is unchecked. The GitHub API is its workbench and CI is its
+  validation. The contract would not change if a workbench arrived.
 - The leak case ends in a gated restart (the `restarter` agent, 2026-10-14), not a code fix:
   a recurring leak is a finding again and needs an upstream change. Contention stays a finding.
 - No CI feedback loop inside the turn: the agent does not wait for checks or fix up a PR.
-- No evaluation corpus for this agent: a prompt regression shows in its next PR, which you read.
-- One kind of change from alerts (a resource number in one manifest). Anything else arrives
+- One kind of change from alerts (a resource number in one manifest) and one from the
+  bug-investigator trigger (a Taskboard fix with its regression test). Anything else arrives
   through a human request to the same agent, under the same contract.
 
 ## Operating it
