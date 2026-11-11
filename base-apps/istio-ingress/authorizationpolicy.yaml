@@ -104,7 +104,12 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
-  # atlantis additionally allows GitHub webhook ranges (IPv4 + IPv6).
+  # atlantis additionally allows GitHub webhook ranges (IPv4 + IPv6), copied
+  # from the `hooks` list of `gh api meta`. GitHub adds ranges without notice:
+  # the three 9.234.x.x/28s were missing until 2026-11-11, and a third of
+  # webhooks (PR opened, `atlantis apply` comments) got a 403 here and never
+  # reached Atlantis. If autoplan or a comment does nothing, diff this list
+  # against `gh api meta --jq '.hooks[]'` first.
     - to:
         - operation:
             hosts:
@@ -121,6 +126,9 @@ spec:
               - 185.199.108.0/22
               - 140.82.112.0/20
               - 143.55.64.0/20
+              - 9.234.106.48/28
+              - 9.234.98.160/28
+              - 9.234.98.176/28
               - 2a0a:a440::/29
               - 2606:50c0::/32
     - to:
