@@ -185,7 +185,7 @@ The agent keeps answering from live cluster objects and says it can't read the r
 
 ### Symptom: the implementer says it cannot open a pull request (GitHub 401/404 from `implementer-mcp`)
 The App token is minted from the Secret `implementer-github-app` (Vault `implementer-github-app`).
-- **Check:** `kubectl -n kagent logs deploy/implementer-mcp --tail=50`: `401` = App ID or private key wrong; `404` = installation ID wrong or the App is not installed on the repo; a startup error naming a tool = a misspelt `--tools` entry. `kubectl -n kagent get remotemcpserver implementer -o jsonpath='{.status.discoveredTools[*].name}'` must list 12 tools.
+- **Check:** `kubectl -n kagent logs deploy/implementer-mcp --tail=50`: `401` = App ID or private key wrong; `404` = installation ID wrong or the App is not installed on the repo; a startup error naming a tool = a misspelt `--tools` entry. `kubectl -n kagent get remotemcpserver implementer -o jsonpath='{.status.discoveredTools[*].name}'` must list 11 tools.
 - **Fix (owner):** re-run `scripts/provision-implementer-vault.sh` with the right `--app-id`, `--installation-id` or a new `--key-file`, then `kubectl -n kagent annotate externalsecret implementer-github-app force-sync=$(date +%s) --overwrite` and `kubectl -n kagent rollout restart deploy/implementer-mcp`.
 - **A PR it opened cannot change `.github/workflows`**: by design (no Workflows permission); the agent reports it and opens nothing.
 - **`agent run failed: duplicate tool: "<name>"`** on the first turn: two bindings on the template repeat a tool name; the Go ADK refuses the agent. `tests/implementer/test_agent.py::test_no_tool_name_is_bound_twice` pins it.

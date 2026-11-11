@@ -1,6 +1,6 @@
 # implementer — the agent that changes this repository, under its own identity (§T.116, §V.94,
 # §V.95). WHAT it is: Sonnet 5.5, class `propose`: it binds the implementer GitHub tools (read +
-# the taxonomy's five proposal tools, ungated: the merge is the human gate) and k8s-reader's
+# the taxonomy's four proposal tools, ungated: the merge is the human gate) and k8s-reader's
 # eight read tools, so it can investigate before it proposes. HOW it runs:
 # ../agents/implementer.yaml -> ../harnesses/kagent-stateless.yaml (no memory: every task starts
 # from the repository and the request). No sub-agents. It never merges, closes, reviews or
