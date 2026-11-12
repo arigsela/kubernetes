@@ -93,12 +93,15 @@ jobs:
       - name: Validate changed Kubernetes manifests
         run: |
           # base-apps/<app>/mkdocs.yml is Backstage TechDocs config,
-          # appsets/*/*.yaml are ApplicationSet generator configs and
+          # appsets/*/*.yaml are ApplicationSet generator configs,
           # base-apps/model-gateway/budgets.yaml is the budget table (§T.137,
-          # read by scripts/gen-model-budgets.py). None is a Kubernetes
-          # manifest, so kubeconform would fail them. Drop them before
-          # validating; yamllint still covers them.
-          FILES=$(echo "${{ needs.changed-files.outputs.yaml_files }}" | tr ' ' '\n' | grep -v -e '/mkdocs\.yml$' -e '^appsets/' -e '^base-apps/model-gateway/budgets\.yaml$' || true)
+          # read by scripts/gen-model-budgets.py), and Chart.yaml/values.yaml
+          # belong to Helm umbrella charts (base-apps/crossplane-system). None
+          # is a Kubernetes manifest, so kubeconform would fail them ("missing
+          # 'kind' key"). Drop them before validating; yamllint still covers them.
+          FILES=$(echo "${{ needs.changed-files.outputs.yaml_files }}" | tr ' ' '\n' \
+            | grep -v -e '/mkdocs\.yml$' -e '^appsets/' -e '^base-apps/model-gateway/budgets\.yaml$' \
+              -e '/Chart\.yaml$' -e '/values\.yaml$' || true)
           if [ -z "$FILES" ]; then echo "No Kubernetes manifests to validate."; exit 0; fi
           echo "$FILES" | xargs kubeconform \
             -summary \
