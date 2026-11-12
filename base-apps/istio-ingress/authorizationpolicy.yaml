@@ -39,7 +39,8 @@ metadata:
   annotations:
     # SOURCE OF TRUTH for which of the four /32s below is the home WAN address.
     #
-    # This file allow-lists four addresses per rule; only this one rotates when
+    # This file allow-lists four addresses per rule (the backstage rule has a
+    # fifth, 104.28.177.81); only this one rotates when
     # the ISP reassigns it. base-apps/wan-ip-monitor replaces exactly the string
     # named here and moves this annotation in the same commit, so it can never
     # guess wrong and clobber one of the three remote addresses.
@@ -143,6 +144,12 @@ spec:
               - 170.85.56.189/32
               - 170.85.130.202/32
               - 104.28.177.82/32
+              # Work laptop's Cloudflare WARP egress, seen as the source of a
+              # 403 on this host in the gateway access log (2026-11-12). WARP
+              # picks the egress from a pool, so it can differ from .82 above.
+              # Backstage only: sign-in is GitHub OAuth, so no other host is
+              # needed. Add single /32s as they appear, never a range.
+              - 104.28.177.81/32
     - to:
         - operation:
             hosts:
