@@ -110,13 +110,15 @@ spec:
         # 2026-10-26: alert "Container near memory limit" (logging/prometheus-0, 91% of
         # the 4608Mi limit, no OOMKilled, 0 restarts) -> limit 4608Mi -> 6912Mi, request
         # 3Gi -> 4608Mi (same 2:3 ratio).
+        # 2026-11-12: no alert. Limit 6912Mi -> 7168Mi, request unchanged, so git differs from
+        # the running pod (OnDelete) and a replayed alert exercises the rollout-pending restart.
         resources:
           requests:
             cpu: 250m
             memory: 4608Mi
           limits:
             cpu: 1000m
-            memory: 6912Mi
+            memory: 7168Mi
         # Resize in place without restarting the container (the default, stated so the
         # intent is explicit). In-place resize is GA in k8s 1.35.
         resizePolicy:
