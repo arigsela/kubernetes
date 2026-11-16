@@ -32,7 +32,7 @@ spec:
         # decides how text sorts in every index built on the default collation. The plain tag
         # once moved this server from postgres:18.1 (trixie, 2.41) to bookworm without anyone
         # noticing (2026-04-10). Changing it again needs a reindex: runbook, "collation version mismatch".
-        image: pgvector/pgvector:0.8.7-pg18-bookworm@sha256:c29f30688a9ad961691bdf0ec1650717cc132a5814619d80f80463d6e4c42e47
+        image: pgvector/pgvector:0.8.7-pg18-bookworm@sha256:38681dc6eaf55308e2a4c6de392d131652dcfac70e1263e35cd9b5ea3fe39782
         env:
         - name: POSTGRES_DB
           valueFrom:
