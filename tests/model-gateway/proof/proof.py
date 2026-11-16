@@ -32,7 +32,7 @@ import model_budgets as mb  # noqa: E402
 IMAGE = ("852893458518.dkr.ecr.us-east-2.amazonaws.com/agentgateway:v1.7.0"
          "@sha256:3deb61f286641d4577202d11a10d5e7c1dcf83f23c6f44692f36d9310d894b8e")
 NET = "mgproof"
-ALPINE = "alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a"
+ALPINE = "alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf"
 VOLUME = "mgproof-files"
 PROVIDER_KEY = "sk-proof-provider-not-a-real-key"
 DB_PASSWORD = "proof-db-password-0123456789abcdef"
