@@ -24,7 +24,7 @@ spec:
           serviceAccountName: ecr-credentials-sync
           containers:
           - name: ecr-credentials-sync
-            image: heyvaldemar/aws-kubectl:latest@sha256:380e09adaba1088337c9933e1e423f8e1b63891df9421e0b58c8d068a8e2f2af
+            image: heyvaldemar/aws-kubectl:latest@sha256:149f0cc23de04137e36a30d25efb28388ea5a8a908bd43120334cd54f38ed015
             env:
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
