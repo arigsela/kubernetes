@@ -28,7 +28,7 @@ spec:
     type: parentbased_traceidratio
     argument: "1.0"
   python:
-    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b2@sha256:07b31dd459eac3556f8c8c9afc5fe03e90a8fd06c58f79d9a727bfb9add9a3af
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b2@sha256:2758fda65f55f77b6de42ee28bfcc190d3e31552bad30a38bc6724b822b7c245
     env:
       # Log lines get trace_id=..., which Grafana links to Tempo (beacon §T.43). The httpx
       # logger stays at WARNING all the same (beacon_core.logs.setup, beacon §V.45).
