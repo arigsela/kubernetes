@@ -77,7 +77,7 @@ spec:
         #     context, which the API server authenticates against Dex.
         # Neither the Gateway nor any other pod can reach 8888 directly.
         - name: jupyter
-          image: quay.io/jupyter/scipy-notebook@sha256:9d1087eda0dadd6e98763b346fcaa34aa10153067092fac39380669265c3c268
+          image: quay.io/jupyter/scipy-notebook@sha256:21b93d2df02daa665b11442282d01f96d5a639e8ca9045cfd296e2896709b2fc
           env:
             # Jupyter's native token auth, kept as the inner layer. The browser
             # never types it: oauth2-proxy injects it after the GitHub login.
