@@ -34,7 +34,7 @@ spec:
     #
     # NEXT MINOR IS A BLOCKER: 1.31.0 removes in-tree barmanObjectStore backups, which
     # postgresql-cluster uses. Migrate to the Barman Cloud Plugin before 1.31.
-    targetRevision: 0.29.1
+    targetRevision: 0.29.2
     helm:
       releaseName: cnpg
       values: |
