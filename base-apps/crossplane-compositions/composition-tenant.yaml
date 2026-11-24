@@ -71,7 +71,7 @@ spec:
           AWS_CLI = ("public.ecr.aws/aws-cli/aws-cli:2.39.3"
                      "@sha256:d557b3524475d70dd3104cf44d96568ee3188897b73a6ece2b37aa50e1af362f")
           PY_LAYER = ("ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python:0.66b2"
-                      "@sha256:07b31dd459eac3556f8c8c9afc5fe03e90a8fd06c58f79d9a727bfb9add9a3af")
+                      "@sha256:2758fda65f55f77b6de42ee28bfcc190d3e31552bad30a38bc6724b822b7c245")
           OTEL = "http://otel-collector.tracing.svc.cluster.local:4318"
           SELF_HOSTS = "dex.arigsela.com,beacon.arigsela.com"
           # beacon's fault flags (beacon §I.flags), every one off: faults are injected on homelab only.

@@ -40,7 +40,7 @@ spec:
           autoInstrumentationImage:
             python:
               repository: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python
-              tag: "0.66b2@sha256:07b31dd459eac3556f8c8c9afc5fe03e90a8fd06c58f79d9a727bfb9add9a3af"
+              tag: "0.66b2@sha256:2758fda65f55f77b6de42ee28bfcc190d3e31552bad30a38bc6724b822b7c245"
           resources:
             requests:
               cpu: 50m
@@ -61,7 +61,7 @@ spec:
         testFramework:
           image:
             repository: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-python
-            tag: "0.66b2@sha256:07b31dd459eac3556f8c8c9afc5fe03e90a8fd06c58f79d9a727bfb9add9a3af"
+            tag: "0.66b2@sha256:2758fda65f55f77b6de42ee28bfcc190d3e31552bad30a38bc6724b822b7c245"
   destination:
     server: https://kubernetes.default.svc
     namespace: opentelemetry-operator-system
